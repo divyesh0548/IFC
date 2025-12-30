@@ -1,57 +1,67 @@
-# =========================
-# Dependencies (all apps)
-# =========================
-node_modules/            # ignore everywhere in repo [web:2]
-
-# =========================
-# Build outputs (Vite/React + Node)
-# =========================
-dist/
-dist-ssr/
-build/
-out/
-
-# =========================
-# Vite / tooling caches
-# =========================
-.vite/
-.eslintcache
-*.tsbuildinfo
-
-# =========================
-# Logs
-# =========================
-logs/
-*.log
+# ======================
+# General - Node modules (ignore everywhere)
+# ======================
+node_modules/
+**/node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+*.log
 
-# =========================
-# Runtime / process files
-# =========================
-*.pid
-*.seed
-*.pid.lock
-
-# =========================
-# Environment variables (secrets)
-# =========================
-.env
-.env.*                # keep .env.example committed separately
-
-# =========================
-# Coverage
-# =========================
-coverage/
-.nyc_output/
-
-# =========================
-# OS / editor files
-# =========================
+# OS files
 .DS_Store
 Thumbs.db
-.idea/
+
+# ======================
+# Environment variables
+# ======================
+.env
+.env.*
+!.env.example
+
+# ======================
+# Vite / React
+# ======================
+dist/
+.vite/
+.vite-cache/
+
+# If using React with testing
+coverage/
+
+# ======================
+# Express / Backend
+# ======================
+build/
+tmp/
+temp/
+uploads/
+logs/
+
+# ======================
+# Database / local data
+# ======================
+*.sqlite
+*.sqlite3
+*.db
+
+# ======================
+# IDE / Editor
+# ======================
 .vscode/
+.idea/
 *.swp
+*.swo
+
+# ======================
+# TypeScript
+# ======================
+*.tsbuildinfo
+
+# ======================
+# Optional: lockfiles (keep ONE if team agrees)
+# ======================
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
