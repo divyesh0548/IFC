@@ -1,0 +1,519 @@
+const express = require('express');
+const { Pool } = require('pg');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
+
+const router = express.Router();
+
+// Database connection pool
+const pool = new Pool({
+  user: process.env.DB_USER || 'divyesh',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'ifc_dev',
+  password: String(process.env.DB_PASSWORD || '0548'),
+  port: parseInt(process.env.DB_PORT || '5432', 10),
+});
+
+// Helper function to encrypt JWT token with an extra layer
+function encryptToken(token) {
+  const algorithm = 'aes-256-gcm';
+  const encryptionKeyHex = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+  
+  // Ensure the key is exactly 64 hex characters (32 bytes)
+  const encryptionKey = Buffer.from(encryptionKeyHex.slice(0, 64), 'hex');
+  const iv = crypto.randomBytes(16);
+  
+  const cipher = crypto.createCipheriv(algorithm, encryptionKey, iv);
+  let encrypted = cipher.update(token, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag();
+  
+  // Combine IV, authTag, and encrypted data
+  return iv.toString('hex') + ':' + authTag.toString('hex') + ':' + encrypted;
+}
+
+// Helper function to decrypt JWT token
+function decryptToken(encryptedToken) {
+  try {
+    const algorithm = 'aes-256-gcm';
+    const encryptionKeyHex = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+    const encryptionKey = Buffer.from(encryptionKeyHex.slice(0, 64), 'hex');
+    
+    // Split the encrypted token
+    const parts = encryptedToken.split(':');
+    if (parts.length !== 3) {
+      throw new Error('Invalid token format');
+    }
+    
+    const iv = Buffer.from(parts[0], 'hex');
+    const authTag = Buffer.from(parts[1], 'hex');
+    const encrypted = parts[2];
+    
+    const decipher = crypto.createDecipheriv(algorithm, encryptionKey, iv);
+    decipher.setAuthTag(authTag);
+    
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return decrypted;
+  } catch (error) {
+    throw new Error('Token decryption failed');
+  }
+}
+
+// Login API endpoint
+router.post('/siteadmin/login', async (req, res) => {
+  const { email_id, password } = req.body;
+
+  // Validate input
+  if (!email_id || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email ID and password are required'
+    });
+  }
+
+  try {
+    // Query the siteadmin table
+    const query = 'SELECT * FROM siteadmin WHERE email_id = $1 AND password = $2';
+    const result = await pool.query(query, [email_id, password]);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email ID or password'
+      });
+    }
+
+    // Login successful - Generate JWT token
+    const user = result.rows[0];
+    const jwtSecret = process.env.JWT_SECRET;
+    
+    if (!jwtSecret) {
+      console.error('JWT_SECRET is not set in environment variables');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
+    // Generate JWT token with email_id
+    const tokenPayload = {
+      email_id: user.email_id,
+      id: user.id,
+      iat: Math.floor(Date.now() / 1000)
+    };
+
+    const jwtToken = jwt.sign(tokenPayload, jwtSecret, {
+      expiresIn: '24h' // Token expires in 24 hours
+    });
+
+    // Add extra encryption layer to JWT token
+    const encryptedToken = encryptToken(jwtToken);
+
+    // Clear user auth token if exists (to prevent dual login)
+    res.clearCookie('userAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+
+    // Set httpOnly cookie with the encrypted token
+    res.cookie('authToken', encryptedToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
+      sameSite: 'lax', // CSRF protection
+      path: '/', // Available to all paths
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      user: {
+        id: user.id,
+        email_id: user.email_id
+      }
+    });
+
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Verify token endpoint
+router.get('/siteadmin/verify', async (req, res) => {
+  try {
+    const token = req.cookies.authToken;
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided'
+      });
+    }
+
+    // Decrypt the token
+    const decryptedToken = decryptToken(token);
+    
+    // Verify JWT token
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
+    const decoded = jwt.verify(decryptedToken, jwtSecret);
+    
+    // Token is valid
+    res.status(200).json({
+      success: true,
+      user: {
+        id: decoded.id,
+        email_id: decoded.email_id
+      }
+    });
+
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
+    
+    console.error('Token verification error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Token verification failed'
+    });
+  }
+});
+
+// Logout endpoint
+router.post('/siteadmin/logout', (req, res) => {
+  // Clear the httpOnly cookie - must match the same options used when setting it
+  res.clearCookie('authToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/' // Ensure cookie is cleared from all paths
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Logged out successfully'
+  });
+});
+
+// User Login API endpoint (for ifc_users table)
+router.post('/user/login', async (req, res) => {
+  const { email_id, password } = req.body;
+
+  // Validate input
+  if (!email_id || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email ID and password are required'
+    });
+  }
+
+  try {
+    // Query the ifc_users table
+    const query = 'SELECT * FROM ifc_users WHERE email_id = $1 AND password = $2';
+    const result = await pool.query(query, [email_id, password]);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email ID or password'
+      });
+    }
+
+    // Login successful - Generate JWT token
+    const user = result.rows[0];
+    const jwtSecret = process.env.JWT_SECRET;
+    
+    if (!jwtSecret) {
+      console.error('JWT_SECRET is not set in environment variables');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
+    // Generate JWT token with email_id, id, and role
+    const tokenPayload = {
+      email_id: user.email_id,
+      id: user.id,
+      role: user.role,
+      iat: Math.floor(Date.now() / 1000)
+    };
+
+    const jwtToken = jwt.sign(tokenPayload, jwtSecret, {
+      expiresIn: '24h' // Token expires in 24 hours
+    });
+
+    // Add extra encryption layer to JWT token
+    const encryptedToken = encryptToken(jwtToken);
+
+    // Clear siteadmin auth token if exists (to prevent dual login)
+    res.clearCookie('authToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+
+    // Set httpOnly cookie with the encrypted token (using different cookie name for users)
+    res.cookie('userAuthToken', encryptedToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
+      sameSite: 'lax', // CSRF protection
+      path: '/', // Available to all paths
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      user: {
+        id: user.id,
+        email_id: user.email_id,
+        role: user.role
+      },
+      requiresPasswordUpdate: user.temp_login === 1 || user.temp_login === true
+    });
+
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// User Verify token endpoint
+router.get('/user/verify', async (req, res) => {
+  try {
+    const token = req.cookies.userAuthToken;
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided'
+      });
+    }
+
+    // Decrypt the token
+    const decryptedToken = decryptToken(token);
+    
+    // Verify JWT token
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
+    const decoded = jwt.verify(decryptedToken, jwtSecret);
+    
+    // Token is valid - return user info including role
+    res.status(200).json({
+      success: true,
+      user: {
+        id: decoded.id,
+        email_id: decoded.email_id,
+        role: decoded.role
+      }
+    });
+
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
+    
+    console.error('Token verification error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Token verification failed'
+    });
+  }
+});
+
+// User Logout endpoint
+router.post('/user/logout', (req, res) => {
+  // Clear the httpOnly cookie - must match the same options used when setting it
+  res.clearCookie('userAuthToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/' // Ensure cookie is cleared from all paths
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Logged out successfully'
+  });
+});
+
+// Helper function to generate temporary password
+function generateTempPassword() {
+  const length = 12;
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    password += charset.charAt(Math.floor(Math.random() * charset.length));
+  }
+  return password;
+}
+
+// Helper function to send email
+async function sendEmail(to, subject, text) {
+  // Create transporter (configure with your email service)
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: process.env.SMTP_PORT || 587,
+    secure: false, // true for 465, false for other ports
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+
+  const mailOptions = {
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: to,
+    subject: subject,
+    text: text
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return false;
+  }
+}
+
+// Forgot Password endpoint
+router.post('/forgot-password', async (req, res) => {
+  const { email_id } = req.body;
+
+  if (!email_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email ID is required'
+    });
+  }
+
+  try {
+    // Check if user exists
+    const userQuery = 'SELECT * FROM ifc_users WHERE email_id = $1';
+    const userResult = await pool.query(userQuery, [email_id]);
+
+    if (userResult.rows.length === 0) {
+      // Don't reveal if email exists for security
+      return res.status(200).json({
+        success: true,
+        message: 'If the email exists, a temporary password has been sent.'
+      });
+    }
+
+    // Generate temporary password
+    const tempPassword = generateTempPassword();
+
+    // Update user with temporary password and set temp_login to 1
+    const updateQuery = `
+      UPDATE ifc_users 
+      SET password = $1, temp_login = 1 
+      WHERE email_id = $2
+    `;
+    await pool.query(updateQuery, [tempPassword, email_id]);
+
+    // Send email with temporary password
+    const emailSubject = 'Temporary Password for IFC Account';
+    const emailText = `Your temporary password is: ${tempPassword}\n\nPlease login and update your password immediately.`;
+
+    const emailSent = await sendEmail(email_id, emailSubject, emailText);
+
+    if (!emailSent) {
+      console.error('Failed to send email, but password was updated');
+      // Still return success to user, but log the error
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'If the email exists, a temporary password has been sent.'
+    });
+
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Update Password endpoint
+router.post('/update-password', async (req, res) => {
+  const { email_id, currentPassword, newPassword } = req.body;
+
+  if (!email_id || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email ID and new password are required'
+    });
+  }
+
+  try {
+    // Verify current password (or temp password)
+    const verifyQuery = 'SELECT * FROM ifc_users WHERE email_id = $1 AND password = $2';
+    const verifyResult = await pool.query(verifyQuery, [email_id, currentPassword]);
+
+    if (verifyResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid current password'
+      });
+    }
+
+    // Update password and set temp_login to 0
+    const updateQuery = `
+      UPDATE ifc_users 
+      SET password = $1, temp_login = 0 
+      WHERE email_id = $2
+    `;
+    await pool.query(updateQuery, [newPassword, email_id]);
+
+    res.status(200).json({
+      success: true,
+      message: 'Password updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Update password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+module.exports = router;
+

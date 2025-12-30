@@ -1,0 +1,57 @@
+# =========================
+# Dependencies (all apps)
+# =========================
+node_modules/            # ignore everywhere in repo [web:2]
+
+# =========================
+# Build outputs (Vite/React + Node)
+# =========================
+dist/
+dist-ssr/
+build/
+out/
+
+# =========================
+# Vite / tooling caches
+# =========================
+.vite/
+.eslintcache
+*.tsbuildinfo
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# Runtime / process files
+# =========================
+*.pid
+*.seed
+*.pid.lock
+
+# =========================
+# Environment variables (secrets)
+# =========================
+.env
+.env.*                # keep .env.example committed separately
+
+# =========================
+# Coverage
+# =========================
+coverage/
+.nyc_output/
+
+# =========================
+# OS / editor files
+# =========================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
