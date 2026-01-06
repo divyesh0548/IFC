@@ -7,8 +7,9 @@ import InputAdornment from '@mui/material/InputAdornment'
 import IconButton from '@mui/material/IconButton'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import Alert from '@mui/material/Alert'
 
-function Login() {
+function ApproverLogin() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,7 +23,7 @@ function Login() {
     setError('')
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/user/login', {
+      const response = await fetch('http://localhost:3000/api/auth/approver/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -38,14 +39,9 @@ function Login() {
 
       if (response.ok && data.success) {
         // Login successful - token is stored in httpOnly cookie
-        console.log('Login successful:', data.user)
-        // Check if password update is required
-        if (data.requiresPasswordUpdate) {
-          navigate('/update-password')
-        } else {
-          // Redirect to dashboard
-          navigate('/user/dashboard')
-        }
+        console.log('Approver login successful:', data.approver)
+        // Redirect to dashboard
+        navigate('/approver/dashboard')
       } else {
         setError(data.message || 'Login failed')
       }
@@ -60,7 +56,7 @@ function Login() {
   const handleForgotPassword = () => {
     // Pass email as URL parameter if it exists
     const emailParam = email ? `?email=${encodeURIComponent(email)}` : ''
-    navigate(`/forgot-password${emailParam}`)
+    navigate(`/approver/forgot-password${emailParam}`)
   }
 
   return (
@@ -68,13 +64,13 @@ function Login() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-lg shadow-lg p-8">
           <h1 className="text-3xl font-bold text-secondary mb-8 text-center">
-            Login
+            Approver Login
           </h1>
           
           {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md">
+            <Alert severity="error" sx={{ mb: 3 }}>
               {error}
-            </div>
+            </Alert>
           )}
 
           <form onSubmit={handleSubmit}>
@@ -163,4 +159,5 @@ function Login() {
   )
 }
 
-export default Login
+export default ApproverLogin
+

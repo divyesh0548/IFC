@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import Button from '@mui/material/Button'
+import Box from '@mui/material/Box'
+import TextField from '@mui/material/TextField'
+import Alert from '@mui/material/Alert'
 
 function ForgotPassword() {
   const navigate = useNavigate()
@@ -62,54 +66,68 @@ function ForgotPassword() {
           </h1>
           
           {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md">
+            <Alert severity="error" sx={{ mb: 3 }}>
               {error}
-            </div>
+            </Alert>
           )}
 
           {success && (
-            <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded-md">
+            <Alert severity="success" sx={{ mb: 3 }}>
               {success}
-            </div>
+            </Alert>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label 
-                htmlFor="email_id" 
-                className="block text-sm font-medium text-secondary mb-2"
-              >
-                Email ID
-              </label>
-              <input
-                type="email"
+          <form onSubmit={handleSubmit}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mb: 3 }}>
+              <TextField
                 id="email_id"
+                label="Email ID"
+                type="email"
+                variant="filled"
                 value={email_id}
                 onChange={(e) => setEmail_id(e.target.value)}
                 required
                 disabled={loading}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="Enter your email"
+                fullWidth
               />
-            </div>
+            </Box>
 
-            <button
+            <Button
               type="submit"
               disabled={loading}
-              className="w-full bg-secondary text-primary py-3 rounded-md font-semibold hover:bg-hover transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 cursor-pointer disabled:bg-gray-400 disabled:cursor-not-allowed"
+              variant="contained"
+              color="secondary"
+              fullWidth
+              sx={{
+                py: 1.5,
+                fontSize: '1rem',
+                fontWeight: 600,
+                textTransform: 'none',
+                mb: 2,
+              }}
             >
               {loading ? 'Sending...' : 'Send Temporary Password'}
-            </button>
+            </Button>
 
-            <div className="text-center">
-              <button
+            <Box sx={{ textAlign: 'center' }}>
+              <Button
                 type="button"
                 onClick={() => navigate('/user/login')}
-                className="text-sm text-secondary hover:text-hover transition-colors cursor-pointer"
+                variant="text"
+                sx={{
+                  textTransform: 'none',
+                  fontSize: '0.875rem',
+                  color: 'text.primary',
+                  '&:hover': {
+                    backgroundColor: 'transparent',
+                    textDecoration: 'underline',
+                  },
+                }}
               >
                 Back to Login
-              </button>
-            </div>
+              </Button>
+            </Box>
           </form>
         </div>
       </div>

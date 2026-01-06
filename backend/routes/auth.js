@@ -15,6 +15,11 @@ const pool = new Pool({
   port: parseInt(process.env.DB_PORT || '5432', 10),
 });
 
+// Set timezone to IST for all connections
+pool.on('connect', async (client) => {
+  await client.query("SET timezone = 'Asia/Kolkata'");
+});
+
 // Helper function to encrypt JWT token with an extra layer
 function encryptToken(token) {
   const algorithm = 'aes-256-gcm';
@@ -112,8 +117,14 @@ router.post('/siteadmin/login', async (req, res) => {
     // Add extra encryption layer to JWT token
     const encryptedToken = encryptToken(jwtToken);
 
-    // Clear user auth token if exists (to prevent dual login)
+    // Clear other auth tokens if exists (to prevent dual login)
     res.clearCookie('userAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('auditorAuthToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -202,6 +213,164 @@ router.get('/siteadmin/verify', async (req, res) => {
 router.post('/siteadmin/logout', (req, res) => {
   // Clear the httpOnly cookie - must match the same options used when setting it
   res.clearCookie('authToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/' // Ensure cookie is cleared from all paths
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Logged out successfully'
+  });
+});
+
+// Auditor Login API endpoint
+router.post('/auditor/login', async (req, res) => {
+  const { email_id, password } = req.body;
+
+  // Validate input
+  if (!email_id || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email ID and password are required'
+    });
+  }
+
+  try {
+    // Query the auditors table
+    const query = 'SELECT * FROM auditors WHERE email_id = $1 AND password = $2';
+    const result = await pool.query(query, [email_id, password]);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email ID or password'
+      });
+    }
+
+    // Login successful - Generate JWT token
+    const user = result.rows[0];
+    const jwtSecret = process.env.JWT_SECRET;
+    
+    if (!jwtSecret) {
+      console.error('JWT_SECRET is not set in environment variables');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
+    // Generate JWT token with email_id
+    const tokenPayload = {
+      email_id: user.email_id,
+      id: user.id,
+      iat: Math.floor(Date.now() / 1000)
+    };
+
+    const jwtToken = jwt.sign(tokenPayload, jwtSecret, {
+      expiresIn: '24h' // Token expires in 24 hours
+    });
+
+    // Add extra encryption layer to JWT token
+    const encryptedToken = encryptToken(jwtToken);
+
+    // Clear other auth tokens if exists (to prevent dual login)
+    res.clearCookie('userAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('authToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+
+    // Set httpOnly cookie with the encrypted token (using different cookie name for auditors)
+    res.cookie('auditorAuthToken', encryptedToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
+      sameSite: 'lax', // CSRF protection
+      path: '/', // Available to all paths
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      user: {
+        id: user.id,
+        email_id: user.email_id
+      }
+    });
+
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Auditor Verify token endpoint
+router.get('/auditor/verify', async (req, res) => {
+  try {
+    const token = req.cookies.auditorAuthToken;
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided'
+      });
+    }
+
+    // Decrypt the token
+    const decryptedToken = decryptToken(token);
+    
+    // Verify JWT token
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
+    const decoded = jwt.verify(decryptedToken, jwtSecret);
+    
+    // Token is valid
+    res.status(200).json({
+      success: true,
+      user: {
+        id: decoded.id,
+        email_id: decoded.email_id
+      }
+    });
+
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
+    
+    console.error('Token verification error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Token verification failed'
+    });
+  }
+});
+
+// Auditor Logout endpoint
+router.post('/auditor/logout', (req, res) => {
+  // Clear the httpOnly cookie - must match the same options used when setting it
+  res.clearCookie('auditorAuthToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
@@ -328,13 +497,27 @@ router.get('/user/verify', async (req, res) => {
 
     const decoded = jwt.verify(decryptedToken, jwtSecret);
     
-    // Token is valid - return user info including role
+    // Get user details from database to include company_identifier
+    const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
+    const userResult = await pool.query(userQuery, [decoded.email_id]);
+    
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Token is valid - return user info including role and company_identifier
     res.status(200).json({
       success: true,
       user: {
-        id: decoded.id,
-        email_id: decoded.email_id,
-        role: decoded.role
+        id: user.id,
+        email_id: user.email_id,
+        role: user.role,
+        company_identifier: user.company_identifier
       }
     });
 
@@ -508,6 +691,291 @@ router.post('/update-password', async (req, res) => {
 
   } catch (error) {
     console.error('Update password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// ==================== APPROVER AUTHENTICATION ROUTES ====================
+
+// Approver Login API endpoint
+router.post('/approver/login', async (req, res) => {
+  const { email_id, password } = req.body;
+
+  // Validate input
+  if (!email_id || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email ID and password are required'
+    });
+  }
+
+  try {
+    // Query the appover table
+    const query = 'SELECT * FROM appover WHERE email_id = $1 AND password = $2';
+    const result = await pool.query(query, [email_id, password]);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email ID or password'
+      });
+    }
+
+    // Login successful - Generate JWT token
+    const approver = result.rows[0];
+    const jwtSecret = process.env.JWT_SECRET;
+    
+    if (!jwtSecret) {
+      console.error('JWT_SECRET is not set in environment variables');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
+    // Generate JWT token with email_id and id
+    const tokenPayload = {
+      email_id: approver.email_id,
+      id: approver.id,
+      role: 'approver',
+      iat: Math.floor(Date.now() / 1000)
+    };
+
+    const jwtToken = jwt.sign(tokenPayload, jwtSecret, {
+      expiresIn: '24h' // Token expires in 24 hours
+    });
+
+    // Add extra encryption layer to JWT token
+    const encryptedToken = encryptToken(jwtToken);
+
+    // Clear other auth tokens if exists (to prevent dual login)
+    res.clearCookie('userAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('authToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('auditorAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+
+    // Set httpOnly cookie with the encrypted token (using different cookie name for approvers)
+    res.cookie('approverAuthToken', encryptedToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
+      sameSite: 'lax', // CSRF protection
+      path: '/', // Available to all paths
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      approver: {
+        id: approver.id,
+        email_id: approver.email_id
+      }
+    });
+
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Approver Verify token endpoint
+router.get('/approver/verify', async (req, res) => {
+  try {
+    const token = req.cookies.approverAuthToken;
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided'
+      });
+    }
+
+    // Decrypt the token
+    const decryptedToken = decryptToken(token);
+    
+    // Verify JWT token
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
+    const decoded = jwt.verify(decryptedToken, jwtSecret);
+    
+    // Get approver details from database
+    const approverQuery = 'SELECT id, email_id FROM appover WHERE email_id = $1';
+    const approverResult = await pool.query(approverQuery, [decoded.email_id]);
+    
+    if (approverResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Approver not found'
+      });
+    }
+    
+    const approver = approverResult.rows[0];
+    
+    // Token is valid - return approver info
+    res.status(200).json({
+      success: true,
+      approver: {
+        id: approver.id,
+        email_id: approver.email_id
+      }
+    });
+
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
+    
+    console.error('Token verification error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Token verification failed'
+    });
+  }
+});
+
+// Approver Logout endpoint
+router.post('/approver/logout', (req, res) => {
+  // Clear the httpOnly cookie - must match the same options used when setting it
+  res.clearCookie('approverAuthToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/' // Ensure cookie is cleared from all paths
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Logged out successfully'
+  });
+});
+
+// Approver Forgot Password endpoint
+router.post('/approver/forgot-password', async (req, res) => {
+  const { email_id } = req.body;
+
+  if (!email_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email ID is required'
+    });
+  }
+
+  try {
+    // Check if approver exists
+    const approverQuery = 'SELECT * FROM appover WHERE email_id = $1';
+    const approverResult = await pool.query(approverQuery, [email_id]);
+
+    if (approverResult.rows.length === 0) {
+      // Don't reveal if email exists for security
+      return res.status(200).json({
+        success: true,
+        message: 'If the email exists, a temporary password has been sent.'
+      });
+    }
+
+    // Generate temporary password
+    const tempPassword = generateTempPassword();
+
+    // Update approver with temporary password
+    const updateQuery = `
+      UPDATE appover 
+      SET password = $1 
+      WHERE email_id = $2
+    `;
+    await pool.query(updateQuery, [tempPassword, email_id]);
+
+    // Send email with temporary password
+    const emailSubject = 'Temporary Password for IFC Approver Account';
+    const emailText = `Your temporary password is: ${tempPassword}\n\nPlease login and update your password immediately.`;
+
+    const emailSent = await sendEmail(email_id, emailSubject, emailText);
+
+    if (!emailSent) {
+      console.error('Failed to send email, but password was updated');
+      // Still return success to user, but log the error
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'If the email exists, a temporary password has been sent.'
+    });
+
+  } catch (error) {
+    console.error('Approver forgot password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Approver Update Password endpoint
+router.post('/approver/update-password', async (req, res) => {
+  const { email_id, currentPassword, newPassword } = req.body;
+
+  if (!email_id || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email ID and new password are required'
+    });
+  }
+
+  try {
+    // Verify current password (or temp password)
+    const verifyQuery = 'SELECT * FROM appover WHERE email_id = $1 AND password = $2';
+    const verifyResult = await pool.query(verifyQuery, [email_id, currentPassword]);
+
+    if (verifyResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid current password'
+      });
+    }
+
+    // Update password
+    const updateQuery = `
+      UPDATE appover 
+      SET password = $1 
+      WHERE email_id = $2
+    `;
+    await pool.query(updateQuery, [newPassword, email_id]);
+
+    res.status(200).json({
+      success: true,
+      message: 'Password updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Approver update password error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

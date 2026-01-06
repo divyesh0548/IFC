@@ -6,6 +6,11 @@ const cookieParser = require('cookie-parser');
 dotenv.config();
 
 const authRoutes = require('./routes/auth');
+const companiesRoutes = require('./routes/companies');
+const companyCoRoutes = require('./routes/company_co');
+const controlFormsRoutes = require('./routes/control_forms');
+const approverRoutes = require('./routes/approver');
+const { processExcelFiles } = require('./scripts/process_excel_files');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,10 +57,29 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/companies', companiesRoutes);
+app.use('/api/company-co', companyCoRoutes);
+app.use('/api/control-forms', controlFormsRoutes);
+app.use('/api/approver', approverRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
+});
+
+// Start scheduled task to process Excel files every 1 minute
+console.log('Starting Excel file processor scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await processExcelFiles();
+  } catch (error) {
+    console.error('Error in scheduled Excel file processing:', error);
+  }
+}, 60 * 1000); // 60 seconds = 1 minute
+
+// Process any existing unprocessed files on server start
+processExcelFiles().catch(error => {
+  console.error('Error processing Excel files on startup:', error);
 });
 
 // Start server

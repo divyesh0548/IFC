@@ -1,41 +1,25 @@
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import Navbar from '../../components/Siteadmin_navbar'
+import { useSiteadminLogout } from '../../hooks/useSiteadminLogout'
 
 function Siteadmin_dashboard() {
-  const navigate = useNavigate()
-
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/siteadmin/logout', {
-        method: 'POST',
-        credentials: 'include', // Important: sends cookies
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        // Redirect to login page
-        navigate('/siteadmin/login')
-      } else {
-        console.error('Logout failed:', data.message)
-        // Still redirect to login even if logout API fails
-        navigate('/siteadmin/login')
-      }
-    } catch (error) {
-      console.error('Logout error:', error)
-      // Still redirect to login even if there's an error
-      navigate('/siteadmin/login')
-    }
-  }
+  const handleLogout = useSiteadminLogout()
 
   return (
     <div className="min-h-screen bg-primary">
       <Navbar onLogout={handleLogout} />
 
       {/* Dashboard Content */}
-      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-        <h1 className="text-4xl font-bold text-secondary">Siteadmin Dashboard</h1>
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-4">
+        <h1 className="text-4xl font-bold text-secondary mb-8">Siteadmin Dashboard</h1>
+        
+        <Link
+          to="/siteadmin/create-company"
+          className="bg-secondary text-primary px-8 py-3 rounded-md font-semibold hover:bg-hover transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 cursor-pointer"
+        >
+          Create Company
+        </Link>
       </div>
     </div>
   )

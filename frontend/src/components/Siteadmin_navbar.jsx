@@ -1,24 +1,55 @@
 import React from 'react'
+import { useTheme } from '@mui/material/styles'
+import AppBar from '@mui/material/AppBar'
+import Toolbar from '@mui/material/Toolbar'
+import Typography from '@mui/material/Typography'
+import Button from '@mui/material/Button'
+import Box from '@mui/material/Box'
 
 function Navbar({ onLogout, header = 'Site Admin' }) {
+  const theme = useTheme()
+  
   return (
-    <nav className="bg-secondary text-primary shadow-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center">
-            <h1 className="text-xl font-bold">{header}</h1>
-          </div>
-          <div className="flex items-center">
-            <button
-              onClick={onLogout}
-              className="bg-hover hover:bg-opacity-90 text-primary px-4 py-2 rounded-md font-semibold transition-colors cursor-pointer"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </div>
-    </nav>
+    <AppBar 
+      position="static"
+      elevation={0}
+      sx={{
+        backgroundColor: '#ffffff', // White background
+        color: theme.palette.text.primary,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+      }}
+    >
+      <Toolbar sx={{ maxWidth: '1280px', width: '100%', mx: 'auto', px: { xs: 2, sm: 3, lg: 4 } }}>
+        <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}>
+          <Typography 
+            variant="h6" 
+            component="h1"
+            sx={{ 
+              fontWeight: 700,
+              color: 'text.primary',
+            }}
+          >
+            {header}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <Button
+            onClick={onLogout}
+            variant="contained"
+            color="secondary"
+            sx={{
+              backgroundColor: theme.palette.secondary.main,
+              color: theme.palette.secondary.contrastText,
+              '&:hover': {
+                backgroundColor: theme.palette.secondary.dark,
+              },
+            }}
+          >
+            Logout
+          </Button>
+        </Box>
+      </Toolbar>
+    </AppBar>
   )
 }
 
