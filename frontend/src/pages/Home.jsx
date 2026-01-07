@@ -1,40 +1,100 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { Box, Container, Typography, Button } from '@mui/material'
 
 function Home() {
   return (
-    <div className="min-h-screen bg-primary flex items-center justify-center px-4">
-      <div className="text-center">
-        <h1 className="text-5xl font-bold text-secondary mb-8">
-          IFC
-        </h1>
-        <p className="text-xl text-secondary mb-12">
-          Welcome to IFC Platform
-        </p>
-        
-        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-          <Link
-            to="/user/login"
-            className="bg-secondary text-primary px-8 py-3 rounded-md font-semibold hover:bg-hover transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 cursor-pointer min-w-[200px] text-center"
+    <Box
+      sx={{
+        minHeight: '100vh',
+        backgroundColor: 'background.default',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        px: 2,
+      }}
+    >
+      <Container maxWidth="sm">
+        <Box sx={{ textAlign: 'center' }}>
+          <Typography
+            variant="h2"
+            component="h1"
+            sx={{
+              fontWeight: 700,
+              mb: 4,
+              color: 'secondary.main',
+            }}
           >
-            User Login
-          </Link>
+            IFC
+          </Typography>
+          <Typography
+            variant="h5"
+            component="p"
+            sx={{
+              mb: 6,
+              color: 'text.secondary',
+            }}
+          >
+            Welcome to IFC Platform
+          </Typography>
           
-          <Link
-            to="/siteadmin/login"
-            className="bg-secondary text-primary px-8 py-3 rounded-md font-semibold hover:bg-hover transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 cursor-pointer min-w-[200px] text-center"
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: 2,
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
           >
-            Site Admin Login
-          </Link>
-          <Link
-            to="/auditor/login"
-            className="bg-secondary text-primary px-8 py-3 rounded-md font-semibold hover:bg-hover transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 cursor-pointer min-w-[200px] text-center"
-          >
-            Auditor Login
-          </Link>
-        </div>
-      </div>
-    </div>
+            <Button
+              component={Link}
+              to="/user/login"
+              variant="contained"
+              color="secondary"
+              sx={{
+                minWidth: '200px',
+                py: 1.5,
+                textTransform: 'none',
+                fontWeight: 600,
+              }}
+            >
+              User Login
+            </Button>
+            
+            <Button
+              component={Link}
+              to="/siteadmin/login"
+              variant="contained"
+              color="secondary"
+              sx={{
+                minWidth: '200px',
+                py: 1.5,
+                textTransform: 'none',
+                fontWeight: 600,
+              }}
+            >
+              Site Admin Login
+            </Button>
+            
+            <Button
+              component={Link}
+              to="/auditor/login"
+              variant="contained"
+              color="secondary"
+              sx={{
+                minWidth: '200px',
+                py: 1.5,
+                textTransform: 'none',
+                fontWeight: 600,
+              }}
+            >
+              Auditor Login
+            </Button>
+          </Box>
+        </Box>
+      </Container>
+    </Box>
   )
 }
 

@@ -180,6 +180,7 @@ function ApproverFormDetail() {
     control_objective: 'Control Objective',
     control_to_address: 'Control to Address',
     mrc_or_not: 'MRC or Not',
+    gap_description_resolution: 'Gap Description & Resolution',
     source_data_report_logic_report_parameters: 'Source Data/Report Logic/Report Parameters',
     relevant_data_elements_of_ipe: 'Relevant Data Elements of IPE',
     type_of_control: 'Type of Control',
@@ -196,12 +197,41 @@ function ApproverFormDetail() {
     effective_or_not_effective: 'Effective or Not Effective',
     done: 'Done',
     findings: 'Findings',
-    gap_description_resolution: 'Gap Description & Resolution',
     doc_uploaded_by_user: 'Doc Uploaded by User',
     active: 'Active',
     approved_rejected: 'Approved/Rejected',
     reason_by_approver: 'Reason by Approver',
   }
+
+  // Define field order - gap_description_resolution comes after mrc_or_not
+  const fieldOrder = [
+    'description_of_control',
+    'process',
+    'sub_process',
+    'risk_description',
+    'whether_fraud_risks_exist',
+    'control_objective',
+    'control_to_address',
+    'mrc_or_not',
+    'gap_description_resolution',
+    'source_data_report_logic_report_parameters',
+    'relevant_data_elements_of_ipe',
+    'type_of_control',
+    'nature_of_control',
+    'type_of_risk_mitigation_method',
+    'process_owner',
+    'reviewer_process_supervisor',
+    'control_frequency',
+    'basis_of_sampling',
+    'docs_to_review_for_dms_audit',
+    'type_of_risk_associated',
+    'financial_reporting',
+    'checks_performed',
+    'effective_or_not_effective',
+    'done',
+    'findings',
+    'doc_uploaded_by_user'
+  ]
 
   // Fields to exclude from display
   const excludedFields = ['id', 'form_id', 'company_identifier', 'created_at', 'active', 'approved_rejected', 'reason_by_approver']
@@ -285,7 +315,7 @@ function ApproverFormDetail() {
                         component="label"
                         sx={{
                           display: 'block',
-                          fontWeight: 600,
+                          fontWeight: 700,
                           mb: 2,
                           color: 'text.primary'
                         }}
@@ -387,7 +417,7 @@ function ApproverFormDetail() {
                         component="label"
                         sx={{
                           display: 'block',
-                          fontWeight: 600,
+                          fontWeight: 700,
                           mb: 1,
                           color: 'text.primary'
                         }}
@@ -412,14 +442,14 @@ function ApproverFormDetail() {
                         component="label"
                         sx={{
                           display: 'block',
-                          fontWeight: 600,
+                          fontWeight: 700,
                           mb: 1,
                           color: 'text.primary'
                         }}
                       >
                         Created At
                       </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                         {formatDateTime(formData?.created_at)}
                       </Typography>
                     </Box>
@@ -431,14 +461,14 @@ function ApproverFormDetail() {
                         component="label"
                         sx={{
                           display: 'block',
-                          fontWeight: 600,
+                          fontWeight: 700,
                           mb: 1,
                           color: 'text.primary'
                         }}
                       >
                         Approved/Rejected
                       </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                         {formData?.approved_rejected || '-'}
                       </Typography>
                     </Box>
@@ -450,7 +480,7 @@ function ApproverFormDetail() {
                         component="label"
                         sx={{
                           display: 'block',
-                          fontWeight: 600,
+                          fontWeight: 700,
                           mb: 1,
                           color: 'text.primary'
                         }}
@@ -460,7 +490,7 @@ function ApproverFormDetail() {
                       <Typography 
                         variant="body2" 
                         sx={{ 
-                          color: 'text.primary',
+                          color: 'text.secondary',
                           wordBreak: 'break-word'
                         }}
                       >
@@ -490,8 +520,8 @@ function ApproverFormDetail() {
                     gap: 3,
                   }}
                 >
-                  {Object.keys(formData)
-                    .filter(key => !excludedFields.includes(key))
+                  {fieldOrder
+                    .filter(key => formData.hasOwnProperty(key) && !excludedFields.includes(key))
                     .map((key) => {
                       const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                       const value = formData[key]
@@ -514,12 +544,12 @@ function ApproverFormDetail() {
                             component="dt"
                             sx={{
                               display: 'block',
-                              fontWeight: 600,
+                              fontWeight: 700,
                               textTransform: 'uppercase',
                               letterSpacing: '0.5px',
                               mb: 1,
                               color: 'text.primary',
-                              fontSize: '0.75rem',
+                              fontSize: theme.typography.customSizes.small,
                             }}
                           >
                             {label}
@@ -528,10 +558,10 @@ function ApproverFormDetail() {
                             variant="body2"
                             component="dd"
                             sx={{
-                              color: isEmpty ? 'text.disabled' : 'text.primary',
+                              color: isEmpty ? 'text.disabled' : 'text.secondary',
                               wordBreak: 'break-word',
                               lineHeight: 1.6,
-                              fontSize: '0.9375rem',
+                              fontSize: theme.typography.customSizes.medium,
                             }}
                           >
                             {isEmpty ? '-' : String(value)}

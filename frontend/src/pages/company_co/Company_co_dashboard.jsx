@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useTheme } from '@mui/material/styles'
 import Navbar from '../../components/Siteadmin_navbar'
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -7,6 +8,7 @@ import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 
 function Company_Co_dashboard() {
+  const theme = useTheme()
   const navigate = useNavigate()
   const [userRole, setUserRole] = useState(null)
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
@@ -126,7 +128,7 @@ function Company_Co_dashboard() {
             sx={{
               px: 3,
               py: 1.5,
-              fontSize: '1rem',
+              fontSize: theme.typography.customSizes.medium,
               fontWeight: 500,
               textTransform: 'none',
             }}
@@ -143,7 +145,7 @@ function Company_Co_dashboard() {
             sx={{
               px: 3,
               py: 1.5,
-              fontSize: '1rem',
+              fontSize: theme.typography.customSizes.medium,
               fontWeight: 500,
               textTransform: 'none',
             }}

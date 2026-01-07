@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTheme } from '@mui/material/styles'
+import Button from '@mui/material/Button'
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 
 function UpdatePassword() {
+  const theme = useTheme()
   const navigate = useNavigate()
   const [email_id, setEmail_id] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
@@ -90,9 +95,9 @@ function UpdatePassword() {
           </h1>
           
           {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md">
+            <Alert severity="error" sx={{ mb: 3 }}>
               {error}
-            </div>
+            </Alert>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -153,13 +158,21 @@ function UpdatePassword() {
               />
             </div>
 
-            <button
+            <Button
               type="submit"
               disabled={loading}
-              className="w-full bg-secondary text-primary py-3 rounded-md font-semibold hover:bg-hover transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 cursor-pointer disabled:bg-gray-400 disabled:cursor-not-allowed"
+              variant="contained"
+              color="secondary"
+              fullWidth
+              sx={{
+                py: 1.5,
+                fontSize: theme.typography.customSizes.medium,
+                fontWeight: 600,
+                textTransform: 'none',
+              }}
             >
               {loading ? 'Updating...' : 'Update Password'}
-            </button>
+            </Button>
           </form>
         </div>
       </div>

@@ -1,9 +1,13 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { useTheme } from '@mui/material/styles'
 import Navbar from '../../components/Siteadmin_navbar'
 import { useSiteadminLogout } from '../../hooks/useSiteadminLogout'
+import Button from '@mui/material/Button'
+import Box from '@mui/material/Box'
 
 function Siteadmin_dashboard() {
+  const theme = useTheme()
   const handleLogout = useSiteadminLogout()
 
   return (
@@ -11,16 +15,34 @@ function Siteadmin_dashboard() {
       <Navbar onLogout={handleLogout} />
 
       {/* Dashboard Content */}
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-4">
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: 'calc(100vh - 4rem)',
+          px: 2,
+        }}
+      >
         <h1 className="text-4xl font-bold text-secondary mb-8">Siteadmin Dashboard</h1>
         
-        <Link
+        <Button
+          component={Link}
           to="/siteadmin/create-company"
-          className="bg-secondary text-primary px-8 py-3 rounded-md font-semibold hover:bg-hover transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 cursor-pointer"
+          variant="contained"
+          color="secondary"
+          sx={{
+            px: 4,
+            py: 1.5,
+            fontSize: theme.typography.customSizes.medium,
+            fontWeight: 600,
+            textTransform: 'none',
+          }}
         >
           Create Company
-        </Link>
-      </div>
+        </Button>
+      </Box>
     </div>
   )
 }

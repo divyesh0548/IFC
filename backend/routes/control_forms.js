@@ -73,7 +73,13 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure multer for file uploads (disk storage)
+// Create User_Docs directory if it doesn't exist
+const userDocsDir = path.join(__dirname, '..', 'uploads', 'User_Docs');
+if (!fs.existsSync(userDocsDir)) {
+  fs.mkdirSync(userDocsDir, { recursive: true });
+}
+
+// Configure multer for Excel file uploads (disk storage)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadsDir);
@@ -83,6 +89,20 @@ const storage = multer.diskStorage({
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
     cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  }
+});
+
+// Configure multer for user document uploads
+const userDocsStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, userDocsDir);
+  },
+  filename: function (req, file, cb) {
+    // Generate unique filename with timestamp and form_id
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    const formId = req.params.form_id || 'unknown';
+    cb(null, `form_${formId}_${uniqueSuffix}${ext}`);
   }
 });
 
@@ -101,6 +121,12 @@ const upload = multer({
       cb(new Error('Invalid file type. Only Excel files (.xlsx, .xls) and CSV files are allowed.'));
     }
   }
+});
+
+// Multer for user document uploads (accepts all file types)
+const uploadUserDoc = multer({
+  storage: userDocsStorage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
 
 // Helper function to decrypt JWT token
@@ -359,7 +385,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
     type_of_risk_associated, financial_reporting, checks_performed,
     effective_or_not_effective, done, findings, gap_description_resolution,
-    doc_uploaded_by_user, active, approved_rejected, reason_by_approver
+    doc_uploaded_by_user, active, status, reason_by_approver, remarks_by_user
   } = req.body;
 
   const client = await pool.connect();
@@ -381,7 +407,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
       type_of_risk_associated, financial_reporting, checks_performed,
       effective_or_not_effective, done, findings, gap_description_resolution,
-      doc_uploaded_by_user, active, approved_rejected, reason_by_approver
+      doc_uploaded_by_user, active, status, reason_by_approver, remarks_by_user
     };
 
     Object.keys(fieldsToUpdate).forEach(field => {
@@ -391,6 +417,9 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
         paramIndex++;
       }
     });
+
+    // Debug: Log the update query
+    console.log('Update query fields:', updateFields);
 
     if (updateFields.length === 0) {
       return res.status(400).json({
@@ -409,7 +438,26 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       RETURNING *;
     `;
 
-    const result = await client.query(updateQuery, updateValues);
+    let result;
+    try {
+      result = await client.query(updateQuery, updateValues);
+    } catch (dbError) {
+      await client.query('ROLLBACK');
+      console.error('Database error during update:', dbError);
+      // Check if it's a column doesn't exist error
+      if (dbError.message && dbError.message.includes('column') && dbError.message.includes('does not exist')) {
+        return res.status(500).json({
+          success: false,
+          message: 'Database column error. Please ensure remarks_by_user column exists in control_forms table.',
+          error: dbError.message
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        message: 'Database error during update',
+        error: dbError.message
+      });
+    }
 
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -505,6 +553,86 @@ router.post('/', verifyAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error creating control form',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Upload user document for a specific form
+router.post('/:form_id/upload-document', verifyAuth, uploadUserDoc.single('document'), async (req, res) => {
+  const { form_id } = req.params;
+  
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      message: 'No file uploaded'
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Save relative path (from uploads folder)
+    const relativePath = path.relative(path.join(__dirname, '..', 'uploads'), req.file.path);
+    
+    // Update the form with the document path
+    const updateQuery = `
+      UPDATE control_forms
+      SET doc_uploaded_by_user = $1
+      WHERE form_id = $2
+      RETURNING *;
+    `;
+
+    const result = await client.query(updateQuery, [relativePath, form_id]);
+
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      // Delete uploaded file if form not found
+      if (req.file && req.file.path) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (unlinkError) {
+          console.error('Error deleting file:', unlinkError);
+        }
+      }
+      return res.status(404).json({
+        success: false,
+        message: 'Control form not found'
+      });
+    }
+
+    await client.query('COMMIT');
+
+    res.status(200).json({
+      success: true,
+      message: 'Document uploaded successfully',
+      data: {
+        form_id: result.rows[0].form_id,
+        doc_uploaded_by_user: result.rows[0].doc_uploaded_by_user,
+        file_name: req.file.originalname
+      }
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error uploading document:', error);
+    
+    // Delete uploaded file on error
+    if (req.file && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (unlinkError) {
+        console.error('Error deleting file:', unlinkError);
+      }
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading document',
       error: error.message
     });
   } finally {

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import Alert from '@mui/material/Alert'
 
 function ForgotPassword() {
+  const theme = useTheme()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [email_id, setEmail_id] = useState('')
@@ -101,7 +103,7 @@ function ForgotPassword() {
               fullWidth
               sx={{
                 py: 1.5,
-                fontSize: '1rem',
+                fontSize: theme.typography.customSizes.medium,
                 fontWeight: 600,
                 textTransform: 'none',
                 mb: 2,
@@ -117,7 +119,7 @@ function ForgotPassword() {
                 variant="text"
                 sx={{
                   textTransform: 'none',
-                  fontSize: '0.875rem',
+                  fontSize: theme.typography.customSizes.small,
                   color: 'text.primary',
                   '&:hover': {
                     backgroundColor: 'transparent',

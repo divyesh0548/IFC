@@ -1027,6 +1027,99 @@ def remove_excel_files_columns():
         if conn:
             conn.close()
 
+def rename_approved_rejected_to_status():
+    """
+    Renames the 'approved_rejected' column to 'status' in the 'control_forms' table
+    Also adds 'remarks_by_user' column if it doesn't exist
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return False
+        
+        cur = conn.cursor()
+        
+        # Check if approved_rejected column exists
+        check_column_query = """
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'control_forms' 
+        AND column_name = 'approved_rejected';
+        """
+        cur.execute(check_column_query)
+        
+        if cur.fetchone():
+            # Check if status column already exists
+            check_status_query = """
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'control_forms' 
+            AND column_name = 'status';
+            """
+            cur.execute(check_status_query)
+            
+            if cur.fetchone():
+                print("Column 'status' already exists in 'control_forms' table.")
+                print("Please drop the 'status' column first or rename 'approved_rejected' manually.")
+                conn.rollback()
+                cur.close()
+                return False
+            
+            # Rename the column
+            alter_query = """
+            ALTER TABLE control_forms 
+            RENAME COLUMN approved_rejected TO status;
+            """
+            cur.execute(alter_query)
+            print("Column 'approved_rejected' renamed to 'status' successfully in 'control_forms' table!")
+        else:
+            print("Column 'approved_rejected' does not exist in 'control_forms' table.")
+        
+        # Add remarks_by_user column if it doesn't exist
+        check_remarks_query = """
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'control_forms' 
+        AND column_name = 'remarks_by_user';
+        """
+        cur.execute(check_remarks_query)
+        
+        if not cur.fetchone():
+            # Add the remarks_by_user column
+            add_remarks_query = """
+            ALTER TABLE control_forms 
+            ADD COLUMN remarks_by_user TEXT;
+            """
+            cur.execute(add_remarks_query)
+            print("Column 'remarks_by_user' added successfully to 'control_forms' table!")
+        else:
+            print("Column 'remarks_by_user' already exists in 'control_forms' table.")
+        
+        # Commit the transaction
+        conn.commit()
+        
+        print("All changes applied successfully!")
+        cur.close()
+        return True
+        
+    except psycopg2.Error as e:
+        print(f"Error renaming column or adding remarks_by_user: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 if __name__ == "__main__":
     # Create ifc_users table
     # create_ifc_users_table()
@@ -1036,7 +1129,9 @@ if __name__ == "__main__":
     
     # Create appover table
     # create_appover_table()
-    add_appover("appover@gmail.com", "123456")
+    # add_appover("appover@gmail.com", "123456")
+
+    rename_approved_rejected_to_status()
     
     # Create companies table
     # create_companies_table()

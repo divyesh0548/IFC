@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
@@ -10,6 +11,7 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Alert from '@mui/material/Alert'
 
 function ApproverLogin() {
+  const theme = useTheme()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -125,7 +127,7 @@ function ApproverLogin() {
                 variant="text"
                 sx={{
                   textTransform: 'none',
-                  fontSize: '0.875rem',
+                  fontSize: theme.typography.customSizes.small,
                   color: 'text.primary',
                   '&:hover': {
                     backgroundColor: 'transparent',
@@ -145,7 +147,7 @@ function ApproverLogin() {
               fullWidth
               sx={{
                 py: 1.5,
-                fontSize: '1rem',
+                fontSize: theme.typography.customSizes.medium,
                 fontWeight: 600,
                 textTransform: 'none',
               }}

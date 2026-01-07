@@ -22,6 +22,7 @@ import FormDetail from './pages/company_co/FormDetail'
 import ApproverLogin from './pages/approver/ApproverLogin'
 import ApproverDashboard from './pages/approver/ApproverDashboard'
 import ApproverFormDetail from './pages/approver/ApproverFormDetail'
+import UserFormDetail from './pages/user/UserFormDetail'
 
 function App() {
 
@@ -92,11 +93,21 @@ function App() {
           } 
         />
 
+
+{/* User Routes */}
         <Route 
           path="/user/dashboard" 
           element={
             <RoleBasedProtectedRoute allowedRoles={['user']}>
               <User_dashboard />
+            </RoleBasedProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/user/form/:form_id" 
+          element={
+            <RoleBasedProtectedRoute allowedRoles={['user']}>
+              <UserFormDetail />
             </RoleBasedProtectedRoute>
           } 
         />

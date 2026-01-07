@@ -141,7 +141,7 @@ router.get('/pending-approvals', verifyApproverAuth, async (req, res) => {
     // Get control forms that are pending approval
     const query = `
       SELECT * FROM control_forms 
-      WHERE approved_rejected IS NULL OR approved_rejected = ''
+      WHERE status IS NULL OR status = '' OR status = 'sent for approval'
       ORDER BY created_at DESC
     `;
     
@@ -165,27 +165,27 @@ router.get('/pending-approvals', verifyApproverAuth, async (req, res) => {
 router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
   try {
     const { form_id } = req.params;
-    const { approved_rejected, reason_by_approver } = req.body;
+    const { status, reason_by_approver } = req.body;
     const approver = req.approver;
 
-    if (!approved_rejected || !['Approved', 'Rejected'].includes(approved_rejected)) {
+    if (!status || !['Approved', 'Rejected'].includes(status)) {
       return res.status(400).json({
         success: false,
-        message: 'approved_rejected must be either "Approved" or "Rejected"'
+        message: 'status must be either "Approved" or "Rejected"'
       });
     }
 
     // Update the control form
     const updateQuery = `
       UPDATE control_forms 
-      SET approved_rejected = $1, 
+      SET status = $1, 
           reason_by_approver = $2
       WHERE form_id = $3
       RETURNING *
     `;
     
     const result = await pool.query(updateQuery, [
-      approved_rejected,
+      status,
       reason_by_approver || null,
       form_id
     ]);
@@ -199,7 +199,7 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `Form ${approved_rejected.toLowerCase()} successfully`,
+      message: `Form ${status.toLowerCase()} successfully`,
       data: result.rows[0]
     });
   } catch (error) {
@@ -214,15 +214,15 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
 // Protected route: Get all control forms (with filter options)
 router.get('/control-forms', verifyApproverAuth, async (req, res) => {
   try {
-    const { approved_rejected, active } = req.query;
+    const { status, active } = req.query;
     
     let query = 'SELECT * FROM control_forms WHERE 1=1';
     const queryParams = [];
     let paramIndex = 1;
 
-    if (approved_rejected) {
-      query += ` AND approved_rejected = $${paramIndex}`;
-      queryParams.push(approved_rejected);
+    if (status) {
+      query += ` AND status = $${paramIndex}`;
+      queryParams.push(status);
       paramIndex++;
     }
 

@@ -443,7 +443,7 @@ async function processExcelFiles() {
           'control_frequency', 'basis_of_sampling', 'docs_to_review_for_dms_audit',
           'type_of_risk_associated', 'financial_reporting', 'checks_performed',
           'effective_or_not_effective', 'done', 'findings', 'gap_description_resolution',
-          'doc_uploaded_by_user', 'active', 'approved_rejected', 'reason_by_approver',
+          'doc_uploaded_by_user', 'active', 'status', 'reason_by_approver',
           'company_identifier', 'form_id'
         ];
 

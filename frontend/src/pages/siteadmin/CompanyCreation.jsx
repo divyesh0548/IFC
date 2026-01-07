@@ -1,9 +1,18 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTheme } from '@mui/material/styles'
 import Navbar from '../../components/Siteadmin_navbar'
 import { useSiteadminLogout } from '../../hooks/useSiteadminLogout'
+import Button from '@mui/material/Button'
+import Box from '@mui/material/Box'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
+import Card from '@mui/material/Card'
+import CardContent from '@mui/material/CardContent'
+import Alert from '@mui/material/Alert'
 
 function CompanyCreation() {
+  const theme = useTheme()
   const navigate = useNavigate()
   const [formData, setFormData] = useState({
     company_name: '',
@@ -18,6 +27,7 @@ function CompanyCreation() {
   })
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   // GST Validation function
   const validateGST = (gst) => {
@@ -203,244 +213,243 @@ function CompanyCreation() {
   const handleLogout = useSiteadminLogout()
 
   return (
-    <div className="min-h-screen bg-primary hide-scrollbar overflow-y-auto overflow-x-hidden">
+    <Box
+      sx={{
+        minHeight: '100vh',
+        backgroundColor: 'background.default',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+      }}
+    >
       <Navbar onLogout={handleLogout} header="Site Admin" />
 
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-secondary mb-8 text-center">
-            Create Company
-          </h1>
+      <Box sx={{ maxWidth: '896px', mx: 'auto', px: 2, py: 4 }}>
+        <Card elevation={3}>
+          <CardContent sx={{ p: 4 }}>
+            <Typography
+              variant="h4"
+              component="h1"
+              sx={{
+                fontWeight: 700,
+                mb: 4,
+                textAlign: 'center',
+                color: 'secondary.main',
+              }}
+            >
+              Create Company
+            </Typography>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Company Name */}
-            <div>
-              <label htmlFor="company_name" className="block text-sm font-medium text-secondary mb-2">
-                Company Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
+            <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {/* Company Name */}
+              <TextField
                 id="company_name"
                 name="company_name"
+                label="Company Name"
+                variant="filled"
                 value={formData.company_name}
                 onChange={handleChange}
                 required
                 disabled={loading}
-                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${
-                  errors.company_name ? 'border-red-500' : 'border-gray-300'
-                }`}
                 placeholder="Enter company name"
+                error={!!errors.company_name}
+                helperText={errors.company_name}
+                fullWidth
               />
-              {errors.company_name && (
-                <p className="mt-1 text-sm text-red-600">{errors.company_name}</p>
-              )}
-            </div>
 
-            {/* Registered Email */}
-            <div>
-              <label htmlFor="registered_email" className="block text-sm font-medium text-secondary mb-2">
-                Registered Email <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="email"
+              {/* Registered Email */}
+              <TextField
                 id="registered_email"
                 name="registered_email"
+                label="Registered Email"
+                type="email"
+                variant="filled"
                 value={formData.registered_email}
                 onChange={handleChange}
                 required
                 disabled={loading}
-                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${
-                  errors.registered_email ? 'border-red-500' : 'border-gray-300'
-                }`}
                 placeholder="Enter registered email"
+                error={!!errors.registered_email}
+                helperText={errors.registered_email}
+                fullWidth
               />
-              {errors.registered_email && (
-                <p className="mt-1 text-sm text-red-600">{errors.registered_email}</p>
-              )}
-            </div>
 
-            {/* Registered Address */}
-            <div>
-              <label htmlFor="registered_address" className="block text-sm font-medium text-secondary mb-2">
-                Registered Address <span className="text-red-500">*</span>
-              </label>
-              <textarea
+              {/* Registered Address */}
+              <TextField
                 id="registered_address"
                 name="registered_address"
+                label="Registered Address"
+                variant="filled"
                 value={formData.registered_address}
                 onChange={handleChange}
                 required
                 disabled={loading}
+                multiline
                 rows={3}
-                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${
-                  errors.registered_address ? 'border-red-500' : 'border-gray-300'
-                }`}
                 placeholder="Enter registered address"
+                error={!!errors.registered_address}
+                helperText={errors.registered_address}
+                fullWidth
               />
-              {errors.registered_address && (
-                <p className="mt-1 text-sm text-red-600">{errors.registered_address}</p>
-              )}
-            </div>
 
-            {/* Unique Identification Number */}
-            <div>
-              <label htmlFor="unique_identification_number" className="block text-sm font-medium text-secondary mb-2">
-                Unique Identification Number <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
+              {/* Unique Identification Number */}
+              <TextField
                 id="unique_identification_number"
                 name="unique_identification_number"
+                label="Unique Identification Number"
+                type="number"
+                variant="filled"
                 value={formData.unique_identification_number}
                 onChange={handleChange}
                 required
                 disabled={loading}
-                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${
-                  errors.unique_identification_number ? 'border-red-500' : 'border-gray-300'
-                }`}
                 placeholder="Enter unique identification number"
+                error={!!errors.unique_identification_number}
+                helperText={errors.unique_identification_number}
+                fullWidth
               />
-              {errors.unique_identification_number && (
-                <p className="mt-1 text-sm text-red-600">{errors.unique_identification_number}</p>
-              )}
-            </div>
 
-            {/* GST */}
-            <div>
-              <label htmlFor="gst" className="block text-sm font-medium text-secondary mb-2">
-                GST <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
+              {/* GST */}
+              <TextField
                 id="gst"
                 name="gst"
+                label="GST"
+                variant="filled"
                 value={formData.gst}
                 onChange={handleGSTChange}
                 required
                 disabled={loading}
-                maxLength={15}
-                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed uppercase ${
-                  errors.gst ? 'border-red-500' : 'border-gray-300'
-                }`}
+                inputProps={{ maxLength: 15, style: { textTransform: 'uppercase' } }}
                 placeholder="Enter GST number (15 characters)"
+                error={!!errors.gst}
+                helperText={errors.gst || (formData.gst && formData.gst.length === 15 && !errors.gst ? 'Valid GST format' : '')}
+                fullWidth
+                sx={{
+                  '& input': {
+                    textTransform: 'uppercase',
+                  },
+                }}
               />
-              {errors.gst && (
-                <p className="mt-1 text-sm text-red-600">{errors.gst}</p>
-              )}
-              {formData.gst && formData.gst.length === 15 && !errors.gst && (
-                <p className="mt-1 text-sm text-green-600">Valid GST format</p>
-              )}
-            </div>
 
-            {/* PAN (Auto-filled from GST) */}
-            <div>
-              <label htmlFor="pan" className="block text-sm font-medium text-secondary mb-2">
-                PAN (Auto-filled from GST)
-              </label>
-              <input
-                type="text"
+              {/* PAN (Auto-filled from GST) */}
+              <TextField
                 id="pan"
                 name="pan"
+                label="PAN (Auto-filled from GST)"
+                variant="filled"
                 value={formData.pan}
                 onChange={handleChange}
                 disabled
-                className="w-full px-4 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed uppercase"
                 placeholder="Auto-filled from GST"
+                fullWidth
+                sx={{
+                  '& input': {
+                    textTransform: 'uppercase',
+                  },
+                }}
               />
-            </div>
 
-            {/* Number of Corporate Offices */}
-            <div>
-              <label htmlFor="number_of_corporate_offices" className="block text-sm font-medium text-secondary mb-2">
-                Number of Corporate Offices <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
+              {/* Number of Corporate Offices */}
+              <TextField
                 id="number_of_corporate_offices"
                 name="number_of_corporate_offices"
+                label="Number of Corporate Offices"
+                type="number"
+                variant="filled"
                 value={formData.number_of_corporate_offices}
                 onChange={handleChange}
                 required
                 disabled={loading}
-                min="0"
-                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${
-                  errors.number_of_corporate_offices ? 'border-red-500' : 'border-gray-300'
-                }`}
+                inputProps={{ min: 0 }}
                 placeholder="Enter number of corporate offices"
+                error={!!errors.number_of_corporate_offices}
+                helperText={errors.number_of_corporate_offices}
+                fullWidth
               />
-              {errors.number_of_corporate_offices && (
-                <p className="mt-1 text-sm text-red-600">{errors.number_of_corporate_offices}</p>
-              )}
-            </div>
 
-            {/* Number of Factory Unit/Warehouse/Other Facilities */}
-            <div>
-              <label htmlFor="number_of_factory_units" className="block text-sm font-medium text-secondary mb-2">
-                Number of Factory Unit/Warehouse/Other Facilities <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
+              {/* Number of Factory Unit/Warehouse/Other Facilities */}
+              <TextField
                 id="number_of_factory_units"
                 name="number_of_factory_units"
+                label="Number of Factory Unit/Warehouse/Other Facilities"
+                type="number"
+                variant="filled"
                 value={formData.number_of_factory_units}
                 onChange={handleChange}
                 required
                 disabled={loading}
-                min="0"
-                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${
-                  errors.number_of_factory_units ? 'border-red-500' : 'border-gray-300'
-                }`}
+                inputProps={{ min: 0 }}
                 placeholder="Enter number of factory units/warehouse/other facilities"
+                error={!!errors.number_of_factory_units}
+                helperText={errors.number_of_factory_units}
+                fullWidth
               />
-              {errors.number_of_factory_units && (
-                <p className="mt-1 text-sm text-red-600">{errors.number_of_factory_units}</p>
-              )}
-            </div>
 
-            {/* Company Coordinator Email */}
-            <div>
-              <label htmlFor="company_coordinator_email" className="block text-sm font-medium text-secondary mb-2">
-                Company Coordinator Email
-              </label>
-              <input
-                type="email"
+              {/* Company Coordinator Email */}
+              <TextField
                 id="company_coordinator_email"
                 name="company_coordinator_email"
+                label="Company Coordinator Email"
+                type="email"
+                variant="filled"
                 value={formData.company_coordinator_email}
                 onChange={handleChange}
                 disabled={loading}
-                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${
-                  errors.company_coordinator_email ? 'border-red-500' : 'border-gray-300'
-                }`}
                 placeholder="Enter company coordinator email (optional)"
+                error={!!errors.company_coordinator_email}
+                helperText={errors.company_coordinator_email}
+                fullWidth
               />
-              {errors.company_coordinator_email && (
-                <p className="mt-1 text-sm text-red-600">{errors.company_coordinator_email}</p>
-              )}
-            </div>
 
-            {/* Buttons */}
-            <div className="flex gap-4 pt-4">
-              <button
-                type="button"
-                onClick={() => navigate('/siteadmin/dashboard')}
-                disabled={loading}
-                className="flex-1 bg-gray-300 text-gray-700 py-3 rounded-md font-semibold hover:bg-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 cursor-pointer disabled:bg-gray-200 disabled:cursor-not-allowed"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex-1 bg-secondary text-primary py-3 rounded-md font-semibold hover:bg-hover transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 cursor-pointer disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Creating...' : 'Create Company'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
+              {/* Error Message */}
+              {error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {error}
+                </Alert>
+              )}
+
+              {/* Buttons */}
+              <Box sx={{ display: 'flex', gap: 2, pt: 2 }}>
+                <Button
+                  type="button"
+                  onClick={() => navigate('/siteadmin/dashboard')}
+                  disabled={loading}
+                  variant="contained"
+                  sx={{
+                    flex: 1,
+                    py: 1.5,
+                    fontSize: theme.typography.customSizes.medium,
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    backgroundColor: '#d1d5db',
+                    color: '#374151',
+                    '&:hover': {
+                      backgroundColor: '#9ca3af',
+                    },
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  variant="contained"
+                  color="secondary"
+                  sx={{
+                    flex: 1,
+                    py: 1.5,
+                    fontSize: theme.typography.customSizes.medium,
+                    fontWeight: 600,
+                    textTransform: 'none',
+                  }}
+                >
+                  {loading ? 'Creating...' : 'Create Company'}
+                </Button>
+              </Box>
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
+    </Box>
   )
 }
 

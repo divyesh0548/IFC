@@ -14,7 +14,6 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Paper from '@mui/material/Paper'
 import Chip from '@mui/material/Chip'
-import Alert from '@mui/material/Alert'
 
 function ApproverDashboard() {
   const navigate = useNavigate()
@@ -23,7 +22,6 @@ function ApproverDashboard() {
   const [allForms, setAllForms] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('pending') // 'pending', 'all', 'approved', 'rejected'
-  const [message, setMessage] = useState({ type: '', text: '' })
 
   useEffect(() => {
     // Fetch approver info on component mount
@@ -98,39 +96,8 @@ function ApproverDashboard() {
     }
   }
 
-  const handleApproveReject = async (formId, action) => {
-    try {
-      const response = await fetch(`http://localhost:3000/api/approver/approve-form/${formId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          approved_rejected: action,
-          reason_by_approver: action === 'Rejected' ? prompt('Please provide a reason for rejection:') || '' : ''
-        })
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        setMessage({ type: 'success', text: `Form ${action.toLowerCase()} successfully` })
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000)
-        fetchForms() // Refresh the list
-      } else {
-        setMessage({ type: 'error', text: data.message || 'Failed to update form' })
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000)
-      }
-    } catch (error) {
-      console.error('Error approving/rejecting form:', error)
-      setMessage({ type: 'error', text: 'Network error. Please try again.' })
-      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
-    }
-  }
-
   const handleFormClick = (formId) => {
-    window.open(`/company_co/form/${formId}`, '_blank')
+    window.open(`/approver/form/${formId}`, '_blank')
   }
 
   const handleLogout = async () => {
@@ -162,22 +129,6 @@ function ApproverDashboard() {
 
       {/* Dashboard Content */}
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-6">
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 1, color: 'text.primary' }}>
-            Approver Dashboard
-          </Typography>
-          {approver && (
-            <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-              Email: {approver.email_id}
-            </Typography>
-          )}
-        </div>
-
-        {message.text && (
-          <Alert severity={message.type === 'success' ? 'success' : 'error'} sx={{ mb: 3 }}>
-            {message.text}
-          </Alert>
-        )}
 
         {/* Filter Buttons */}
         <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
@@ -251,15 +202,18 @@ function ApproverDashboard() {
                       <TableCell sx={{ fontWeight: 600 }}>Description</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Process</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Approval Status</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Created At</TableCell>
-                      {filter === 'pending' && (
-                        <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
-                      )}
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {formsToDisplay.map((form, index) => {
                       const isActive = form.active && form.active !== '' && form.active !== '0'
+                      const approvalStatus = form.approved_rejected || 'Pending'
+                      const isPending = !form.approved_rejected || form.approved_rejected === ''
+                      const isApproved = form.approved_rejected === 'Approved'
+                      const isRejected = form.approved_rejected === 'Rejected'
+                      
                       return (
                         <TableRow
                           key={form.id}
@@ -281,6 +235,17 @@ function ApproverDashboard() {
                             />
                           </TableCell>
                           <TableCell>
+                            <Chip
+                              label={approvalStatus}
+                              size="small"
+                              sx={{
+                                backgroundColor: isPending ? '#fef3c7' : isApproved ? '#d1fae5' : '#fee2e2',
+                                color: isPending ? '#f59e0b' : isApproved ? '#10b981' : '#ef4444',
+                                fontWeight: 600,
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>
                             {form.created_at
                               ? new Date(form.created_at).toLocaleDateString('en-IN', {
                                   year: 'numeric',
@@ -291,42 +256,6 @@ function ApproverDashboard() {
                                 })
                               : 'N/A'}
                           </TableCell>
-                          {filter === 'pending' && (
-                            <TableCell onClick={(e) => e.stopPropagation()}>
-                              <Box sx={{ display: 'flex', gap: 1 }}>
-                                <Button
-                                  variant="contained"
-                                  size="small"
-                                  onClick={() => handleApproveReject(form.form_id, 'Approved')}
-                                  sx={{
-                                    backgroundColor: '#10b981',
-                                    color: '#ffffff',
-                                    textTransform: 'none',
-                                    '&:hover': {
-                                      backgroundColor: '#059669',
-                                    },
-                                  }}
-                                >
-                                  Approve
-                                </Button>
-                                <Button
-                                  variant="contained"
-                                  size="small"
-                                  onClick={() => handleApproveReject(form.form_id, 'Rejected')}
-                                  sx={{
-                                    backgroundColor: '#ef4444',
-                                    color: '#ffffff',
-                                    textTransform: 'none',
-                                    '&:hover': {
-                                      backgroundColor: '#dc2626',
-                                    },
-                                  }}
-                                >
-                                  Reject
-                                </Button>
-                              </Box>
-                            </TableCell>
-                          )}
                         </TableRow>
                       )
                     })}

@@ -73,7 +73,7 @@ function User_dashboard() {
   }
 
   const handleFormClick = (formId) => {
-    window.open(`/company_co/form/${formId}`, '_blank')
+    navigate(`/user/form/${formId}`)
   }
 
   const handleLogout = async () => {
@@ -106,12 +106,6 @@ function User_dashboard() {
 
       {/* Dashboard Content */}
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-secondary mb-2">User Dashboard</h1>
-          {userRole && (
-            <p className="text-lg text-secondary">Role: {userRole}</p>
-          )}
-        </div>
 
         {/* Forms Section */}
         <div className="bg-white rounded-lg shadow-lg p-6">

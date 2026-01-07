@@ -1,6 +1,10 @@
 import React, { useState } from 'react'
+import { useTheme } from '@mui/material/styles'
+import Button from '@mui/material/Button'
+import Box from '@mui/material/Box'
 
 function Control_form() {
+  const theme = useTheme()
   
   const [formData, setFormData] = useState({
     descriptionOfControl: '',
@@ -552,23 +556,44 @@ function Control_form() {
             </div>
 
             {/* Form Actions */}
-            <div className="flex flex-col sm:flex-row gap-4 pt-6">
-              <button
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, pt: 3 }}>
+              <Button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-secondary text-primary py-2 px-4 rounded-lg hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                variant="contained"
+                color="secondary"
+                fullWidth
+                sx={{
+                  flex: 1,
+                  py: 1.5,
+                  fontSize: theme.typography.customSizes.medium,
+                  fontWeight: 600,
+                  textTransform: 'none',
+                }}
               >
                 {loading ? 'Submitting...' : 'Submit Form'}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={handleReset}
                 disabled={loading}
-                className="flex-1 bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                variant="contained"
+                sx={{
+                  flex: 1,
+                  py: 1.5,
+                  fontSize: theme.typography.customSizes.medium,
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  backgroundColor: '#6b7280',
+                  color: '#ffffff',
+                  '&:hover': {
+                    backgroundColor: '#4b5563',
+                  },
+                }}
               >
                 Reset Form
-              </button>
-            </div>
+              </Button>
+            </Box>
           </form>
         </div>
       </div>

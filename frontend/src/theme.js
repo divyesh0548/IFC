@@ -21,12 +21,13 @@ const theme = createTheme({
     },
     text: {
       primary: '#000000', // Black for primary text
-      secondary: '#000000', // Black for secondary text
+      secondary: '#6b7280', // Gray for secondary text (form data)
       disabled: '#9ca3af', // Gray for disabled text
     },
   },
   typography: {
     fontFamily: [
+      '"Lexend"',
       '-apple-system',
       'BlinkMacSystemFont',
       '"Segoe UI"',
@@ -35,29 +36,57 @@ const theme = createTheme({
       'Arial',
       'sans-serif',
     ].join(','),
+    // Custom text size variables for consistent sizing across the website
+    customSizes: {
+      bigHeader: '2rem',      // For h1, h2, h3 - large headings
+      header: '1.5rem',       // For h4, h5, h6 - medium headings
+      medium: '1rem',         // For body text, buttons, standard content
+      small: '0.75rem',       // For captions, labels, small text
+    },
     h1: {
-      fontWeight: 700,
+      fontFamily: '"Aldrich", sans-serif',
+      fontWeight: 400,
       color: '#0369a1',
+      fontSize: '2rem', // Uses customSizes.bigHeader
     },
     h2: {
-      fontWeight: 700,
+      fontFamily: '"Aldrich", sans-serif',
+      fontWeight: 400,
       color: '#0369a1',
+      fontSize: '2rem', // Uses customSizes.bigHeader
     },
     h3: {
-      fontWeight: 600,
+      fontFamily: '"Aldrich", sans-serif',
+      fontWeight: 400,
       color: '#0369a1',
+      fontSize: '2rem', // Uses customSizes.bigHeader
     },
     h4: {
+      fontFamily: '"Lexend", sans-serif',
       fontWeight: 600,
       color: '#0369a1',
+      fontSize: '1.5rem', // Uses customSizes.header
     },
     h5: {
+      fontFamily: '"Lexend", sans-serif',
       fontWeight: 600,
       color: '#0369a1',
+      fontSize: '1.5rem', // Uses customSizes.header
     },
     h6: {
+      fontFamily: '"Lexend", sans-serif',
       fontWeight: 600,
       color: '#0369a1',
+      fontSize: '1.5rem', // Uses customSizes.header
+    },
+    body1: {
+      fontSize: '1rem', // Uses customSizes.medium
+    },
+    body2: {
+      fontSize: '0.9375rem', // Slightly smaller than medium for secondary text
+    },
+    caption: {
+      fontSize: '0.75rem', // Uses customSizes.small
     },
   },
   components: {

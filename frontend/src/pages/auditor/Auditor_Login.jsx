@@ -1,10 +1,24 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTheme } from '@mui/material/styles'
+import Button from '@mui/material/Button'
+import Box from '@mui/material/Box'
+import TextField from '@mui/material/TextField'
+import InputAdornment from '@mui/material/InputAdornment'
+import IconButton from '@mui/material/IconButton'
+import Visibility from '@mui/icons-material/Visibility'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import Alert from '@mui/material/Alert'
+import Card from '@mui/material/Card'
+import CardContent from '@mui/material/CardContent'
+import Typography from '@mui/material/Typography'
 
 function Auditor_Login() {
+  const theme = useTheme()
   const navigate = useNavigate()
   const [email_id, setEmail_id] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -45,69 +59,102 @@ function Auditor_Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-primary px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-secondary mb-8 text-center">
-            Auditor Login
-          </h1>
-          
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md">
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label 
-                htmlFor="email_id" 
-                className="block text-sm font-medium text-secondary mb-2"
-              >
-                Email ID
-              </label>
-              <input
-                type="email"
-                id="email_id"
-                value={email_id}
-                onChange={(e) => setEmail_id(e.target.value)}
-                required
-                disabled={loading}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                placeholder="Enter your email"
-              />
-            </div>
-
-            <div>
-              <label 
-                htmlFor="password" 
-                className="block text-sm font-medium text-secondary mb-2"
-              >
-                Password
-              </label>
-              <input
-                type="password"
-                id="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={loading}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                placeholder="Enter your password"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-secondary text-primary py-3 rounded-md font-semibold hover:bg-hover transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 cursor-pointer disabled:bg-gray-400 disabled:cursor-not-allowed"
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'background.default',
+        px: 2,
+      }}
+    >
+      <Box sx={{ width: '100%', maxWidth: '448px' }}>
+        <Card elevation={3}>
+          <CardContent sx={{ p: 4 }}>
+            <Typography
+              variant="h4"
+              component="h1"
+              sx={{
+                fontWeight: 700,
+                mb: 4,
+                textAlign: 'center',
+                color: 'secondary.main',
+              }}
             >
-              {loading ? 'Logging in...' : 'Login'}
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
+              Auditor Login
+            </Typography>
+
+            {error && (
+              <Alert severity="error" sx={{ mb: 3 }}>
+                {error}
+              </Alert>
+            )}
+
+            <form onSubmit={handleSubmit}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mb: 3 }}>
+                <TextField
+                  id="email_id"
+                  label="Email ID"
+                  type="email"
+                  variant="filled"
+                  value={email_id}
+                  onChange={(e) => setEmail_id(e.target.value)}
+                  required
+                  disabled={loading}
+                  placeholder="Enter your email"
+                  fullWidth
+                />
+
+                <TextField
+                  id="password"
+                  label="Password"
+                  type={showPassword ? 'text' : 'password'}
+                  variant="filled"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  placeholder="Enter your password"
+                  fullWidth
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          aria-label="toggle password visibility"
+                          onClick={() => setShowPassword(!showPassword)}
+                          onMouseDown={(e) => e.preventDefault()}
+                          edge="end"
+                          disabled={loading}
+                        >
+                          {showPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Box>
+
+              <Button
+                type="submit"
+                disabled={loading}
+                variant="contained"
+                color="secondary"
+                fullWidth
+                sx={{
+                  py: 1.5,
+                  fontSize: theme.typography.customSizes.medium,
+                  fontWeight: 600,
+                  textTransform: 'none',
+                }}
+              >
+                {loading ? 'Logging in...' : 'Login'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </Box>
+    </Box>
   )
 }
 

@@ -1,8 +1,12 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTheme } from '@mui/material/styles'
 import Navbar from '../../components/Siteadmin_navbar'
+import Button from '@mui/material/Button'
+import Alert from '@mui/material/Alert'
 
 function ExcelUpload() {
+  const theme = useTheme()
   const navigate = useNavigate()
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -163,16 +167,16 @@ function ExcelUpload() {
 
               {/* Error Message */}
               {error && (
-                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                <Alert severity="error" sx={{ mb: 2 }}>
                   {error}
-                </div>
+                </Alert>
               )}
 
               {/* Success Message */}
               {success && (
-                <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+                <Alert severity="success" sx={{ mb: 2 }}>
                   {success}
-                </div>
+                </Alert>
               )}
 
               {/* Instructions */}
@@ -188,22 +192,43 @@ function ExcelUpload() {
               </div>
 
               {/* Submit Button */}
-              <button
+              <Button
                 type="submit"
                 disabled={loading || !file}
-                className="w-full bg-secondary text-primary py-2 px-4 rounded-lg hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                variant="contained"
+                color="secondary"
+                fullWidth
+                sx={{
+                  py: 1.5,
+                  fontSize: theme.typography.customSizes.medium,
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  mb: 2,
+                }}
               >
                 {loading ? 'Uploading...' : 'Upload Excel File'}
-              </button>
+              </Button>
 
               {/* Back Button */}
-              <button
+              <Button
                 type="button"
                 onClick={() => navigate('/company_co/dashboard')}
-                className="w-full bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors font-medium"
+                variant="contained"
+                fullWidth
+                sx={{
+                  py: 1.5,
+                  fontSize: theme.typography.customSizes.medium,
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  backgroundColor: '#6b7280',
+                  color: '#ffffff',
+                  '&:hover': {
+                    backgroundColor: '#4b5563',
+                  },
+                }}
               >
                 Back to Dashboard
-              </button>
+              </Button>
             </form>
           </div>
         </div>
