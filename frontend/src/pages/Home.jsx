@@ -79,6 +79,21 @@ function Home() {
             
             <Button
               component={Link}
+              to="/approver/login"
+              variant="contained"
+              color="secondary"
+              sx={{
+                minWidth: '200px',
+                py: 1.5,
+                textTransform: 'none',
+                fontWeight: 600,
+              }}
+            >
+              Approver Login
+            </Button>
+            
+            <Button
+              component={Link}
               to="/auditor/login"
               variant="contained"
               color="secondary"

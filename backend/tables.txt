@@ -1,0 +1,160 @@
+auditors : 
+CREATE TABLE
+  public.auditors (
+    id serial NOT NULL,
+    email_id character varying(255) NOT NULL,
+    password character varying(255) NOT NULL,
+    created_at timestamp without time zone NULL DEFAULT (
+      (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+    )
+  );
+
+ALTER TABLE
+  public.auditors
+ADD
+  CONSTRAINT auditors_pkey PRIMARY KEY (id)
+
+
+
+
+
+
+CREATE TABLE
+  public.companies (
+    id serial NOT NULL,
+    company_identifier character varying(255) NULL,
+    company_name character varying(255) NULL,
+    registered_email character varying(255) NULL,
+    registered_address text NULL,
+    unique_identification_number character varying(255) NULL,
+    gst character varying(255) NULL,
+    pan character varying(255) NULL,
+    number_of_corporate_offices character varying(255) NULL,
+    number_of_factory_units character varying(255) NULL,
+    created_at timestamp without time zone NULL DEFAULT (
+      (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+    )
+  );
+
+ALTER TABLE
+  public.companies
+ADD
+  CONSTRAINT companies_pkey PRIMARY KEY (id)
+
+
+
+
+
+
+CREATE TABLE
+  public.control_forms (
+    id serial NOT NULL,
+    description_of_control text NULL,
+    process character varying(255) NULL,
+    sub_process character varying(255) NULL,
+    risk_description text NULL,
+    whether_fraud_risks_exist character varying(255) NULL,
+    control_objective text NULL,
+    control_to_address text NULL,
+    mrc_or_not character varying(255) NULL,
+    source_data_report_logic_report_parameters text NULL,
+    relevant_data_elements_of_ipe text NULL,
+    type_of_control character varying(255) NULL,
+    nature_of_control character varying(255) NULL,
+    type_of_risk_mitigation_method character varying(255) NULL,
+    process_owner character varying(255) NULL,
+    reviewer_process_supervisor character varying(255) NULL,
+    control_frequency character varying(255) NULL,
+    basis_of_sampling character varying(255) NULL,
+    docs_to_review_for_dms_audit text NULL,
+    type_of_risk_associated character varying(255) NULL,
+    financial_reporting character varying(255) NULL,
+    checks_performed text NULL,
+    effective_or_not_effective character varying(255) NULL,
+    done character varying(255) NULL,
+    findings text NULL,
+    doc_uploaded_by_user character varying(255) NULL,
+    active character varying(255) NULL,
+    status character varying(255) NULL,
+    reason_by_approver text NULL,
+    created_at timestamp without time zone NULL DEFAULT (
+      CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'::text
+    ),
+    gap_description_resolution text NULL,
+    company_identifier character varying(255) NULL,
+    form_id character varying(255) NULL,
+    remarks_by_user text NULL
+  );
+
+ALTER TABLE
+  public.control_forms
+ADD
+  CONSTRAINT control_forms_pkey PRIMARY KEY (id)
+
+
+
+
+
+
+
+
+CREATE TABLE
+  public.excel_files (
+    id serial NOT NULL,
+    file_path character varying(500) NOT NULL,
+    file_name character varying(255) NOT NULL,
+    processed integer NULL DEFAULT 0,
+    created_at timestamp without time zone NULL DEFAULT (
+      (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+    ),
+    company_identifier character varying(255) NULL
+  );
+
+ALTER TABLE
+  public.excel_files
+ADD
+  CONSTRAINT excel_files_pkey PRIMARY KEY (id)
+
+
+
+
+
+
+
+CREATE TABLE
+  public.ifc_users (
+    id serial NOT NULL,
+    email_id character varying(255) NOT NULL,
+    password character varying(255) NOT NULL,
+    role character varying(50) NOT NULL,
+    created_at timestamp without time zone NULL DEFAULT (
+      (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+    ),
+    temp_login integer NULL DEFAULT 0,
+    company_identifier character varying(255) NULL
+  );
+
+ALTER TABLE
+  public.ifc_users
+ADD
+  CONSTRAINT ifc_users_pkey PRIMARY KEY (id)
+
+
+
+
+
+
+CREATE TABLE
+  public.siteadmin (
+    id serial NOT NULL,
+    email_id character varying(255) NOT NULL,
+    password character varying(255) NOT NULL,
+    created_at timestamp without time zone NULL DEFAULT (
+      (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+    )
+  );
+
+ALTER TABLE
+  public.siteadmin
+ADD
+  CONSTRAINT siteadmin_pkey PRIMARY KEY (id)

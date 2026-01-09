@@ -1,1186 +1,678 @@
+import os
 import psycopg2
+from psycopg2 import sql
+from dotenv import load_dotenv
 
-# Database connection parameters
-DB_NAME = "ifc_dev"
-DB_USER = "divyesh"  # Change if your PostgreSQL user is different
-DB_PASSWORD = "0548"  # Add your PostgreSQL password if required
-DB_HOST = "localhost"
-DB_PORT = "5432"
+# Load environment variables from .env file
+load_dotenv()
 
-def get_connection():
-    """Creates and returns a database connection with IST timezone"""
-    try:
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            host=DB_HOST,
-            port=DB_PORT
+def get_db_config():
+    """
+    Returns database configuration from environment variables.
+    """
+    db_host = os.getenv('DB_HOST', 'localhost')
+    is_localhost = db_host == 'localhost' or db_host == '127.0.0.1'
+    
+    config = {
+        'host': db_host,
+        'database': os.getenv('DB_NAME', 'ifc_dev'),
+        'user': os.getenv('DB_USER', 'divyesh'),
+        'password': os.getenv('DB_PASSWORD', '0548'),
+        'port': int(os.getenv('DB_PORT', '5432'))
+    }
+    
+    # Enable SSL for remote connections (AWS RDS requires SSL)
+    # For psycopg2, we use ssl parameter with a dictionary
+    if not is_localhost:
+        config['sslmode'] = 'require'
+        # Alternative: use ssl parameter (uncomment if sslmode doesn't work)
+        # config['ssl'] = {'sslmode': 'require'}
+    
+    return config
+
+    
+def table_exists(cursor, table_name):
+    """
+    Checks if a table exists in the public schema.
+    Returns True if table exists, False otherwise.
+    """
+    cursor.execute("""
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = %s
+        );
+    """, (table_name,))
+    return cursor.fetchone()[0]
+
+def constraint_exists(cursor, constraint_name):
+    """
+    Checks if a constraint exists.
+    Returns True if constraint exists, False otherwise.
+    """
+    cursor.execute("""
+        SELECT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = %s
+        );
+    """, (constraint_name,))
+    return cursor.fetchone()[0]
+
+def create_table_with_constraint(cursor, table_name, create_table_query, constraint_name, add_constraint_query):
+    """
+    Helper function to create a table and its primary key constraint if they don't exist.
+    """
+    if table_exists(cursor, table_name):
+        print(f"  ⚠️  Table '{table_name}' already exists. Skipping creation.")
+    else:
+        print(f"  Creating table '{table_name}'...")
+        cursor.execute(create_table_query)
+        print(f"  ✓ Table '{table_name}' created successfully!")
+    
+    if constraint_exists(cursor, constraint_name):
+        print(f"  ⚠️  Constraint '{constraint_name}' already exists. Skipping.")
+    else:
+        print(f"  Adding primary key constraint '{constraint_name}'...")
+        cursor.execute(add_constraint_query)
+        print(f"  ✓ Constraint '{constraint_name}' added successfully!")
+
+def create_auditors_table(cursor):
+    """Creates the auditors table if it doesn't exist."""
+    print("\n[auditors]")
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.auditors (
+        id serial NOT NULL,
+        email_id character varying(255) NOT NULL,
+        password character varying(255) NOT NULL,
+        created_at timestamp without time zone NULL DEFAULT (
+            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
         )
-        # Set timezone to IST (Asia/Kolkata)
-        cur = conn.cursor()
-        cur.execute("SET timezone = 'Asia/Kolkata'")
-        conn.commit()
-        cur.close()
-        return conn
-    except psycopg2.Error as e:
-        print(f"Error connecting to database: {e}")
-        return None
-
-def add_siteadmin(email_id, password):
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Insert query
-        insert_query = """
-        INSERT INTO siteadmin (email_id, password)
-        VALUES (%s, %s)
-        RETURNING id;
-        """
-        
-        cur.execute(insert_query, (email_id, password))
-        
-        # Get the inserted row's ID
-        inserted_id = cur.fetchone()[0]
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print(f"Site admin added successfully! ID: {inserted_id}")
-        cur.close()
-        return True
-        
-    except psycopg2.IntegrityError as e:
-        print(f"Error: Email ID '{email_id}' already exists in the database.")
-        if conn:
-            conn.rollback()
-        return False
-    except psycopg2.Error as e:
-        print(f"Database error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def create_ifc_users_table():
+    );
     """
-    Creates the 'ifc_users' table in the PostgreSQL database 'ifc_dev'
-    with columns: email_id, password, role, created_at
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Create the ifc_users table
-        create_table_query = """
-        CREATE TABLE IF NOT EXISTS ifc_users (
-            id SERIAL PRIMARY KEY,
-            email_id VARCHAR(255) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
-            role VARCHAR(50) NOT NULL,
-            created_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
-        );
-        """
-        
-        cur.execute(create_table_query)
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("Table 'ifc_users' created successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error creating table: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def add_ifc_user(email_id, password, role):
-    """
-    Adds a new row to the ifc_users table
     
-    Args:
-        email_id (str): Email ID of the user
-        password (str): Password of the user
-        role (str): Role of the user
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'auditors_pkey'
+        ) THEN
+            ALTER TABLE public.auditors
+            ADD CONSTRAINT auditors_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
     
-    Returns:
-        bool: True if successful, False otherwise
+    create_table_with_constraint(cursor, 'auditors', create_table_query, 'auditors_pkey', add_constraint_query)
+
+def create_companies_table(cursor):
+    """Creates the companies table if it doesn't exist."""
+    print("\n[companies]")
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.companies (
+        id serial NOT NULL,
+        company_identifier character varying(255) NULL,
+        company_name character varying(255) NULL,
+        registered_email character varying(255) NULL,
+        registered_address text NULL,
+        unique_identification_number character varying(255) NULL,
+        gst character varying(255) NULL,
+        pan character varying(255) NULL,
+        number_of_corporate_offices character varying(255) NULL,
+        number_of_factory_units character varying(255) NULL,
+        created_at timestamp without time zone NULL DEFAULT (
+            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+        )
+    );
     """
+    
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'companies_pkey'
+        ) THEN
+            ALTER TABLE public.companies
+            ADD CONSTRAINT companies_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+    
+    create_table_with_constraint(cursor, 'companies', create_table_query, 'companies_pkey', add_constraint_query)
+
+def create_control_forms_table(cursor):
+    """Creates the control_forms table if it doesn't exist."""
+    print("\n[control_forms]")
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.control_forms (
+        id serial NOT NULL,
+        description_of_control text NULL,
+        process character varying(255) NULL,
+        sub_process character varying(255) NULL,
+        risk_description text NULL,
+        whether_fraud_risks_exist character varying(255) NULL,
+        control_objective text NULL,
+        control_to_address text NULL,
+        mrc_or_not character varying(255) NULL,
+        source_data_report_logic_report_parameters text NULL,
+        relevant_data_elements_of_ipe text NULL,
+        type_of_control character varying(255) NULL,
+        nature_of_control character varying(255) NULL,
+        type_of_risk_mitigation_method character varying(255) NULL,
+        process_owner character varying(255) NULL,
+        reviewer_process_supervisor character varying(255) NULL,
+        control_frequency character varying(255) NULL,
+        basis_of_sampling character varying(255) NULL,
+        docs_to_review_for_dms_audit text NULL,
+        type_of_risk_associated character varying(255) NULL,
+        financial_reporting character varying(255) NULL,
+        checks_performed text NULL,
+        effective_or_not_effective character varying(255) NULL,
+        done character varying(255) NULL,
+        findings text NULL,
+        doc_uploaded_by_user character varying(255) NULL,
+        active character varying(255) NULL,
+        status character varying(255) NULL,
+        reason_by_approver text NULL,
+        created_at timestamp without time zone NULL DEFAULT (
+            CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'::text
+        ),
+        gap_description_resolution text NULL,
+        company_identifier character varying(255) NULL,
+        form_id character varying(255) NULL,
+        remarks_by_user text NULL
+    );
+    """
+    
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'control_forms_pkey'
+        ) THEN
+            ALTER TABLE public.control_forms
+            ADD CONSTRAINT control_forms_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+    
+    create_table_with_constraint(cursor, 'control_forms', create_table_query, 'control_forms_pkey', add_constraint_query)
+
+def create_excel_files_table(cursor):
+    """Creates the excel_files table if it doesn't exist."""
+    print("\n[excel_files]")
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.excel_files (
+        id serial NOT NULL,
+        file_path character varying(500) NOT NULL,
+        file_name character varying(255) NOT NULL,
+        processed integer NULL DEFAULT 0,
+        created_at timestamp without time zone NULL DEFAULT (
+            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+        ),
+        company_identifier character varying(255) NULL
+    );
+    """
+    
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'excel_files_pkey'
+        ) THEN
+            ALTER TABLE public.excel_files
+            ADD CONSTRAINT excel_files_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+    
+    create_table_with_constraint(cursor, 'excel_files', create_table_query, 'excel_files_pkey', add_constraint_query)
+
+def create_ifc_users_table(cursor):
+    """Creates the ifc_users table if it doesn't exist."""
+    print("\n[ifc_users]")
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.ifc_users (
+        id serial NOT NULL,
+        email_id character varying(255) NOT NULL,
+        password character varying(255) NOT NULL,
+        role character varying(50) NOT NULL,
+        created_at timestamp without time zone NULL DEFAULT (
+            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+        ),
+        temp_login integer NULL DEFAULT 0,
+        company_identifier character varying(255) NULL
+    );
+    """
+    
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'ifc_users_pkey'
+        ) THEN
+            ALTER TABLE public.ifc_users
+            ADD CONSTRAINT ifc_users_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+    
+    create_table_with_constraint(cursor, 'ifc_users', create_table_query, 'ifc_users_pkey', add_constraint_query)
+
+def create_siteadmin_table(cursor):
+    """Creates the siteadmin table if it doesn't exist."""
+    print("\n[siteadmin]")
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.siteadmin (
+        id serial NOT NULL,
+        email_id character varying(255) NOT NULL,
+        password character varying(255) NOT NULL,
+        created_at timestamp without time zone NULL DEFAULT (
+            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+        )
+    );
+    """
+    
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'siteadmin_pkey'
+        ) THEN
+            ALTER TABLE public.siteadmin
+            ADD CONSTRAINT siteadmin_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+    
+    create_table_with_constraint(cursor, 'siteadmin', create_table_query, 'siteadmin_pkey', add_constraint_query)
+
+def create_appover_table(cursor):
+    """Creates the appover table if it doesn't exist."""
+    print("\n[appover]")
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.appover (
+        id serial NOT NULL,
+        email_id character varying(255) NOT NULL,
+        password character varying(255) NOT NULL,
+        created_at timestamp without time zone NULL DEFAULT (
+            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+        )
+    );
+    """
+    
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'appover_pkey'
+        ) THEN
+            ALTER TABLE public.appover
+            ADD CONSTRAINT appover_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+    
+    create_table_with_constraint(cursor, 'appover', create_table_query, 'appover_pkey', add_constraint_query)
+
+def create_all_tables():
+    """
+    Main function that creates all tables in the database.
+    """
+    db_config = get_db_config()
+    
+    # Display connection info
+    print("=" * 70)
+    print("PostgreSQL Table Creation Script")
+    print("=" * 70)
+    print(f"Host: {db_config['host']}")
+    print(f"Database: {db_config['database']}")
+    print(f"User: {db_config['user']}")
+    print(f"Port: {db_config['port']}")
+    print("=" * 70)
+    
     conn = None
     try:
-        conn = get_connection()
-        if not conn:
-            return False
+        # Connect to PostgreSQL database
+        print(f"\nConnecting to database '{db_config['database']}'...")
+        conn = psycopg2.connect(**db_config)
+        conn.autocommit = True
+        cursor = conn.cursor()
         
-        cur = conn.cursor()
+        # Set timezone to Asia/Kolkata
+        cursor.execute("SET timezone = 'Asia/Kolkata'")
         
-        # Insert query
-        insert_query = """
-        INSERT INTO ifc_users (email_id, password, role)
-        VALUES (%s, %s, %s)
-        RETURNING id;
-        """
+        # Create all tables
+        print("\n" + "=" * 70)
+        print("Creating tables...")
+        print("=" * 70)
         
-        cur.execute(insert_query, (email_id, password, role))
+        create_auditors_table(cursor)
+        create_companies_table(cursor)
+        create_control_forms_table(cursor)
+        create_excel_files_table(cursor)
+        create_ifc_users_table(cursor)
+        create_siteadmin_table(cursor)
+        create_appover_table(cursor)
         
-        # Get the inserted row's ID
-        inserted_id = cur.fetchone()[0]
+        print("\n" + "=" * 70)
+        print("✓ All tables processed successfully!")
+        print("=" * 70)
         
-        # Commit the transaction
-        conn.commit()
+        # List all created tables
+        cursor.execute("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_type = 'BASE TABLE'
+            ORDER BY table_name;
+        """)
         
-        print(f"IFC user added successfully! ID: {inserted_id}")
-        cur.close()
-        return True
+        tables = cursor.fetchall()
+        if tables:
+            print("\nTables in database:")
+            print("-" * 70)
+            for table in tables:
+                print(f"  ✓ {table[0]}")
         
-    except psycopg2.IntegrityError as e:
-        print(f"Error: Email ID '{email_id}' already exists in the database.")
+        cursor.close()
+        
+    except psycopg2.OperationalError as e:
+        error_msg = str(e)
+        print(f"\n❌ Database connection error: {e}")
+        
+        # Check if it's a "database does not exist" error
+        if "does not exist" in error_msg.lower():
+            print(f"\n⚠️  The database '{db_config['database']}' does not exist on the server.")
+            print("\n   The script attempted to create it automatically but failed.")
+            print("\n   To fix this, you have two options:")
+            print("\n   Option 1: Create the database manually using psql:")
+            print(f"     psql -h {db_config['host']} -U {db_config['user']} -p {db_config['port']} -d postgres")
+            print(f"     CREATE DATABASE {db_config['database']};")
+            print("\n   Option 2: Update your .env file to use an existing database:")
+            print("     DB_NAME=ifc_dev  (or another existing database name)")
+            print("\n   To list available databases, connect to 'postgres' database:")
+            print(f"     psql -h {db_config['host']} -U {db_config['user']} -p {db_config['port']} -d postgres -c '\\l'")
+        
+        # Check if it's an authentication error
+        elif "password authentication failed" in error_msg.lower() or "authentication failed" in error_msg.lower():
+            print("\n⚠️  Authentication failed. Please check your DB_USER and DB_PASSWORD in .env file.")
+        
+        # Check if it's a connection error
+        elif "could not connect" in error_msg.lower() or "connection refused" in error_msg.lower():
+            print(f"\n⚠️  Could not connect to the database server.")
+            print(f"  Please verify that:")
+            print(f"    - The database server is running")
+            print(f"    - DB_HOST ({db_config['host']}) is correct")
+            print(f"    - DB_PORT ({db_config['port']}) is correct")
+            print(f"    - Your network/firewall allows connections to this host")
+        
         if conn:
             conn.rollback()
-        return False
+        raise
+    
     except psycopg2.Error as e:
-        print(f"Database error: {e}")
+        print(f"\n❌ PostgreSQL error: {e}")
         if conn:
             conn.rollback()
-        return False
+        raise
+    
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"\n❌ Unexpected error: {e}")
         if conn:
             conn.rollback()
-        return False
+        raise
+    
     finally:
         if conn:
             conn.close()
+            print("\nDatabase connection closed.")
 
-def add_temp_login_column():
+def add_appover_row(email_id, password):
     """
-    Adds the 'temp_login' column to the 'ifc_users' table
-    with default value 0 and datatype INTEGER
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Add the temp_login column
-        alter_table_query = """
-        ALTER TABLE ifc_users 
-        ADD COLUMN IF NOT EXISTS temp_login INTEGER DEFAULT 0;
-        """
-        
-        cur.execute(alter_table_query)
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("Column 'temp_login' added successfully to 'ifc_users' table!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error adding column: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def create_auditors_table():
-    """
-    Creates the 'auditors' table in the PostgreSQL database 'ifc_dev'
-    with the same structure as 'siteadmin' table
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Create the auditors table
-        create_table_query = """
-        CREATE TABLE IF NOT EXISTS auditors (
-            id SERIAL PRIMARY KEY,
-            email_id VARCHAR(255) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
-        );
-        """
-        
-        cur.execute(create_table_query)
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("Table 'auditors' created successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error creating table: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def create_appover_table():
-    """
-    Creates the 'appover' table in the PostgreSQL database 'ifc_dev'
-    with the same structure as 'siteadmin' table
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Create the appover table
-        create_table_query = """
-        CREATE TABLE IF NOT EXISTS appover (
-            id SERIAL NOT NULL,
-            email_id VARCHAR(255) NOT NULL,
-            password VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP WITHOUT TIME ZONE NULL DEFAULT (
-                (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
-            ),
-            CONSTRAINT appover_pkey PRIMARY KEY (id)
-        );
-        """
-        
-        cur.execute(create_table_query)
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("Table 'appover' created successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error creating table: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def add_appover(email_id, password):
-    """
-    Adds a new row to the appover table
+    Adds a new row to the appover table.
     
     Args:
         email_id (str): Email ID of the approver
-        password (str): Password of the approver
+        password (str): Password for the approver
     
     Returns:
-        bool: True if successful, False otherwise
+        dict: Dictionary containing the inserted row data (id, email_id, created_at)
+        None: If insertion failed or email already exists
+    
+    Raises:
+        psycopg2.Error: If database error occurs
     """
+    db_config = get_db_config()
     conn = None
+    
     try:
-        conn = get_connection()
-        if not conn:
-            return False
+        conn = psycopg2.connect(**db_config)
+        conn.autocommit = True
+        cursor = conn.cursor()
         
-        cur = conn.cursor()
+        # Set timezone to Asia/Kolkata
+        cursor.execute("SET timezone = 'Asia/Kolkata'")
         
-        # Insert query
-        insert_query = """
-        INSERT INTO appover (email_id, password)
-        VALUES (%s, %s)
-        RETURNING id;
-        """
+        # Check if email already exists
+        cursor.execute("""
+            SELECT id FROM public.appover WHERE email_id = %s
+        """, (email_id,))
         
-        cur.execute(insert_query, (email_id, password))
+        if cursor.fetchone():
+            print(f"⚠️  Email '{email_id}' already exists in appover table.")
+            return None
         
-        # Get the inserted row's ID
-        inserted_id = cur.fetchone()[0]
+        # Insert new row
+        cursor.execute("""
+            INSERT INTO public.appover (email_id, password)
+            VALUES (%s, %s)
+            RETURNING id, email_id, created_at
+        """, (email_id, password))
         
-        # Commit the transaction
-        conn.commit()
+        result = cursor.fetchone()
+        inserted_row = {
+            'id': result[0],
+            'email_id': result[1],
+            'created_at': result[2]
+        }
         
-        print(f"Approver added successfully! ID: {inserted_id}")
-        cur.close()
-        return True
+        print(f"✓ Successfully added approver: {email_id} (ID: {inserted_row['id']})")
+        cursor.close()
+        return inserted_row
         
     except psycopg2.IntegrityError as e:
-        print(f"Error: Email ID '{email_id}' already exists in the database.")
+        print(f"❌ Integrity error: {e}")
         if conn:
             conn.rollback()
-        return False
+        return None
+    
     except psycopg2.Error as e:
-        print(f"Database error: {e}")
+        print(f"❌ Database error: {e}")
         if conn:
             conn.rollback()
-        return False
+        raise
+    
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"❌ Unexpected error: {e}")
         if conn:
             conn.rollback()
-        return False
+        raise
+    
     finally:
         if conn:
             conn.close()
 
-def add_auditor(email_id, password):
+def add_auditor_row(email_id, password):
     """
-    Adds a new row to the auditors table
+    Adds a new row to the auditors table.
     
     Args:
         email_id (str): Email ID of the auditor
-        password (str): Password of the auditor
+        password (str): Password for the auditor
     
     Returns:
-        bool: True if successful, False otherwise
+        dict: Dictionary containing the inserted row data (id, email_id, created_at)
+        None: If insertion failed or email already exists
+    
+    Raises:
+        psycopg2.Error: If database error occurs
     """
+    db_config = get_db_config()
     conn = None
+    
     try:
-        conn = get_connection()
-        if not conn:
-            return False
+        conn = psycopg2.connect(**db_config)
+        conn.autocommit = True
+        cursor = conn.cursor()
         
-        cur = conn.cursor()
+        # Set timezone to Asia/Kolkata
+        cursor.execute("SET timezone = 'Asia/Kolkata'")
         
-        # Insert query
-        insert_query = """
-        INSERT INTO auditors (email_id, password)
-        VALUES (%s, %s)
-        RETURNING id;
-        """
+        # Check if email already exists
+        cursor.execute("""
+            SELECT id FROM public.auditors WHERE email_id = %s
+        """, (email_id,))
         
-        cur.execute(insert_query, (email_id, password))
+        if cursor.fetchone():
+            print(f"⚠️  Email '{email_id}' already exists in auditors table.")
+            return None
         
-        # Get the inserted row's ID
-        inserted_id = cur.fetchone()[0]
+        # Insert new row
+        cursor.execute("""
+            INSERT INTO public.auditors (email_id, password)
+            VALUES (%s, %s)
+            RETURNING id, email_id, created_at
+        """, (email_id, password))
         
-        # Commit the transaction
-        conn.commit()
+        result = cursor.fetchone()
+        inserted_row = {
+            'id': result[0],
+            'email_id': result[1],
+            'created_at': result[2]
+        }
         
-        print(f"Auditor added successfully! ID: {inserted_id}")
-        cur.close()
-        return True
+        print(f"✓ Successfully added auditor: {email_id} (ID: {inserted_row['id']})")
+        cursor.close()
+        return inserted_row
         
     except psycopg2.IntegrityError as e:
-        print(f"Error: Email ID '{email_id}' already exists in the database.")
+        print(f"❌ Integrity error: {e}")
         if conn:
             conn.rollback()
-        return False
+        return None
+    
     except psycopg2.Error as e:
-        print(f"Database error: {e}")
+        print(f"❌ Database error: {e}")
         if conn:
             conn.rollback()
-        return False
+        raise
+    
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"❌ Unexpected error: {e}")
         if conn:
             conn.rollback()
-        return False
+        raise
+    
     finally:
         if conn:
             conn.close()
 
-def create_companies_table():
+def add_siteadmin_row(email_id, password):
     """
-    Creates the 'companies' table in the PostgreSQL database 'ifc_dev'
-    with columns: Company_identifier, Company Name, Registered Email, Registered Address,
-    Unique Identification Number, GST, PAN, Number of Corporate Offices,
-    Number of Factory Unit/Warehouse/Other, Company Coordinator Email
-    All columns are VARCHAR (string) datatype
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Create the companies table
-        create_table_query = """
-        CREATE TABLE IF NOT EXISTS companies (
-            id SERIAL PRIMARY KEY,
-            company_identifier VARCHAR(255),
-            company_name VARCHAR(255),
-            registered_email VARCHAR(255),
-            registered_address TEXT,
-            unique_identification_number VARCHAR(255),
-            gst VARCHAR(255),
-            pan VARCHAR(255),
-            number_of_corporate_offices VARCHAR(255),
-            number_of_factory_units VARCHAR(255),
-            created_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
-        );
-        """
-        
-        cur.execute(create_table_query)
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("Table 'companies' created successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error creating table: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def add_company(company_identifier, company_name, registered_email, registered_address, 
-                unique_identification_number, gst, pan, number_of_corporate_offices, 
-                number_of_factory_units):
-    """
-    Adds a new row to the companies table
+    Adds a new row to the siteadmin table.
     
     Args:
-        company_identifier (str): Company identifier
-        company_name (str): Company name
-        registered_email (str): Registered email
-        registered_address (str): Registered address
-        unique_identification_number (str): Unique identification number
-        gst (str): GST number
-        pan (str): PAN number
-        number_of_corporate_offices (str): Number of corporate offices
-        number_of_factory_units (str): Number of factory units/warehouse/other
+        email_id (str): Email ID of the site admin
+        password (str): Password for the site admin
     
     Returns:
-        bool: True if successful, False otherwise
+        dict: Dictionary containing the inserted row data (id, email_id, created_at)
+        None: If insertion failed or email already exists
+    
+    Raises:
+        psycopg2.Error: If database error occurs
     """
+    db_config = get_db_config()
     conn = None
+    
     try:
-        conn = get_connection()
-        if not conn:
-            return False
+        conn = psycopg2.connect(**db_config)
+        conn.autocommit = True
+        cursor = conn.cursor()
         
-        cur = conn.cursor()
+        # Set timezone to Asia/Kolkata
+        cursor.execute("SET timezone = 'Asia/Kolkata'")
         
-        # Insert query
-        insert_query = """
-        INSERT INTO companies (
-            company_identifier, company_name, registered_email, registered_address,
-            unique_identification_number, gst, pan, number_of_corporate_offices,
-            number_of_factory_units
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id;
-        """
+        # Check if email already exists
+        cursor.execute("""
+            SELECT id FROM public.siteadmin WHERE email_id = %s
+        """, (email_id,))
         
-        cur.execute(insert_query, (
-            company_identifier, company_name, registered_email, registered_address,
-            unique_identification_number, gst, pan, number_of_corporate_offices,
-            number_of_factory_units
-        ))
+        if cursor.fetchone():
+            print(f"⚠️  Email '{email_id}' already exists in siteadmin table.")
+            return None
         
-        # Get the inserted row's ID
-        inserted_id = cur.fetchone()[0]
+        # Insert new row
+        cursor.execute("""
+            INSERT INTO public.siteadmin (email_id, password)
+            VALUES (%s, %s)
+            RETURNING id, email_id, created_at
+        """, (email_id, password))
         
-        # Commit the transaction
-        conn.commit()
+        result = cursor.fetchone()
+        inserted_row = {
+            'id': result[0],
+            'email_id': result[1],
+            'created_at': result[2]
+        }
         
-        print(f"Company added successfully! ID: {inserted_id}")
-        cur.close()
-        return True
+        print(f"✓ Successfully added site admin: {email_id} (ID: {inserted_row['id']})")
+        cursor.close()
+        return inserted_row
         
     except psycopg2.IntegrityError as e:
-        print(f"Error: {e}")
+        print(f"❌ Integrity error: {e}")
         if conn:
             conn.rollback()
-        return False
+        return None
+    
     except psycopg2.Error as e:
-        print(f"Database error: {e}")
+        print(f"❌ Database error: {e}")
         if conn:
             conn.rollback()
-        return False
+        raise
+    
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"❌ Unexpected error: {e}")
         if conn:
             conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def update_timestamp_defaults_to_ist():
-    """
-    Updates the DEFAULT value for created_at columns in all tables to use IST timezone
-    This function updates existing tables to use IST instead of UTC/GMT
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # List of tables and their created_at columns
-        tables = ['siteadmin', 'ifc_users', 'auditors', 'companies', 'control_forms']
-        
-        for table in tables:
-            try:
-                # Check if table exists and has created_at column
-                check_query = """
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = %s AND column_name = 'created_at'
-                """
-                cur.execute(check_query, (table,))
-                if cur.fetchone():
-                    # Update the default value to use IST
-                    alter_query = f"""
-                    ALTER TABLE {table} 
-                    ALTER COLUMN created_at 
-                    SET DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
-                    """
-                    cur.execute(alter_query)
-                    print(f"Updated created_at default to IST for table '{table}'")
-            except psycopg2.Error as e:
-                print(f"Error updating table '{table}': {e}")
-                continue
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("All timestamp defaults updated to IST successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error updating timestamp defaults: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def remove_company_coordinator_email_column():
-    """
-    Removes the 'company_coordinator_email' column from the 'companies' table
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Drop the company_coordinator_email column
-        alter_table_query = """
-        ALTER TABLE companies 
-        DROP COLUMN IF EXISTS company_coordinator_email;
-        """
-        
-        cur.execute(alter_table_query)
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("Column 'company_coordinator_email' removed successfully from 'companies' table!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error removing column: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def create_control_forms_table():
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Create the control_forms table
-        create_table_query = """
-        CREATE TABLE IF NOT EXISTS control_forms (
-            id SERIAL PRIMARY KEY,
-            description_of_control VARCHAR(255),
-            process VARCHAR(255),
-            sub_process VARCHAR(255),
-            risk_description VARCHAR(255),
-            whether_fraud_risks_exist VARCHAR(255),
-            control_objective VARCHAR(255),
-            control_to_address VARCHAR(255),
-            mrc_or_not VARCHAR(255),
-            source_data_report_logic_report_parameters TEXT,
-            relevant_data_elements_of_ipe VARCHAR(255),
-            type_of_control VARCHAR(255),
-            nature_of_control VARCHAR(255),
-            type_of_risk_mitigation_method VARCHAR(255),
-            process_owner VARCHAR(255),
-            reviewer_process_supervisor VARCHAR(255),
-            control_frequency VARCHAR(255),
-            basis_of_sampling VARCHAR(255),
-            docs_to_review_for_dms_audit VARCHAR(255),
-            type_of_risk_associated VARCHAR(255),
-            financial_reporting VARCHAR(255),
-            checks_performed VARCHAR(255),
-            effective_or_not_effective VARCHAR(255),
-            done VARCHAR(255),
-            findings TEXT,
-            gap_description_resolution VARCHAR(255),
-            doc_uploaded_by_user VARCHAR(255),
-            active VARCHAR(255),
-            approved_rejected VARCHAR(255),
-            reason_by_approver VARCHAR(255),
-            company_identifier VARCHAR(255),
-            form_id VARCHAR(255),
-            created_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
-        );
-        """
-        
-        cur.execute(create_table_query)
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("Table 'control_forms' created successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error creating table: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def fix_control_forms_created_at_default():
-    """
-    Fixes the created_at default value in control_forms table to correctly use Asia/Kolkata timezone
-    This function updates the existing default value to use the correct timezone conversion
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Check if table exists and has created_at column
-        check_query = """
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name = 'control_forms' AND column_name = 'created_at'
-        """
-        cur.execute(check_query)
-        if cur.fetchone():
-            # Update the default value to use IST correctly
-            alter_query = """
-            ALTER TABLE control_forms 
-            ALTER COLUMN created_at 
-            SET DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
-            """
-            cur.execute(alter_query)
-            print("Updated created_at default to IST for table 'control_forms'")
-        else:
-            print("Table 'control_forms' or column 'created_at' does not exist")
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("Control forms created_at default fixed successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error fixing control_forms created_at default: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def create_excel_files_table():
-    """
-    Creates the 'excel_files' table to store paths of uploaded Excel files
-    with a 'processed' column (default 0) to track processing status
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Create the excel_files table
-        create_table_query = """
-        CREATE TABLE IF NOT EXISTS excel_files (
-            id SERIAL PRIMARY KEY,
-            file_path VARCHAR(500) NOT NULL,
-            file_name VARCHAR(255) NOT NULL,
-            processed INTEGER DEFAULT 0,
-            company_identifier VARCHAR(255)
-        );
-        """
-        
-        cur.execute(create_table_query)
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("Table 'excel_files' created successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error creating table: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def alter_control_forms_columns_to_text():
-    """
-    Alters VARCHAR(255) columns in control_forms table to TEXT type
-    for columns that may contain long text content.
-    Also adds company_identifier and form_id columns if they don't exist.
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Columns that may contain long text and should be changed to TEXT
-        columns_to_alter = [
-            'description_of_control',
-            'risk_description',
-            'control_objective',
-            'control_to_address',
-            'relevant_data_elements_of_ipe',
-            'docs_to_review_for_dms_audit',
-            'checks_performed',
-            'gap_description_resolution',
-            'reason_by_approver'
-        ]
-        
-        for column in columns_to_alter:
-            try:
-                alter_query = f"""
-                ALTER TABLE control_forms 
-                ALTER COLUMN {column} TYPE TEXT;
-                """
-                cur.execute(alter_query)
-                print(f"Column '{column}' altered to TEXT successfully!")
-            except psycopg2.Error as e:
-                print(f"Error altering column '{column}': {e}")
-                continue
-        
-        # Add company_identifier column if it doesn't exist
-        try:
-            check_column_query = """
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-            AND table_name = 'control_forms' 
-            AND column_name = 'company_identifier';
-            """
-            cur.execute(check_column_query)
-            if not cur.fetchone():
-                alter_table_query = """
-                ALTER TABLE control_forms 
-                ADD COLUMN company_identifier VARCHAR(255);
-                """
-                cur.execute(alter_table_query)
-                print("Column 'company_identifier' added successfully!")
-            else:
-                print("Column 'company_identifier' already exists.")
-        except psycopg2.Error as e:
-            print(f"Error adding company_identifier column: {e}")
-        
-        # Add form_id column if it doesn't exist
-        try:
-            check_column_query = """
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-            AND table_name = 'control_forms' 
-            AND column_name = 'form_id';
-            """
-            cur.execute(check_column_query)
-            if not cur.fetchone():
-                alter_table_query = """
-                ALTER TABLE control_forms 
-                ADD COLUMN form_id VARCHAR(255);
-                """
-                cur.execute(alter_table_query)
-                print("Column 'form_id' added successfully!")
-            else:
-                print("Column 'form_id' already exists.")
-        except psycopg2.Error as e:
-            print(f"Error adding form_id column: {e}")
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("All columns altered successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error altering columns: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def remove_excel_files_columns():
-    """
-    Removes specified columns from the 'excel_files' table
-    Columns to remove: file_size, uploaded_by, processed_at, error_message, records_imported
-    Also adds company_identifier column if it doesn't exist
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Columns to remove (checking for both possible spellings)
-        columns_to_remove = [
-            'file_size',
-            'uploaded_by',
-            'processed_at',
-            'proccessed_at',  # In case of typo
-            'error_message',
-            'records_imported',
-            'records_importted'  # In case of typo
-        ]
-        
-        for column in columns_to_remove:
-            try:
-                # Check if column exists before trying to drop it
-                check_column_query = """
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_schema = 'public' 
-                AND table_name = 'excel_files' 
-                AND column_name = %s;
-                """
-                cur.execute(check_column_query, (column,))
-                if cur.fetchone():
-                    alter_query = f"""
-                    ALTER TABLE excel_files 
-                    DROP COLUMN IF EXISTS {column};
-                    """
-                    cur.execute(alter_query)
-                    print(f"Column '{column}' removed successfully from 'excel_files' table!")
-                else:
-                    print(f"Column '{column}' does not exist in 'excel_files' table, skipping...")
-            except psycopg2.Error as e:
-                print(f"Error removing column '{column}': {e}")
-                continue
-        
-        # Add company_identifier column if it doesn't exist
-        try:
-            check_column_query = """
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-            AND table_name = 'excel_files' 
-            AND column_name = 'company_identifier';
-            """
-            cur.execute(check_column_query)
-            if not cur.fetchone():
-                alter_table_query = """
-                ALTER TABLE excel_files 
-                ADD COLUMN company_identifier VARCHAR(255);
-                """
-                cur.execute(alter_table_query)
-                print("Column 'company_identifier' added successfully to 'excel_files' table!")
-            else:
-                print("Column 'company_identifier' already exists in 'excel_files' table.")
-        except psycopg2.Error as e:
-            print(f"Error adding company_identifier column: {e}")
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("All specified columns removed and company_identifier added successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error removing columns: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def rename_approved_rejected_to_status():
-    """
-    Renames the 'approved_rejected' column to 'status' in the 'control_forms' table
-    Also adds 'remarks_by_user' column if it doesn't exist
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn:
-            return False
-        
-        cur = conn.cursor()
-        
-        # Check if approved_rejected column exists
-        check_column_query = """
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'control_forms' 
-        AND column_name = 'approved_rejected';
-        """
-        cur.execute(check_column_query)
-        
-        if cur.fetchone():
-            # Check if status column already exists
-            check_status_query = """
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-            AND table_name = 'control_forms' 
-            AND column_name = 'status';
-            """
-            cur.execute(check_status_query)
-            
-            if cur.fetchone():
-                print("Column 'status' already exists in 'control_forms' table.")
-                print("Please drop the 'status' column first or rename 'approved_rejected' manually.")
-                conn.rollback()
-                cur.close()
-                return False
-            
-            # Rename the column
-            alter_query = """
-            ALTER TABLE control_forms 
-            RENAME COLUMN approved_rejected TO status;
-            """
-            cur.execute(alter_query)
-            print("Column 'approved_rejected' renamed to 'status' successfully in 'control_forms' table!")
-        else:
-            print("Column 'approved_rejected' does not exist in 'control_forms' table.")
-        
-        # Add remarks_by_user column if it doesn't exist
-        check_remarks_query = """
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'control_forms' 
-        AND column_name = 'remarks_by_user';
-        """
-        cur.execute(check_remarks_query)
-        
-        if not cur.fetchone():
-            # Add the remarks_by_user column
-            add_remarks_query = """
-            ALTER TABLE control_forms 
-            ADD COLUMN remarks_by_user TEXT;
-            """
-            cur.execute(add_remarks_query)
-            print("Column 'remarks_by_user' added successfully to 'control_forms' table!")
-        else:
-            print("Column 'remarks_by_user' already exists in 'control_forms' table.")
-        
-        # Commit the transaction
-        conn.commit()
-        
-        print("All changes applied successfully!")
-        cur.close()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"Error renaming column or adding remarks_by_user: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        return False
+        raise
+    
     finally:
         if conn:
             conn.close()
 
 if __name__ == "__main__":
-    # Create ifc_users table
-    # create_ifc_users_table()
+    # create_all_tables()
+    # Add an approver
+    result = add_appover_row("approver@example.com", "password123")
     
-    # Create auditors table
-    # create_auditors_table()
+    # Add an auditor
+    result = add_auditor_row("auditor@example.com", "password123")
     
-    # Create appover table
-    # create_appover_table()
-    # add_appover("appover@gmail.com", "123456")
-
-    rename_approved_rejected_to_status()
-    
-    # Create companies table
-    # create_companies_table()
-    
-    # Create control_forms table
-    # create_control_forms_table()
-    
-    # Add gap_description_resolution column to control_forms table
-    # add_gap_description_resolution_column()
-
-    # fix_control_forms_created_at_default()
-    
-    # Add company_identifier column to control_forms table
-    # add_company_identifier_column()
-    
-    # Remove columns from excel_files table and add company_identifier
-    # remove_excel_files_columns()
-    
-    # Create excel_files table
-    # create_excel_files_table()
-    
-    # Add temp_login column to ifc_users table
-    # add_temp_login_column()
-    
-    # Update timestamp defaults to IST (run this once to update existing tables)
-    # update_timestamp_defaults_to_ist()
-    
-    # Remove company_coordinator_email column from companies table
-    # remove_company_coordinator_email_column()
-    
-    # Example usage for siteadmin
-    # add_siteadmin("siteadmin@gmail.com", "password123")
-    
-    # Example usage for auditors
-    # add_auditor("auditor@example.com", "password123")
-    
-    # Example usage for ifc_users
-    # add_ifc_user("company_co@example.com", "password123", "company_co")
-    
-    # Example usage for companies
-    # add_company(
-    #     "COMP001",
-    #     "Example Company",
-    #     "company@example.com",
-    #     "123 Main St, City, State",
-    #     "123456789",
-    #     "12ABCDE1234F1Z5",
-    #     "ABCDE1234F",
-    #     "5",
-    #     "10"
-    # )
-    pass
+    # Add a site admin
+    result = add_siteadmin_row("admin@example.com", "password123")

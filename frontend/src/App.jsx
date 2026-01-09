@@ -23,11 +23,13 @@ import ApproverLogin from './pages/approver/ApproverLogin'
 import ApproverDashboard from './pages/approver/ApproverDashboard'
 import ApproverFormDetail from './pages/approver/ApproverFormDetail'
 import UserFormDetail from './pages/user/UserFormDetail'
+import { Toaster } from 'react-hot-toast';
 
 function App() {
 
   return (
     <>
+      <Toaster />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/user/login" element={<Login />} />

@@ -2,22 +2,59 @@ const express = require('express');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 
 const router = express.Router();
 
 // Database connection pool
+const dbHost = process.env.DB_HOST || 'localhost';
+const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
+
 const pool = new Pool({
   user: process.env.DB_USER || 'divyesh',
-  host: process.env.DB_HOST || 'localhost',
+  host: dbHost,
   database: process.env.DB_NAME || 'ifc_dev',
   password: String(process.env.DB_PASSWORD || '0548'),
   port: parseInt(process.env.DB_PORT || '5432', 10),
+  // Enable SSL for remote connections (AWS RDS requires SSL)
+  ssl: isLocalhost ? false : {
+    rejectUnauthorized: false
+  }
 });
 
 // Set timezone to IST for all connections
 pool.on('connect', async (client) => {
   await client.query("SET timezone = 'Asia/Kolkata'");
 });
+
+// Helper function to send email
+async function sendEmail(to, subject, text) {
+  // Create transporter (configure with your email service)
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: process.env.SMTP_PORT || 587,
+    secure: false, // true for 465, false for other ports
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+
+  const mailOptions = {
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: to,
+    subject: subject,
+    text: text
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return false;
+  }
+}
 
 // Helper function to decrypt JWT token
 function decryptToken(encryptedToken) {
@@ -165,7 +202,14 @@ router.get('/pending-approvals', verifyApproverAuth, async (req, res) => {
 router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
   try {
     const { form_id } = req.params;
-    const { status, reason_by_approver } = req.body;
+    const { 
+      status, 
+      reason_by_approver,
+      checks_performed,
+      effective_or_not_effective,
+      done,
+      findings
+    } = req.body;
     const approver = req.approver;
 
     if (!status || !['Approved', 'Rejected'].includes(status)) {
@@ -175,20 +219,55 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
       });
     }
 
+    // Log received data for debugging
+    console.log('Approver form update - Received fields:', {
+      form_id,
+      status,
+      checks_performed,
+      effective_or_not_effective,
+      done,
+      findings
+    });
+
+    // Build dynamic update query to include optional fields
+    const updateFields = ['status = $1', 'reason_by_approver = $2'];
+    const updateValues = [status, reason_by_approver || null];
+    let paramIndex = 3;
+
+    // Always include approver-editable fields (even if empty strings)
+    // This ensures the fields are always updated when approver approves/rejects
+    // Preserve empty strings as they are (don't convert to null)
+    updateFields.push(`checks_performed = $${paramIndex}`);
+    updateValues.push(checks_performed !== undefined ? checks_performed : null);
+    paramIndex++;
+    
+    updateFields.push(`effective_or_not_effective = $${paramIndex}`);
+    updateValues.push(effective_or_not_effective !== undefined ? effective_or_not_effective : null);
+    paramIndex++;
+    
+    updateFields.push(`done = $${paramIndex}`);
+    updateValues.push(done !== undefined ? done : null);
+    paramIndex++;
+    
+    updateFields.push(`findings = $${paramIndex}`);
+    updateValues.push(findings !== undefined ? findings : null);
+    paramIndex++;
+
+    // Add form_id as the last parameter
+    updateValues.push(form_id);
+
     // Update the control form
     const updateQuery = `
       UPDATE control_forms 
-      SET status = $1, 
-          reason_by_approver = $2
-      WHERE form_id = $3
+      SET ${updateFields.join(', ')}
+      WHERE form_id = $${paramIndex}
       RETURNING *
     `;
     
-    const result = await pool.query(updateQuery, [
-      status,
-      reason_by_approver || null,
-      form_id
-    ]);
+    console.log('Update query:', updateQuery);
+    console.log('Update values:', updateValues);
+    
+    const result = await pool.query(updateQuery, updateValues);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
@@ -197,10 +276,57 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
       });
     }
 
+    const updatedForm = result.rows[0];
+    const processOwnerEmail = updatedForm.process_owner;
+
+    // Send email to process owner if email exists
+    if (processOwnerEmail) {
+      const statusText = status === 'Approved' ? 'approved' : 'rejected';
+      const emailSubject = `Control Form ${status}`;
+      
+      let emailBody = `Dear Process Owner,\n\n`;
+      emailBody += `Your control form has been ${statusText} by the approver.\n\n`;
+      
+      if (reason_by_approver) {
+        emailBody += `Reason/Comments from Approver:\n${reason_by_approver}\n\n`;
+      }
+      
+      emailBody += `Form Details:\n`;
+      if (updatedForm.description_of_control) {
+        emailBody += `- Description: ${updatedForm.description_of_control}\n`;
+      }
+      if (updatedForm.process) {
+        emailBody += `- Process: ${updatedForm.process}\n`;
+      }
+      
+      emailBody += `\n`;
+      
+      if (status === 'Rejected') {
+        emailBody += `You can review the feedback above, make necessary changes, and resubmit the form for approval.\n\n`;
+      }
+      
+      emailBody += `Thank you for using the IFC system.\n\n`;
+      emailBody += `Best regards,\nSharp & Tannan Associates`;
+
+      try {
+        const emailSent = await sendEmail(processOwnerEmail, emailSubject, emailBody);
+        if (emailSent) {
+          console.log(`✓ Email sent successfully to ${processOwnerEmail} for form ${form_id}`);
+        } else {
+          console.error(`⚠️  Failed to send email to ${processOwnerEmail} for form ${form_id}`);
+        }
+      } catch (emailError) {
+        console.error(`Error sending email to ${processOwnerEmail}:`, emailError);
+        // Don't fail the request if email fails
+      }
+    } else {
+      console.warn(`⚠️  No process owner email found for form ${form_id}, email not sent`);
+    }
+
     res.status(200).json({
       success: true,
       message: `Form ${status.toLowerCase()} successfully`,
-      data: result.rows[0]
+      data: updatedForm
     });
   } catch (error) {
     console.error('Approve form error:', error);
@@ -220,10 +346,22 @@ router.get('/control-forms', verifyApproverAuth, async (req, res) => {
     const queryParams = [];
     let paramIndex = 1;
 
+    // Only fetch forms with status: "sent for approval", "Approved", or "Rejected"
+    const allowedStatuses = ['sent for approval', 'Approved', 'Rejected'];
+    
     if (status) {
-      query += ` AND status = $${paramIndex}`;
-      queryParams.push(status);
-      paramIndex++;
+      // Validate that the requested status is one of the allowed statuses
+      if (allowedStatuses.includes(status)) {
+        query += ` AND status = $${paramIndex}`;
+        queryParams.push(status);
+        paramIndex++;
+      } else {
+        // If invalid status, return empty result
+        query += ` AND 1=0`;
+      }
+    } else {
+      // When no status filter is provided, show all allowed statuses
+      query += ` AND status IN ('sent for approval', 'Approved', 'Rejected')`;
     }
 
     if (active !== undefined) {

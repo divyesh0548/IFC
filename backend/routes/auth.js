@@ -7,12 +7,19 @@ const nodemailer = require('nodemailer');
 const router = express.Router();
 
 // Database connection pool
+const dbHost = process.env.DB_HOST || 'localhost';
+const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
+
 const pool = new Pool({
   user: process.env.DB_USER || 'divyesh',
-  host: process.env.DB_HOST || 'localhost',
+  host: dbHost,
   database: process.env.DB_NAME || 'ifc_dev',
   password: String(process.env.DB_PASSWORD || '0548'),
   port: parseInt(process.env.DB_PORT || '5432', 10),
+  // Enable SSL for remote connections (AWS RDS requires SSL)
+  ssl: isLocalhost ? false : {
+    rejectUnauthorized: false
+  }
 });
 
 // Set timezone to IST for all connections
@@ -67,6 +74,48 @@ function decryptToken(encryptedToken) {
   }
 }
 
+// Helper function to generate temporary password
+function generateTempPassword() {
+  const length = 12;
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    password += charset.charAt(Math.floor(Math.random() * charset.length));
+  }
+  return password;
+}
+
+// Helper function to send email
+async function sendEmail(to, subject, text) {
+  // Create transporter (configure with your email service)
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: process.env.SMTP_PORT || 587,
+    secure: false, // true for 465, false for other ports
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+
+  const mailOptions = {
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: to,
+    subject: subject,
+    text: text
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return false;
+  }
+}
+
+
+// ==================== SITE ADMIN AUTHENTICATION ROUTES ====================
 // Login API endpoint
 router.post('/siteadmin/login', async (req, res) => {
   const { email_id, password } = req.body;
@@ -225,6 +274,10 @@ router.post('/siteadmin/logout', (req, res) => {
   });
 });
 
+
+
+
+// ==================== AUDITOR AUTHENTICATION ROUTES ====================
 // Auditor Login API endpoint
 router.post('/auditor/login', async (req, res) => {
   const { email_id, password } = req.body;
@@ -383,6 +436,13 @@ router.post('/auditor/logout', (req, res) => {
   });
 });
 
+
+
+
+
+
+
+// ==================== USER AUTHENTICATION ROUTES ====================
 // User Login API endpoint (for ifc_users table)
 router.post('/user/login', async (req, res) => {
   const { email_id, password } = req.body;
@@ -553,45 +613,6 @@ router.post('/user/logout', (req, res) => {
   });
 });
 
-// Helper function to generate temporary password
-function generateTempPassword() {
-  const length = 12;
-  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let password = '';
-  for (let i = 0; i < length; i++) {
-    password += charset.charAt(Math.floor(Math.random() * charset.length));
-  }
-  return password;
-}
-
-// Helper function to send email
-async function sendEmail(to, subject, text) {
-  // Create transporter (configure with your email service)
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: process.env.SMTP_PORT || 587,
-    secure: false, // true for 465, false for other ports
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
-
-  const mailOptions = {
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to: to,
-    subject: subject,
-    text: text
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    return true;
-  } catch (error) {
-    console.error('Error sending email:', error);
-    return false;
-  }
-}
 
 // Forgot Password endpoint
 router.post('/forgot-password', async (req, res) => {
@@ -697,6 +718,10 @@ router.post('/update-password', async (req, res) => {
     });
   }
 });
+
+
+
+
 
 // ==================== APPROVER AUTHENTICATION ROUTES ====================
 
@@ -982,6 +1007,11 @@ router.post('/approver/update-password', async (req, res) => {
     });
   }
 });
+
+
+
+
+
 
 module.exports = router;
 

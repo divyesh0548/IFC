@@ -6,12 +6,19 @@ const nodemailer = require('nodemailer');
 const router = express.Router();
 
 // Database connection pool
+const dbHost = process.env.DB_HOST || 'localhost';
+const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
+
 const pool = new Pool({
   user: process.env.DB_USER || 'divyesh',
-  host: process.env.DB_HOST || 'localhost',
+  host: dbHost,
   database: process.env.DB_NAME || 'ifc_dev',
   password: String(process.env.DB_PASSWORD || '0548'),
   port: parseInt(process.env.DB_PORT || '5432', 10),
+  // Enable SSL for remote connections (AWS RDS requires SSL)
+  ssl: isLocalhost ? false : {
+    rejectUnauthorized: false
+  }
 });
 
 // Set timezone to IST for all connections
@@ -63,6 +70,27 @@ async function sendEmail(to, subject, text) {
     return false;
   }
 }
+
+// Get all companies API endpoint
+router.get('/', async (req, res) => {
+  try {
+    const query = 'SELECT * FROM companies ORDER BY created_at DESC';
+    const result = await pool.query(query);
+
+    res.status(200).json({
+      success: true,
+      message: 'Companies retrieved successfully',
+      data: result.rows,
+      count: result.rows.length
+    });
+  } catch (error) {
+    console.error('Error fetching companies:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching companies'
+    });
+  }
+});
 
 // Create Company API endpoint
 router.post('/create', async (req, res) => {

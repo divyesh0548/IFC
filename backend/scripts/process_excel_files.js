@@ -4,14 +4,22 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { normalizeColumnName } = require('../utils/column_mapping');
+const { downloadFileFromS3 } = require('../utils/s3Upload');
 
 // Database connection pool
+const dbHost = process.env.DB_HOST || 'localhost';
+const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
+
 const pool = new Pool({
   user: process.env.DB_USER || 'divyesh',
-  host: process.env.DB_HOST || 'localhost',
+  host: dbHost,
   database: process.env.DB_NAME || 'ifc_dev',
   password: String(process.env.DB_PASSWORD || '0548'),
   port: parseInt(process.env.DB_PORT || '5432', 10),
+  // Enable SSL for remote connections (AWS RDS requires SSL)
+  ssl: isLocalhost ? false : {
+    rejectUnauthorized: false
+  }
 });
 
 // Set timezone to IST for all connections
@@ -203,9 +211,23 @@ function parseSheet(worksheet, sheetName) {
 }
 
 // Function to parse Excel file with header detection for all sheets
-function parseExcelFile(filePath) {
+// Accepts either a file path (string) or a buffer
+function parseExcelFile(filePathOrBuffer) {
   try {
-    const workbook = XLSX.readFile(filePath);
+    let workbook;
+    let fileName;
+    
+    // Check if input is a buffer or file path
+    if (Buffer.isBuffer(filePathOrBuffer)) {
+      // Read from buffer
+      workbook = XLSX.read(filePathOrBuffer, { type: 'buffer' });
+      fileName = 'uploaded_file';
+    } else {
+      // Read from file path (legacy support)
+      workbook = XLSX.readFile(filePathOrBuffer);
+      fileName = path.basename(filePathOrBuffer);
+    }
+    
     const sheetNames = workbook.SheetNames;
     
     if (!sheetNames || sheetNames.length === 0) {
@@ -213,7 +235,7 @@ function parseExcelFile(filePath) {
     }
     
     console.log(`\n${'='.repeat(60)}`);
-    console.log(`Excel File: ${path.basename(filePath)}`);
+    console.log(`Excel File: ${fileName}`);
     console.log(`Total Sheets Found: ${sheetNames.length}`);
     console.log(`Sheet Names: ${sheetNames.join(', ')}`);
     console.log('='.repeat(60));
@@ -364,13 +386,22 @@ async function processExcelFiles() {
       try {
         await client.query('BEGIN');
 
-        // Check if file exists
-        if (!fs.existsSync(filePath)) {
-          throw new Error(`File not found: ${filePath}`);
+        // Check if file path is an S3 key (starts with 'IFC/') or local path
+        let fileBuffer;
+        if (filePath.startsWith('IFC/')) {
+          // Download file from S3
+          console.log(`  Downloading file from S3: ${filePath}`);
+          fileBuffer = await downloadFileFromS3(filePath);
+        } else {
+          // Legacy: Read from local filesystem
+          if (!fs.existsSync(filePath)) {
+            throw new Error(`File not found: ${filePath}`);
+          }
+          fileBuffer = fs.readFileSync(filePath);
         }
 
-        // Parse Excel file
-        const excelData = parseExcelFile(filePath);
+        // Parse Excel file from buffer
+        const excelData = parseExcelFile(fileBuffer);
         
         if (excelData.length === 0) {
           throw new Error('Excel file is empty or has no data rows');

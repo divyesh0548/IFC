@@ -3,8 +3,10 @@ import { useTheme } from '@mui/material/styles'
 import AppBar from '@mui/material/AppBar'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
-import Button from '@mui/material/Button'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import Box from '@mui/material/Box'
+import LogoutIcon from '@mui/icons-material/Logout'
 
 function Navbar({ onLogout, header = 'Site Admin' }) {
   const theme = useTheme()
@@ -33,20 +35,19 @@ function Navbar({ onLogout, header = 'Site Admin' }) {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <Button
-            onClick={onLogout}
-            variant="contained"
-            color="secondary"
-            sx={{
-              backgroundColor: theme.palette.secondary.main,
-              color: theme.palette.secondary.contrastText,
-              '&:hover': {
-                backgroundColor: theme.palette.secondary.dark,
-              },
-            }}
-          >
-            Logout
-          </Button>
+          <Tooltip title="Logout" arrow>
+            <IconButton
+              onClick={onLogout}
+              sx={{
+                color: theme.palette.text.primary,
+                '&:hover': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                },
+              }}
+            >
+              <LogoutIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Toolbar>
     </AppBar>

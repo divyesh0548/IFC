@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Siteadmin_navbar'
+import Navbar from '../../components/Global_navbar'
+import { useUserLogout } from '../../hooks/useUserLogout'
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Button from '@mui/material/Button';
@@ -9,7 +10,6 @@ import Box from '@mui/material/Box';
 
 function Company_Co_dashboard() {
   const theme = useTheme()
-  const navigate = useNavigate()
   const [userRole, setUserRole] = useState(null)
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
   const [forms, setForms] = useState([])
@@ -84,29 +84,7 @@ function Company_Co_dashboard() {
     }
   }
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/user/logout', {
-        method: 'POST',
-        credentials: 'include', // Important: sends cookies
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        // Redirect to login page
-        navigate('/user/login')
-      } else {
-        console.error('Logout failed:', data.message)
-        // Still redirect to login even if logout API fails
-        navigate('/user/login')
-      }
-    } catch (error) {
-      console.error('Logout error:', error)
-      // Still redirect to login even if there's an error
-      navigate('/user/login')
-    }
-  }
+  const handleLogout = useUserLogout()
 
   const handleFormClick = (formId) => {
     window.open(`/company_co/form/${formId}`, '_blank')

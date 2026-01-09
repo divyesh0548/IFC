@@ -1,30 +1,38 @@
 import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Siteadmin_navbar'
+import Navbar from '../../components/Global_navbar'
+import { useApproverLogout } from '../../hooks/useApproverLogout'
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
 import Alert from '@mui/material/Alert';
+import IconButton from '@mui/material/IconButton';
+import DownloadIcon from '@mui/icons-material/Download';
+import { toast } from 'react-hot-toast';
+import { useRef } from 'react';
 
 function ApproverFormDetail() {
   const theme = useTheme()
   const { form_id } = useParams()
-  const navigate = useNavigate()
   const [formData, setFormData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [approving, setApproving] = useState(false)
-  const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
-  const [rejectionReason, setRejectionReason] = useState('')
-  const [message, setMessage] = useState({ type: '', text: '' })
+  const [reasonByApprover, setReasonByApprover] = useState('')
+  
+  // Editable fields for approver (only editable when status is pending)
+  const [editableFields, setEditableFields] = useState({
+    checks_performed: '',
+    effective_or_not_effective: '',
+    done: '',
+    findings: ''
+  })
+
+  const toastId = useRef(null)
 
   useEffect(() => {
     fetchFormData()
@@ -43,6 +51,13 @@ function ApproverFormDetail() {
 
       if (response.ok && data.success) {
         setFormData(data.data)
+        // Initialize editable fields
+        setEditableFields({
+          checks_performed: data.data.checks_performed || '',
+          effective_or_not_effective: data.data.effective_or_not_effective || '',
+          done: data.data.done || '',
+          findings: data.data.findings || ''
+        })
       } else {
         setError(data.message || 'Failed to fetch form data')
       }
@@ -54,24 +69,13 @@ function ApproverFormDetail() {
     }
   }
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/approver/logout', {
-        method: 'POST',
-        credentials: 'include',
-      })
+  const handleLogout = useApproverLogout()
 
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        navigate('/approver/login')
-      } else {
-        navigate('/approver/login')
-      }
-    } catch (error) {
-      console.error('Logout error:', error)
-      navigate('/approver/login')
-    }
+  const handleFieldChange = (field, value) => {
+    setEditableFields(prev => ({
+      ...prev,
+      [field]: value
+    }))
   }
 
   const handleApprove = async () => {
@@ -86,36 +90,45 @@ function ApproverFormDetail() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          approved_rejected: 'Approved',
-          reason_by_approver: ''
+          status: 'Approved',
+          reason_by_approver: reasonByApprover || '',
+          checks_performed: editableFields.checks_performed,
+          effective_or_not_effective: editableFields.effective_or_not_effective,
+          done: editableFields.done,
+          findings: editableFields.findings
         }),
       })
 
       const data = await response.json()
 
       if (response.ok && data.success) {
-        setMessage({ type: 'success', text: 'Form approved successfully' })
+        toastId.current = toast.success('Form approved successfully')
+        setReasonByApprover('')
+        // Clear editable fields
+        setEditableFields({
+          checks_performed: '',
+          effective_or_not_effective: '',
+          done: '',
+          findings: ''
+        })
+        // Update form data immediately to hide approval action card
+        setFormData(data.data)
         setTimeout(() => {
-          setMessage({ type: '', text: '' })
-          fetchFormData() // Refresh form data
+          fetchFormData() // Refresh form data to ensure consistency
         }, 2000)
       } else {
-        setMessage({ type: 'error', text: data.message || 'Failed to approve form' })
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+        toast.error(data.message || 'Failed to approve form', { id: toastId.current })
       }
     } catch (error) {
       console.error('Error approving form:', error)
-      setMessage({ type: 'error', text: 'Error approving form' })
-      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+      toast.error('Error approving form', { id: toastId.current })
     } finally {
       setApproving(false)
     }
   }
 
   const handleReject = async () => {
-    if (!formData || !rejectionReason.trim()) {
-      setMessage({ type: 'error', text: 'Please provide a reason for rejection' })
-      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+    if (!formData) {
       return
     }
 
@@ -128,29 +141,38 @@ function ApproverFormDetail() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          approved_rejected: 'Rejected',
-          reason_by_approver: rejectionReason
+          status: 'Rejected',
+          reason_by_approver: reasonByApprover || '',
+          checks_performed: editableFields.checks_performed,
+          effective_or_not_effective: editableFields.effective_or_not_effective,
+          done: editableFields.done,
+          findings: editableFields.findings
         }),
       })
 
       const data = await response.json()
 
       if (response.ok && data.success) {
-        setMessage({ type: 'success', text: 'Form rejected successfully' })
-        setRejectDialogOpen(false)
-        setRejectionReason('')
+        toast.success('Form rejected successfully', { id: toastId.current })
+        setReasonByApprover('')
+        // Clear editable fields
+        setEditableFields({
+          checks_performed: '',
+          effective_or_not_effective: '',
+          done: '',
+          findings: ''
+        })
+        // Update form data immediately to hide approval action card
+        setFormData(data.data)
         setTimeout(() => {
-          setMessage({ type: '', text: '' })
-          fetchFormData() // Refresh form data
+          fetchFormData() // Refresh form data to ensure consistency
         }, 2000)
       } else {
-        setMessage({ type: 'error', text: data.message || 'Failed to reject form' })
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+        toast.error(data.message || 'Failed to reject form', { id: toastId.current })
       }
     } catch (error) {
       console.error('Error rejecting form:', error)
-      setMessage({ type: 'error', text: 'Error rejecting form' })
-      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+      toast.error('Error rejecting form', { id: toastId.current })
     } finally {
       setApproving(false)
     }
@@ -168,6 +190,73 @@ function ApproverFormDetail() {
       second: '2-digit',
       timeZone: 'Asia/Kolkata'
     })
+  }
+
+  const getFileName = (filePath) => {
+    if (!filePath) return ''
+    const parts = filePath.split(/[/\\]/)
+    return parts[parts.length - 1]
+  }
+
+  const handleDownloadFile = async (filePath) => {
+    if (!filePath) return
+    
+    try {
+      const fileName = getFileName(filePath)
+      const response = await fetch(`http://localhost:3000/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      // Check status code explicitly
+      const status = response.status
+      const contentType = response.headers.get('content-type') || ''
+
+      // Success: status 200 and content-type is octet-stream (file download)
+      if (status === 200 && contentType.includes('application/octet-stream')) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        toast.success('File downloaded successfully', { id: toastId.current })
+      } else {
+        // Error response: try to parse JSON error message
+        let errorMessage = 'Failed to download file'
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.message || errorData.error || errorMessage
+          
+          // Include debug info if available
+          if (errorData.debug) {
+            console.error('Download error debug info:', errorData.debug)
+          }
+        } catch (e) {
+          // If response is not JSON, use status-based message
+          if (status === 400) {
+            errorMessage = 'Bad request: File path is required'
+          } else if (status === 403) {
+            errorMessage = 'Access denied: Invalid file path'
+          } else if (status === 404) {
+            errorMessage = 'File not found'
+          } else if (status === 401) {
+            errorMessage = 'Authentication required'
+          } else if (status >= 500) {
+            errorMessage = 'Server error occurred'
+          } else {
+            errorMessage = `Download failed with status ${status}`
+          }
+        }
+        toast.error(errorMessage, { id: toastId.current })
+      }
+    } catch (error) {
+      console.error('Error downloading file:', error)
+      toast.error(`Error downloading file: ${error.message}`, { id: toastId.current })
+    }
   }
 
   // Define field labels mapping
@@ -198,6 +287,7 @@ function ApproverFormDetail() {
     done: 'Done',
     findings: 'Findings',
     doc_uploaded_by_user: 'Doc Uploaded by User',
+    remarks_by_user: 'Remarks by User',
     active: 'Active',
     approved_rejected: 'Approved/Rejected',
     reason_by_approver: 'Reason by Approver',
@@ -230,7 +320,8 @@ function ApproverFormDetail() {
     'effective_or_not_effective',
     'done',
     'findings',
-    'doc_uploaded_by_user'
+    'doc_uploaded_by_user',
+    'remarks_by_user'
   ]
 
   // Fields to exclude from display
@@ -274,21 +365,15 @@ function ApproverFormDetail() {
   }
 
   const isActive = formData?.active && formData.active !== '' && formData.active !== '0'
-  const isPending = !formData?.approved_rejected || formData.approved_rejected === ''
-  const isApproved = formData?.approved_rejected === 'Approved'
-  const isRejected = formData?.approved_rejected === 'Rejected'
+  const isPending = !formData?.status || formData.status === '' || formData.status === 'sent for approval'
+  const isApproved = formData?.status === 'Approved'
+  const isRejected = formData?.status === 'Rejected'
 
   return (
     <div className="min-h-screen bg-primary">
       <Navbar onLogout={handleLogout} header="Control Form" />
 
       <div className="w-full max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {message.text && (
-          <Alert severity={message.type === 'success' ? 'success' : 'error'} sx={{ mb: 3 }}>
-            {message.text}
-          </Alert>
-        )}
-
         <Typography 
           variant="h4" 
           component="h1" 
@@ -308,110 +393,8 @@ function ApproverFormDetail() {
               <Card>
                 <CardContent sx={{ p: 3 }}>
                   <div className="space-y-6">
-                    {/* Approval Status */}
-                    <div>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 2,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Approval Status
-                      </Typography>
-                      <Box sx={{ mb: 2 }}>
-                        {isPending && (
-                          <Typography 
-                            variant="body2" 
-                            sx={{ 
-                              color: '#f59e0b',
-                              fontWeight: 600,
-                              p: 1,
-                              backgroundColor: '#fef3c7',
-                              borderRadius: 1
-                            }}
-                          >
-                            Pending Approval
-                          </Typography>
-                        )}
-                        {isApproved && (
-                          <Typography 
-                            variant="body2" 
-                            sx={{ 
-                              color: '#10b981',
-                              fontWeight: 600,
-                              p: 1,
-                              backgroundColor: '#d1fae5',
-                              borderRadius: 1
-                            }}
-                          >
-                            ✓ Approved
-                          </Typography>
-                        )}
-                        {isRejected && (
-                          <Typography 
-                            variant="body2" 
-                            sx={{ 
-                              color: '#ef4444',
-                              fontWeight: 600,
-                              p: 1,
-                              backgroundColor: '#fee2e2',
-                              borderRadius: 1
-                            }}
-                          >
-                            ✗ Rejected
-                          </Typography>
-                        )}
-                      </Box>
-
-                      {/* Approve/Reject Buttons (only show if pending) */}
-                      {isPending && (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                          <Button
-                            onClick={handleApprove}
-                            disabled={approving}
-                            fullWidth
-                            variant="contained"
-                            sx={{
-                              py: 1.5,
-                              fontWeight: 600,
-                              textTransform: 'none',
-                              backgroundColor: '#10b981',
-                              color: '#ffffff',
-                              '&:hover': {
-                                backgroundColor: '#059669',
-                              },
-                            }}
-                          >
-                            {approving ? 'Processing...' : '✓ Approve'}
-                          </Button>
-                          <Button
-                            onClick={() => setRejectDialogOpen(true)}
-                            disabled={approving}
-                            fullWidth
-                            variant="contained"
-                            sx={{
-                              py: 1.5,
-                              fontWeight: 600,
-                              textTransform: 'none',
-                              backgroundColor: '#ef4444',
-                              color: '#ffffff',
-                              '&:hover': {
-                                backgroundColor: '#dc2626',
-                              },
-                            }}
-                          >
-                            ✗ Reject
-                          </Button>
-                        </Box>
-                      )}
-                    </div>
-
                     {/* Form Status (Read-only for approver) */}
-                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Box sx={{ pt: 2, borderColor: 'divider' }}>
                       <Typography
                         variant="body2"
                         component="label"
@@ -466,10 +449,10 @@ function ApproverFormDetail() {
                           color: 'text.primary'
                         }}
                       >
-                        Approved/Rejected
+                        Status
                       </Typography>
                       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {formData?.approved_rejected || '-'}
+                        {formData?.status || '-'}
                       </Typography>
                     </Box>
 
@@ -526,6 +509,12 @@ function ApproverFormDetail() {
                       const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                       const value = formData[key]
                       const isEmpty = value === null || value === undefined || value === ''
+                      const isFileField = key === 'doc_uploaded_by_user'
+                      
+                      // Check if this is an editable field for approver (only when pending)
+                      const editableFieldKeys = ['checks_performed', 'effective_or_not_effective', 'done', 'findings']
+                      const isEditableField = editableFieldKeys.includes(key)
+                      const isEditable = isPending && isEditableField
 
                       return (
                         <Box
@@ -534,6 +523,10 @@ function ApproverFormDetail() {
                             pb: 3,
                             borderBottom: '1px solid',
                             borderColor: 'divider',
+                            gridColumn: isEditable ? {
+                              xs: '1',
+                              md: '1 / -1'
+                            } : undefined,
                             '&:last-child': {
                               borderBottom: 'none',
                             },
@@ -554,73 +547,166 @@ function ApproverFormDetail() {
                           >
                             {label}
                           </Typography>
-                          <Typography
-                            variant="body2"
-                            component="dd"
-                            sx={{
-                              color: isEmpty ? 'text.disabled' : 'text.secondary',
-                              wordBreak: 'break-word',
-                              lineHeight: 1.6,
-                              fontSize: theme.typography.customSizes.medium,
-                            }}
-                          >
-                            {isEmpty ? '-' : String(value)}
-                          </Typography>
+                          {isEditable ? (
+                            // Editable TextField for approver (only when pending)
+                            <TextField
+                              label={label}
+                              variant="outlined"
+                              value={editableFields[key]}
+                              onChange={(e) => handleFieldChange(key, e.target.value)}
+                              fullWidth
+                              multiline={key === 'findings'}
+                              rows={key === 'findings' ? 4 : 1}
+                              sx={{
+                                '& .MuiOutlinedInput-root': {
+                                  backgroundColor: 'transparent',
+                                  '&:hover': {
+                                    backgroundColor: 'transparent',
+                                  },
+                                  '&.Mui-focused': {
+                                    backgroundColor: 'transparent',
+                                  },
+                                },
+                              }}
+                            />
+                          ) : isFileField && !isEmpty ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography
+                                variant="body2"
+                                component="dd"
+                                sx={{
+                                  color: 'text.secondary',
+                                  wordBreak: 'break-word',
+                                  lineHeight: 1.6,
+                                  fontSize: theme.typography.customSizes.medium,
+                                  flex: 1,
+                                }}
+                              >
+                                {getFileName(String(value))}
+                              </Typography>
+                              <IconButton
+                                onClick={() => handleDownloadFile(value)}
+                                size="small"
+                                sx={{
+                                  color: 'primary.main',
+                                  '&:hover': {
+                                    backgroundColor: 'action.hover',
+                                  },
+                                }}
+                              >
+                                <DownloadIcon />
+                              </IconButton>
+                            </Box>
+                          ) : (
+                            <Typography
+                              variant="body2"
+                              component="dd"
+                              sx={{
+                                color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                wordBreak: 'break-word',
+                                lineHeight: 1.6,
+                                fontSize: theme.typography.customSizes.medium,
+                              }}
+                            >
+                              {isEmpty ? '-' : String(value)}
+                            </Typography>
+                          )}
                         </Box>
                       )
                     })}
                 </Box>
               </CardContent>
             </Card>
+
+            {/* Approval Action Card - Only show if pending, hide if approved or rejected */}
+            {isPending && !isApproved && !isRejected && (
+              <Card sx={{ mt: 4 }}>
+                <CardContent sx={{ p: 4 }}>
+                  <Typography
+                    variant="h6"
+                    component="h2"
+                    sx={{
+                      fontWeight: 700,
+                      mb: 3,
+                      color: 'text.primary',
+                      borderBottom: '2px solid',
+                      borderColor: 'divider',
+                      pb: 2
+                    }}
+                  >
+                    Approval Action
+                  </Typography>
+                  
+                  <Box sx={{ mb: 3 }}>
+                    <TextField
+                      label="Reason by Approver"
+                      placeholder="Enter reason for approval or rejection (optional)"
+                      fullWidth
+                      multiline
+                      rows={4}
+                      value={reasonByApprover}
+                      onChange={(e) => setReasonByApprover(e.target.value)}
+                      variant="outlined"
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          '&:hover fieldset': {
+                            borderColor: 'primary.main',
+                          },
+                        },
+                      }}
+                    />
+                  </Box>
+
+                  <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+                    <Button
+                      onClick={handleApprove}
+                      disabled={approving}
+                      variant="contained"
+                      sx={{
+                        minWidth: '120px',
+                        py: 1.5,
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        backgroundColor: '#10b981',
+                        color: '#ffffff',
+                        '&:hover': {
+                          backgroundColor: '#059669',
+                        },
+                        '&:disabled': {
+                          backgroundColor: '#9ca3af',
+                        },
+                      }}
+                    >
+                      {approving ? 'Processing...' : '✓ Approve'}
+                    </Button>
+                    <Button
+                      onClick={handleReject}
+                      disabled={approving}
+                      variant="contained"
+                      sx={{
+                        minWidth: '120px',
+                        py: 1.5,
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        backgroundColor: '#ef4444',
+                        color: '#ffffff',
+                        '&:hover': {
+                          backgroundColor: '#dc2626',
+                        },
+                        '&:disabled': {
+                          backgroundColor: '#9ca3af',
+                        },
+                      }}
+                    >
+                      {approving ? 'Processing...' : '✗ Reject'}
+                    </Button>
+                  </Box>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>
-
-      {/* Rejection Reason Dialog */}
-      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Reject Form</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-            Please provide a reason for rejecting this form:
-          </Typography>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Rejection Reason"
-            type="text"
-            fullWidth
-            variant="filled"
-            multiline
-            rows={4}
-            value={rejectionReason}
-            onChange={(e) => setRejectionReason(e.target.value)}
-            required
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => {
-            setRejectDialogOpen(false)
-            setRejectionReason('')
-          }} sx={{ textTransform: 'none' }}>
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleReject} 
-            disabled={!rejectionReason.trim() || approving}
-            variant="contained"
-            sx={{
-              backgroundColor: '#ef4444',
-              color: '#ffffff',
-              textTransform: 'none',
-              '&:hover': {
-                backgroundColor: '#dc2626',
-              },
-            }}
-          >
-            {approving ? 'Processing...' : 'Reject'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </div>
   )
 }

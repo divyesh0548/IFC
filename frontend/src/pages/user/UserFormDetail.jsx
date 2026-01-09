@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Siteadmin_navbar'
+import Navbar from '../../components/Global_navbar'
+import { useUserLogout } from '../../hooks/useUserLogout'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
@@ -12,11 +13,11 @@ import Alert from '@mui/material/Alert'
 import IconButton from '@mui/material/IconButton'
 import AttachFileIcon from '@mui/icons-material/AttachFile'
 import CloseIcon from '@mui/icons-material/Close'
+import { toast } from 'react-hot-toast'
 
 function UserFormDetail() {
   const theme = useTheme()
   const { form_id } = useParams()
-  const navigate = useNavigate()
   const [formData, setFormData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -26,13 +27,7 @@ function UserFormDetail() {
   const [fileName, setFileName] = useState('')
   const [remarksByUser, setRemarksByUser] = useState('')
 
-  // Editable fields state
-  const [editableFields, setEditableFields] = useState({
-    checks_performed: '',
-    effective_or_not_effective: '',
-    done: '',
-    findings: ''
-  })
+  // Removed editableFields state - users can only edit remarks_by_user
 
   useEffect(() => {
     fetchFormData()
@@ -51,14 +46,7 @@ function UserFormDetail() {
 
       if (response.ok && data.success) {
         setFormData(data.data)
-        // Initialize editable fields
-        setEditableFields({
-          checks_performed: data.data.checks_performed || '',
-          effective_or_not_effective: data.data.effective_or_not_effective || '',
-          done: data.data.done || '',
-          findings: data.data.findings || ''
-        })
-        // Initialize remarks by user
+        // Initialize remarks by user (only editable field for users)
         setRemarksByUser(data.data.remarks_by_user || '')
       } else {
         setError(data.message || 'Failed to fetch form data')
@@ -71,32 +59,9 @@ function UserFormDetail() {
     }
   }
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/user/logout', {
-        method: 'POST',
-        credentials: 'include',
-      })
+  const handleLogout = useUserLogout()
 
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        navigate('/user/login')
-      } else {
-        navigate('/user/login')
-      }
-    } catch (error) {
-      console.error('Logout error:', error)
-      navigate('/user/login')
-    }
-  }
-
-  const handleFieldChange = (field, value) => {
-    setEditableFields(prev => ({
-      ...prev,
-      [field]: value
-    }))
-  }
+  // Removed handleFieldChange - users can only edit remarks_by_user
 
   const handleFileSelect = (e) => {
     const file = e.target.files[0]
@@ -107,7 +72,7 @@ function UserFormDetail() {
     setFileName(file.name)
     setMessage({ type: 'info', text: `File "${file.name}" selected. It will be uploaded when you send for approval.` })
     setTimeout(() => setMessage({ type: '', text: '' }), 3000)
-    
+
     // Reset file input to allow selecting the same file again
     e.target.value = ''
   }
@@ -124,7 +89,7 @@ function UserFormDetail() {
     try {
       // First, upload document if one is selected
       let documentPath = formData?.doc_uploaded_by_user || null
-      
+
       if (selectedFile) {
         const formDataUpload = new FormData()
         formDataUpload.append('document', selectedFile)
@@ -139,15 +104,18 @@ function UserFormDetail() {
 
         if (uploadResponse.ok && uploadData.success) {
           documentPath = uploadData.data.doc_uploaded_by_user
+          toast.success('Document uploaded successfully')
         } else {
-          setMessage({ type: 'error', text: uploadData.message || 'Failed to upload document' })
+          const errorMessage = uploadData.message || 'Failed to upload document'
+          setMessage({ type: 'error', text: errorMessage })
+          toast.error(errorMessage)
           setTimeout(() => setMessage({ type: '', text: '' }), 3000)
           setSaving(false)
           return
         }
       }
 
-      // Then update the editable fields and status
+      // Then update only remarks, document, and status (users cannot edit other fields)
       const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
         method: 'PUT',
         headers: {
@@ -155,10 +123,6 @@ function UserFormDetail() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          checks_performed: editableFields.checks_performed,
-          effective_or_not_effective: editableFields.effective_or_not_effective,
-          done: editableFields.done,
-          findings: editableFields.findings,
           doc_uploaded_by_user: documentPath,
           remarks_by_user: remarksByUser,
           status: 'sent for approval'
@@ -168,7 +132,11 @@ function UserFormDetail() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        setMessage({ type: 'success', text: 'Form sent for approval successfully' })
+        const successMessage = formData?.status === 'Rejected' 
+          ? 'Form resubmitted for approval successfully' 
+          : 'Form sent for approval successfully'
+        setMessage({ type: 'success', text: successMessage })
+        toast.success(successMessage)
         // Clear selected file
         setSelectedFile(null)
         setFileName('')
@@ -176,12 +144,16 @@ function UserFormDetail() {
         fetchFormData()
         setTimeout(() => setMessage({ type: '', text: '' }), 3000)
       } else {
-        setMessage({ type: 'error', text: data.message || 'Failed to send for approval' })
+        const errorMessage = data.message || 'Failed to send for approval'
+        setMessage({ type: 'error', text: errorMessage })
+        toast.error(errorMessage)
         setTimeout(() => setMessage({ type: '', text: '' }), 3000)
       }
     } catch (error) {
       console.error('Error sending for approval:', error)
-      setMessage({ type: 'error', text: 'Error sending for approval' })
+      const errorMessage = 'Error sending for approval'
+      setMessage({ type: 'error', text: errorMessage })
+      toast.error(errorMessage)
       setTimeout(() => setMessage({ type: '', text: '' }), 3000)
     } finally {
       setSaving(false)
@@ -270,12 +242,16 @@ function UserFormDetail() {
   // Fields to exclude from display
   const excludedFields = ['id', 'form_id', 'company_identifier', 'created_at', 'active', 'status', 'reason_by_approver']
 
-  // Editable fields list
-  const editableFieldKeys = ['checks_performed', 'effective_or_not_effective', 'done', 'findings']
+  // Editable fields list - users can only edit remarks_by_user
+  const editableFieldKeys = ['remarks_by_user']
 
-  // Check if form is sent for approval
+  // Check if form is sent for approval, approved, or rejected
   const isSentForApproval = formData?.status === 'sent for approval'
-  const isEditable = !isSentForApproval
+  const isApproved = formData?.status === 'Approved'
+  const isRejected = formData?.status === 'Rejected'
+  // Form is editable if status is not 'sent for approval' or 'Approved'
+  // If status is 'Rejected', user can edit and resubmit
+  const isEditable = !isSentForApproval && !isApproved
 
   if (loading) {
     return (
@@ -314,10 +290,8 @@ function UserFormDetail() {
     )
   }
 
-  const isActive = formData?.active && formData.active !== '' && formData.active !== '0'
-
   // Sort fields according to fieldOrder
-  const sortedFields = fieldOrder.filter(key => 
+  const sortedFields = fieldOrder.filter(key =>
     formData.hasOwnProperty(key) && !excludedFields.includes(key)
   )
 
@@ -332,12 +306,12 @@ function UserFormDetail() {
           </Alert>
         )}
 
-        <Typography 
-          variant="h4" 
-          component="h1" 
-          sx={{ 
-            fontWeight: 700, 
-            textAlign: 'center', 
+        <Typography
+          variant="h4"
+          component="h1"
+          sx={{
+            fontWeight: 700,
+            textAlign: 'center',
             mb: 4,
             color: 'text.primary'
           }}
@@ -351,8 +325,9 @@ function UserFormDetail() {
               <Card>
                 <CardContent sx={{ p: 3 }}>
                   <div className="space-y-6">
-                    {/* Form Status (Read-only for users) */}
-                    <div>
+
+                    {/* Status */}
+                    <Box sx={{ pt: 1, borderColor: 'divider' }}>
                       <Typography
                         variant="body2"
                         component="label"
@@ -363,19 +338,12 @@ function UserFormDetail() {
                           color: 'text.primary'
                         }}
                       >
-                        Form Status
+                        Status
                       </Typography>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
-                          color: isActive ? '#10b981' : '#ef4444',
-                          fontWeight: 600
-                        }}
-                      >
-                        {isActive ? 'Active' : 'Inactive'}
+                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                        {formData?.status || '-'}
                       </Typography>
-                    </div>
-
+                    </Box>
                     {/* Creation Time */}
                     <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
                       <Typography
@@ -395,25 +363,6 @@ function UserFormDetail() {
                       </Typography>
                     </Box>
 
-                    {/* Status */}
-                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Status
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {formData?.status || '-'}
-                      </Typography>
-                    </Box>
-
                     {/* Reason by Approver */}
                     <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
                       <Typography
@@ -428,9 +377,9 @@ function UserFormDetail() {
                       >
                         Reason by Approver
                       </Typography>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
+                      <Typography
+                        variant="body2"
+                        sx={{
                           color: 'text.secondary',
                           wordBreak: 'break-word'
                         }}
@@ -454,7 +403,10 @@ function UserFormDetail() {
                             textTransform: 'none',
                           }}
                         >
-                          {saving ? 'Sending...' : 'Send for Approval'}
+                          {saving 
+                            ? (isRejected ? 'Resubmitting...' : 'Sending...') 
+                            : (isRejected ? 'Resubmit for Approval' : 'Send for Approval')
+                          }
                         </Button>
                       </Box>
                     )}
@@ -487,7 +439,51 @@ function UserFormDetail() {
                     const isEmpty = value === null || value === undefined || value === ''
                     const isEditableField = editableFieldKeys.includes(key)
 
-                    // Special handling for doc_uploaded_by_user
+                    // Editable fields - only remarks_by_user is editable by users
+                    if (isEditableField && isEditable) {
+                      // Only remarks_by_user is editable
+                      const fieldValue = remarksByUser
+                      const handleChange = (e) => setRemarksByUser(e.target.value)
+
+                      return (
+                        <Box
+                          key={key}
+                          sx={{
+                            pb: 3,
+                            borderBottom: '1px solid',
+                            borderColor: 'divider',
+                            gridColumn: {
+                              xs: '1',
+                              md: '1 / -1'
+                            },
+                          }}
+                        >
+                          <TextField
+                            label={label}
+                            variant="outlined"
+                            value={fieldValue}
+                            onChange={handleChange}
+                            fullWidth
+                            multiline={key === 'remarks_by_user'}
+                            rows={key === 'remarks_by_user' ? 4 : 1}
+                            disabled={!isEditable}
+                            sx={{
+                              '& .MuiOutlinedInput-root': {
+                                backgroundColor: 'transparent',
+                                '&:hover': {
+                                  backgroundColor: 'transparent',
+                                },
+                                '&.Mui-focused': {
+                                  backgroundColor: 'transparent',
+                                },
+                              },
+                            }}
+                          />
+                        </Box>
+                      )
+                    }
+
+                    // Special handling for doc_uploaded_by_user (but in normal grid layout)
                     if (key === 'doc_uploaded_by_user') {
                       // Extract filename from path
                       const getFileName = (path) => {
@@ -506,12 +502,14 @@ function UserFormDetail() {
                             pb: 3,
                             borderBottom: '1px solid',
                             borderColor: 'divider',
-                            gridColumn: { xs: '1', md: '1' },
+                            '&:last-child': {
+                              borderBottom: 'none',
+                            },
                           }}
                         >
                           <Typography
                             variant="caption"
-                            component="label"
+                            component="dt"
                             sx={{
                               display: 'block',
                               fontWeight: 700,
@@ -531,20 +529,23 @@ function UserFormDetail() {
                                 sx={{
                                   color: 'text.secondary',
                                   wordBreak: 'break-word',
-                                  mb: 1
+                                  lineHeight: 1.6,
+                                  fontSize: theme.typography.customSizes.medium,
                                 }}
                               >
                                 {currentFileName}
                               </Typography>
                             )}
                             {selectedFile && (
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <Typography
                                   variant="body2"
                                   sx={{
                                     color: 'text.secondary',
                                     flex: 1,
-                                    wordBreak: 'break-word'
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.6,
+                                    fontSize: theme.typography.customSizes.medium,
                                   }}
                                 >
                                   {fileName}
@@ -564,7 +565,8 @@ function UserFormDetail() {
                                 variant="body2"
                                 sx={{
                                   color: 'text.disabled',
-                                  mb: 1
+                                  lineHeight: 1.6,
+                                  fontSize: theme.typography.customSizes.medium,
                                 }}
                               >
                                 No document selected
@@ -584,7 +586,8 @@ function UserFormDetail() {
                                   color="secondary"
                                   sx={{
                                     border: '1px solid',
-                                    borderColor: 'divider'
+                                    borderColor: 'divider',
+                                    mt: 0.5
                                   }}
                                 >
                                   <AttachFileIcon />
@@ -596,60 +599,11 @@ function UserFormDetail() {
                       )
                     }
 
-                    // Special handling for remarks_by_user (editable field)
-                    if (key === 'remarks_by_user') {
-                      return (
-                        <Box
-                          key={key}
-                          sx={{
-                            pb: 3,
-                            borderBottom: '1px solid',
-                            borderColor: 'divider',
-                            gridColumn: { xs: '1', md: '2' },
-                          }}
-                        >
-                          <TextField
-                            label={label}
-                            variant="filled"
-                            value={remarksByUser}
-                            onChange={(e) => setRemarksByUser(e.target.value)}
-                            fullWidth
-                            multiline
-                            rows={4}
-                            disabled={!isEditable}
-                            placeholder="Enter your remarks..."
-                          />
-                        </Box>
-                      )
-                    }
+                    // Read-only fields (including editable fields when form is not editable)
+                    // Always use formData values for read-only display (saved database values)
+                    const displayValue = value
+                    const isEmptyDisplay = displayValue === null || displayValue === undefined || displayValue === ''
 
-                    // Editable fields
-                    if (isEditableField && isEditable) {
-                      return (
-                        <Box
-                          key={key}
-                          sx={{
-                            pb: 3,
-                            borderBottom: '1px solid',
-                            borderColor: 'divider',
-                            gridColumn: { xs: '1', md: key === 'findings' ? '1 / -1' : '1' },
-                          }}
-                        >
-                          <TextField
-                            label={label}
-                            variant="filled"
-                            value={editableFields[key]}
-                            onChange={(e) => handleFieldChange(key, e.target.value)}
-                            fullWidth
-                            multiline={key === 'findings'}
-                            rows={key === 'findings' ? 4 : 1}
-                            disabled={!isEditable}
-                          />
-                        </Box>
-                      )
-                    }
-
-                    // Read-only fields
                     return (
                       <Box
                         key={key}
@@ -681,13 +635,13 @@ function UserFormDetail() {
                           variant="body2"
                           component="dd"
                           sx={{
-                            color: isEmpty ? 'text.disabled' : 'text.secondary',
+                            color: isEmptyDisplay ? 'text.disabled' : 'text.secondary',
                             wordBreak: 'break-word',
                             lineHeight: 1.6,
                             fontSize: theme.typography.customSizes.medium,
                           }}
                         >
-                          {isEmpty ? '-' : String(value)}
+                          {isEmptyDisplay ? '-' : String(displayValue)}
                         </Typography>
                       </Box>
                     )

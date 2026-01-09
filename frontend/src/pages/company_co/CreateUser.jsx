@@ -1,38 +1,19 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Siteadmin_navbar'
+import Navbar from '../../components/Global_navbar'
+import { useUserLogout } from '../../hooks/useUserLogout'
 import Button from '@mui/material/Button'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 
 function CreateUser() {
   const theme = useTheme()
-  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/user/logout', {
-        method: 'POST',
-        credentials: 'include',
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        navigate('/user/login')
-      } else {
-        navigate('/user/login')
-      }
-    } catch (error) {
-      console.error('Logout error:', error)
-      navigate('/user/login')
-    }
-  }
+  const handleLogout = useUserLogout()
 
   const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/

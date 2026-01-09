@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import Navbar from '../../components/Siteadmin_navbar'
+import Navbar from '../../components/Global_navbar'
+import { useUserLogout } from '../../hooks/useUserLogout'
 
 function User_dashboard() {
-  const navigate = useNavigate()
   const [userRole, setUserRole] = useState(null)
   const [userEmail, setUserEmail] = useState(null)
   const [forms, setForms] = useState([])
@@ -73,32 +72,10 @@ function User_dashboard() {
   }
 
   const handleFormClick = (formId) => {
-    navigate(`/user/form/${formId}`)
+    window.open(`/user/form/${formId}`, '_blank')
   }
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/user/logout', {
-        method: 'POST',
-        credentials: 'include', // Important: sends cookies
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        // Redirect to login page
-        navigate('/user/login')
-      } else {
-        console.error('Logout failed:', data.message)
-        // Still redirect to login even if logout API fails
-        navigate('/user/login')
-      }
-    } catch (error) {
-      console.error('Logout error:', error)
-      // Still redirect to login even if there's an error
-      navigate('/user/login')
-    }
-  }
+  const handleLogout = useUserLogout()
 
   return (
     <div className="min-h-screen bg-primary">
@@ -134,16 +111,12 @@ function User_dashboard() {
                       Process
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Created At
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {forms.map((form, index) => {
-                    const isActive = form.active && form.active !== '' && form.active !== '0'
                     return (
                       <tr
                         key={form.id}
@@ -158,17 +131,6 @@ function User_dashboard() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                           {form.process || 'N/A'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              isActive
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {isActive ? 'Active' : 'Inactive'}
-                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                           {form.created_at

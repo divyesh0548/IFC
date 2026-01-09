@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { normalizeColumnName } = require('../utils/column_mapping');
+const { uploadFileToS3 } = require('../utils/s3Upload');
+
+console.log('✅ control_forms.js module loaded successfully');
 
 // Function to generate a random 15-character alphanumeric string
 function generateFormId() {
@@ -53,13 +56,28 @@ async function generateUniqueFormId(client) {
 
 const router = express.Router();
 
+// Test route to verify routes are working (no auth required)
+router.get('/test-route', (req, res) => {
+  console.log('🧪 TEST ROUTE HIT - Routes are working!');
+  console.log('Request path:', req.path);
+  console.log('Request method:', req.method);
+  res.json({ success: true, message: 'Test route is working!', timestamp: new Date().toISOString() });
+});
+
 // Database connection pool
+const dbHost = process.env.DB_HOST || 'localhost';
+const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
+
 const pool = new Pool({
   user: process.env.DB_USER || 'divyesh',
-  host: process.env.DB_HOST || 'localhost',
+  host: dbHost,
   database: process.env.DB_NAME || 'ifc_dev',
   password: String(process.env.DB_PASSWORD || '0548'),
   port: parseInt(process.env.DB_PORT || '5432', 10),
+  // Enable SSL for remote connections (AWS RDS requires SSL)
+  ssl: isLocalhost ? false : {
+    rejectUnauthorized: false
+  }
 });
 
 // Set timezone to IST for all connections
@@ -79,18 +97,8 @@ if (!fs.existsSync(userDocsDir)) {
   fs.mkdirSync(userDocsDir, { recursive: true });
 }
 
-// Configure multer for Excel file uploads (disk storage)
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir);
-  },
-  filename: function (req, file, cb) {
-    // Generate unique filename with timestamp
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
-  }
-});
+// Configure multer for Excel file uploads (memory storage for S3 upload)
+const storage = multer.memoryStorage();
 
 // Configure multer for user document uploads
 const userDocsStorage = multer.diskStorage({
@@ -123,9 +131,9 @@ const upload = multer({
   }
 });
 
-// Multer for user document uploads (accepts all file types)
+// Multer for user document uploads (memory storage for S3 upload)
 const uploadUserDoc = multer({
-  storage: userDocsStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
 
@@ -158,12 +166,16 @@ function decryptToken(encryptedToken) {
   }
 }
 
-// Middleware to verify authentication
+// Middleware to verify authentication (supports both user and approver tokens)
 async function verifyAuth(req, res, next) {
+  
   try {
-    const token = req.cookies.userAuthToken || req.cookies.authToken;
+    const token = req.cookies.userAuthToken || req.cookies.authToken || req.cookies.approverAuthToken;
+    
+    console.log('Token found:', !!token);
     
     if (!token) {
+      console.error('❌ No token found in cookies');
       return res.status(401).json({
         success: false,
         message: 'Authentication required'
@@ -172,8 +184,10 @@ async function verifyAuth(req, res, next) {
 
     const decoded = decryptToken(token);
     req.user = decoded;
+    console.log('✅ Token verified successfully, user:', decoded.email_id);
     next();
   } catch (error) {
+    console.error('❌ Token verification failed:', error.message);
     return res.status(401).json({
       success: false,
       message: 'Token verification failed'
@@ -221,7 +235,7 @@ function transformExcelData(excelRows) {
   });
 }
 
-// Bulk upload - Save file and record in excel_files table (processed = 0)
+// Bulk upload - Upload file to S3 and record in excel_files table (processed = 0)
 router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({
@@ -245,10 +259,15 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
       companyIdentifier = userResult.rows[0].company_identifier;
     }
 
-    // Save file info to excel_files table with processed = 0 and company_identifier
-    const filePath = req.file.path;
     const fileName = req.file.originalname;
+    const fileBuffer = req.file.buffer;
 
+    // Upload file to S3
+    console.log(`Uploading file to S3: ${fileName}`);
+    const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/control_form_excel_files');
+    console.log(`File uploaded to S3 with key: ${s3Key}`);
+
+    // Save S3 key to excel_files table with processed = 0 and company_identifier
     const insertFileQuery = `
       INSERT INTO excel_files (file_path, file_name, processed, company_identifier)
       VALUES ($1, $2, 0, $3)
@@ -256,7 +275,7 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
     `;
 
     const fileResult = await client.query(insertFileQuery, [
-      filePath,
+      s3Key, // Store S3 key instead of local file path
       fileName,
       companyIdentifier
     ]);
@@ -267,25 +286,17 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
       success: true,
       message: 'File uploaded successfully. It will be processed automatically within 1 minute.',
       fileId: fileResult.rows[0].id,
-      fileName: fileName
+      fileName: fileName,
+      s3Key: s3Key
     });
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error saving file:', error);
-    
-    // Delete uploaded file if database insert fails
-    if (req.file && req.file.path) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (unlinkError) {
-        console.error('Error deleting file:', unlinkError);
-      }
-    }
+    console.error('Error uploading file to S3:', error);
     
     res.status(500).json({
       success: false,
-      message: 'Error saving file information',
+      message: 'Error uploading file to S3',
       error: error.message
     });
   } finally {
@@ -345,6 +356,75 @@ router.get('/', verifyAuth, async (req, res) => {
   }
 });
 
+// Download user uploaded document (for approver) - MUST be before /:form_id route
+router.get('/download-document', verifyAuth, async (req, res) => {
+  try {
+    let { path: filePath } = req.query;
+
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        message: 'File path is required'
+      });
+    }
+
+    // Decode the file path (in case it was encoded by the frontend)
+    try {
+      filePath = decodeURIComponent(filePath);
+    } catch (decodeError) {
+      // If decoding fails, use the original path
+      console.warn('[Download Endpoint] Failed to decode file path, using original:', decodeError);
+    }
+
+    // Download from S3
+    const { downloadFileFromS3 } = require('../utils/s3Upload');
+    
+    console.log(`[Download Endpoint] Request received - Path (raw): ${req.query.path}`);
+    console.log(`[Download Endpoint] Request received - Path (decoded): ${filePath}`);
+    
+    try {
+      console.log(`[Download Endpoint] Starting download from S3: ${filePath}`);
+      const fileBuffer = await downloadFileFromS3(filePath);
+      
+      // Extract filename from S3 key
+      const fileName = path.basename(filePath);
+      
+      console.log(`[Download Endpoint] File downloaded successfully, sending to client`);
+      
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${fileName}"`
+      );
+      res.setHeader('Content-Type', 'application/octet-stream');
+      
+      res.send(fileBuffer);
+    } catch (error) {
+      console.error('[Download Endpoint] Error downloading from S3:', error);
+      console.error('[Download Endpoint] Error message:', error.message);
+      
+      // Return 404 if file not found, otherwise 500
+      const statusCode = error.message.includes('not found') || error.message.includes('NoSuchKey') ? 404 : 500;
+      
+      console.error(`[Download Endpoint] Returning status ${statusCode} with error: ${error.message}`);
+      
+      return res.status(statusCode).json({
+        success: false,
+        message: 'Error downloading document from S3',
+        error: error.message
+      });
+    }
+
+  } catch (error) {
+    console.error('Download error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Error downloading document'
+      });
+    }
+  }
+});
+
 // Get single control form by form_id
 router.get('/:form_id', verifyAuth, async (req, res) => {
   try {
@@ -376,7 +456,7 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
 // Update single control form by form_id
 router.put('/:form_id', verifyAuth, async (req, res) => {
   const { form_id } = req.params;
-  const {
+const {
     description_of_control, process, sub_process, risk_description,
     whether_fraud_risks_exist, control_objective, control_to_address,
     mrc_or_not, source_data_report_logic_report_parameters,
@@ -392,6 +472,28 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
 
   try {
     await client.query('BEGIN');
+
+    // Check if user is an approver (only approvers can edit checks_performed, effective_or_not_effective, done, findings)
+    const isApprover = !!req.cookies.approverAuthToken;
+    
+    // Fields that only approvers can update
+    const approverOnlyFields = ['checks_performed', 'effective_or_not_effective', 'done', 'findings'];
+    
+    // If user is not an approver, remove approver-only fields from the update
+    if (!isApprover) {
+      // Check if user is trying to update approver-only fields
+      const attemptedApproverFields = approverOnlyFields.filter(field => 
+        req.body[field] !== undefined
+      );
+      
+      if (attemptedApproverFields.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to update these fields. Only approvers can update: checks_performed, effective_or_not_effective, done, findings'
+        });
+      }
+    }
 
     // Build dynamic update query - exclude created_at to preserve original timestamp
     const updateFields = [];
@@ -411,6 +513,11 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     };
 
     Object.keys(fieldsToUpdate).forEach(field => {
+      // Skip approver-only fields if user is not an approver
+      if (!isApprover && approverOnlyFields.includes(field)) {
+        return;
+      }
+      
       if (fieldsToUpdate[field] !== undefined) {
         updateFields.push(`${field} = $${paramIndex}`);
         updateValues.push(fieldsToUpdate[field]);
@@ -576,10 +683,15 @@ router.post('/:form_id/upload-document', verifyAuth, uploadUserDoc.single('docum
   try {
     await client.query('BEGIN');
 
-    // Save relative path (from uploads folder)
-    const relativePath = path.relative(path.join(__dirname, '..', 'uploads'), req.file.path);
+    const fileName = req.file.originalname;
+    const fileBuffer = req.file.buffer;
+
+    // Upload file to S3
+    console.log(`Uploading user document to S3: ${fileName}`);
+    const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/user_docs');
+    console.log(`User document uploaded to S3 with key: ${s3Key}`);
     
-    // Update the form with the document path
+    // Update the form with the S3 key
     const updateQuery = `
       UPDATE control_forms
       SET doc_uploaded_by_user = $1
@@ -587,18 +699,10 @@ router.post('/:form_id/upload-document', verifyAuth, uploadUserDoc.single('docum
       RETURNING *;
     `;
 
-    const result = await client.query(updateQuery, [relativePath, form_id]);
+    const result = await client.query(updateQuery, [s3Key, form_id]);
 
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
-      // Delete uploaded file if form not found
-      if (req.file && req.file.path) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (unlinkError) {
-          console.error('Error deleting file:', unlinkError);
-        }
-      }
       return res.status(404).json({
         success: false,
         message: 'Control form not found'
@@ -613,32 +717,24 @@ router.post('/:form_id/upload-document', verifyAuth, uploadUserDoc.single('docum
       data: {
         form_id: result.rows[0].form_id,
         doc_uploaded_by_user: result.rows[0].doc_uploaded_by_user,
-        file_name: req.file.originalname
+        file_name: fileName
       }
     });
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error uploading document:', error);
-    
-    // Delete uploaded file on error
-    if (req.file && req.file.path) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (unlinkError) {
-        console.error('Error deleting file:', unlinkError);
-      }
-    }
+    console.error('Error uploading document to S3:', error);
     
     res.status(500).json({
       success: false,
-      message: 'Error uploading document',
+      message: 'Error uploading document to S3',
       error: error.message
     });
   } finally {
     client.release();
   }
 });
+
 
 module.exports = router;
 

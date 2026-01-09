@@ -12,6 +12,7 @@ import Alert from '@mui/material/Alert'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
+import { toast } from 'react-hot-toast'
 
 function Auditor_Login() {
   const theme = useTheme()
@@ -45,14 +46,19 @@ function Auditor_Login() {
       if (response.ok && data.success) {
         // Login successful - token is stored in httpOnly cookie
         console.log('Login successful:', data.user)
+        toast.success('Login successful!')
         // Redirect to dashboard
         navigate('/auditor/dashboard')
       } else {
-        setError(data.message || 'Login failed')
+        const errorMessage = data.message || 'Login failed'
+        setError(errorMessage)
+        toast.error(errorMessage)
       }
     } catch (err) {
       console.error('Login error:', err)
-      setError('Network error. Please try again.')
+      const errorMessage = 'Network error. Please try again.'
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }

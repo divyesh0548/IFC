@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Siteadmin_navbar'
+import Navbar from '../../components/Global_navbar'
+import { useUserLogout } from '../../hooks/useUserLogout'
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
@@ -44,25 +45,7 @@ function FormDetail() {
     }
   }
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/user/logout', {
-        method: 'POST',
-        credentials: 'include',
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        window.location.href = '/user/login'
-      } else {
-        window.location.href = '/user/login'
-      }
-    } catch (error) {
-      console.error('Logout error:', error)
-      window.location.href = '/user/login'
-    }
-  }
+  const handleLogout = useUserLogout()
 
   const handleToggleActive = async () => {
     if (!formData) return
@@ -245,53 +228,32 @@ function FormDetail() {
           <div className="w-full lg:w-1/4 pr-6">
             <div className="sticky top-4">
               <Card>
-                <CardContent sx={{ p: 3 }}>
-                  <div className="space-y-6">
-                    {/* Active/Inactive Toggle Button */}
-                    <div>
+                <CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div className="space-y-6" style={{ flex: 1 }}>
+                    {/* Form Status - Text Display */}
+                    <Box>
                       <Typography
                         variant="body2"
                         component="label"
                         sx={{
                           display: 'block',
                           fontWeight: 700,
-                          mb: 2,
+                          mb: 1,
                           color: 'text.primary'
                         }}
                       >
                         Form Status
                       </Typography>
-                      <Button
-                        onClick={handleToggleActive}
-                        disabled={updating}
-                        fullWidth
-                        variant="contained"
-                        sx={{
-                          py: 1.5,
-                          fontWeight: 600,
-                          textTransform: 'none',
-                          ...(isActive ? {
-                            backgroundColor: '#10b981',
-                            color: '#ffffff',
-                            '&:hover': {
-                              backgroundColor: '#059669',
-                            },
-                          } : {
-                            backgroundColor: '#ef4444',
-                            color: '#ffffff',
-                            '&:hover': {
-                              backgroundColor: '#dc2626',
-                            },
-                          }),
-                          ...(updating && {
-                            opacity: 0.6,
-                            cursor: 'not-allowed',
-                          }),
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          color: isActive ? '#10b981' : '#ef4444',
+                          fontWeight: 600
                         }}
                       >
-                        {updating ? 'Updating...' : (isActive ? '✓ Active' : '✗ Inactive')}
-                      </Button>
-                    </div>
+                        {isActive ? 'Active' : 'Inactive'}
+                      </Typography>
+                    </Box>
 
                     {/* Creation Time */}
                     <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
@@ -356,6 +318,40 @@ function FormDetail() {
                       </Typography>
                     </Box>
                   </div>
+
+                  {/* Toggle Button at Bottom */}
+                  <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Button
+                      onClick={handleToggleActive}
+                      disabled={updating}
+                      fullWidth
+                      variant="contained"
+                      sx={{
+                        py: 1.5,
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        ...(isActive ? {
+                          backgroundColor: '#10b981',
+                          color: '#ffffff',
+                          '&:hover': {
+                            backgroundColor: '#059669',
+                          },
+                        } : {
+                          backgroundColor: '#ef4444',
+                          color: '#ffffff',
+                          '&:hover': {
+                            backgroundColor: '#dc2626',
+                          },
+                        }),
+                        ...(updating && {
+                          opacity: 0.6,
+                          cursor: 'not-allowed',
+                        }),
+                      }}
+                    >
+                      {updating ? 'Updating...' : (isActive ? 'Set Inactive' : 'Set Active')}
+                    </Button>
+                  </Box>
                 </CardContent>
               </Card>
             </div>

@@ -1,46 +1,36 @@
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useRef } from 'react'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Siteadmin_navbar'
+import { useNavigate } from 'react-router-dom'
+import Navbar from '../../components/Global_navbar'
+import { useUserLogout } from '../../hooks/useUserLogout'
 import Button from '@mui/material/Button'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
+import Paper from '@mui/material/Paper'
+import Typography from '@mui/material/Typography'
+import IconButton from '@mui/material/IconButton'
+import CloudUploadIcon from '@mui/icons-material/CloudUpload'
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
+import DeleteIcon from '@mui/icons-material/Delete'
 
 function ExcelUpload() {
   const theme = useTheme()
   const navigate = useNavigate()
+  const fileInputRef = useRef(null)
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [preview, setPreview] = useState(null)
+  const [isDragging, setIsDragging] = useState(false)
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/user/logout', {
-        method: 'POST',
-        credentials: 'include',
-      })
+  const handleLogout = useUserLogout()
 
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        navigate('/user/login')
-      } else {
-        navigate('/user/login')
-      }
-    } catch (error) {
-      console.error('Logout error:', error)
-      navigate('/user/login')
-    }
-  }
-
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0]
-    
+  const validateAndSetFile = (selectedFile) => {
     if (!selectedFile) {
       setFile(null)
       setPreview(null)
-      return
+      return false
     }
 
     // Validate file type
@@ -54,7 +44,7 @@ function ExcelUpload() {
       setError('Invalid file type. Please upload an Excel file (.xlsx, .xls) or CSV file.')
       setFile(null)
       setPreview(null)
-      return
+      return false
     }
 
     // Validate file size (10MB limit)
@@ -62,17 +52,55 @@ function ExcelUpload() {
       setError('File size exceeds 10MB limit.')
       setFile(null)
       setPreview(null)
-      return
+      return false
     }
 
     setFile(selectedFile)
     setError('')
     setSuccess('')
     setPreview({
-      name: selectedFile.name,
-      size: (selectedFile.size / 1024).toFixed(2) + ' KB',
-      type: selectedFile.type
+      name: selectedFile.name
     })
+    return true
+  }
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0]
+    validateAndSetFile(selectedFile)
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+
+    const droppedFile = e.dataTransfer.files[0]
+    validateAndSetFile(droppedFile)
+  }
+
+  const handleFileSelect = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleRemoveFile = () => {
+    setFile(null)
+    setPreview(null)
+    setError('')
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -132,37 +160,89 @@ function ExcelUpload() {
               Upload Control Forms from Excel
             </h1>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* File Input */}
-              <div>
-                <label htmlFor="excelFile" className="block text-sm font-medium text-secondary mb-2">
-                  Select Excel File (.xlsx, .xls, or .csv)
-                </label>
-                <input
-                  type="file"
-                  id="excelFile"
-                  name="excelFile"
-                  accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
-                  onChange={handleFileChange}
-                  disabled={loading}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  required
-                />
-                <p className="mt-2 text-sm text-gray-500">
-                  Maximum file size: 10MB. Supported formats: .xlsx, .xls, .csv
-                </p>
-              </div>
+            <form onSubmit={handleSubmit}>
+              {/* Hidden File Input */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                id="excelFile"
+                name="excelFile"
+                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                onChange={handleFileChange}
+                disabled={loading}
+                style={{ display: 'none' }}
+                required
+              />
 
-              {/* File Preview */}
-              {preview && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h3 className="text-sm font-medium text-secondary mb-2">Selected File:</h3>
-                  <ul className="text-sm text-gray-600 space-y-1">
-                    <li><strong>Name:</strong> {preview.name}</li>
-                    <li><strong>Size:</strong> {preview.size}</li>
-                    <li><strong>Type:</strong> {preview.type}</li>
-                  </ul>
-                </div>
+              {/* MUI File Upload Area */}
+              {!preview ? (
+                <Paper
+                  elevation={isDragging ? 4 : 1}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={handleFileSelect}
+                  sx={{
+                    p: 4,
+                    mb: 3,
+                    border: 1,
+                    borderColor: isDragging ? theme.palette.secondary.main : 'divider',
+                    borderStyle: 'dashed',
+                    borderRadius: 1,
+                    textAlign: 'center',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    backgroundColor: isDragging ? 'action.hover' : 'background.paper',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      backgroundColor: loading ? 'background.paper' : 'action.hover',
+                      borderColor: loading ? 'divider' : theme.palette.secondary.main,
+                    },
+                  }}
+                >
+                  <CloudUploadIcon
+                    sx={{
+                      fontSize: 48,
+                      color: theme.palette.secondary.main,
+                      mb: 2,
+                    }}
+                  />
+                  <Typography variant="body1" color="textSecondary">
+                    Click to upload or drag and drop
+                  </Typography>
+                </Paper>
+              ) : (
+                <Paper
+                  elevation={1}
+                  sx={{
+                    p: 2.5,
+                    mb: 3,
+                    border: 1,
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                      <InsertDriveFileIcon
+                        sx={{
+                          fontSize: 32,
+                          color: theme.palette.secondary.main,
+                        }}
+                      />
+                      <Typography variant="body1" fontWeight="medium">
+                        {preview.name}
+                      </Typography>
+                    </Box>
+                    <IconButton
+                      onClick={handleRemoveFile}
+                      disabled={loading}
+                      size="small"
+                      sx={{ ml: 2 }}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </Box>
+                </Paper>
               )}
 
               {/* Error Message */}

@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 
 export function useSiteadminLogout() {
   const navigate = useNavigate()
@@ -13,17 +14,20 @@ export function useSiteadminLogout() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        // Redirect to login page
-        navigate('/siteadmin/login')
+        toast.success('Logged out successfully')
+        // Redirect to home page
+        navigate('/')
       } else {
         console.error('Logout failed:', data.message)
-        // Still redirect to login even if logout API fails
-        navigate('/siteadmin/login')
+        toast.error(data.message || 'Logout failed')
+        // Still redirect to home page even if logout API fails
+        navigate('/')
       }
     } catch (error) {
       console.error('Logout error:', error)
-      // Still redirect to login even if there's an error
-      navigate('/siteadmin/login')
+      toast.error('Error during logout')
+      // Still redirect to home page even if there's an error
+      navigate('/')
     }
   }
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Navbar from '../../components/Siteadmin_navbar'
+import Navbar from '../../components/Global_navbar'
+import { useApproverLogout } from '../../hooks/useApproverLogout'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -60,11 +61,11 @@ function ApproverDashboard() {
       let url = 'http://localhost:3000/api/approver/control-forms'
       
       if (filter === 'pending') {
-        url = 'http://localhost:3000/api/approver/pending-approvals'
+        url += '?status=sent for approval'
       } else if (filter === 'approved') {
-        url += '?approved_rejected=Approved'
+        url += '?status=Approved'
       } else if (filter === 'rejected') {
-        url += '?approved_rejected=Rejected'
+        url += '?status=Rejected'
       }
 
       const response = await fetch(url, {
@@ -100,26 +101,7 @@ function ApproverDashboard() {
     window.open(`/approver/form/${formId}`, '_blank')
   }
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/approver/logout', {
-        method: 'POST',
-        credentials: 'include',
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        navigate('/approver/login')
-      } else {
-        console.error('Logout failed:', data.message)
-        navigate('/approver/login')
-      }
-    } catch (error) {
-      console.error('Logout error:', error)
-      navigate('/approver/login')
-    }
-  }
+  const handleLogout = useApproverLogout()
 
   const formsToDisplay = filter === 'pending' ? pendingForms : allForms
 
@@ -133,17 +115,6 @@ function ApproverDashboard() {
         {/* Filter Buttons */}
         <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
           <Button
-            onClick={() => setFilter('pending')}
-            variant={filter === 'pending' ? 'contained' : 'outlined'}
-            color={filter === 'pending' ? 'secondary' : 'inherit'}
-            sx={{
-              minWidth: '100px',
-              textTransform: 'none',
-            }}
-          >
-            Pending
-          </Button>
-          <Button
             onClick={() => setFilter('all')}
             variant={filter === 'all' ? 'contained' : 'outlined'}
             color={filter === 'all' ? 'secondary' : 'inherit'}
@@ -153,6 +124,17 @@ function ApproverDashboard() {
             }}
           >
             All
+          </Button>
+          <Button
+            onClick={() => setFilter('pending')}
+            variant={filter === 'pending' ? 'contained' : 'outlined'}
+            color={filter === 'pending' ? 'secondary' : 'inherit'}
+            sx={{
+              minWidth: '100px',
+              textTransform: 'none',
+            }}
+          >
+            Pending
           </Button>
           <Button
             onClick={() => setFilter('approved')}
@@ -209,10 +191,10 @@ function ApproverDashboard() {
                   <TableBody>
                     {formsToDisplay.map((form, index) => {
                       const isActive = form.active && form.active !== '' && form.active !== '0'
-                      const approvalStatus = form.approved_rejected || 'Pending'
-                      const isPending = !form.approved_rejected || form.approved_rejected === ''
-                      const isApproved = form.approved_rejected === 'Approved'
-                      const isRejected = form.approved_rejected === 'Rejected'
+                      const approvalStatus = form.status || 'Pending'
+                      const isPending = !form.status || form.status === '' || form.status === 'sent for approval'
+                      const isApproved = form.status === 'Approved'
+                      const isRejected = form.status === 'Rejected'
                       
                       return (
                         <TableRow
