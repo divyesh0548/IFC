@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Global_navbar'
-import { useUserLogout } from '../../hooks/useUserLogout'
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Button from '@mui/material/Button';
-import Box from '@mui/material/Box';
+import Button from '@mui/material/Button'
+import Box from '@mui/material/Box'
+import Paper from '@mui/material/Paper'
+import Typography from '@mui/material/Typography'
 
 function Company_Co_dashboard() {
   const theme = useTheme()
+  const navigate = useNavigate()
   const [userRole, setUserRole] = useState(null)
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
   const [forms, setForms] = useState([])
@@ -84,61 +83,42 @@ function Company_Co_dashboard() {
     }
   }
 
-  const handleLogout = useUserLogout()
-
   const handleFormClick = (formId) => {
-    window.open(`/company_co/form/${formId}`, '_blank')
+    navigate(`/company_co/form/${formId}`)
   }
 
   return (
-    <div className="min-h-screen bg-primary">
-      <Navbar onLogout={handleLogout} header="Company Coordinator Dashboard" />
-
-      {/* Dashboard Content */}
-      <div className="container mx-auto px-4 py-8">
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mb: 4 }}>
-          {/* Create User Button */}
-          <Button
-            component={Link}
-            to="/company_co/create-user"
-            variant="contained"
-            color="secondary"
-            sx={{
-              px: 3,
-              py: 1.5,
-              fontSize: theme.typography.customSizes.medium,
-              fontWeight: 500,
-              textTransform: 'none',
-            }}
-          >
-            Create New User
-          </Button>
-
-          {/* Upload Excel Button */}
-          <Button
-            component={Link}
-            to="/company_co/upload-excel"
-            variant="contained"
-            color="secondary"
-            sx={{
-              px: 3,
-              py: 1.5,
-              fontSize: theme.typography.customSizes.medium,
-              fontWeight: 500,
-              textTransform: 'none',
-            }}
-          >
-            Upload Control Forms (Excel)
-          </Button>
-        </Box>
-
+    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 2, py: 4 }}>
         {/* Forms Section */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-secondary mb-4 sm:mb-0">Control Forms</h2>
+        <Paper 
+          elevation={3}
+          sx={{
+            p: 3,
+            backgroundColor: theme.palette.background.paper,
+            borderRadius: 2,
+          }}
+        >
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: { xs: 'column', sm: 'row' }, 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            mb: 3 
+          }}>
+            <Typography 
+              variant="h5" 
+              component="h2"
+              sx={{ 
+                fontWeight: 700, 
+                color: theme.palette.secondary.main,
+                mb: { xs: 2, sm: 0 }
+              }}
+            >
+              Control Forms
+            </Typography>
             
             {/* Filter Options */}
-            <div className="flex gap-2">
+            <Box sx={{ display: 'flex', gap: 1 }}>
               <Button
                 onClick={() => setFilterActive('all')}
                 variant={filterActive === 'all' ? 'contained' : 'outlined'}
@@ -154,11 +134,11 @@ function Company_Co_dashboard() {
                     },
                   }),
                   ...(filterActive !== 'all' && {
-                    borderColor: '#d1d5db',
-                    color: '#374151',
+                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
+                    color: theme.palette.text.primary,
                     '&:hover': {
-                      borderColor: '#9ca3af',
-                      backgroundColor: '#f3f4f6',
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#f3f4f6',
                     },
                   }),
                 }}
@@ -180,11 +160,11 @@ function Company_Co_dashboard() {
                     },
                   }),
                   ...(filterActive !== 'active' && {
-                    borderColor: '#d1d5db',
-                    color: '#374151',
+                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
+                    color: theme.palette.text.primary,
                     '&:hover': {
-                      borderColor: '#9ca3af',
-                      backgroundColor: '#f3f4f6',
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#f3f4f6',
                     },
                   }),
                 }}
@@ -206,94 +186,231 @@ function Company_Co_dashboard() {
                     },
                   }),
                   ...(filterActive !== 'inactive' && {
-                    borderColor: '#d1d5db',
-                    color: '#374151',
+                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
+                    color: theme.palette.text.primary,
                     '&:hover': {
-                      borderColor: '#9ca3af',
-                      backgroundColor: '#f3f4f6',
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#f3f4f6',
                     },
                   }),
                 }}
               >
                 Inactive
               </Button>
-            </div>
-          </div>
+            </Box>
+          </Box>
 
           {loading ? (
-            <div className="text-center py-8">
-              <p className="text-secondary">Loading forms...</p>
-            </div>
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography color="text.secondary">Loading forms...</Typography>
+            </Box>
           ) : forms.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-secondary">No forms found.</p>
-            </div>
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography color="text.secondary">No forms found.</Typography>
+            </Box>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <Box sx={{ overflowX: 'auto' }}>
+              <Box
+                component="table"
+                sx={{
+                  minWidth: '100%',
+                  borderCollapse: 'collapse',
+                  '& th, & td': {
+                    borderBottom: `1px solid ${theme.palette.divider}`,
+                  },
+                }}
+              >
+                <Box
+                  component="thead"
+                  sx={{
+                    backgroundColor: theme.palette.mode === 'dark' 
+                      ? 'rgba(255, 255, 255, 0.05)' 
+                      : '#f9fafb',
+                  }}
+                >
+                  <Box component="tr">
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
                       #
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
                       Description
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
                       Process
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
                       Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
                       Created At
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                    </Box>
+                  </Box>
+                </Box>
+                <Box component="tbody">
                   {forms.map((form, index) => {
                     const isActive = form.active && form.active !== '' && form.active !== '0'
                     return (
-                      <tr
+                      <Box
+                        component="tr"
                         key={form.id}
                         onClick={() => handleFormClick(form.form_id)}
-                        className="hover:bg-gray-50 cursor-pointer transition-colors"
+                        sx={{
+                          cursor: 'pointer',
+                          transition: 'background-color 0.2s',
+                          '&:hover': {
+                            backgroundColor: theme.palette.mode === 'dark' 
+                              ? 'rgba(255, 255, 255, 0.05)' 
+                              : '#f9fafb',
+                          },
+                        }}
                       >
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700">
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
+                            fontSize: '0.875rem',
+                            fontWeight: 500,
+                            color: theme.palette.text.primary,
+                          }}
+                        >
                           {index + 1}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-700">
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          }}
+                        >
                           {form.description_of_control || 'N/A'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          }}
+                        >
                           {form.process || 'N/A'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              isActive
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <Box
+                            component="span"
+                            sx={{
+                              px: 1,
+                              py: 0.5,
+                              display: 'inline-flex',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              borderRadius: '9999px',
+                              backgroundColor: isActive
+                                ? (theme.palette.mode === 'dark' ? 'rgba(34, 197, 94, 0.2)' : '#d1fae5')
+                                : (theme.palette.mode === 'dark' ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2'),
+                              color: isActive
+                                ? (theme.palette.mode === 'dark' ? '#4ade80' : '#065f46')
+                                : (theme.palette.mode === 'dark' ? '#f87171' : '#991b1b'),
+                            }}
                           >
                             {isActive ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          </Box>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          }}
+                        >
                           {form.created_at
                             ? new Date(form.created_at).toLocaleDateString()
                             : 'N/A'}
-                        </td>
-                      </tr>
+                        </Box>
+                      </Box>
                     )
                   })}
-                </tbody>
-              </table>
-            </div>
+                </Box>
+              </Box>
+            </Box>
           )}
-        </div>
-      </div>
-    </div>
+        </Paper>
+      </Box>
   )
 }
 

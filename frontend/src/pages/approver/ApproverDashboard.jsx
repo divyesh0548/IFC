@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Navbar from '../../components/Global_navbar'
-import { useApproverLogout } from '../../hooks/useApproverLogout'
+import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -17,6 +16,7 @@ import Paper from '@mui/material/Paper'
 import Chip from '@mui/material/Chip'
 
 function ApproverDashboard() {
+  const theme = useTheme()
   const navigate = useNavigate()
   const [approver, setApprover] = useState(null)
   const [pendingForms, setPendingForms] = useState([])
@@ -98,19 +98,13 @@ function ApproverDashboard() {
   }
 
   const handleFormClick = (formId) => {
-    window.open(`/approver/form/${formId}`, '_blank')
+    navigate(`/approver/form/${formId}`)
   }
-
-  const handleLogout = useApproverLogout()
 
   const formsToDisplay = filter === 'pending' ? pendingForms : allForms
 
   return (
-    <div className="min-h-screen bg-primary">
-      <Navbar onLogout={handleLogout} header="Approver Dashboard" />
-
-      {/* Dashboard Content */}
-      <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8">
 
         {/* Filter Buttons */}
         <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
@@ -179,7 +173,7 @@ function ApproverDashboard() {
               <TableContainer component={Paper} elevation={0}>
                 <Table>
                   <TableHead>
-                    <TableRow sx={{ backgroundColor: '#f8f9fa' }}>
+                    <TableRow sx={{ backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : '#f8f9fa' }}>
                       <TableCell sx={{ fontWeight: 600 }}>#</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Description</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Process</TableCell>
@@ -248,7 +242,6 @@ function ApproverDashboard() {
           </CardContent>
         </Card>
       </div>
-    </div>
   )
 }
 

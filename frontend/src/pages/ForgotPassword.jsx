@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
+import Paper from '@mui/material/Paper'
+import Typography from '@mui/material/Typography'
 import TextField from '@mui/material/TextField'
 import Alert from '@mui/material/Alert'
 
@@ -60,12 +62,37 @@ function ForgotPassword() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-primary px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-secondary mb-8 text-center">
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: theme.palette.background.default,
+        px: 2,
+      }}
+    >
+      <Box sx={{ width: '100%', maxWidth: '448px' }}>
+        <Paper
+          elevation={3}
+          sx={{
+            p: 4,
+            backgroundColor: theme.palette.background.paper,
+            borderRadius: 2,
+          }}
+        >
+          <Typography
+            variant="h4"
+            component="h1"
+            sx={{
+              fontWeight: 700,
+              color: theme.palette.secondary.main,
+              mb: 4,
+              textAlign: 'center',
+            }}
+          >
             Forgot Password
-          </h1>
+          </Typography>
           
           {error && (
             <Alert severity="error" sx={{ mb: 3 }}>
@@ -131,9 +158,9 @@ function ForgotPassword() {
               </Button>
             </Box>
           </form>
-        </div>
-      </div>
-    </div>
+        </Paper>
+      </Box>
+    </Box>
   )
 }
 

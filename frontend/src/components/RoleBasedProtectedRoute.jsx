@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 
 function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
@@ -6,8 +6,15 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
   const [userRole, setUserRole] = useState(null)
   const [loading, setLoading] = useState(true)
   const location = useLocation()
+  const hasVerifiedRef = useRef(false)
 
   useEffect(() => {
+    // Only verify on initial mount, not on every route change
+    // Skip verification if we've already verified successfully
+    if (hasVerifiedRef.current) {
+      return
+    }
+
     const verifyToken = async () => {
       setLoading(true)
       try {
@@ -23,6 +30,7 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
           setIsAuthenticated(true)
           setUserRole(data.user.role)
           setLoading(false)
+          hasVerifiedRef.current = true
           return
         }
 
@@ -38,23 +46,28 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
           setIsAuthenticated(true)
           setUserRole('siteadmin') // Siteadmin doesn't have role in token, so set it explicitly
           setLoading(false)
+          hasVerifiedRef.current = true
           return
         }
 
         // Both verifications failed
         setIsAuthenticated(false)
         setUserRole(null)
+        hasVerifiedRef.current = false
       } catch (error) {
         console.error('Token verification error:', error)
         setIsAuthenticated(false)
         setUserRole(null)
+        hasVerifiedRef.current = false
       } finally {
         setLoading(false)
       }
     }
 
     verifyToken()
-  }, [location.pathname])
+    // Only verify on mount, not on every pathname change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (loading) {
     return (

@@ -1,8 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Global_navbar'
-import { useSiteadminLogout } from '../../hooks/useSiteadminLogout'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
@@ -210,20 +208,8 @@ function CompanyCreation() {
     }
   }
 
-  const handleLogout = useSiteadminLogout()
-
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        backgroundColor: 'background.default',
-        overflowY: 'auto',
-        overflowX: 'hidden',
-      }}
-    >
-      <Navbar onLogout={handleLogout} header='Admin Dashboard' />
-
-      <Box sx={{ maxWidth: '896px', mx: 'auto', px: 2, py: 4 }}>
+    <Box sx={{ maxWidth: '896px', mx: 'auto', px: 2, py: 4 }}>
         <Card elevation={3}>
           <CardContent sx={{ p: 4 }}>
             <Typography
@@ -449,7 +435,6 @@ function CompanyCreation() {
           </CardContent>
         </Card>
       </Box>
-    </Box>
   )
 }
 

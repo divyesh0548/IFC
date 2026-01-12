@@ -65,9 +65,9 @@ function Siteadmin_Login() {
   }
 
   const handleForgotPassword = () => {
-    // Handle forgot password logic here
-    console.log('Forgot password clicked')
-    // You can navigate to forgot password page or show a modal
+    // Pass email as URL parameter if it exists
+    const emailParam = email_id ? `?email=${encodeURIComponent(email_id)}` : ''
+    navigate(`/forgot-password${emailParam}`)
   }
 
   return (
@@ -116,6 +116,18 @@ function Siteadmin_Login() {
                   disabled={loading}
                   placeholder="Enter your email"
                   fullWidth
+                  sx={{
+                    '& input:-webkit-autofill': {
+                      WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                      WebkitTextFillColor: theme.palette.text.primary,
+                    },
+                    '& input:-webkit-autofill:hover': {
+                      WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                    },
+                    '& input:-webkit-autofill:focus': {
+                      WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                    },
+                  }}
                 />
 
                 <TextField
@@ -129,6 +141,18 @@ function Siteadmin_Login() {
                   disabled={loading}
                   placeholder="Enter your password"
                   fullWidth
+                  sx={{
+                    '& input:-webkit-autofill': {
+                      WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                      WebkitTextFillColor: theme.palette.text.primary,
+                    },
+                    '& input:-webkit-autofill:hover': {
+                      WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                    },
+                    '& input:-webkit-autofill:focus': {
+                      WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                    },
+                  }}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
@@ -178,10 +202,28 @@ function Siteadmin_Login() {
                   fontSize: theme.typography.customSizes.medium,
                   fontWeight: 600,
                   textTransform: 'none',
+                  mb: 2,
                 }}
               >
                 {loading ? 'Logging in...' : 'Login'}
               </Button>
+
+              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                <Button
+                  variant="text"
+                  onClick={() => navigate('/')}
+                  sx={{
+                    textTransform: 'none',
+                    color: theme.palette.text.primary,
+                    '&:hover': {
+                      backgroundColor: 'transparent',
+                      textDecoration: 'underline',
+                    },
+                  }}
+                >
+                  Back
+                </Button>
+              </Box>
             </form>
           </CardContent>
         </Card>

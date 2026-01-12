@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+const { logAuditEvent } = require('../utils/auditLog');
 
 const router = express.Router();
 
@@ -322,6 +323,10 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     } else {
       console.warn(`⚠️  No process owner email found for form ${form_id}, email not sent`);
     }
+
+    // Log audit event for form approval/rejection
+    const action = status === 'Approved' ? 'Form Approved' : 'Form Rejected';
+    await logAuditEvent(action, approver.email_id, form_id);
 
     res.status(200).json({
       success: true,

@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Global_navbar'
-import { useSiteadminLogout } from '../../hooks/useSiteadminLogout'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -14,7 +12,6 @@ import Alert from '@mui/material/Alert'
 
 function Siteadmin_dashboard() {
   const theme = useTheme()
-  const handleLogout = useSiteadminLogout()
   const [companies, setCompanies] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -62,12 +59,10 @@ function Siteadmin_dashboard() {
     <Box
       sx={{
         minHeight: '100vh',
-        backgroundColor: '#f8f9fa',
+        backgroundColor: theme.palette.background.default,
       }}
     >
-      <Navbar onLogout={handleLogout} header='Admin Dashboard' />
-
-      {/* Dashboard Content */}
+        {/* Dashboard Content */}
       <Box
         sx={{
           maxWidth: '1400px',
@@ -85,7 +80,7 @@ function Siteadmin_dashboard() {
             mb: 4,
             pb: 3,
             borderBottom: '1px solid',
-            borderColor: '#e0e0e0',
+            borderColor: theme.palette.divider,
             flexDirection: { xs: 'column', sm: 'row' },
             gap: 3,
           }}
@@ -96,7 +91,7 @@ function Siteadmin_dashboard() {
               component="h1"
               sx={{
                 fontWeight: 600,
-                color: '#212121',
+                color: theme.palette.text.primary,
                 mb: 0.75,
                 fontSize: { xs: '1.375rem', sm: '1.5rem' },
                 letterSpacing: '-0.02em',
@@ -107,7 +102,7 @@ function Siteadmin_dashboard() {
             <Typography
               variant="body2"
               sx={{
-                color: '#757575',
+                color: theme.palette.text.secondary,
                 fontSize: '0.875rem',
                 fontWeight: 400,
               }}
@@ -165,8 +160,11 @@ function Siteadmin_dashboard() {
           <Card
             sx={{
               borderRadius: '4px',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-              border: '1px solid #e0e0e0',
+              boxShadow: theme.palette.mode === 'dark' 
+                ? '0 1px 3px rgba(0,0,0,0.3)' 
+                : '0 1px 3px rgba(0,0,0,0.12)',
+              border: `1px solid ${theme.palette.divider}`,
+              backgroundColor: theme.palette.background.paper,
             }}
           >
             <CardContent sx={{ py: 6, px: 4 }}>
@@ -174,7 +172,7 @@ function Siteadmin_dashboard() {
                 variant="body1"
                 sx={{
                   textAlign: 'center',
-                  color: '#757575',
+                  color: theme.palette.text.secondary,
                   fontSize: '0.9375rem',
                   fontWeight: 400,
                 }}
@@ -193,13 +191,19 @@ function Siteadmin_dashboard() {
                     display: 'flex',
                     flexDirection: 'column',
                     borderRadius: '4px',
-                    border: '1px solid #e0e0e0',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+                    border: `1px solid ${theme.palette.divider}`,
+                    boxShadow: theme.palette.mode === 'dark' 
+                      ? '0 1px 3px rgba(0,0,0,0.3)' 
+                      : '0 1px 3px rgba(0,0,0,0.12)',
                     transition: 'all 0.2s ease-in-out',
-                    backgroundColor: '#ffffff',
+                    backgroundColor: theme.palette.background.paper,
                     '&:hover': {
-                      borderColor: '#bdbdbd',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                      borderColor: theme.palette.mode === 'dark' 
+                        ? 'rgba(255, 255, 255, 0.3)' 
+                        : '#bdbdbd',
+                      boxShadow: theme.palette.mode === 'dark' 
+                        ? '0 4px 12px rgba(0,0,0,0.5)' 
+                        : '0 4px 12px rgba(0,0,0,0.15)',
                     },
                   }}
                 >
@@ -211,10 +215,10 @@ function Siteadmin_dashboard() {
                       sx={{
                         fontWeight: 600,
                         mb: 2.5,
-                        color: '#212121',
+                        color: theme.palette.text.primary,
                         fontSize: '1.125rem',
                         lineHeight: 1.4,
-                        borderBottom: '1px solid #f0f0f0',
+                        borderBottom: `1px solid ${theme.palette.divider}`,
                         pb: 2,
                         letterSpacing: '-0.01em',
                       }}
@@ -229,7 +233,7 @@ function Siteadmin_dashboard() {
                           variant="caption"
                           sx={{
                             fontWeight: 500,
-                            color: '#757575',
+                            color: theme.palette.text.secondary,
                             fontSize: '0.75rem',
                             textTransform: 'uppercase',
                             letterSpacing: '0.5px',
@@ -242,7 +246,7 @@ function Siteadmin_dashboard() {
                         <Typography
                           variant="body2"
                           sx={{
-                            color: '#212121',
+                            color: theme.palette.text.primary,
                             fontSize: '0.875rem',
                             fontWeight: 500,
                             fontFamily: 'monospace',
@@ -258,7 +262,7 @@ function Siteadmin_dashboard() {
                           variant="caption"
                           sx={{
                             fontWeight: 500,
-                            color: '#757575',
+                            color: theme.palette.text.secondary,
                             fontSize: '0.75rem',
                             textTransform: 'uppercase',
                             letterSpacing: '0.5px',
@@ -271,7 +275,7 @@ function Siteadmin_dashboard() {
                         <Typography
                           variant="body2"
                           sx={{
-                            color: '#212121',
+                            color: theme.palette.text.primary,
                             fontSize: '0.875rem',
                             wordBreak: 'break-word',
                             lineHeight: 1.5,
@@ -286,7 +290,7 @@ function Siteadmin_dashboard() {
                           variant="caption"
                           sx={{
                             fontWeight: 500,
-                            color: '#757575',
+                            color: theme.palette.text.secondary,
                             fontSize: '0.75rem',
                             textTransform: 'uppercase',
                             letterSpacing: '0.5px',
@@ -299,7 +303,7 @@ function Siteadmin_dashboard() {
                         <Typography
                           variant="body2"
                           sx={{
-                            color: '#212121',
+                            color: theme.palette.text.primary,
                             fontSize: '0.875rem',
                             lineHeight: 1.5,
                           }}

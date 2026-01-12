@@ -328,6 +328,79 @@ def create_appover_table(cursor):
     
     create_table_with_constraint(cursor, 'appover', create_table_query, 'appover_pkey', add_constraint_query)
 
+def create_audit_logs_table(cursor):
+    """Creates the audit_logs table if it doesn't exist."""
+    print("\n[audit_logs]")
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.audit_logs (
+        id serial NOT NULL,
+        timestamp timestamp without time zone NULL DEFAULT (
+            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+        ),
+        action character varying(255) NULL,
+        user_email_id character varying(255) NULL
+    );
+    """
+    
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'audit_logs_pkey'
+        ) THEN
+            ALTER TABLE public.audit_logs
+            ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+    
+    create_table_with_constraint(cursor, 'audit_logs', create_table_query, 'audit_logs_pkey', add_constraint_query)
+
+def column_exists(cursor, table_name, column_name):
+    """
+    Checks if a column exists in a table.
+    Returns True if column exists, False otherwise.
+    """
+    cursor.execute("""
+        SELECT EXISTS (
+            SELECT FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = %s
+            AND column_name = %s
+        );
+    """, (table_name, column_name))
+    return cursor.fetchone()[0]
+
+def alter_audit_logs_add_form_id(cursor):
+    """Adds form_id column to audit_logs table if it doesn't exist."""
+    print("\n[audit_logs - Adding form_id column]")
+    
+    if column_exists(cursor, 'audit_logs', 'form_id'):
+        print("  ⚠️  Column 'form_id' already exists in 'audit_logs' table. Skipping.")
+    else:
+        print("  Adding column 'form_id' to 'audit_logs' table...")
+        cursor.execute("""
+            ALTER TABLE public.audit_logs
+            ADD COLUMN form_id character varying(255) NULL;
+        """)
+        print("  ✓ Column 'form_id' added successfully!")
+
+def alter_excel_files_add_coordinator_email_id(cursor):
+    """Adds coordinator_email_id column to excel_files table if it doesn't exist."""
+    print("\n[excel_files - Adding coordinator_email_id column]")
+    
+    if column_exists(cursor, 'excel_files', 'coordinator_email_id'):
+        print("  ⚠️  Column 'coordinator_email_id' already exists in 'excel_files' table. Skipping.")
+    else:
+        print("  Adding column 'coordinator_email_id' to 'excel_files' table...")
+        cursor.execute("""
+            ALTER TABLE public.excel_files
+            ADD COLUMN coordinator_email_id character varying(255) NULL;
+        """)
+        print("  ✓ Column 'coordinator_email_id' added successfully!")
+
 def create_all_tables():
     """
     Main function that creates all tables in the database.
@@ -367,6 +440,9 @@ def create_all_tables():
         create_ifc_users_table(cursor)
         create_siteadmin_table(cursor)
         create_appover_table(cursor)
+        create_audit_logs_table(cursor)
+        alter_audit_logs_add_form_id(cursor)
+        alter_excel_files_add_coordinator_email_id(cursor)
         
         print("\n" + "=" * 70)
         print("✓ All tables processed successfully!")
@@ -667,12 +743,4 @@ def add_siteadmin_row(email_id, password):
             conn.close()
 
 if __name__ == "__main__":
-    # create_all_tables()
-    # Add an approver
-    result = add_appover_row("approver@example.com", "password123")
-    
-    # Add an auditor
-    result = add_auditor_row("auditor@example.com", "password123")
-    
-    # Add a site admin
-    result = add_siteadmin_row("admin@example.com", "password123")
+    create_all_tables()

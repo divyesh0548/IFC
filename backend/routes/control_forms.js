@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { normalizeColumnName } = require('../utils/column_mapping');
 const { uploadFileToS3 } = require('../utils/s3Upload');
+const { logAuditEvent } = require('../utils/auditLog');
 
 console.log('✅ control_forms.js module loaded successfully');
 
@@ -267,17 +268,18 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
     const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/control_form_excel_files');
     console.log(`File uploaded to S3 with key: ${s3Key}`);
 
-    // Save S3 key to excel_files table with processed = 0 and company_identifier
+    // Save S3 key to excel_files table with processed = 0, company_identifier, and coordinator_email_id
     const insertFileQuery = `
-      INSERT INTO excel_files (file_path, file_name, processed, company_identifier)
-      VALUES ($1, $2, 0, $3)
+      INSERT INTO excel_files (file_path, file_name, processed, company_identifier, coordinator_email_id)
+      VALUES ($1, $2, 0, $3, $4)
       RETURNING id;
     `;
 
     const fileResult = await client.query(insertFileQuery, [
       s3Key, // Store S3 key instead of local file path
       fileName,
-      companyIdentifier
+      companyIdentifier,
+      userEmail // coordinator_email_id
     ]);
 
     await client.query('COMMIT');
@@ -575,6 +577,11 @@ const {
     }
 
     await client.query('COMMIT');
+
+    // Log audit event if status is being set to 'sent for approval'
+    if (status === 'sent for approval' && req.user && req.user.email_id) {
+      await logAuditEvent('Sent for approval', req.user.email_id, form_id);
+    }
 
     res.status(200).json({
       success: true,

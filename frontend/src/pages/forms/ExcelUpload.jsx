@@ -1,10 +1,7 @@
 import React, { useState, useRef } from 'react'
 import { useTheme } from '@mui/material/styles'
 import { useNavigate } from 'react-router-dom'
-import Navbar from '../../components/Global_navbar'
-import { useUserLogout } from '../../hooks/useUserLogout'
 import Button from '@mui/material/Button'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
@@ -12,6 +9,7 @@ import IconButton from '@mui/material/IconButton'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import DeleteIcon from '@mui/icons-material/Delete'
+import { toast } from 'react-hot-toast'
 
 function ExcelUpload() {
   const theme = useTheme()
@@ -19,12 +17,8 @@ function ExcelUpload() {
   const fileInputRef = useRef(null)
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
   const [preview, setPreview] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
-
-  const handleLogout = useUserLogout()
 
   const validateAndSetFile = (selectedFile) => {
     if (!selectedFile) {
@@ -41,7 +35,7 @@ function ExcelUpload() {
     ]
 
     if (!validTypes.includes(selectedFile.type)) {
-      setError('Invalid file type. Please upload an Excel file (.xlsx, .xls) or CSV file.')
+      toast.error('Invalid file type. Please upload an Excel file (.xlsx, .xls) or CSV file.')
       setFile(null)
       setPreview(null)
       return false
@@ -49,15 +43,13 @@ function ExcelUpload() {
 
     // Validate file size (10MB limit)
     if (selectedFile.size > 10 * 1024 * 1024) {
-      setError('File size exceeds 10MB limit.')
+      toast.error('File size exceeds 10MB limit.')
       setFile(null)
       setPreview(null)
       return false
     }
 
     setFile(selectedFile)
-    setError('')
-    setSuccess('')
     setPreview({
       name: selectedFile.name
     })
@@ -97,7 +89,6 @@ function ExcelUpload() {
   const handleRemoveFile = () => {
     setFile(null)
     setPreview(null)
-    setError('')
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -105,11 +96,9 @@ function ExcelUpload() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError('')
-    setSuccess('')
 
     if (!file) {
-      setError('Please select a file to upload')
+      toast.error('Please select a file to upload')
       return
     }
 
@@ -128,37 +117,55 @@ function ExcelUpload() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        setSuccess(`Successfully imported ${data.count} control form(s)!`)
+        toast.success(`Successfully imported ${data.count} control form(s)!`)
         setFile(null)
         setPreview(null)
         // Reset file input
         e.target.reset()
-        
-        // Clear success message after 5 seconds
-        setTimeout(() => {
-          setSuccess('')
-        }, 5000)
       } else {
-        setError(data.message || 'Failed to upload file')
+        toast.error(data.message || 'Failed to upload file')
       }
     } catch (err) {
       console.error('Upload error:', err)
-      setError('Network error. Please try again.')
+      toast.error('Network error. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-primary">
-      <Navbar onLogout={handleLogout} header="Upload Control Forms from Excel" />
-
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-4 py-8">
-        <div className="w-full max-w-2xl">
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <h1 className="text-3xl font-bold text-secondary mb-6 text-center">
+    <Box 
+      sx={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        minHeight: 'calc(100vh - 4rem)', 
+        px: 2, 
+        py: 4 
+      }}
+    >
+        <Box sx={{ width: '100%', maxWidth: '800px' }}>
+          <Paper 
+            elevation={3}
+            sx={{
+              p: 4,
+              backgroundColor: theme.palette.background.paper,
+              borderRadius: 2,
+            }}
+          >
+            <Typography
+              variant="h4"
+              component="h1"
+              sx={{
+                fontWeight: 700,
+                color: theme.palette.secondary.main,
+                mb: 3,
+                textAlign: 'center',
+              }}
+            >
               Upload Control Forms from Excel
-            </h1>
+            </Typography>
 
             <form onSubmit={handleSubmit}>
               {/* Hidden File Input */}
@@ -245,31 +252,53 @@ function ExcelUpload() {
                 </Paper>
               )}
 
-              {/* Error Message */}
-              {error && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {error}
-                </Alert>
-              )}
-
-              {/* Success Message */}
-              {success && (
-                <Alert severity="success" sx={{ mb: 2 }}>
-                  {success}
-                </Alert>
-              )}
-
               {/* Instructions */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-blue-900 mb-2">Excel File Format Instructions:</h3>
-                <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+              <Box
+                sx={{
+                  p: 2,
+                  mb: 2,
+                  borderRadius: 1,
+                  backgroundColor: theme.palette.mode === 'dark' 
+                    ? 'rgba(3, 105, 161, 0.15)' 
+                    : 'rgba(3, 105, 161, 0.08)',
+                  border: `1px solid ${theme.palette.mode === 'dark' 
+                    ? 'rgba(3, 105, 161, 0.3)' 
+                    : 'rgba(3, 105, 161, 0.2)'}`,
+                }}
+              >
+                <Typography
+                  variant="subtitle2"
+                  sx={{
+                    fontWeight: 600,
+                    mb: 1,
+                    color: theme.palette.mode === 'dark' 
+                      ? theme.palette.secondary.light 
+                      : theme.palette.secondary.dark,
+                  }}
+                >
+                  Excel File Format Instructions:
+                </Typography>
+                <Box
+                  component="ul"
+                  sx={{
+                    m: 0,
+                    pl: 2.5,
+                    color: theme.palette.mode === 'dark' 
+                      ? theme.palette.text.secondary 
+                      : theme.palette.secondary.dark,
+                    '& li': {
+                      mb: 0.5,
+                      fontSize: '0.875rem',
+                    },
+                  }}
+                >
                   <li>First row should contain column headers</li>
                   <li>Column names should match the form fields (case-insensitive)</li>
                   <li>Each subsequent row represents one control form entry</li>
                   <li>Empty cells will be stored as null values</li>
                   <li>Supported column names include: Description of Control, Process, Sub-process, Risk Description, etc.</li>
-                </ul>
-              </div>
+                </Box>
+              </Box>
 
               {/* Submit Button */}
               <Button
@@ -293,27 +322,33 @@ function ExcelUpload() {
               <Button
                 type="button"
                 onClick={() => navigate('/company_co/dashboard')}
-                variant="contained"
+                variant="outlined"
                 fullWidth
                 sx={{
                   py: 1.5,
                   fontSize: theme.typography.customSizes.medium,
                   fontWeight: 600,
                   textTransform: 'none',
-                  backgroundColor: '#6b7280',
-                  color: '#ffffff',
+                  borderColor: theme.palette.mode === 'dark' 
+                    ? 'rgba(255, 255, 255, 0.23)' 
+                    : '#6b7280',
+                  color: theme.palette.text.primary,
                   '&:hover': {
-                    backgroundColor: '#4b5563',
+                    borderColor: theme.palette.mode === 'dark' 
+                      ? 'rgba(255, 255, 255, 0.3)' 
+                      : '#4b5563',
+                    backgroundColor: theme.palette.mode === 'dark' 
+                      ? 'rgba(255, 255, 255, 0.08)' 
+                      : 'rgba(107, 114, 128, 0.08)',
                   },
                 }}
               >
                 Back to Dashboard
               </Button>
             </form>
-          </div>
-        </div>
-      </div>
-    </div>
+          </Paper>
+        </Box>
+      </Box>
   )
 }
 

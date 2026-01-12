@@ -1,15 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Global_navbar'
-import { useUserLogout } from '../../hooks/useUserLogout'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
-import Alert from '@mui/material/Alert'
 import IconButton from '@mui/material/IconButton'
 import AttachFileIcon from '@mui/icons-material/AttachFile'
 import CloseIcon from '@mui/icons-material/Close'
@@ -21,7 +18,6 @@ function UserFormDetail() {
   const [formData, setFormData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [message, setMessage] = useState({ type: '', text: '' })
   const [saving, setSaving] = useState(false)
   const [selectedFile, setSelectedFile] = useState(null)
   const [fileName, setFileName] = useState('')
@@ -59,8 +55,6 @@ function UserFormDetail() {
     }
   }
 
-  const handleLogout = useUserLogout()
-
   // Removed handleFieldChange - users can only edit remarks_by_user
 
   const handleFileSelect = (e) => {
@@ -70,8 +64,6 @@ function UserFormDetail() {
     // Store the file for later upload
     setSelectedFile(file)
     setFileName(file.name)
-    setMessage({ type: 'info', text: `File "${file.name}" selected. It will be uploaded when you send for approval.` })
-    setTimeout(() => setMessage({ type: '', text: '' }), 3000)
 
     // Reset file input to allow selecting the same file again
     e.target.value = ''
@@ -83,8 +75,16 @@ function UserFormDetail() {
   }
 
   const handleSendForApproval = async () => {
+    // Validation: Check if document is uploaded (either existing or newly selected)
+    const hasExistingDocument = formData?.doc_uploaded_by_user && formData.doc_uploaded_by_user !== ''
+    const hasNewDocument = selectedFile !== null
+
+    if (!hasExistingDocument && !hasNewDocument) {
+      toast.error('Please upload a document before sending for approval')
+      return
+    }
+
     setSaving(true)
-    setMessage({ type: '', text: '' })
 
     try {
       // First, upload document if one is selected
@@ -104,12 +104,9 @@ function UserFormDetail() {
 
         if (uploadResponse.ok && uploadData.success) {
           documentPath = uploadData.data.doc_uploaded_by_user
-          toast.success('Document uploaded successfully')
         } else {
           const errorMessage = uploadData.message || 'Failed to upload document'
-          setMessage({ type: 'error', text: errorMessage })
           toast.error(errorMessage)
-          setTimeout(() => setMessage({ type: '', text: '' }), 3000)
           setSaving(false)
           return
         }
@@ -135,26 +132,20 @@ function UserFormDetail() {
         const successMessage = formData?.status === 'Rejected' 
           ? 'Form resubmitted for approval successfully' 
           : 'Form sent for approval successfully'
-        setMessage({ type: 'success', text: successMessage })
         toast.success(successMessage)
         // Clear selected file
         setSelectedFile(null)
         setFileName('')
         // Refresh form data
         fetchFormData()
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000)
       } else {
         const errorMessage = data.message || 'Failed to send for approval'
-        setMessage({ type: 'error', text: errorMessage })
         toast.error(errorMessage)
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000)
       }
     } catch (error) {
       console.error('Error sending for approval:', error)
       const errorMessage = 'Error sending for approval'
-      setMessage({ type: 'error', text: errorMessage })
       toast.error(errorMessage)
-      setTimeout(() => setMessage({ type: '', text: '' }), 3000)
     } finally {
       setSaving(false)
     }
@@ -255,23 +246,17 @@ function UserFormDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-primary">
-        <Navbar onLogout={handleLogout} header="Control Form" />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-          <p className="text-secondary text-lg">Loading form data...</p>
-        </div>
+      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+        <p className="text-secondary text-lg">Loading form data...</p>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-primary">
-        <Navbar onLogout={handleLogout} header="Control Form" />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-          <div className="bg-white rounded-xl shadow-lg p-8 max-w-md">
-            <p className="text-red-600 text-lg text-center">{error}</p>
-          </div>
+      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md">
+          <p className="text-red-600 text-lg text-center">{error}</p>
         </div>
       </div>
     )
@@ -279,12 +264,9 @@ function UserFormDetail() {
 
   if (!formData) {
     return (
-      <div className="min-h-screen bg-primary">
-        <Navbar onLogout={handleLogout} header="Control Form" />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-          <div className="bg-white rounded-xl shadow-lg p-8 max-w-md">
-            <p className="text-secondary text-lg text-center">Form not found</p>
-          </div>
+      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md">
+          <p className="text-secondary text-lg text-center">Form not found</p>
         </div>
       </div>
     )
@@ -296,16 +278,15 @@ function UserFormDetail() {
   )
 
   return (
-    <div className="min-h-screen bg-primary">
-      <Navbar onLogout={handleLogout} header="Control Form" />
-
-      <div className="w-full max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {message.text && (
-          <Alert severity={message.type === 'success' ? 'success' : 'error'} sx={{ mb: 3 }}>
-            {message.text}
-          </Alert>
-        )}
-
+    <Box
+        sx={{
+          width: '100%',
+          maxWidth: '1500px',
+          mx: 'auto',
+          px: { xs: 2, sm: 3, md: 4 },
+          py: 3,
+        }}
+      >
         <Typography
           variant="h4"
           component="h1"
@@ -318,10 +299,18 @@ function UserFormDetail() {
         >
           Control Form
         </Typography>
-        <div className="flex flex-col lg:flex-row">
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
           {/* Left Sidebar - 25% */}
-          <div className="w-full lg:w-1/4 pr-6">
-            <div className="sticky top-4">
+          <Box sx={{ width: { xs: '100%', lg: '25%' } }}>
+            <Box
+              sx={{
+                position: 'sticky',
+                top: { xs: 64, lg: 80 }, // Account for AppBar height (64px) + some padding
+                zIndex: 1,
+                maxHeight: { xs: 'calc(100vh - 64px)', lg: 'calc(100vh - 80px)' },
+                overflowY: 'auto',
+              }}
+            >
               <Card>
                 <CardContent sx={{ p: 3 }}>
                   <div className="space-y-6">
@@ -413,14 +402,21 @@ function UserFormDetail() {
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          </div>
+            </Box>
+          </Box>
 
           {/* Vertical Divider */}
-          <div className="hidden lg:block w-px bg-gray-300"></div>
+          <Box
+            sx={{
+              display: { xs: 'none', lg: 'block' },
+              width: '1px',
+              backgroundColor: 'divider',
+              alignSelf: 'stretch',
+            }}
+          />
 
           {/* Right Side - 75% */}
-          <div className="w-full lg:w-3/4 pl-6">
+          <Box sx={{ width: { xs: '100%', lg: '75%' }, flex: 1 }}>
             <Card>
               <CardContent sx={{ p: 4 }}>
                 <Box
@@ -649,10 +645,9 @@ function UserFormDetail() {
                 </Box>
               </CardContent>
             </Card>
-          </div>
-        </div>
-      </div>
-    </div>
+          </Box>
+        </Box>
+      </Box>
   )
 }
 

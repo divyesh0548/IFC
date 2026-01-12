@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+const { logAuditEvent } = require('../utils/auditLog');
 
 const router = express.Router();
 
@@ -189,6 +190,9 @@ router.post('/siteadmin/login', async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
 
+    // Log audit event for successful login
+    await logAuditEvent('Logged In', user.email_id);
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -259,19 +263,57 @@ router.get('/siteadmin/verify', async (req, res) => {
 });
 
 // Logout endpoint
-router.post('/siteadmin/logout', (req, res) => {
-  // Clear the httpOnly cookie - must match the same options used when setting it
-  res.clearCookie('authToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/' // Ensure cookie is cleared from all paths
-  });
+router.post('/siteadmin/logout', async (req, res) => {
+  try {
+    // Get user email from token before clearing cookie
+    const token = req.cookies.authToken;
+    let userEmail = null;
+    
+    if (token) {
+      try {
+        const decryptedToken = decryptToken(token);
+        const jwtSecret = process.env.JWT_SECRET;
+        if (jwtSecret) {
+          const decoded = jwt.verify(decryptedToken, jwtSecret);
+          userEmail = decoded.email_id;
+        }
+      } catch (error) {
+        // Token might be invalid/expired, but we still want to log logout attempt
+        console.warn('Could not decode token during logout:', error.message);
+      }
+    }
 
-  res.status(200).json({
-    success: true,
-    message: 'Logged out successfully'
-  });
+    // Log audit event for logout
+    if (userEmail) {
+      await logAuditEvent('Logged Out', userEmail);
+    }
+
+    // Clear the httpOnly cookie - must match the same options used when setting it
+    res.clearCookie('authToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/' // Ensure cookie is cleared from all paths
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Still clear cookie and return success even if logging fails
+    res.clearCookie('authToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  }
 });
 
 
@@ -351,6 +393,9 @@ router.post('/auditor/login', async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
 
+    // Log audit event for successful login
+    await logAuditEvent('Logged In', user.email_id);
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -421,19 +466,57 @@ router.get('/auditor/verify', async (req, res) => {
 });
 
 // Auditor Logout endpoint
-router.post('/auditor/logout', (req, res) => {
-  // Clear the httpOnly cookie - must match the same options used when setting it
-  res.clearCookie('auditorAuthToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/' // Ensure cookie is cleared from all paths
-  });
+router.post('/auditor/logout', async (req, res) => {
+  try {
+    // Get user email from token before clearing cookie
+    const token = req.cookies.auditorAuthToken;
+    let userEmail = null;
+    
+    if (token) {
+      try {
+        const decryptedToken = decryptToken(token);
+        const jwtSecret = process.env.JWT_SECRET;
+        if (jwtSecret) {
+          const decoded = jwt.verify(decryptedToken, jwtSecret);
+          userEmail = decoded.email_id;
+        }
+      } catch (error) {
+        // Token might be invalid/expired, but we still want to log logout attempt
+        console.warn('Could not decode token during logout:', error.message);
+      }
+    }
 
-  res.status(200).json({
-    success: true,
-    message: 'Logged out successfully'
-  });
+    // Log audit event for logout
+    if (userEmail) {
+      await logAuditEvent('Logged Out', userEmail);
+    }
+
+    // Clear the httpOnly cookie - must match the same options used when setting it
+    res.clearCookie('auditorAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/' // Ensure cookie is cleared from all paths
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Still clear cookie and return success even if logging fails
+    res.clearCookie('auditorAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  }
 });
 
 
@@ -510,6 +593,9 @@ router.post('/user/login', async (req, res) => {
       path: '/', // Available to all paths
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
+
+    // Log audit event for successful login
+    await logAuditEvent('Logged In', user.email_id);
 
     res.status(200).json({
       success: true,
@@ -598,19 +684,57 @@ router.get('/user/verify', async (req, res) => {
 });
 
 // User Logout endpoint
-router.post('/user/logout', (req, res) => {
-  // Clear the httpOnly cookie - must match the same options used when setting it
-  res.clearCookie('userAuthToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/' // Ensure cookie is cleared from all paths
-  });
+router.post('/user/logout', async (req, res) => {
+  try {
+    // Get user email from token before clearing cookie
+    const token = req.cookies.userAuthToken;
+    let userEmail = null;
+    
+    if (token) {
+      try {
+        const decryptedToken = decryptToken(token);
+        const jwtSecret = process.env.JWT_SECRET;
+        if (jwtSecret) {
+          const decoded = jwt.verify(decryptedToken, jwtSecret);
+          userEmail = decoded.email_id;
+        }
+      } catch (error) {
+        // Token might be invalid/expired, but we still want to log logout attempt
+        console.warn('Could not decode token during logout:', error.message);
+      }
+    }
 
-  res.status(200).json({
-    success: true,
-    message: 'Logged out successfully'
-  });
+    // Log audit event for logout
+    if (userEmail) {
+      await logAuditEvent('Logged Out', userEmail);
+    }
+
+    // Clear the httpOnly cookie - must match the same options used when setting it
+    res.clearCookie('userAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/' // Ensure cookie is cleared from all paths
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Still clear cookie and return success even if logging fails
+    res.clearCookie('userAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  }
 });
 
 
@@ -805,6 +929,9 @@ router.post('/approver/login', async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
 
+    // Log audit event for successful login
+    await logAuditEvent('Logged In', approver.email_id);
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -888,19 +1015,57 @@ router.get('/approver/verify', async (req, res) => {
 });
 
 // Approver Logout endpoint
-router.post('/approver/logout', (req, res) => {
-  // Clear the httpOnly cookie - must match the same options used when setting it
-  res.clearCookie('approverAuthToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/' // Ensure cookie is cleared from all paths
-  });
+router.post('/approver/logout', async (req, res) => {
+  try {
+    // Get user email from token before clearing cookie
+    const token = req.cookies.approverAuthToken;
+    let userEmail = null;
+    
+    if (token) {
+      try {
+        const decryptedToken = decryptToken(token);
+        const jwtSecret = process.env.JWT_SECRET;
+        if (jwtSecret) {
+          const decoded = jwt.verify(decryptedToken, jwtSecret);
+          userEmail = decoded.email_id;
+        }
+      } catch (error) {
+        // Token might be invalid/expired, but we still want to log logout attempt
+        console.warn('Could not decode token during logout:', error.message);
+      }
+    }
 
-  res.status(200).json({
-    success: true,
-    message: 'Logged out successfully'
-  });
+    // Log audit event for logout
+    if (userEmail) {
+      await logAuditEvent('Logged Out', userEmail);
+    }
+
+    // Clear the httpOnly cookie - must match the same options used when setting it
+    res.clearCookie('approverAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/' // Ensure cookie is cleared from all paths
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Still clear cookie and return success even if logging fails
+    res.clearCookie('approverAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  }
 });
 
 // Approver Forgot Password endpoint

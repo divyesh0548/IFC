@@ -23,6 +23,7 @@ import ApproverLogin from './pages/approver/ApproverLogin'
 import ApproverDashboard from './pages/approver/ApproverDashboard'
 import ApproverFormDetail from './pages/approver/ApproverFormDetail'
 import UserFormDetail from './pages/user/UserFormDetail'
+import DashboardLayout from './components/DashboardLayout'
 import { Toaster } from 'react-hot-toast';
 
 function App() {
@@ -48,105 +49,71 @@ function App() {
 {/* Siteadmin Routes */}
         <Route path="/siteadmin/login" element={<Siteadmin_Login />} />
         <Route 
-          path="/siteadmin/dashboard" 
+          path="/siteadmin/*" 
           element={
             <ProtectedRoute>
-              <Siteadmin_dashboard />
+              <DashboardLayout />
             </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/siteadmin/create-company" 
-          element={
-            <ProtectedRoute>
-              <CompanyCreation />
-            </ProtectedRoute>
-          } 
-        />
-
+          }
+        >
+          <Route path="dashboard" element={<Siteadmin_dashboard />} />
+          <Route path="create-company" element={<CompanyCreation />} />
+        </Route>
 
 {/* Auditor Routes */}
         <Route path="/auditor/login" element={<Auditor_Login />} />
         <Route 
-          path="/auditor/dashboard" 
+          path="/auditor/*" 
           element={
             <AuditorProtectedRoute>
-              <Auditor_dashboard />
+              <DashboardLayout />
             </AuditorProtectedRoute>
-          } 
-        />
+          }
+        >
+          <Route path="dashboard" element={<Auditor_dashboard />} />
+        </Route>
 
 {/* Approver Routes */}
         <Route path="/approver/login" element={<ApproverLogin />} />
         <Route 
-          path="/approver/dashboard" 
+          path="/approver/*" 
           element={
             <ApproverProtectedRoute>
-              <ApproverDashboard />
+              <DashboardLayout />
             </ApproverProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/approver/form/:form_id" 
-          element={
-            <ApproverProtectedRoute>
-              <ApproverFormDetail />
-            </ApproverProtectedRoute>
-          } 
-        />
-
+          }
+        >
+          <Route path="dashboard" element={<ApproverDashboard />} />
+          <Route path="form/:form_id" element={<ApproverFormDetail />} />
+        </Route>
 
 {/* User Routes */}
         <Route 
-          path="/user/dashboard" 
+          path="/user/*" 
           element={
             <RoleBasedProtectedRoute allowedRoles={['user']}>
-              <User_dashboard />
+              <DashboardLayout />
             </RoleBasedProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/user/form/:form_id" 
-          element={
-            <RoleBasedProtectedRoute allowedRoles={['user']}>
-              <UserFormDetail />
-            </RoleBasedProtectedRoute>
-          } 
-        />
+          }
+        >
+          <Route path="dashboard" element={<User_dashboard />} />
+          <Route path="form/:form_id" element={<UserFormDetail />} />
+        </Route>
 
       {/* Company Coordinator Routes */}
         <Route 
-          path="/company_co/dashboard" 
+          path="/company_co/*" 
           element={
             <RoleBasedProtectedRoute allowedRoles={['company_co']}>
-              <Company_Co_dashboard />
+              <DashboardLayout />
             </RoleBasedProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/company_co/create-user" 
-          element={
-            <RoleBasedProtectedRoute allowedRoles={['company_co']}>
-              <CreateUser />
-            </RoleBasedProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/company_co/upload-excel" 
-          element={
-            <RoleBasedProtectedRoute allowedRoles={['company_co']}>
-              <ExcelUpload />
-            </RoleBasedProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/company_co/form/:form_id" 
-          element={
-            <RoleBasedProtectedRoute allowedRoles={['company_co']}>
-              <FormDetail />
-            </RoleBasedProtectedRoute>
-          } 
-        />
+          }
+        >
+          <Route path="dashboard" element={<Company_Co_dashboard />} />
+          <Route path="create-user" element={<CreateUser />} />
+          <Route path="upload-excel" element={<ExcelUpload />} />
+          <Route path="form/:form_id" element={<FormDetail />} />
+        </Route>
         
       </Routes>
     </>

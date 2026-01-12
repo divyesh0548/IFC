@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { normalizeColumnName } = require('../utils/column_mapping');
 const { downloadFileFromS3 } = require('../utils/s3Upload');
+const { logAuditEvent } = require('../utils/auditLog');
 
 // Database connection pool
 const dbHost = process.env.DB_HOST || 'localhost';
@@ -354,7 +355,7 @@ async function processExcelFiles() {
   try {
     // Get all unprocessed files (processed = 0)
     const getUnprocessedQuery = `
-      SELECT id, file_path, file_name, company_identifier 
+      SELECT id, file_path, file_name, company_identifier, coordinator_email_id 
       FROM excel_files 
       WHERE processed = 0 
       ORDER BY id ASC;
@@ -375,12 +376,18 @@ async function processExcelFiles() {
       const filePath = file.file_path;
       const fileName = file.file_name;
       const companyIdentifier = file.company_identifier;
+      const coordinatorEmailId = file.coordinator_email_id;
 
       console.log(`Processing file: ${fileName} (ID: ${fileId})`);
       if (companyIdentifier) {
         console.log(`  Company Identifier: ${companyIdentifier}`);
       } else {
         console.log(`  Warning: No company_identifier found for this file`);
+      }
+      if (coordinatorEmailId) {
+        console.log(`  Coordinator Email: ${coordinatorEmailId}`);
+      } else {
+        console.log(`  Warning: No coordinator_email_id found for this file`);
       }
 
       try {
@@ -520,6 +527,11 @@ async function processExcelFiles() {
           // Insert row into database
           await client.query(insertQuery, values);
           insertedCount++;
+          
+          // Log audit event for control form creation
+          if (coordinatorEmailId) {
+            await logAuditEvent('Control form created', coordinatorEmailId, formId);
+          }
           
           // Log progress for every 10 rows
           if ((i + 1) % 10 === 0 || i === transformedData.length - 1) {

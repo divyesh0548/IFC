@@ -1,46 +1,10 @@
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
-import Navbar from '../../components/Global_navbar'
 import { toast } from 'react-hot-toast'
 
 function Auditor_dashboard() {
-  const navigate = useNavigate()
-
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/auditor/logout', {
-        method: 'POST',
-        credentials: 'include', // Important: sends cookies
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        toast.success('Logged out successfully')
-        // Redirect to home page
-        navigate('/')
-      } else {
-        console.error('Logout failed:', data.message)
-        toast.error(data.message || 'Logout failed')
-        // Still redirect to home page even if logout API fails
-        navigate('/')
-      }
-    } catch (error) {
-      console.error('Logout error:', error)
-      toast.error('Error during logout')
-      // Still redirect to home page even if there's an error
-      navigate('/')
-    }
-  }
-
   return (
-    <div className="min-h-screen bg-primary">
-      <Navbar onLogout={handleLogout} header="Auditor Dashboard" />
-
-      {/* Dashboard Content */}
-      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-        <h1 className="text-4xl font-bold text-secondary">Auditor Dashboard</h1>
-      </div>
+    <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+      <h1 className="text-4xl font-bold text-secondary">Auditor Dashboard</h1>
     </div>
   )
 }

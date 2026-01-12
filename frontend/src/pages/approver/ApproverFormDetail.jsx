@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Global_navbar'
-import { useApproverLogout } from '../../hooks/useApproverLogout'
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
@@ -68,8 +66,6 @@ function ApproverFormDetail() {
       setLoading(false)
     }
   }
-
-  const handleLogout = useApproverLogout()
 
   const handleFieldChange = (field, value) => {
     setEditableFields(prev => ({
@@ -329,23 +325,17 @@ function ApproverFormDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-primary">
-        <Navbar onLogout={handleLogout} header="Control Form" />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-          <p className="text-secondary text-lg">Loading form data...</p>
-        </div>
+      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+        <p className="text-secondary text-lg">Loading form data...</p>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-primary">
-        <Navbar onLogout={handleLogout} header="Control Form" />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-          <div className="bg-white rounded-xl shadow-lg p-8 max-w-md">
-            <p className="text-red-600 text-lg text-center">{error}</p>
-          </div>
+      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md">
+          <p className="text-red-600 text-lg text-center">{error}</p>
         </div>
       </div>
     )
@@ -353,12 +343,9 @@ function ApproverFormDetail() {
 
   if (!formData) {
     return (
-      <div className="min-h-screen bg-primary">
-        <Navbar onLogout={handleLogout} header="Control Form" />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-          <div className="bg-white rounded-xl shadow-lg p-8 max-w-md">
-            <p className="text-secondary text-lg text-center">Form not found</p>
-          </div>
+      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md">
+          <p className="text-secondary text-lg text-center">Form not found</p>
         </div>
       </div>
     )
@@ -370,10 +357,15 @@ function ApproverFormDetail() {
   const isRejected = formData?.status === 'Rejected'
 
   return (
-    <div className="min-h-screen bg-primary">
-      <Navbar onLogout={handleLogout} header="Control Form" />
-
-      <div className="w-full max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <Box
+        sx={{
+          width: '100%',
+          maxWidth: '1500px',
+          mx: 'auto',
+          px: { xs: 2, sm: 3, md: 4 },
+          py: 3,
+        }}
+      >
         <Typography 
           variant="h4" 
           component="h1" 
@@ -386,10 +378,18 @@ function ApproverFormDetail() {
         >
           Control Form
         </Typography>
-        <div className="flex flex-col lg:flex-row">
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
           {/* Left Sidebar - 25% */}
-          <div className="w-full lg:w-1/4 pr-6">
-            <div className="sticky top-4">
+          <Box sx={{ width: { xs: '100%', lg: '25%' } }}>
+            <Box
+              sx={{
+                position: 'sticky',
+                top: { xs: 64, lg: 80 }, // Account for AppBar height (64px) + some padding
+                zIndex: 1,
+                maxHeight: { xs: 'calc(100vh - 64px)', lg: 'calc(100vh - 80px)' },
+                overflowY: 'auto',
+              }}
+            >
               <Card>
                 <CardContent sx={{ p: 3 }}>
                   <div className="space-y-6">
@@ -483,14 +483,21 @@ function ApproverFormDetail() {
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          </div>
+            </Box>
+          </Box>
 
           {/* Vertical Divider */}
-          <div className="hidden lg:block w-px bg-gray-300"></div>
+          <Box
+            sx={{
+              display: { xs: 'none', lg: 'block' },
+              width: '1px',
+              backgroundColor: 'divider',
+              alignSelf: 'stretch',
+            }}
+          />
 
           {/* Right Side - 75% */}
-          <div className="w-full lg:w-3/4 pl-6">
+          <Box sx={{ width: { xs: '100%', lg: '75%' }, flex: 1 }}>
             <Card>
               <CardContent sx={{ p: 4 }}>
                 <Box
@@ -704,10 +711,9 @@ function ApproverFormDetail() {
                 </CardContent>
               </Card>
             )}
-          </div>
-        </div>
-      </div>
-    </div>
+          </Box>
+        </Box>
+      </Box>
   )
 }
 

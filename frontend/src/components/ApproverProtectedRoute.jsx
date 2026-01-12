@@ -1,12 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 
 function ApproverProtectedRoute({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(null)
   const [loading, setLoading] = useState(true)
   const location = useLocation()
+  const hasVerifiedRef = useRef(false)
 
   useEffect(() => {
+    // Only verify on initial mount, not on every route change
+    if (hasVerifiedRef.current) {
+      return
+    }
+
     const verifyToken = async () => {
       setLoading(true)
       try {
@@ -19,19 +25,24 @@ function ApproverProtectedRoute({ children }) {
 
         if (response.ok && data.success) {
           setIsAuthenticated(true)
+          hasVerifiedRef.current = true
         } else {
           setIsAuthenticated(false)
+          hasVerifiedRef.current = false
         }
       } catch (error) {
         console.error('Token verification error:', error)
         setIsAuthenticated(false)
+        hasVerifiedRef.current = false
       } finally {
         setLoading(false)
       }
     }
 
     verifyToken()
-  }, [location.pathname]) // Re-verify when route changes
+    // Only verify on mount, not on every pathname change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (loading) {
     return (

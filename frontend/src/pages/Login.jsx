@@ -3,11 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
+import Paper from '@mui/material/Paper'
+import Typography from '@mui/material/Typography'
 import TextField from '@mui/material/TextField'
 import InputAdornment from '@mui/material/InputAdornment'
 import IconButton from '@mui/material/IconButton'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import Alert from '@mui/material/Alert'
 import { toast } from 'react-hot-toast'
 
 function Login() {
@@ -72,17 +76,42 @@ function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-primary px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-secondary mb-8 text-center">
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: theme.palette.background.default,
+        px: 2,
+      }}
+    >
+      <Box sx={{ width: '100%', maxWidth: '448px' }}>
+        <Paper
+          elevation={3}
+          sx={{
+            p: 4,
+            backgroundColor: theme.palette.background.paper,
+            borderRadius: 2,
+          }}
+        >
+          <Typography
+            variant="h4"
+            component="h1"
+            sx={{
+              fontWeight: 700,
+              color: theme.palette.secondary.main,
+              mb: 4,
+              textAlign: 'center',
+            }}
+          >
             Login
-          </h1>
+          </Typography>
           
           {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md">
+            <Alert severity="error" sx={{ mb: 3 }}>
               {error}
-            </div>
+            </Alert>
           )}
 
           <form onSubmit={handleSubmit}>
@@ -98,6 +127,18 @@ function Login() {
                 disabled={loading}
                 placeholder="Enter your email"
                 fullWidth
+                sx={{
+                  '& input:-webkit-autofill': {
+                    WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                    WebkitTextFillColor: theme.palette.text.primary,
+                  },
+                  '& input:-webkit-autofill:hover': {
+                    WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                  },
+                  '& input:-webkit-autofill:focus': {
+                    WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                  },
+                }}
               />
 
               <TextField
@@ -111,6 +152,18 @@ function Login() {
                 disabled={loading}
                 placeholder="Enter your password"
                 fullWidth
+                sx={{
+                  '& input:-webkit-autofill': {
+                    WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                    WebkitTextFillColor: theme.palette.text.primary,
+                  },
+                  '& input:-webkit-autofill:hover': {
+                    WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                  },
+                  '& input:-webkit-autofill:focus': {
+                    WebkitBoxShadow: `0 0 0 1000px ${theme.palette.mode === 'dark' ? theme.palette.background.paper : 'rgba(0, 0, 0, 0.06)'} inset`,
+                  },
+                }}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
@@ -160,14 +213,32 @@ function Login() {
                 fontSize: theme.typography.customSizes.medium,
                 fontWeight: 600,
                 textTransform: 'none',
+                mb: 2,
               }}
             >
               {loading ? 'Logging in...' : 'Login'}
             </Button>
+
+            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+              <Button
+                variant="text"
+                onClick={() => navigate('/')}
+                sx={{
+                  textTransform: 'none',
+                  color: theme.palette.text.primary,
+                  '&:hover': {
+                    backgroundColor: 'transparent',
+                    textDecoration: 'underline',
+                  },
+                }}
+              >
+                Back
+              </Button>
+            </Box>
           </form>
-        </div>
-      </div>
-    </div>
+        </Paper>
+      </Box>
+    </Box>
   )
 }
 

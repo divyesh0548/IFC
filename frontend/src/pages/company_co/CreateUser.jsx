@@ -1,19 +1,17 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Navbar from '../../components/Global_navbar'
-import { useUserLogout } from '../../hooks/useUserLogout'
 import Button from '@mui/material/Button'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import TextField from '@mui/material/TextField'
+import { toast } from 'react-hot-toast'
 
 function CreateUser() {
   const theme = useTheme()
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-
-  const handleLogout = useUserLogout()
 
   const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -23,16 +21,19 @@ function CreateUser() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    setSuccess('')
 
     // Validate email
     if (!email.trim()) {
-      setError('Email ID is required')
+      const errorMsg = 'Email ID is required'
+      setError(errorMsg)
+      toast.error(errorMsg)
       return
     }
 
     if (!validateEmail(email)) {
-      setError('Please enter a valid email address')
+      const errorMsg = 'Please enter a valid email address'
+      setError(errorMsg)
+      toast.error(errorMsg)
       return
     }
 
@@ -51,29 +52,27 @@ function CreateUser() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        setSuccess(`User created successfully! ${data.emailSent ? 'An email with temporary password has been sent.' : 'Note: Email sending failed, but user was created.'}`)
+        const successMsg = `User created successfully! ${data.emailSent ? 'An email with temporary password has been sent.' : 'Note: Email sending failed, but user was created.'}`
+        toast.success(successMsg)
         setEmail('')
-        
-        // Clear success message after 5 seconds
-        setTimeout(() => {
-          setSuccess('')
-        }, 5000)
+        setError('')
       } else {
-        setError(data.message || 'Failed to create user')
+        const errorMsg = data.message || 'Failed to create user'
+        setError(errorMsg)
+        toast.error(errorMsg)
       }
     } catch (err) {
       console.error('Create user error:', err)
-      setError('Network error. Please try again.')
+      const errorMsg = 'Network error. Please try again.'
+      setError(errorMsg)
+      toast.error(errorMsg)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-primary">
-      <Navbar onLogout={handleLogout} header="Create User" />
-
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-4">
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-4">
         <div className="w-full max-w-md">
           <h1 className="text-3xl font-bold text-secondary mb-6 text-center">
             Create New User
@@ -81,35 +80,22 @@ function CreateUser() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email Input */}
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-secondary mb-2">
-                Email ID
-              </label>
-              <input
-                type="email"
-                id="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
-                placeholder="user@example.com"
-                disabled={loading}
-                required
-              />
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {error}
-              </Alert>
-            )}
-
-            {/* Success Message */}
-            {success && (
-              <Alert severity="success" sx={{ mb: 2 }}>
-                {success}
-              </Alert>
-            )}
+            <TextField
+              id="email"
+              name="email"
+              label="Email ID"
+              type="email"
+              variant="filled"
+              value={email}
+              sx={{mb: 2}}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={loading}
+              placeholder="user@example.com"
+              error={!!error}
+              helperText={error || ''}
+              fullWidth
+            />
 
             {/* Submit Button */}
             <Button
@@ -152,7 +138,6 @@ function CreateUser() {
           </form>
         </div>
       </div>
-    </div>
   )
 }
 
