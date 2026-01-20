@@ -19,7 +19,7 @@ function UpdatePassword() {
     // Fetch user email from verify endpoint
     const fetchUserInfo = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/user/verify', {
+        const response = await fetch('http://localhost:3000/api/auth/verify', {
           method: 'GET',
           credentials: 'include',
         })

@@ -355,7 +355,7 @@ async function processExcelFiles() {
   try {
     // Get all unprocessed files (processed = 0)
     const getUnprocessedQuery = `
-      SELECT id, file_path, file_name, company_identifier, coordinator_email_id 
+      SELECT id, file_path, file_name, company_identifier, coordinator_email_id, business_process 
       FROM excel_files 
       WHERE processed = 0 
       ORDER BY id ASC;
@@ -377,6 +377,7 @@ async function processExcelFiles() {
       const fileName = file.file_name;
       const companyIdentifier = file.company_identifier;
       const coordinatorEmailId = file.coordinator_email_id;
+      const businessProcess = file.business_process;
 
       console.log(`Processing file: ${fileName} (ID: ${fileId})`);
       if (companyIdentifier) {
@@ -388,6 +389,11 @@ async function processExcelFiles() {
         console.log(`  Coordinator Email: ${coordinatorEmailId}`);
       } else {
         console.log(`  Warning: No coordinator_email_id found for this file`);
+      }
+      if (businessProcess) {
+        console.log(`  Business Process: ${businessProcess}`);
+      } else {
+        console.log(`  Warning: No business_process found for this file`);
       }
 
       try {
@@ -482,7 +488,7 @@ async function processExcelFiles() {
           'type_of_risk_associated', 'financial_reporting', 'checks_performed',
           'effective_or_not_effective', 'done', 'findings', 'gap_description_resolution',
           'doc_uploaded_by_user', 'active', 'status', 'reason_by_approver',
-          'company_identifier', 'form_id'
+          'company_identifier', 'form_id', 'business_process'
         ];
 
         const columnList = columns.join(', ');
@@ -520,6 +526,10 @@ async function processExcelFiles() {
             // Use generated form_id
             if (col === 'form_id') {
               return formId;
+            }
+            // Use business_process from excel_files table, not from Excel data
+            if (col === 'business_process') {
+              return businessProcess;
             }
             return row[col] || null;
           });

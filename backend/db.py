@@ -184,7 +184,8 @@ def create_control_forms_table(cursor):
         gap_description_resolution text NULL,
         company_identifier character varying(255) NULL,
         form_id character varying(255) NULL,
-        remarks_by_user text NULL
+        remarks_by_user text NULL,
+        business_process character varying(255) NULL
     );
     """
     
@@ -216,7 +217,9 @@ def create_excel_files_table(cursor):
         created_at timestamp without time zone NULL DEFAULT (
             (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
         ),
-        company_identifier character varying(255) NULL
+        company_identifier character varying(255) NULL,
+        coordinator_email_id character varying(255) NULL,
+        business_process character varying(255) NULL
     );
     """
     
@@ -339,7 +342,8 @@ def create_audit_logs_table(cursor):
             (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
         ),
         action character varying(255) NULL,
-        user_email_id character varying(255) NULL
+        user_email_id character varying(255) NULL,
+        form_id character varying(255) NULL
     );
     """
     
@@ -401,6 +405,136 @@ def alter_excel_files_add_coordinator_email_id(cursor):
         """)
         print("  ✓ Column 'coordinator_email_id' added successfully!")
 
+def alter_excel_files_add_business_process(cursor):
+    """Adds business_process column to excel_files table if it doesn't exist."""
+    print("\n[excel_files - Adding business_process column]")
+    
+    if column_exists(cursor, 'excel_files', 'business_process'):
+        print("  ⚠️  Column 'business_process' already exists in 'excel_files' table. Skipping.")
+    else:
+        print("  Adding column 'business_process' to 'excel_files' table...")
+        cursor.execute("""
+            ALTER TABLE public.excel_files
+            ADD COLUMN business_process character varying(255) NULL;
+        """)
+        print("  ✓ Column 'business_process' added successfully!")
+
+def alter_control_forms_add_business_process(cursor):
+    """Adds business_process column to control_forms table if it doesn't exist."""
+    print("\n[control_forms - Adding business_process column]")
+    
+    if column_exists(cursor, 'control_forms', 'business_process'):
+        print("  ⚠️  Column 'business_process' already exists in 'control_forms' table. Skipping.")
+    else:
+        print("  Adding column 'business_process' to 'control_forms' table...")
+        cursor.execute("""
+            ALTER TABLE public.control_forms
+            ADD COLUMN business_process character varying(255) NULL;
+        """)
+        print("  ✓ Column 'business_process' added successfully!")
+
+def insert_ifc_user(email_id, password, role, company_identifier=None, temp_login=0):
+    """
+    Inserts a new user into the ifc_users table.
+    
+    Args:
+        email_id (str): User's email address (required)
+        password (str): User's password (required)
+        role (str): User's role - must be one of: 'user', 'company_co', 'approver', 'siteadmin', 'auditor' (required)
+        company_identifier (str, optional): Company identifier for company_co and user roles
+        temp_login (int, optional): Temporary login flag (0 or 1), defaults to 0
+    
+    Returns:
+        dict: Dictionary containing the inserted user data with 'id', 'email_id', 'role', etc.
+        None: If insertion fails
+    
+    Raises:
+        ValueError: If required parameters are missing or role is invalid
+        psycopg2.Error: If database operation fails
+    """
+    # Validate required parameters
+    if not email_id or not password or not role:
+        raise ValueError("email_id, password, and role are required parameters")
+    
+    # Validate role
+    valid_roles = ['user', 'company_co', 'approver', 'siteadmin', 'auditor']
+    if role not in valid_roles:
+        raise ValueError(f"Invalid role '{role}'. Must be one of: {', '.join(valid_roles)}")
+    
+    # Validate temp_login
+    if temp_login not in [0, 1]:
+        raise ValueError("temp_login must be 0 or 1")
+    
+    db_config = get_db_config()
+    conn = None
+    
+    try:
+        # Connect to PostgreSQL database
+        conn = psycopg2.connect(**db_config)
+        conn.autocommit = True
+        cursor = conn.cursor()
+        
+        # Set timezone to Asia/Kolkata
+        cursor.execute("SET timezone = 'Asia/Kolkata'")
+        
+        # Check if user with this email already exists
+        cursor.execute("""
+            SELECT id FROM public.ifc_users 
+            WHERE email_id = %s
+        """, (email_id,))
+        
+        existing_user = cursor.fetchone()
+        if existing_user:
+            print(f"⚠️  User with email '{email_id}' already exists (ID: {existing_user[0]})")
+            return None
+        
+        # Insert new user
+        insert_query = """
+            INSERT INTO public.ifc_users (email_id, password, role, company_identifier, temp_login)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, email_id, role, company_identifier, temp_login, created_at;
+        """
+        
+        cursor.execute(insert_query, (email_id, password, role, company_identifier, temp_login))
+        
+        # Fetch the inserted row
+        result = cursor.fetchone()
+        
+        if result:
+            user_data = {
+                'id': result[0],
+                'email_id': result[1],
+                'role': result[2],
+                'company_identifier': result[3],
+                'temp_login': result[4],
+                'created_at': result[5]
+            }
+            print(f"✓ User '{email_id}' (role: {role}) inserted successfully with ID: {user_data['id']}")
+            return user_data
+        else:
+            print(f"⚠️  Failed to insert user '{email_id}'")
+            return None
+            
+    except psycopg2.IntegrityError as e:
+        print(f"❌ Integrity error while inserting user: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    except psycopg2.Error as e:
+        print(f"❌ PostgreSQL error while inserting user: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    except Exception as e:
+        print(f"❌ Unexpected error while inserting user: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+
 def create_all_tables():
     """
     Main function that creates all tables in the database.
@@ -443,6 +577,8 @@ def create_all_tables():
         create_audit_logs_table(cursor)
         alter_audit_logs_add_form_id(cursor)
         alter_excel_files_add_coordinator_email_id(cursor)
+        alter_excel_files_add_business_process(cursor)
+        alter_control_forms_add_business_process(cursor)
         
         print("\n" + "=" * 70)
         print("✓ All tables processed successfully!")
@@ -516,231 +652,6 @@ def create_all_tables():
         if conn:
             conn.close()
             print("\nDatabase connection closed.")
-
-def add_appover_row(email_id, password):
-    """
-    Adds a new row to the appover table.
-    
-    Args:
-        email_id (str): Email ID of the approver
-        password (str): Password for the approver
-    
-    Returns:
-        dict: Dictionary containing the inserted row data (id, email_id, created_at)
-        None: If insertion failed or email already exists
-    
-    Raises:
-        psycopg2.Error: If database error occurs
-    """
-    db_config = get_db_config()
-    conn = None
-    
-    try:
-        conn = psycopg2.connect(**db_config)
-        conn.autocommit = True
-        cursor = conn.cursor()
-        
-        # Set timezone to Asia/Kolkata
-        cursor.execute("SET timezone = 'Asia/Kolkata'")
-        
-        # Check if email already exists
-        cursor.execute("""
-            SELECT id FROM public.appover WHERE email_id = %s
-        """, (email_id,))
-        
-        if cursor.fetchone():
-            print(f"⚠️  Email '{email_id}' already exists in appover table.")
-            return None
-        
-        # Insert new row
-        cursor.execute("""
-            INSERT INTO public.appover (email_id, password)
-            VALUES (%s, %s)
-            RETURNING id, email_id, created_at
-        """, (email_id, password))
-        
-        result = cursor.fetchone()
-        inserted_row = {
-            'id': result[0],
-            'email_id': result[1],
-            'created_at': result[2]
-        }
-        
-        print(f"✓ Successfully added approver: {email_id} (ID: {inserted_row['id']})")
-        cursor.close()
-        return inserted_row
-        
-    except psycopg2.IntegrityError as e:
-        print(f"❌ Integrity error: {e}")
-        if conn:
-            conn.rollback()
-        return None
-    
-    except psycopg2.Error as e:
-        print(f"❌ Database error: {e}")
-        if conn:
-            conn.rollback()
-        raise
-    
-    except Exception as e:
-        print(f"❌ Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        raise
-    
-    finally:
-        if conn:
-            conn.close()
-
-def add_auditor_row(email_id, password):
-    """
-    Adds a new row to the auditors table.
-    
-    Args:
-        email_id (str): Email ID of the auditor
-        password (str): Password for the auditor
-    
-    Returns:
-        dict: Dictionary containing the inserted row data (id, email_id, created_at)
-        None: If insertion failed or email already exists
-    
-    Raises:
-        psycopg2.Error: If database error occurs
-    """
-    db_config = get_db_config()
-    conn = None
-    
-    try:
-        conn = psycopg2.connect(**db_config)
-        conn.autocommit = True
-        cursor = conn.cursor()
-        
-        # Set timezone to Asia/Kolkata
-        cursor.execute("SET timezone = 'Asia/Kolkata'")
-        
-        # Check if email already exists
-        cursor.execute("""
-            SELECT id FROM public.auditors WHERE email_id = %s
-        """, (email_id,))
-        
-        if cursor.fetchone():
-            print(f"⚠️  Email '{email_id}' already exists in auditors table.")
-            return None
-        
-        # Insert new row
-        cursor.execute("""
-            INSERT INTO public.auditors (email_id, password)
-            VALUES (%s, %s)
-            RETURNING id, email_id, created_at
-        """, (email_id, password))
-        
-        result = cursor.fetchone()
-        inserted_row = {
-            'id': result[0],
-            'email_id': result[1],
-            'created_at': result[2]
-        }
-        
-        print(f"✓ Successfully added auditor: {email_id} (ID: {inserted_row['id']})")
-        cursor.close()
-        return inserted_row
-        
-    except psycopg2.IntegrityError as e:
-        print(f"❌ Integrity error: {e}")
-        if conn:
-            conn.rollback()
-        return None
-    
-    except psycopg2.Error as e:
-        print(f"❌ Database error: {e}")
-        if conn:
-            conn.rollback()
-        raise
-    
-    except Exception as e:
-        print(f"❌ Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        raise
-    
-    finally:
-        if conn:
-            conn.close()
-
-def add_siteadmin_row(email_id, password):
-    """
-    Adds a new row to the siteadmin table.
-    
-    Args:
-        email_id (str): Email ID of the site admin
-        password (str): Password for the site admin
-    
-    Returns:
-        dict: Dictionary containing the inserted row data (id, email_id, created_at)
-        None: If insertion failed or email already exists
-    
-    Raises:
-        psycopg2.Error: If database error occurs
-    """
-    db_config = get_db_config()
-    conn = None
-    
-    try:
-        conn = psycopg2.connect(**db_config)
-        conn.autocommit = True
-        cursor = conn.cursor()
-        
-        # Set timezone to Asia/Kolkata
-        cursor.execute("SET timezone = 'Asia/Kolkata'")
-        
-        # Check if email already exists
-        cursor.execute("""
-            SELECT id FROM public.siteadmin WHERE email_id = %s
-        """, (email_id,))
-        
-        if cursor.fetchone():
-            print(f"⚠️  Email '{email_id}' already exists in siteadmin table.")
-            return None
-        
-        # Insert new row
-        cursor.execute("""
-            INSERT INTO public.siteadmin (email_id, password)
-            VALUES (%s, %s)
-            RETURNING id, email_id, created_at
-        """, (email_id, password))
-        
-        result = cursor.fetchone()
-        inserted_row = {
-            'id': result[0],
-            'email_id': result[1],
-            'created_at': result[2]
-        }
-        
-        print(f"✓ Successfully added site admin: {email_id} (ID: {inserted_row['id']})")
-        cursor.close()
-        return inserted_row
-        
-    except psycopg2.IntegrityError as e:
-        print(f"❌ Integrity error: {e}")
-        if conn:
-            conn.rollback()
-        return None
-    
-    except psycopg2.Error as e:
-        print(f"❌ Database error: {e}")
-        if conn:
-            conn.rollback()
-        raise
-    
-    except Exception as e:
-        print(f"❌ Unexpected error: {e}")
-        if conn:
-            conn.rollback()
-        raise
-    
-    finally:
-        if conn:
-            conn.close()
 
 if __name__ == "__main__":
     create_all_tables()

@@ -3,23 +3,17 @@ import './index.css'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import { Routes, Route } from 'react-router-dom'
-import Siteadmin_Login from './pages/siteadmin/Siteadmin_Login'
 import Siteadmin_dashboard from './pages/siteadmin/Siteadmin_dashboard'
 import CompanyCreation from './pages/siteadmin/CompanyCreation'
-import Auditor_Login from './pages/auditor/Auditor_Login'
 import Auditor_dashboard from './pages/auditor/Auditor_dashboard'
 import User_dashboard from './pages/user/User_dashboard'
 import ForgotPassword from './pages/ForgotPassword'
 import UpdatePassword from './pages/UpdatePassword'
-import ProtectedRoute from './components/ProtectedRoute'
-import AuditorProtectedRoute from './components/AuditorProtectedRoute'
-import ApproverProtectedRoute from './components/ApproverProtectedRoute'
 import RoleBasedProtectedRoute from './components/RoleBasedProtectedRoute'
 import Company_Co_dashboard from './pages/company_co/Company_co_dashboard'
 import CreateUser from './pages/company_co/CreateUser'
 import ExcelUpload from './pages/forms/ExcelUpload'
 import FormDetail from './pages/company_co/FormDetail'
-import ApproverLogin from './pages/approver/ApproverLogin'
 import ApproverDashboard from './pages/approver/ApproverDashboard'
 import ApproverFormDetail from './pages/approver/ApproverFormDetail'
 import UserFormDetail from './pages/user/UserFormDetail'
@@ -33,7 +27,7 @@ function App() {
       <Toaster />
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/user/login" element={<Login />} />
+        <Route path="/login" element={<Login />} />
 
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route 
@@ -45,15 +39,13 @@ function App() {
           } 
         />
 
-
 {/* Siteadmin Routes */}
-        <Route path="/siteadmin/login" element={<Siteadmin_Login />} />
         <Route 
           path="/siteadmin/*" 
           element={
-            <ProtectedRoute>
+            <RoleBasedProtectedRoute allowedRoles={['siteadmin']}>
               <DashboardLayout />
-            </ProtectedRoute>
+            </RoleBasedProtectedRoute>
           }
         >
           <Route path="dashboard" element={<Siteadmin_dashboard />} />
@@ -61,26 +53,24 @@ function App() {
         </Route>
 
 {/* Auditor Routes */}
-        <Route path="/auditor/login" element={<Auditor_Login />} />
         <Route 
           path="/auditor/*" 
           element={
-            <AuditorProtectedRoute>
+            <RoleBasedProtectedRoute allowedRoles={['auditor']}>
               <DashboardLayout />
-            </AuditorProtectedRoute>
+            </RoleBasedProtectedRoute>
           }
         >
           <Route path="dashboard" element={<Auditor_dashboard />} />
         </Route>
 
 {/* Approver Routes */}
-        <Route path="/approver/login" element={<ApproverLogin />} />
         <Route 
           path="/approver/*" 
           element={
-            <ApproverProtectedRoute>
+            <RoleBasedProtectedRoute allowedRoles={['approver']}>
               <DashboardLayout />
-            </ApproverProtectedRoute>
+            </RoleBasedProtectedRoute>
           }
         >
           <Route path="dashboard" element={<ApproverDashboard />} />

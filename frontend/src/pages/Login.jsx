@@ -29,7 +29,7 @@ function Login() {
     setError('')
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/user/login', {
+      const response = await fetch('http://localhost:3000/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -47,12 +47,29 @@ function Login() {
         // Login successful - token is stored in httpOnly cookie
         console.log('Login successful:', data.user)
         toast.success('Login successful!')
+        
         // Check if password update is required
         if (data.requiresPasswordUpdate) {
           navigate('/update-password')
+          return
+        }
+
+        // Redirect based on role
+        const role = data.user.role
+        const roleRoutes = {
+          'user': '/user/dashboard',
+          'company_co': '/company_co/dashboard',
+          'approver': '/approver/dashboard',
+          'siteadmin': '/siteadmin/dashboard',
+          'auditor': '/auditor/dashboard'
+        }
+
+        const redirectPath = roleRoutes[role]
+        if (redirectPath) {
+          navigate(redirectPath)
         } else {
-          // Redirect to dashboard
-          navigate('/user/dashboard')
+          toast.error('Invalid user role')
+          setError('Invalid user role')
         }
       } else {
         const errorMessage = data.message || 'Login failed'
@@ -105,7 +122,7 @@ function Login() {
               textAlign: 'center',
             }}
           >
-            Login
+            IFC Login
           </Typography>
           
           {error && (

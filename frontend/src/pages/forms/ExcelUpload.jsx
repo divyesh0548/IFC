@@ -5,6 +5,11 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
+import TextField from '@mui/material/TextField'
+import MenuItem from '@mui/material/MenuItem'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
+import Select from '@mui/material/Select'
 import IconButton from '@mui/material/IconButton'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
@@ -19,6 +24,7 @@ function ExcelUpload() {
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [businessProcess, setBusinessProcess] = useState('')
 
   const validateAndSetFile = (selectedFile) => {
     if (!selectedFile) {
@@ -102,11 +108,17 @@ function ExcelUpload() {
       return
     }
 
+    if (!businessProcess) {
+      toast.error('Please select a business process')
+      return
+    }
+
     setLoading(true)
 
     try {
       const formData = new FormData()
       formData.append('excelFile', file)
+      formData.append('businessProcess', businessProcess)
 
       const response = await fetch('http://localhost:3000/api/control-forms/bulk-upload', {
         method: 'POST',
@@ -120,6 +132,7 @@ function ExcelUpload() {
         toast.success(`Successfully imported ${data.count} control form(s)!`)
         setFile(null)
         setPreview(null)
+        setBusinessProcess('')
         // Reset file input
         e.target.reset()
       } else {
@@ -252,6 +265,33 @@ function ExcelUpload() {
                 </Paper>
               )}
 
+              {/* Business Process Dropdown */}
+              <FormControl 
+                fullWidth 
+                required 
+                sx={{ mb: 3 }}
+                disabled={loading}
+              >
+                <InputLabel id="business-process-label">Business Process</InputLabel>
+                <Select
+                  labelId="business-process-label"
+                  id="business-process"
+                  value={businessProcess}
+                  label="Business Process"
+                  onChange={(e) => setBusinessProcess(e.target.value)}
+                  variant="filled"
+                >
+                  <MenuItem value="Purchase to Pay">Purchase to Pay</MenuItem>
+                  <MenuItem value="Order to Cash">Order to Cash</MenuItem>
+                  <MenuItem value="Hire to Retire">Hire to Retire</MenuItem>
+                  <MenuItem value="Capital Expenditure">Capital Expenditure</MenuItem>
+                  <MenuItem value="Treasury">Treasury</MenuItem>
+                  <MenuItem value="Financial Statement Closure Process">Financial Statement Closure Process</MenuItem>
+                  <MenuItem value="Information Technology General Controls">Information Technology General Controls</MenuItem>
+                  <MenuItem value="Entity Level Controls">Entity Level Controls</MenuItem>
+                </Select>
+              </FormControl>
+
               {/* Instructions */}
               <Box
                 sx={{
@@ -303,7 +343,7 @@ function ExcelUpload() {
               {/* Submit Button */}
               <Button
                 type="submit"
-                disabled={loading || !file}
+                disabled={loading || !file || !businessProcess}
                 variant="contained"
                 color="secondary"
                 fullWidth

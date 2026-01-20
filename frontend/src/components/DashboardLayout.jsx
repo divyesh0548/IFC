@@ -30,9 +30,6 @@ import DashboardIcon from '@mui/icons-material/Dashboard'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import BusinessIcon from '@mui/icons-material/Business'
-import { useUserLogout } from '../hooks/useUserLogout'
-import { useApproverLogout } from '../hooks/useApproverLogout'
-import { useSiteadminLogout } from '../hooks/useSiteadminLogout'
 import { useThemeMode } from '../contexts/ThemeContext'
 import { toast } from 'react-hot-toast'
 
@@ -134,49 +131,33 @@ function DashboardLayout() {
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
   const { mode, toggleTheme } = useThemeMode()
   
-  // Get logout handlers
-  const userLogout = useUserLogout()
-  const approverLogout = useApproverLogout()
-  const siteadminLogout = useSiteadminLogout()
-  
   // Determine role from pathname
   useEffect(() => {
     const role = getUserRoleFromPath(location.pathname)
     setUserRole(role)
   }, [location.pathname])
   
-  // Get appropriate logout handler based on role
-  const getLogoutHandler = () => {
-    switch (userRole) {
-      case 'siteadmin':
-        return siteadminLogout
-      case 'approver':
-        return approverLogout
-      case 'auditor':
-        // Auditor doesn't have a hook, handle directly
-        return async () => {
-          try {
-            const response = await fetch('http://localhost:3000/api/auth/auditor/logout', {
-              method: 'POST',
-              credentials: 'include',
-            })
-            const data = await response.json()
-            if (response.ok && data.success) {
-              toast.success('Logged out successfully')
-              navigate('/')
-            } else {
-              console.error('Logout failed:', data.message)
-              toast.error(data.message || 'Logout failed')
-              navigate('/')
-            }
-          } catch (error) {
-            console.error('Logout error:', error)
-            toast.error('Error during logout')
-            navigate('/')
-          }
-        }
-      default:
-        return userLogout
+  // Unified logout handler
+  const handleUnifiedLogout = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await response.json()
+      if (response.ok && data.success) {
+        toast.success('Logged out successfully')
+        navigate('/login')
+      } else {
+        console.error('Logout failed:', data.message)
+        toast.error(data.message || 'Logout failed')
+        navigate('/login')
+      }
+    } catch (error) {
+      console.error('Logout error:', error)
+      toast.error('Error during logout')
+      // Still navigate to login even if logout request fails
+      navigate('/login')
     }
   }
   
@@ -198,8 +179,7 @@ function DashboardLayout() {
 
   const handleLogoutConfirm = () => {
     setLogoutDialogOpen(false)
-    const logoutHandler = getLogoutHandler()
-    logoutHandler()
+    handleUnifiedLogout()
   }
 
   const handleLogoutCancel = () => {

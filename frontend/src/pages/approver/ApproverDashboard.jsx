@@ -25,10 +25,10 @@ function ApproverDashboard() {
   const [filter, setFilter] = useState('pending') // 'pending', 'all', 'approved', 'rejected'
 
   useEffect(() => {
-    // Fetch approver info on component mount
-    const fetchApproverInfo = async () => {
+    // Fetch user info on component mount
+    const fetchUserInfo = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/approver/verify', {
+        const response = await fetch('http://localhost:3000/api/auth/verify', {
           method: 'GET',
           credentials: 'include',
         })
@@ -36,17 +36,21 @@ function ApproverDashboard() {
         const data = await response.json()
 
         if (response.ok && data.success) {
-          setApprover(data.approver)
+          // Store user info as approver for compatibility
+          setApprover({
+            id: data.user.id,
+            email_id: data.user.email_id
+          })
         } else {
-          navigate('/approver/login')
+          navigate('/login')
         }
       } catch (error) {
-        console.error('Error fetching approver info:', error)
-        navigate('/approver/login')
+        console.error('Error fetching user info:', error)
+        navigate('/login')
       }
     }
 
-    fetchApproverInfo()
+    fetchUserInfo()
   }, [navigate])
 
   useEffect(() => {

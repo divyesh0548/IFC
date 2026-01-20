@@ -38,75 +38,20 @@ function Home() {
             Welcome to IFC Platform
           </Typography>
           
-          <Box
+          <Button
+            component={Link}
+            to="/login"
+            variant="contained"
+            color="secondary"
             sx={{
-              display: 'flex',
-              flexDirection: { xs: 'column', sm: 'row' },
-              gap: 2,
-              justifyContent: 'center',
-              alignItems: 'center',
+              minWidth: '200px',
+              py: 1.5,
+              textTransform: 'none',
+              fontWeight: 600,
             }}
           >
-            <Button
-              component={Link}
-              to="/user/login"
-              variant="contained"
-              color="secondary"
-              sx={{
-                minWidth: '200px',
-                py: 1.5,
-                textTransform: 'none',
-                fontWeight: 600,
-              }}
-            >
-              User Login
-            </Button>
-            
-            <Button
-              component={Link}
-              to="/siteadmin/login"
-              variant="contained"
-              color="secondary"
-              sx={{
-                minWidth: '200px',
-                py: 1.5,
-                textTransform: 'none',
-                fontWeight: 600,
-              }}
-            >
-              Site Admin Login
-            </Button>
-            
-            <Button
-              component={Link}
-              to="/approver/login"
-              variant="contained"
-              color="secondary"
-              sx={{
-                minWidth: '200px',
-                py: 1.5,
-                textTransform: 'none',
-                fontWeight: 600,
-              }}
-            >
-              Approver Login
-            </Button>
-            
-            <Button
-              component={Link}
-              to="/auditor/login"
-              variant="contained"
-              color="secondary"
-              sx={{
-                minWidth: '200px',
-                py: 1.5,
-                textTransform: 'none',
-                fontWeight: 600,
-              }}
-            >
-              Auditor Login
-            </Button>
-          </Box>
+            Login
+          </Button>
         </Box>
       </Container>
     </Box>

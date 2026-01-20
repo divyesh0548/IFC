@@ -16,14 +16,15 @@ function ApproverProtectedRoute({ children }) {
     const verifyToken = async () => {
       setLoading(true)
       try {
-        const response = await fetch('http://localhost:3000/api/auth/approver/verify', {
+        // Use unified verify endpoint
+        const response = await fetch('http://localhost:3000/api/auth/verify', {
           method: 'GET',
           credentials: 'include', // Important: sends cookies
         })
 
         const data = await response.json()
 
-        if (response.ok && data.success) {
+        if (response.ok && data.success && data.user.role === 'approver') {
           setIsAuthenticated(true)
           hasVerifiedRef.current = true
         } else {
@@ -53,7 +54,7 @@ function ApproverProtectedRoute({ children }) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/approver/login" replace />
+    return <Navigate to="/login" replace />
   }
 
   return children

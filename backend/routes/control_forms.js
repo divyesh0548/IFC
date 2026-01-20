@@ -167,13 +167,11 @@ function decryptToken(encryptedToken) {
   }
 }
 
-// Middleware to verify authentication (supports both user and approver tokens)
+// Middleware to verify authentication (unified authentication system)
 async function verifyAuth(req, res, next) {
-  
   try {
-    const token = req.cookies.userAuthToken || req.cookies.authToken || req.cookies.approverAuthToken;
-    
-    console.log('Token found:', !!token);
+    // Use unified authToken (prioritize it, but fallback to old tokens for backward compatibility)
+    const token = req.cookies.authToken || req.cookies.userAuthToken || req.cookies.approverAuthToken;
     
     if (!token) {
       console.error('❌ No token found in cookies');
@@ -183,11 +181,41 @@ async function verifyAuth(req, res, next) {
       });
     }
 
+    // Decrypt and verify the token (decryptToken already verifies JWT)
     const decoded = decryptToken(token);
-    req.user = decoded;
-    console.log('✅ Token verified successfully, user:', decoded.email_id);
+    
+    // Get user details from database to include role and company_identifier
+    const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
+    const userResult = await pool.query(userQuery, [decoded.email_id]);
+    
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Attach user info to request object
+    req.user = {
+      id: user.id,
+      email_id: user.email_id,
+      role: user.role,
+      company_identifier: user.company_identifier
+    };
+    
+    console.log('✅ Token verified successfully, user:', user.email_id, 'role:', user.role);
     next();
   } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      console.error('❌ Invalid or expired token:', error.message);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
+    
     console.error('❌ Token verification failed:', error.message);
     return res.status(401).json({
       success: false,
@@ -245,6 +273,15 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
     });
   }
 
+  // Validate business_process is provided
+  const businessProcess = req.body.businessProcess;
+  if (!businessProcess || businessProcess.trim() === '') {
+    return res.status(400).json({
+      success: false,
+      message: 'Business process is required'
+    });
+  }
+
   const client = await pool.connect();
 
   try {
@@ -268,10 +305,10 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
     const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/control_form_excel_files');
     console.log(`File uploaded to S3 with key: ${s3Key}`);
 
-    // Save S3 key to excel_files table with processed = 0, company_identifier, and coordinator_email_id
+    // Save S3 key to excel_files table with processed = 0, company_identifier, coordinator_email_id, and business_process
     const insertFileQuery = `
-      INSERT INTO excel_files (file_path, file_name, processed, company_identifier, coordinator_email_id)
-      VALUES ($1, $2, 0, $3, $4)
+      INSERT INTO excel_files (file_path, file_name, processed, company_identifier, coordinator_email_id, business_process)
+      VALUES ($1, $2, 0, $3, $4, $5)
       RETURNING id;
     `;
 
@@ -279,7 +316,8 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
       s3Key, // Store S3 key instead of local file path
       fileName,
       companyIdentifier,
-      userEmail // coordinator_email_id
+      userEmail, // coordinator_email_id
+      businessProcess // business_process
     ]);
 
     await client.query('COMMIT');
@@ -306,10 +344,10 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
   }
 });
 
-// Get all control forms (with optional company_identifier, process_owner, and active filters)
+// Get all control forms (with optional company_identifier, process_owner, active, and business_process filters)
 router.get('/', verifyAuth, async (req, res) => {
   try {
-    const { company_identifier, process_owner, active } = req.query;
+    const { company_identifier, process_owner, active, business_process } = req.query;
     
     let query = 'SELECT * FROM control_forms WHERE 1=1';
     const queryParams = [];
@@ -326,6 +364,14 @@ router.get('/', verifyAuth, async (req, res) => {
     if (process_owner) {
       query += ` AND process_owner = $${paramIndex}`;
       queryParams.push(process_owner);
+      paramIndex++;
+    }
+    
+    // Filter by business_process if provided
+    if (business_process) {
+      // Use case-insensitive comparison and handle NULL values
+      query += ` AND business_process IS NOT NULL AND LOWER(TRIM(business_process)) = $${paramIndex}`;
+      queryParams.push(business_process.trim().toLowerCase());
       paramIndex++;
     }
     
@@ -596,6 +642,79 @@ const {
     res.status(500).json({
       success: false,
       message: 'Error updating control form',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Bulk update forms to active based on filters
+router.post('/bulk-set-active', verifyAuth, async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    const { company_identifier, business_process, active } = req.body;
+    
+    // Get user's company_identifier if not provided
+    let userCompanyIdentifier = company_identifier;
+    if (!userCompanyIdentifier) {
+      const userEmail = req.user.email_id;
+      const getUserQuery = 'SELECT company_identifier FROM ifc_users WHERE email_id = $1';
+      const userResult = await client.query(getUserQuery, [userEmail]);
+      if (userResult.rows.length > 0 && userResult.rows[0].company_identifier) {
+        userCompanyIdentifier = userResult.rows[0].company_identifier;
+      }
+    }
+    
+    // Build WHERE clause based on filters
+    let query = 'UPDATE control_forms SET active = $1 WHERE 1=1';
+    const queryParams = ['1'];
+    let paramIndex = 2;
+    
+    // Filter by company_identifier (required for company_co)
+    if (userCompanyIdentifier) {
+      query += ` AND company_identifier = $${paramIndex}`;
+      queryParams.push(userCompanyIdentifier);
+      paramIndex++;
+    }
+    
+    // Filter by business_process if provided
+    if (business_process && business_process !== 'all') {
+      query += ` AND business_process IS NOT NULL AND LOWER(TRIM(business_process)) = $${paramIndex}`;
+      queryParams.push(business_process.trim().toLowerCase());
+      paramIndex++;
+    }
+    
+    // Filter by active status if provided (to only update inactive forms, for example)
+    if (active !== undefined) {
+      if (active === 'true' || active === '1') {
+        // Only update forms that are currently active
+        query += ` AND active IS NOT NULL AND active != '' AND active != '0'`;
+      } else if (active === 'false' || active === '0') {
+        // Only update forms that are currently inactive
+        query += ` AND (active IS NULL OR active = '' OR active = '0')`;
+      }
+    }
+    
+    const result = await client.query(query, queryParams);
+    
+    await client.query('COMMIT');
+    
+    res.status(200).json({
+      success: true,
+      message: `Successfully set ${result.rowCount} form(s) to active`,
+      count: result.rowCount
+    });
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error bulk updating forms:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error bulk updating forms',
       error: error.message
     });
   } finally {

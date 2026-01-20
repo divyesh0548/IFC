@@ -86,10 +86,11 @@ function decryptToken(encryptedToken) {
   }
 }
 
-// Middleware to verify approver authentication
+// Middleware to verify approver authentication (unified authentication system)
 async function verifyApproverAuth(req, res, next) {
   try {
-    const token = req.cookies.approverAuthToken;
+    // Use unified authToken (prioritize it, but fallback to old approverAuthToken for backward compatibility)
+    const token = req.cookies.authToken || req.cookies.approverAuthToken;
     
     if (!token) {
       return res.status(401).json({
@@ -112,19 +113,41 @@ async function verifyApproverAuth(req, res, next) {
 
     const decoded = jwt.verify(decryptedToken, jwtSecret);
     
-    // Verify approver exists in database
-    const approverQuery = 'SELECT id, email_id FROM appover WHERE email_id = $1';
-    const approverResult = await pool.query(approverQuery, [decoded.email_id]);
+    // Get user details from database to verify role
+    const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
+    const userResult = await pool.query(userQuery, [decoded.email_id]);
     
-    if (approverResult.rows.length === 0) {
+    if (userResult.rows.length === 0) {
       return res.status(401).json({
         success: false,
-        message: 'Approver not found'
+        message: 'User not found'
       });
     }
     
-    // Attach approver info to request object
-    req.approver = approverResult.rows[0];
+    const user = userResult.rows[0];
+    
+    // Verify user is an approver
+    if (user.role !== 'approver') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Approver role required.'
+      });
+    }
+    
+    // Attach approver info to request object (for backward compatibility)
+    req.approver = {
+      id: user.id,
+      email_id: user.email_id
+    };
+    
+    // Also attach as req.user for consistency
+    req.user = {
+      id: user.id,
+      email_id: user.email_id,
+      role: user.role,
+      company_identifier: user.company_identifier
+    };
+    
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {

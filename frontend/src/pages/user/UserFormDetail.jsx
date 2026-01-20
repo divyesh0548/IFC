@@ -333,6 +333,24 @@ function UserFormDetail() {
                         {formData?.status || '-'}
                       </Typography>
                     </Box>
+                    {/* Business Process */}
+                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+                      <Typography
+                        variant="body2"
+                        component="label"
+                        sx={{
+                          display: 'block',
+                          fontWeight: 700,
+                          mb: 1,
+                          color: 'text.primary'
+                        }}
+                      >
+                        Business Process
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                        {formData?.business_process || '-'}
+                      </Typography>
+                    </Box>
                     {/* Creation Time */}
                     <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
                       <Typography

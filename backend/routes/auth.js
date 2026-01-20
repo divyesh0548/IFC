@@ -116,6 +116,282 @@ async function sendEmail(to, subject, text) {
 }
 
 
+// ==================== UNIFIED LOGIN ENDPOINT ====================
+// Unified Login API endpoint (checks ifc_users table for all roles)
+router.post('/login', async (req, res) => {
+  const { email_id, password } = req.body;
+
+  // Validate input
+  if (!email_id || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email ID and password are required'
+    });
+  }
+
+  try {
+    // Query the ifc_users table
+    const query = 'SELECT * FROM ifc_users WHERE email_id = $1 AND password = $2';
+    const result = await pool.query(query, [email_id, password]);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email ID or password'
+      });
+    }
+
+    // Login successful - Generate JWT token
+    const user = result.rows[0];
+    const jwtSecret = process.env.JWT_SECRET;
+    
+    if (!jwtSecret) {
+      console.error('JWT_SECRET is not set in environment variables');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
+    // Validate role
+    const validRoles = ['user', 'company_co', 'approver', 'siteadmin', 'auditor'];
+    if (!validRoles.includes(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Invalid user role'
+      });
+    }
+
+    // Generate JWT token with email_id, id, and role
+    const tokenPayload = {
+      email_id: user.email_id,
+      id: user.id,
+      role: user.role,
+      iat: Math.floor(Date.now() / 1000)
+    };
+
+    const jwtToken = jwt.sign(tokenPayload, jwtSecret, {
+      expiresIn: '24h' // Token expires in 24 hours
+    });
+
+    // Add extra encryption layer to JWT token
+    const encryptedToken = encryptToken(jwtToken);
+
+    // Clear all existing auth tokens (to prevent dual login)
+    res.clearCookie('userAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('authToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('auditorAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('approverAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+
+    // Set httpOnly cookie with the encrypted token (unified cookie name)
+    res.cookie('authToken', encryptedToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
+      sameSite: 'lax', // CSRF protection
+      path: '/', // Available to all paths
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
+    // Log audit event for successful login
+    await logAuditEvent('Logged In', user.email_id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      user: {
+        id: user.id,
+        email_id: user.email_id,
+        role: user.role,
+        company_identifier: user.company_identifier
+      },
+      requiresPasswordUpdate: user.temp_login === 1 || user.temp_login === true
+    });
+
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Unified Verify token endpoint
+router.get('/verify', async (req, res) => {
+  try {
+    const token = req.cookies.authToken;
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided'
+      });
+    }
+
+    // Decrypt the token
+    const decryptedToken = decryptToken(token);
+    
+    // Verify JWT token
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
+
+    const decoded = jwt.verify(decryptedToken, jwtSecret);
+    
+    // Get user details from database to include role and company_identifier
+    const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
+    const userResult = await pool.query(userQuery, [decoded.email_id]);
+    
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Token is valid - return user info including role and company_identifier
+    res.status(200).json({
+      success: true,
+      user: {
+        id: user.id,
+        email_id: user.email_id,
+        role: user.role,
+        company_identifier: user.company_identifier
+      }
+    });
+
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
+    
+    console.error('Token verification error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Token verification failed'
+    });
+  }
+});
+
+// Unified Logout endpoint
+router.post('/logout', async (req, res) => {
+  try {
+    // Get user email from token before clearing cookie
+    const token = req.cookies.authToken;
+    let userEmail = null;
+    
+    if (token) {
+      try {
+        const decryptedToken = decryptToken(token);
+        const jwtSecret = process.env.JWT_SECRET;
+        if (jwtSecret) {
+          const decoded = jwt.verify(decryptedToken, jwtSecret);
+          userEmail = decoded.email_id;
+        }
+      } catch (error) {
+        // Token might be invalid/expired, but we still want to log logout attempt
+        console.warn('Could not decode token during logout:', error.message);
+      }
+    }
+
+    // Log audit event for logout
+    if (userEmail) {
+      await logAuditEvent('Logged Out', userEmail);
+    }
+
+    // Clear all auth cookies
+    res.clearCookie('authToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('userAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('auditorAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('approverAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Still clear cookies and return success even if logging fails
+    res.clearCookie('authToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('userAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('auditorAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.clearCookie('approverAuthToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  }
+});
+
 // ==================== SITE ADMIN AUTHENTICATION ROUTES ====================
 // Login API endpoint
 router.post('/siteadmin/login', async (req, res) => {

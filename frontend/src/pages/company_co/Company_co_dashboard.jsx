@@ -5,6 +5,16 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
+import DialogActions from '@mui/material/DialogActions'
+import { toast } from 'react-hot-toast'
 
 function Company_Co_dashboard() {
   const theme = useTheme()
@@ -13,13 +23,28 @@ function Company_Co_dashboard() {
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
   const [forms, setForms] = useState([])
   const [filterActive, setFilterActive] = useState('all') // 'all', 'active', 'inactive'
+  const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [loading, setLoading] = useState(true)
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+
+  // Business process options (matching ExcelUpload.jsx)
+  const businessProcessOptions = [
+    'Purchase to Pay',
+    'Order to Cash',
+    'Hire to Retire',
+    'Capital Expenditure',
+    'Treasury',
+    'Financial Statement Closure Process',
+    'Information Technology General Controls',
+    'Entity Level Controls'
+  ]
 
   useEffect(() => {
     // Fetch user role and company_identifier on component mount
     const fetchUserInfo = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/user/verify', {
+        const response = await fetch('http://localhost:3000/api/auth/verify', {
           method: 'GET',
           credentials: 'include',
         })
@@ -43,7 +68,7 @@ function Company_Co_dashboard() {
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterActive])
+  }, [companyIdentifier, filterActive, filterBusinessProcess])
 
   const fetchForms = async () => {
     if (!companyIdentifier) return
@@ -56,6 +81,10 @@ function Company_Co_dashboard() {
         url += '&active=true'
       } else if (filterActive === 'inactive') {
         url += '&active=false'
+      }
+      
+      if (filterBusinessProcess !== 'all') {
+        url += `&business_process=${encodeURIComponent(filterBusinessProcess)}`
       }
       
       const response = await fetch(url, {
@@ -87,6 +116,68 @@ function Company_Co_dashboard() {
     navigate(`/company_co/form/${formId}`)
   }
 
+  const handleBulkSetActiveClick = () => {
+    if (forms.length === 0) {
+      toast.error('No forms to update')
+      return
+    }
+    setConfirmDialogOpen(true)
+  }
+
+  const handleBulkSetActiveCancel = () => {
+    setConfirmDialogOpen(false)
+  }
+
+  const handleBulkSetActiveConfirm = async () => {
+    setConfirmDialogOpen(false)
+    
+    if (!companyIdentifier) {
+      toast.error('Company identifier not found')
+      return
+    }
+
+    setBulkUpdating(true)
+    try {
+      const requestBody = {
+        company_identifier: companyIdentifier
+      }
+
+      // Add business_process filter if not 'all'
+      if (filterBusinessProcess !== 'all') {
+        requestBody.business_process = filterBusinessProcess
+      }
+
+      // Add active filter if not 'all' (to only update inactive forms, for example)
+      if (filterActive !== 'all') {
+        requestBody.active = filterActive === 'active' ? 'true' : 'false'
+      }
+
+      const response = await fetch('http://localhost:3000/api/control-forms/bulk-set-active', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(requestBody)
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast.success(data.message || `Successfully set ${data.count} form(s) to active`)
+        // Refresh the forms list
+        fetchForms()
+      } else {
+        toast.error(data.message || 'Failed to set forms to active')
+      }
+    } catch (error) {
+      console.error('Error bulk setting forms to active:', error)
+      toast.error('Error setting forms to active')
+    } finally {
+      setBulkUpdating(false)
+    }
+  }
+
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 2, py: 4 }}>
         {/* Forms Section */}
@@ -105,20 +196,89 @@ function Company_Co_dashboard() {
             alignItems: 'center', 
             mb: 3 
           }}>
-            <Typography 
-              variant="h5" 
-              component="h2"
-              sx={{ 
-                fontWeight: 700, 
-                color: theme.palette.secondary.main,
-                mb: { xs: 2, sm: 0 }
-              }}
-            >
-              Control Forms
-            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <Typography 
+                variant="h5" 
+                component="h2"
+                sx={{ 
+                  fontWeight: 700, 
+                  color: theme.palette.secondary.main,
+                }}
+              >
+                Control Forms
+              </Typography>
+              
+              {/* Set All Active Button */}
+              <Button
+                onClick={handleBulkSetActiveClick}
+                disabled={bulkUpdating || loading || forms.length === 0}
+                variant="contained"
+                color="secondary"
+                size="small"
+                sx={{
+                  minWidth: '140px',
+                  textTransform: 'none',
+                  fontSize: '0.75rem',
+                  py: 0.5,
+                  alignSelf: 'flex-start',
+                }}
+              >
+                {bulkUpdating ? 'Setting...' : 'Set All Active'}
+              </Button>
+            </Box>
             
             {/* Filter Options */}
-            <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: 2,
+              alignItems: { xs: 'stretch', sm: 'center' },
+              width: { xs: '100%', sm: 'auto' }
+            }}>
+              {/* Business Process Filter */}
+              <FormControl 
+                variant="outlined" 
+                sx={{ 
+                  minWidth: '80px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: 'transparent',
+                    '& fieldset': {
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                    },
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: theme.palette.text.primary,
+                  },
+                  '& .MuiSelect-root': {
+                    color: theme.palette.text.primary,
+                  },
+                }}
+              >
+                <InputLabel id="business-process-filter-label">Business Process</InputLabel>
+                <Select
+                  labelId="business-process-filter-label"
+                  id="business-process-filter"
+                  value={filterBusinessProcess}
+                  label="Business Process"
+                  onChange={(e) => setFilterBusinessProcess(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  {businessProcessOptions.map((option) => (
+                    <MenuItem key={option} value={option}>
+                      {option}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              
+              {/* Active/Inactive Filter Buttons */}
+              <Box sx={{ display: 'flex', gap: 1 }}>
               <Button
                 onClick={() => setFilterActive('all')}
                 variant={filterActive === 'all' ? 'contained' : 'outlined'}
@@ -197,6 +357,7 @@ function Company_Co_dashboard() {
               >
                 Inactive
               </Button>
+              </Box>
             </Box>
           </Box>
 
@@ -273,6 +434,21 @@ function Company_Co_dashboard() {
                       }}
                     >
                       Process
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
+                      Business Process
                     </Box>
                     <Box
                       component="th"
@@ -366,6 +542,18 @@ function Company_Co_dashboard() {
                             px: 3,
                             py: 2,
                             whiteSpace: 'nowrap',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          }}
+                        >
+                          {form.business_process || 'N/A'}
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
                           }}
                         >
                           <Box
@@ -410,6 +598,144 @@ function Company_Co_dashboard() {
             </Box>
           )}
         </Paper>
+
+        {/* Set All Active Confirmation Dialog */}
+        <Dialog
+          open={confirmDialogOpen}
+          onClose={handleBulkSetActiveCancel}
+          aria-labelledby="set-active-dialog-title"
+          aria-describedby="set-active-dialog-description"
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              minWidth: { xs: '90%', sm: '400px' },
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+                : '0 8px 32px rgba(0, 0, 0, 0.12)',
+            },
+          }}
+        >
+          <DialogTitle 
+            id="set-active-dialog-title"
+            sx={{
+              pb: 2.5,
+              pt: 3,
+              px: 3,
+              fontWeight: 600,
+              fontSize: '1.25rem',
+              color: theme.palette.text.primary,
+            }}
+          >
+            Confirm Set All Active
+          </DialogTitle>
+          <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+            <DialogContentText 
+              id="set-active-dialog-description"
+              sx={{
+                color: theme.palette.text.secondary,
+                fontSize: '0.9375rem',
+                lineHeight: 1.5,
+                m: 0,
+                mb: 2,
+              }}
+            >
+              Are you sure you want to set all forms to active?
+            </DialogContentText>
+            <Box sx={{ mt: 2 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: theme.palette.text.primary,
+                  fontWeight: 500,
+                  mb: 1,
+                }}
+              >
+                Number of forms: <strong>{forms.length}</strong>
+              </Typography>
+              {filterBusinessProcess !== 'all' && (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: theme.palette.text.primary,
+                    fontWeight: 500,
+                    mb: 1,
+                  }}
+                >
+                  Business Process: <strong>{filterBusinessProcess}</strong>
+                </Typography>
+              )}
+              {filterActive !== 'all' && (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: theme.palette.text.primary,
+                    fontWeight: 500,
+                  }}
+                >
+                  Current Status Filter: <strong>{filterActive === 'active' ? 'Active' : 'Inactive'}</strong>
+                </Typography>
+              )}
+            </Box>
+          </DialogContent>
+          <DialogActions 
+            sx={{ 
+              px: 3, 
+              pb: 3, 
+              pt: 2.5,
+              gap: 1.5,
+              borderTop: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            <Button 
+              onClick={handleBulkSetActiveCancel}
+              variant="outlined"
+              sx={{
+                textTransform: 'none',
+                px: 3,
+                py: 1,
+                minWidth: '100px',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.23)' 
+                  : 'rgba(0, 0, 0, 0.23)',
+                color: theme.palette.text.primary,
+                '&:hover': {
+                  borderColor: theme.palette.mode === 'dark' 
+                    ? 'rgba(255, 255, 255, 0.3)' 
+                    : 'rgba(0, 0, 0, 0.3)',
+                  backgroundColor: theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.05)'
+                    : 'rgba(0, 0, 0, 0.04)',
+                },
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleBulkSetActiveConfirm} 
+              variant="contained" 
+              color="secondary"
+              autoFocus
+              sx={{
+                textTransform: 'none',
+                px: 3,
+                py: 1,
+                minWidth: '100px',
+                fontWeight: 600,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 12px rgba(3, 105, 161, 0.3)'
+                  : '0 4px 12px rgba(3, 105, 161, 0.2)',
+                '&:hover': {
+                  boxShadow: theme.palette.mode === 'dark'
+                    ? '0 6px 16px rgba(3, 105, 161, 0.4)'
+                    : '0 6px 16px rgba(3, 105, 161, 0.3)',
+                },
+              }}
+            >
+              Set Active
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
   )
 }
