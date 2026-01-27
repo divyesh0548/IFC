@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import React, { useState, useEffect, useRef } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -10,11 +10,12 @@ import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import IconButton from '@mui/material/IconButton';
 import DownloadIcon from '@mui/icons-material/Download';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { toast } from 'react-hot-toast';
-import { useRef } from 'react';
 
 function ApproverFormDetail() {
   const theme = useTheme()
+  const navigate = useNavigate()
   const { form_id } = useParams()
   const [formData, setFormData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -26,7 +27,7 @@ function ApproverFormDetail() {
   const [editableFields, setEditableFields] = useState({
     checks_performed: '',
     effective_or_not_effective: '',
-    done: '',
+    remarks: '',
     findings: ''
   })
 
@@ -53,7 +54,7 @@ function ApproverFormDetail() {
         setEditableFields({
           checks_performed: data.data.checks_performed || '',
           effective_or_not_effective: data.data.effective_or_not_effective || '',
-          done: data.data.done || '',
+          remarks: data.data.remarks || '',
           findings: data.data.findings || ''
         })
       } else {
@@ -90,7 +91,7 @@ function ApproverFormDetail() {
           reason_by_approver: reasonByApprover || '',
           checks_performed: editableFields.checks_performed,
           effective_or_not_effective: editableFields.effective_or_not_effective,
-          done: editableFields.done,
+          remarks: editableFields.remarks,
           findings: editableFields.findings
         }),
       })
@@ -104,7 +105,7 @@ function ApproverFormDetail() {
         setEditableFields({
           checks_performed: '',
           effective_or_not_effective: '',
-          done: '',
+          remarks: '',
           findings: ''
         })
         // Update form data immediately to hide approval action card
@@ -141,7 +142,7 @@ function ApproverFormDetail() {
           reason_by_approver: reasonByApprover || '',
           checks_performed: editableFields.checks_performed,
           effective_or_not_effective: editableFields.effective_or_not_effective,
-          done: editableFields.done,
+          remarks: editableFields.remarks,
           findings: editableFields.findings
         }),
       })
@@ -155,7 +156,7 @@ function ApproverFormDetail() {
         setEditableFields({
           checks_performed: '',
           effective_or_not_effective: '',
-          done: '',
+          remarks: '',
           findings: ''
         })
         // Update form data immediately to hide approval action card
@@ -280,7 +281,7 @@ function ApproverFormDetail() {
     financial_reporting: 'Financial Reporting',
     checks_performed: 'Checks Performed',
     effective_or_not_effective: 'Effective or Not Effective',
-    done: 'Done',
+    remarks: 'Remarks',
     findings: 'Findings',
     doc_uploaded_by_user: 'Doc Uploaded by User',
     remarks_by_user: 'Remarks by User',
@@ -314,7 +315,7 @@ function ApproverFormDetail() {
     'financial_reporting',
     'checks_performed',
     'effective_or_not_effective',
-    'done',
+    'remarks',
     'findings',
     'doc_uploaded_by_user',
     'remarks_by_user'
@@ -366,18 +367,34 @@ function ApproverFormDetail() {
           py: 3,
         }}
       >
-        <Typography 
-          variant="h4" 
-          component="h1" 
-          sx={{ 
-            fontWeight: 700, 
-            textAlign: 'center', 
-            mb: 4,
-            color: 'text.primary'
-          }}
-        >
-          Control Form
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
+          <IconButton
+            onClick={() => navigate('/approver/dashboard')}
+            sx={{
+              mr: 2,
+              color: theme.palette.text.primary,
+              '&:hover': {
+                backgroundColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.08)' 
+                  : 'rgba(0, 0, 0, 0.04)',
+              },
+            }}
+            aria-label="back to dashboard"
+          >
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography 
+            variant="h4" 
+            component="h1" 
+            sx={{ 
+              fontWeight: 700, 
+              flex: 1,
+              color: 'text.primary'
+            }}
+          >
+            Control Form
+          </Typography>
+        </Box>
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
           {/* Left Sidebar - 25% */}
           <Box sx={{ width: { xs: '100%', lg: '25%' } }}>
@@ -386,120 +403,173 @@ function ApproverFormDetail() {
                 position: 'sticky',
                 top: { xs: 64, lg: 80 }, // Account for AppBar height (64px) + some padding
                 zIndex: 1,
-                maxHeight: { xs: 'calc(100vh - 64px)', lg: 'calc(100vh - 80px)' },
-                overflowY: 'auto',
               }}
             >
-              <Card>
-                <CardContent sx={{ p: 3 }}>
-                  <div className="space-y-6">
-                    {/* Form Status (Read-only for approver) */}
-                    <Box sx={{ pt: 2, borderColor: 'divider' }}>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Form Status
-                      </Typography>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
-                          color: isActive ? '#10b981' : '#ef4444',
-                          fontWeight: 600
-                        }}
-                      >
-                        {isActive ? 'Active' : 'Inactive'}
-                      </Typography>
-                    </Box>
+              <Card 
+                sx={{ 
+                  height: 'fit-content',
+                  maxHeight: { xs: 'calc(100vh - 64px - 24px)', lg: 'calc(100vh - 80px - 24px)' },
+                  overflowY: 'hidden',
+                  borderRadius: 3,
+                  boxShadow: theme.palette.mode === 'dark'
+                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                    : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid',
+                  borderColor: theme.palette.mode === 'dark' 
+                    ? 'rgba(255, 255, 255, 0.12)' 
+                    : 'rgba(0, 0, 0, 0.08)',
+                }}
+              >
+                <CardContent sx={{ p: 3.5, display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {/* Form Status */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Form Status
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: isActive ? '#10b981' : '#ef4444',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                      }}
+                    >
+                      {isActive ? 'Active' : 'Inactive'}
+                    </Typography>
+                  </Box>
 
-                    {/* Business Process */}
-                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Business Process
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {formData?.business_process || '-'}
-                      </Typography>
-                    </Box>
+                  {/* Business Process */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Business Process
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formData?.business_process || '-'}
+                    </Typography>
+                  </Box>
 
-                    {/* Creation Time */}
-                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Created At
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {formatDateTime(formData?.created_at)}
-                      </Typography>
-                    </Box>
+                  {/* Creation Time */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Created At
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.875rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formatDateTime(formData?.created_at)}
+                    </Typography>
+                  </Box>
 
-                    {/* Approved/Rejected */}
-                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Status
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {formData?.status || '-'}
-                      </Typography>
-                    </Box>
+                  {/* Approval Status */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Approval Status
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formData?.status || '-'}
+                    </Typography>
+                  </Box>
 
-                    {/* Reason by Approver */}
-                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Reason by Approver
-                      </Typography>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
-                          color: 'text.secondary',
-                          wordBreak: 'break-word'
-                        }}
-                      >
-                        {formData?.reason_by_approver || '-'}
-                      </Typography>
-                    </Box>
-                  </div>
+                  {/* Reason by Approver */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Reason by Approver
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.875rem',
+                        lineHeight: 1.6,
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {formData?.reason_by_approver || 'None'}
+                    </Typography>
+                  </Box>
                 </CardContent>
               </Card>
             </Box>
@@ -538,7 +608,7 @@ function ApproverFormDetail() {
                       const isFileField = key === 'doc_uploaded_by_user'
                       
                       // Check if this is an editable field for approver (only when pending)
-                      const editableFieldKeys = ['checks_performed', 'effective_or_not_effective', 'done', 'findings']
+                      const editableFieldKeys = ['checks_performed', 'effective_or_not_effective', 'remarks', 'findings']
                       const isEditableField = editableFieldKeys.includes(key)
                       const isEditable = isPending && isEditableField
 

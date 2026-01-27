@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
@@ -12,6 +12,7 @@ import Alert from '@mui/material/Alert'
 
 function Siteadmin_dashboard() {
   const theme = useTheme()
+  const navigate = useNavigate()
   const [companies, setCompanies] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -186,6 +187,7 @@ function Siteadmin_dashboard() {
             {companies.map((company) => (
               <Grid item xs={12} sm={6} lg={4} xl={3} key={company.id}>
                 <Card
+                  onClick={() => navigate(`/siteadmin/company/${company.company_identifier}`)}
                   sx={{
                     height: '100%',
                     display: 'flex',
@@ -197,6 +199,7 @@ function Siteadmin_dashboard() {
                       : '0 1px 3px rgba(0,0,0,0.12)',
                     transition: 'all 0.2s ease-in-out',
                     backgroundColor: theme.palette.background.paper,
+                    cursor: 'pointer',
                     '&:hover': {
                       borderColor: theme.palette.mode === 'dark' 
                         ? 'rgba(255, 255, 255, 0.3)' 
@@ -204,6 +207,7 @@ function Siteadmin_dashboard() {
                       boxShadow: theme.palette.mode === 'dark' 
                         ? '0 4px 12px rgba(0,0,0,0.5)' 
                         : '0 4px 12px rgba(0,0,0,0.15)',
+                      transform: 'translateY(-2px)',
                     },
                   }}
                 >

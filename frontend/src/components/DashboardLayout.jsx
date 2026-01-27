@@ -29,6 +29,7 @@ import DarkModeIcon from '@mui/icons-material/DarkMode'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
+import PostAddIcon from '@mui/icons-material/PostAdd'
 import BusinessIcon from '@mui/icons-material/Business'
 import { useThemeMode } from '../contexts/ThemeContext'
 import { toast } from 'react-hot-toast'
@@ -66,6 +67,11 @@ const getNavigationForRole = (role) => {
           path: '/company_co/create-user',
           title: 'Create User',
           icon: <PersonAddIcon />,
+        },
+        {
+          path: '/company_co/create-form',
+          title: 'Create Form',
+          icon: <PostAddIcon />,
         },
         {
           path: '/company_co/upload-excel',

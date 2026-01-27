@@ -11,7 +11,7 @@ const simpleColumnMapping = {
   'basis of sampling': 'basis_of_sampling',
   'checks performed': 'checks_performed',
   'effective or not effective': 'effective_or_not_effective',
-  'done': 'done',
+  'remarks': 'remarks',
   'findings': 'findings'
 };
 

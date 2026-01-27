@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import { Routes, Route } from 'react-router-dom'
 import Siteadmin_dashboard from './pages/siteadmin/Siteadmin_dashboard'
 import CompanyCreation from './pages/siteadmin/CompanyCreation'
+import CompanyDetail from './pages/siteadmin/CompanyDetail'
 import Auditor_dashboard from './pages/auditor/Auditor_dashboard'
 import User_dashboard from './pages/user/User_dashboard'
 import ForgotPassword from './pages/ForgotPassword'
@@ -14,6 +15,7 @@ import Company_Co_dashboard from './pages/company_co/Company_co_dashboard'
 import CreateUser from './pages/company_co/CreateUser'
 import ExcelUpload from './pages/forms/ExcelUpload'
 import FormDetail from './pages/company_co/FormDetail'
+import CreateControlForm from './pages/company_co/CreateControlForm'
 import ApproverDashboard from './pages/approver/ApproverDashboard'
 import ApproverFormDetail from './pages/approver/ApproverFormDetail'
 import UserFormDetail from './pages/user/UserFormDetail'
@@ -24,6 +26,7 @@ function App() {
 
   return (
     <>
+    <div className='scrollbar'>
       <Toaster />
       <Routes>
         <Route path="/" element={<Home />} />
@@ -50,6 +53,7 @@ function App() {
         >
           <Route path="dashboard" element={<Siteadmin_dashboard />} />
           <Route path="create-company" element={<CompanyCreation />} />
+          <Route path="company/:company_identifier" element={<CompanyDetail />} />
         </Route>
 
 {/* Auditor Routes */}
@@ -84,7 +88,7 @@ function App() {
             <RoleBasedProtectedRoute allowedRoles={['user']}>
               <DashboardLayout />
             </RoleBasedProtectedRoute>
-          }
+          } 
         >
           <Route path="dashboard" element={<User_dashboard />} />
           <Route path="form/:form_id" element={<UserFormDetail />} />
@@ -97,15 +101,17 @@ function App() {
             <RoleBasedProtectedRoute allowedRoles={['company_co']}>
               <DashboardLayout />
             </RoleBasedProtectedRoute>
-          }
+          } 
         >
           <Route path="dashboard" element={<Company_Co_dashboard />} />
           <Route path="create-user" element={<CreateUser />} />
           <Route path="upload-excel" element={<ExcelUpload />} />
+          <Route path="create-form" element={<CreateControlForm />} />
           <Route path="form/:form_id" element={<FormDetail />} />
         </Route>
         
       </Routes>
+      </div>
     </>
   )
 }

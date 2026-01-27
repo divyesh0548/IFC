@@ -92,6 +92,35 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Get single company by company_identifier API endpoint
+router.get('/:company_identifier', async (req, res) => {
+  try {
+    const { company_identifier } = req.params;
+    
+    const query = 'SELECT * FROM companies WHERE company_identifier = $1';
+    const result = await pool.query(query, [company_identifier]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Company not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Company retrieved successfully',
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error fetching company:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching company'
+    });
+  }
+});
+
 // Create Company API endpoint
 router.post('/create', async (req, res) => {
   const {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -10,10 +10,13 @@ import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import AttachFileIcon from '@mui/icons-material/AttachFile'
 import CloseIcon from '@mui/icons-material/Close'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import DownloadIcon from '@mui/icons-material/Download'
 import { toast } from 'react-hot-toast'
 
 function UserFormDetail() {
   const theme = useTheme()
+  const navigate = useNavigate()
   const { form_id } = useParams()
   const [formData, setFormData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -136,7 +139,23 @@ function UserFormDetail() {
         // Clear selected file
         setSelectedFile(null)
         setFileName('')
-        // Refresh form data
+        // Update local state immediately with new status
+        if (data.data) {
+          setFormData({
+            ...formData,
+            ...data.data,
+            status: data.data.status || 'sent for approval'
+          })
+        } else {
+          // If data.data is not available, update status locally
+          setFormData({
+            ...formData,
+            status: 'sent for approval',
+            doc_uploaded_by_user: documentPath,
+            remarks_by_user: remarksByUser
+          })
+        }
+        // Refresh form data to ensure consistency
         fetchFormData()
       } else {
         const errorMessage = data.message || 'Failed to send for approval'
@@ -165,6 +184,68 @@ function UserFormDetail() {
     })
   }
 
+  const getFileName = (filePath) => {
+    if (!filePath) return ''
+    const parts = filePath.split(/[/\\]/)
+    return parts[parts.length - 1]
+  }
+
+  const handleDownloadSampleDocument = async (filePath) => {
+    if (!filePath) return
+    
+    try {
+      const fileName = getFileName(filePath)
+      const response = await fetch(`http://localhost:3000/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      // Check status code explicitly
+      const status = response.status
+      const contentType = response.headers.get('content-type') || ''
+
+      // Success: status 200 and content-type is octet-stream (file download)
+      if (status === 200 && contentType.includes('application/octet-stream')) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        toast.success('Sample document downloaded successfully')
+      } else {
+        // Error response: try to parse JSON error message
+        let errorMessage = 'Failed to download sample document'
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.message || errorData.error || errorMessage
+        } catch (e) {
+          // If response is not JSON, use status-based message
+          if (status === 400) {
+            errorMessage = 'Bad request: File path is required'
+          } else if (status === 403) {
+            errorMessage = 'Access denied: Invalid file path'
+          } else if (status === 404) {
+            errorMessage = 'File not found'
+          } else if (status === 401) {
+            errorMessage = 'Authentication required'
+          } else if (status >= 500) {
+            errorMessage = 'Server error occurred'
+          } else {
+            errorMessage = `Download failed with status ${status}`
+          }
+        }
+        toast.error(errorMessage)
+      }
+    } catch (error) {
+      console.error('Error downloading sample document:', error)
+      toast.error(`Error downloading sample document: ${error.message}`)
+    }
+  }
+
   // Define field labels mapping
   const fieldLabels = {
     description_of_control: 'Description of Control',
@@ -190,7 +271,7 @@ function UserFormDetail() {
     financial_reporting: 'Financial Reporting',
     checks_performed: 'Checks Performed',
     effective_or_not_effective: 'Effective or Not Effective',
-    done: 'Done',
+    remarks: 'Remarks',
     findings: 'Findings',
     doc_uploaded_by_user: 'Doc Uploaded by User',
     remarks_by_user: 'Remarks by User',
@@ -224,8 +305,8 @@ function UserFormDetail() {
     'financial_reporting',
     'checks_performed',
     'effective_or_not_effective',
-    'done',
     'findings',
+    'remarks',
     'doc_uploaded_by_user',
     'remarks_by_user'
   ]
@@ -243,6 +324,19 @@ function UserFormDetail() {
   // Form is editable if status is not 'sent for approval' or 'Approved'
   // If status is 'Rejected', user can edit and resubmit
   const isEditable = !isSentForApproval && !isApproved
+
+  // Fields to hide when status is empty/null or 'sent for approval'
+  // Only show them when status is 'Approved' or 'Rejected'
+  // Note: remarks_by_user is always displayed (removed from this list)
+  const conditionalHiddenFields = [
+    'effective_or_not_effective',
+    'checks_performed',
+    'findings',
+    'remarks'
+  ]
+
+  // Check if status should hide conditional fields
+  const shouldHideConditionalFields = !formData?.status || formData.status === '' || formData.status === 'sent for approval'
 
   if (loading) {
     return (
@@ -272,10 +366,18 @@ function UserFormDetail() {
     )
   }
 
-  // Sort fields according to fieldOrder
-  const sortedFields = fieldOrder.filter(key =>
-    formData.hasOwnProperty(key) && !excludedFields.includes(key)
-  )
+  // Sort fields according to fieldOrder and filter out conditional hidden fields
+  const sortedFields = fieldOrder.filter(key => {
+    // First check if field exists and is not in excludedFields
+    if (!formData.hasOwnProperty(key) || excludedFields.includes(key)) {
+      return false
+    }
+    // Then check if field should be hidden based on status
+    if (shouldHideConditionalFields && conditionalHiddenFields.includes(key)) {
+      return false
+    }
+    return true
+  })
 
   return (
     <Box
@@ -287,18 +389,34 @@ function UserFormDetail() {
           py: 3,
         }}
       >
-        <Typography
-          variant="h4"
-          component="h1"
-          sx={{
-            fontWeight: 700,
-            textAlign: 'center',
-            mb: 4,
-            color: 'text.primary'
-          }}
-        >
-          Control Form
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
+          <IconButton
+            onClick={() => navigate('/user/dashboard')}
+            sx={{
+              mr: 2,
+              color: theme.palette.text.primary,
+              '&:hover': {
+                backgroundColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.08)' 
+                  : 'rgba(0, 0, 0, 0.04)',
+              },
+            }}
+            aria-label="back to dashboard"
+          >
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography
+            variant="h4"
+            component="h1"
+            sx={{
+              fontWeight: 700,
+              flex: 1,
+              color: 'text.primary'
+            }}
+          >
+            Control Form
+          </Typography>
+        </Box>
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
           {/* Left Sidebar - 25% */}
           <Box sx={{ width: { xs: '100%', lg: '25%' } }}>
@@ -307,117 +425,262 @@ function UserFormDetail() {
                 position: 'sticky',
                 top: { xs: 64, lg: 80 }, // Account for AppBar height (64px) + some padding
                 zIndex: 1,
+                alignSelf: 'flex-start',
                 maxHeight: { xs: 'calc(100vh - 64px)', lg: 'calc(100vh - 80px)' },
-                overflowY: 'auto',
               }}
             >
-              <Card>
-                <CardContent sx={{ p: 3 }}>
-                  <div className="space-y-6">
+              <Card 
+                sx={{ 
+                  height: 'fit-content',
+                  borderRadius: 3,
+                  boxShadow: theme.palette.mode === 'dark'
+                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                    : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid',
+                  borderColor: theme.palette.mode === 'dark' 
+                    ? 'rgba(255, 255, 255, 0.12)' 
+                    : 'rgba(0, 0, 0, 0.08)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <CardContent sx={{ 
+                  p: 3.5, 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: 0,
+                }}>
+                  {/* Status */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Status
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                      }}
+                    >
+                      {formData?.status && formData.status !== '' ? formData.status : 'Pending'}
+                    </Typography>
+                  </Box>
 
-                    {/* Status */}
-                    <Box sx={{ pt: 1, borderColor: 'divider' }}>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Status
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {formData?.status || '-'}
-                      </Typography>
-                    </Box>
-                    {/* Business Process */}
-                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Business Process
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {formData?.business_process || '-'}
-                      </Typography>
-                    </Box>
-                    {/* Creation Time */}
-                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Created At
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {formatDateTime(formData?.created_at)}
-                      </Typography>
-                    </Box>
+                  {/* Business Process */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Business Process
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formData?.business_process || '-'}
+                    </Typography>
+                  </Box>
 
-                    {/* Reason by Approver */}
-                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-                      <Typography
-                        variant="body2"
-                        component="label"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'text.primary'
-                        }}
-                      >
-                        Reason by Approver
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: 'text.secondary',
-                          wordBreak: 'break-word'
-                        }}
-                      >
-                        {formData?.reason_by_approver || '-'}
-                      </Typography>
-                    </Box>
+                  {/* Creation Time */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Created At
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.875rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formatDateTime(formData?.created_at)}
+                    </Typography>
+                  </Box>
 
-                    {/* Send for Approval Button */}
-                    {isEditable && (
-                      <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-                        <Button
-                          onClick={handleSendForApproval}
-                          disabled={saving}
-                          variant="contained"
-                          color="secondary"
-                          fullWidth
+                  {/* Reason by Approver */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Reason by Approver
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.875rem',
+                        lineHeight: 1.6,
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {formData?.reason_by_approver || 'None'}
+                    </Typography>
+                  </Box>
+
+                  {/* Sample Document */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Sample Document
+                    </Typography>
+                    {formData?.sampling_doc && formData.sampling_doc.trim() !== '' ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography
+                          variant="body2"
                           sx={{
-                            py: 1.5,
-                            fontWeight: 600,
-                            textTransform: 'none',
+                            color: 'text.primary',
+                            fontWeight: 500,
+                            fontSize: '0.875rem',
+                            flex: 1,
+                            wordBreak: 'break-word',
                           }}
                         >
-                          {saving 
-                            ? (isRejected ? 'Resubmitting...' : 'Sending...') 
-                            : (isRejected ? 'Resubmit for Approval' : 'Send for Approval')
-                          }
-                        </Button>
+                          {getFileName(formData.sampling_doc)}
+                        </Typography>
+                        <IconButton
+                          onClick={() => handleDownloadSampleDocument(formData.sampling_doc)}
+                          size="small"
+                          sx={{
+                            color: 'primary.main',
+                            '&:hover': {
+                              backgroundColor: 'action.hover',
+                            },
+                          }}
+                        >
+                          <DownloadIcon fontSize="small" />
+                        </IconButton>
                       </Box>
+                    ) : (
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: 'text.disabled',
+                          fontWeight: 500,
+                          fontSize: '0.875rem',
+                        }}
+                      >
+                        No sample uploaded
+                      </Typography>
                     )}
-                  </div>
+                  </Box>
+
+                  {/* Send for Approval Button */}
+                  {isEditable && (
+                    <Box sx={{ mt: 1, pt: 2, pb: 2 }}>
+                      {(() => {
+                        // Check if document exists (either existing or newly selected)
+                        const hasExistingDocument = formData?.doc_uploaded_by_user && formData.doc_uploaded_by_user !== ''
+                        const hasNewDocument = selectedFile !== null
+                        const hasDocument = hasExistingDocument || hasNewDocument
+                        
+                        // Check if remarks are provided
+                        const hasRemarks = remarksByUser && remarksByUser.trim() !== ''
+                        
+                        // Button is enabled only when both document and remarks are provided
+                        const isButtonDisabled = saving || !hasDocument || !hasRemarks
+                        
+                        return (
+                          <Button
+                            onClick={handleSendForApproval}
+                            disabled={isButtonDisabled}
+                            variant="contained"
+                            color="secondary"
+                            fullWidth
+                            sx={{
+                              py: 1.75,
+                              fontWeight: 600,
+                              textTransform: 'none',
+                              fontSize: '0.9375rem',
+                              borderRadius: 2,
+                              boxShadow: theme.palette.mode === 'dark'
+                                ? '0 4px 12px rgba(3, 105, 161, 0.3)'
+                                : '0 2px 8px rgba(3, 105, 161, 0.2)',
+                              '&:hover': {
+                                boxShadow: theme.palette.mode === 'dark'
+                                  ? '0 6px 16px rgba(3, 105, 161, 0.4)'
+                                  : '0 4px 12px rgba(3, 105, 161, 0.3)',
+                                transform: 'translateY(-1px)',
+                              },
+                              '&:disabled': {
+                                opacity: 0.5,
+                                transform: 'none',
+                              },
+                              transition: 'all 0.2s ease-in-out',
+                            }}
+                          >
+                            {saving 
+                              ? (isRejected ? 'Resubmitting...' : 'Sending...') 
+                              : (isRejected ? 'Resubmit for Approval' : 'Send for Approval')
+                            }
+                          </Button>
+                        )
+                      })()}
+                    </Box>
+                  )}
                 </CardContent>
               </Card>
             </Box>

@@ -4,6 +4,9 @@ import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Paper from '@mui/material/Paper'
+import Typography from '@mui/material/Typography'
+import TextField from '@mui/material/TextField'
 
 function UpdatePassword() {
   const theme = useTheme()
@@ -87,12 +90,37 @@ function UpdatePassword() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-primary px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-secondary mb-8 text-center">
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: theme.palette.background.default,
+        px: 2,
+      }}
+    >
+      <Box sx={{ width: '100%', maxWidth: '448px' }}>
+        <Paper
+          elevation={3}
+          sx={{
+            p: 4,
+            backgroundColor: theme.palette.background.paper,
+            borderRadius: 2,
+          }}
+        >
+          <Typography
+            variant="h4"
+            component="h1"
+            sx={{
+              fontWeight: 700,
+              color: theme.palette.secondary.main,
+              mb: 4,
+              textAlign: 'center',
+            }}
+          >
             Update Password
-          </h1>
+          </Typography>
           
           {error && (
             <Alert severity="error" sx={{ mb: 3 }}>
@@ -100,63 +128,47 @@ function UpdatePassword() {
             </Alert>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label 
-                htmlFor="currentPassword" 
-                className="block text-sm font-medium text-secondary mb-2"
-              >
-                Current/Temporary Password
-              </label>
-              <input
-                type="password"
+          <form onSubmit={handleSubmit}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mb: 3 }}>
+              <TextField
                 id="currentPassword"
+                label="Current/Temporary Password"
+                type="password"
+                variant="filled"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 required
                 disabled={loading}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="Enter current or temporary password"
+                fullWidth
               />
-            </div>
 
-            <div>
-              <label 
-                htmlFor="newPassword" 
-                className="block text-sm font-medium text-secondary mb-2"
-              >
-                New Password
-              </label>
-              <input
-                type="password"
+              <TextField
                 id="newPassword"
+                label="New Password"
+                type="password"
+                variant="filled"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
                 disabled={loading}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="Enter new password"
+                fullWidth
               />
-            </div>
 
-            <div>
-              <label 
-                htmlFor="confirmPassword" 
-                className="block text-sm font-medium text-secondary mb-2"
-              >
-                Confirm New Password
-              </label>
-              <input
-                type="password"
+              <TextField
                 id="confirmPassword"
+                label="Confirm New Password"
+                type="password"
+                variant="filled"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 disabled={loading}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="Confirm new password"
+                fullWidth
               />
-            </div>
+            </Box>
 
             <Button
               type="submit"
@@ -174,9 +186,9 @@ function UpdatePassword() {
               {loading ? 'Updating...' : 'Update Password'}
             </Button>
           </form>
-        </div>
-      </div>
-    </div>
+        </Paper>
+      </Box>
+    </Box>
   )
 }
 

@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 require('dotenv').config();
 
@@ -130,6 +130,46 @@ function getContentType(fileName) {
 }
 
 /**
+ * Delete a file from S3
+ * @param {string} s3Key - The S3 key (full path) of the file to delete
+ * @returns {Promise<void>}
+ */
+async function deleteFileFromS3(s3Key) {
+  try {
+    // Validate credentials before attempting delete
+    if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) {
+      throw new Error('AWS credentials are not configured. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your .env file.');
+    }
+
+    const command = new DeleteObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: s3Key,
+    });
+    
+    console.log(`[S3 Delete] Attempting to delete - Bucket: ${BUCKET_NAME}, Key: ${s3Key}`);
+    await s3Client.send(command);
+    
+    console.log(`[S3 Delete] ✓ Successfully deleted: ${s3Key}`);
+  } catch (error) {
+    console.error('[S3 Delete] Error deleting file from S3:', error);
+    console.error('[S3 Delete] Error name:', error.name);
+    console.error('[S3 Delete] Error message:', error.message);
+    
+    // Check for specific AWS errors
+    if (error.name === 'NoSuchKey' || error.Code === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) {
+      console.warn(`[S3 Delete] ⚠️  File not found in S3 bucket "${BUCKET_NAME}" with key "${s3Key}" - continuing anyway`);
+      return; // Don't throw error if file doesn't exist
+    } else if (error.name === 'AccessDenied' || error.Code === 'AccessDenied' || error.$metadata?.httpStatusCode === 403) {
+      throw new Error(`Access denied to S3 file. Check your AWS credentials and bucket permissions.`);
+    } else if (error.name === 'InvalidAccessKeyId' || error.name === 'SignatureDoesNotMatch') {
+      throw new Error(`Invalid AWS credentials. Please verify your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.`);
+    }
+    
+    throw new Error(`Failed to delete file from S3: ${error.message || error.toString()}`);
+  }
+}
+
+/**
  * Get a presigned URL for downloading a file (optional, for direct downloads)
  * @param {string} s3Key - The S3 key (full path) of the file
  * @param {number} expiresIn - URL expiration time in seconds (default: 3600 = 1 hour)
@@ -153,6 +193,7 @@ async function getPresignedUrl(s3Key, expiresIn = 3600) {
 module.exports = {
   uploadFileToS3,
   downloadFileFromS3,
+  deleteFileFromS3,
   getPresignedUrl,
   BUCKET_NAME,
 };

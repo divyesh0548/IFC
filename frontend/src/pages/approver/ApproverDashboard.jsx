@@ -62,14 +62,15 @@ function ApproverDashboard() {
   const fetchForms = async () => {
     setLoading(true)
     try {
-      let url = 'http://localhost:3000/api/approver/control-forms'
+      // Always exclude inactive forms - only fetch active forms
+      let url = 'http://localhost:3000/api/approver/control-forms?active=true'
       
       if (filter === 'pending') {
-        url += '?status=sent for approval'
+        url += `&status=${encodeURIComponent('sent for approval')}`
       } else if (filter === 'approved') {
-        url += '?status=Approved'
+        url += `&status=${encodeURIComponent('Approved')}`
       } else if (filter === 'rejected') {
-        url += '?status=Rejected'
+        url += `&status=${encodeURIComponent('Rejected')}`
       }
 
       const response = await fetch(url, {
@@ -181,14 +182,12 @@ function ApproverDashboard() {
                       <TableCell sx={{ fontWeight: 600 }}>#</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Description</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Process</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Approval Status</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Created At</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {formsToDisplay.map((form, index) => {
-                      const isActive = form.active && form.active !== '' && form.active !== '0'
                       const approvalStatus = form.status || 'Pending'
                       const isPending = !form.status || form.status === '' || form.status === 'sent for approval'
                       const isApproved = form.status === 'Approved'
@@ -204,16 +203,6 @@ function ApproverDashboard() {
                           <TableCell>{index + 1}</TableCell>
                           <TableCell>{form.description_of_control || 'N/A'}</TableCell>
                           <TableCell>{form.process || 'N/A'}</TableCell>
-                          <TableCell>
-                            <Chip
-                              label={isActive ? 'Active' : 'Inactive'}
-                              size="small"
-                              sx={{
-                                backgroundColor: isActive ? '#10b981' : '#ef4444',
-                                color: '#ffffff',
-                              }}
-                            />
-                          </TableCell>
                           <TableCell>
                             <Chip
                               label={approvalStatus}

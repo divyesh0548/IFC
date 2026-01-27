@@ -11,9 +11,31 @@ const companyCoRoutes = require('./routes/company_co');
 const controlFormsRoutes = require('./routes/control_forms');
 const approverRoutes = require('./routes/approver');
 const { processExcelFiles } = require('./scripts/process_excel_files');
+const { processSamplingExcel } = require('./scripts/process_sampling_excel');
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Database connection pool for stats endpoint
+const dbHost = process.env.DB_HOST || 'localhost';
+const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
+
+const pool = new Pool({
+  user: process.env.DB_USER || 'divyesh',
+  host: dbHost,
+  database: process.env.DB_NAME || 'ifc_dev',
+  password: String(process.env.DB_PASSWORD || '0548'),
+  port: parseInt(process.env.DB_PORT || '5432', 10),
+  ssl: isLocalhost ? false : {
+    rejectUnauthorized: false
+  }
+});
+
+// Set timezone to IST for all connections
+pool.on('connect', async (client) => {
+  await client.query("SET timezone = 'Asia/Kolkata'");
+});
 
 // CORS configuration to allow credentials
 app.use((req, res, next) => {
@@ -55,6 +77,41 @@ app.use((req, res, next) => {
   next();
 });
 
+// Stats endpoint - Get counts of companies and users (defined before other routes)
+app.get('/api/stats', async (req, res) => {
+  try {
+    console.log('Fetching stats...');
+    
+    // Get company count
+    const companiesResult = await pool.query('SELECT COUNT(*) as count FROM companies');
+    const companyCount = parseInt(companiesResult.rows[0].count, 10);
+    console.log('Company count:', companyCount);
+
+    // Get user count
+    const usersResult = await pool.query('SELECT COUNT(*) as count FROM ifc_users');
+    const userCount = parseInt(usersResult.rows[0].count, 10);
+    console.log('User count:', userCount);
+
+    const responseData = {
+      success: true,
+      data: {
+        companies: companyCount,
+        users: userCount
+      }
+    };
+    
+    console.log('Sending stats response:', responseData);
+    res.status(200).json(responseData);
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching statistics',
+      error: error.message
+    });
+  }
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/companies', companiesRoutes);
@@ -80,6 +137,21 @@ setInterval(async () => {
 // Process any existing unprocessed files on server start
 processExcelFiles().catch(error => {
   console.error('Error processing Excel files on startup:', error);
+});
+
+// Start scheduled task to process sampling Excel files every 1 minute
+console.log('Starting sampling Excel file processor scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await processSamplingExcel();
+  } catch (error) {
+    console.error('Error in scheduled sampling Excel file processing:', error);
+  }
+}, 60 * 1000); // 60 seconds = 1 minute
+
+// Process any existing unprocessed sampling files on server start
+processSamplingExcel().catch(error => {
+  console.error('Error processing sampling Excel files on startup:', error);
 });
 
 // Start server

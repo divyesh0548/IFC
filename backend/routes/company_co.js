@@ -58,10 +58,11 @@ function decryptToken(encryptedToken) {
   }
 }
 
-// Middleware to verify company coordinator authentication
+// Middleware to verify company coordinator authentication (unified authentication system)
 async function verifyCompanyCoordinator(req, res, next) {
   try {
-    const token = req.cookies.userAuthToken;
+    // Use unified authToken (prioritize it, but fallback to old userAuthToken for backward compatibility)
+    const token = req.cookies.authToken || req.cookies.userAuthToken;
     
     if (!token) {
       return res.status(401).json({
@@ -70,6 +71,7 @@ async function verifyCompanyCoordinator(req, res, next) {
       });
     }
 
+    // Decrypt and verify the token (decryptToken already verifies JWT)
     const decoded = decryptToken(token);
     
     // Verify user exists and is a company coordinator
@@ -94,8 +96,18 @@ async function verifyCompanyCoordinator(req, res, next) {
 
     // Attach user info to request
     req.user = user;
+    console.log('✅ Company coordinator verified successfully, user:', user.email_id, 'role:', user.role);
     next();
   } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      console.error('❌ Invalid or expired token:', error.message);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
+    
+    console.error('❌ Token verification failed:', error.message);
     return res.status(401).json({
       success: false,
       message: 'Token verification failed'
@@ -133,7 +145,14 @@ async function sendEmail(to, subject, text) {
 
 // Create User for Company API endpoint
 router.post('/create-user', verifyCompanyCoordinator, async (req, res) => {
-  const { email_id } = req.body;
+  const { 
+    email_id, 
+    emp_code, 
+    emp_name, 
+    designation, 
+    department, 
+    mobile 
+  } = req.body;
   const coordinator = req.user; // Company coordinator info from middleware
 
   // Validate email
@@ -149,6 +168,14 @@ router.post('/create-user', verifyCompanyCoordinator, async (req, res) => {
     return res.status(400).json({
       success: false,
       message: 'Invalid email format'
+    });
+  }
+
+  // Validate mobile format if provided
+  if (mobile && !/^[0-9]{10}$/.test(mobile.trim())) {
+    return res.status(400).json({
+      success: false,
+      message: 'Mobile number must be 10 digits'
     });
   }
 
@@ -173,17 +200,37 @@ router.post('/create-user', verifyCompanyCoordinator, async (req, res) => {
 
     // Insert new user with same company_identifier as coordinator
     const insertUserQuery = `
-      INSERT INTO ifc_users (email_id, password, role, company_identifier, temp_login)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO ifc_users (
+        email_id, 
+        password, 
+        role, 
+        company_identifier, 
+        temp_login,
+        emp_code,
+        emp_name,
+        designation,
+        department,
+        mobile
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING id, email_id, company_identifier;
     `;
+
+    // Ensure company_identifier is set from coordinator
+    const companyIdentifier = coordinator.company_identifier || null;
+    console.log(`Creating user ${email_id} with company_identifier: ${companyIdentifier}`);
 
     const userResult = await client.query(insertUserQuery, [
       email_id,
       tempPassword,
       'user', // Regular user role
-      coordinator.company_identifier, // Same company as coordinator
-      1 // Set temp_login to 1 to force password update
+      companyIdentifier, // Same company as coordinator
+      1, // Set temp_login to 1 to force password update
+      emp_code && emp_code.trim() ? emp_code.trim() : null,
+      emp_name && emp_name.trim() ? emp_name.trim() : null,
+      designation && designation.trim() ? designation.trim() : null,
+      department && department.trim() ? department.trim() : null,
+      mobile && mobile.trim() ? mobile.trim() : null
     ]);
 
     const newUser = userResult.rows[0];
@@ -209,14 +256,21 @@ Best regards,
 IFC System
     `;
 
+    // Send email with temporary password (wait for it to complete)
     const emailSent = await sendEmail(email_id, emailSubject, emailText);
 
     if (!emailSent) {
       console.warn(`Warning: Failed to send email to ${email_id}, but user was created successfully.`);
       // Don't fail the transaction if email fails, but log it
+    } else {
+      console.log(`✓ User creation email sent successfully to ${email_id}`);
     }
 
     await client.query('COMMIT');
+    
+    // Small delay to ensure email is fully processed before returning
+    // This helps ensure proper sequencing: user creation email → form status update email
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     res.status(201).json({
       success: true,
@@ -246,6 +300,37 @@ IFC System
     });
   } finally {
     client.release();
+  }
+});
+
+// Check if user exists API endpoint
+router.get('/check-user/:email', verifyCompanyCoordinator, async (req, res) => {
+  const { email } = req.params;
+
+  // Validate email format
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid email format',
+      exists: false
+    });
+  }
+
+  try {
+    const checkUserQuery = 'SELECT * FROM ifc_users WHERE email_id = $1';
+    const existingUser = await pool.query(checkUserQuery, [email]);
+
+    res.status(200).json({
+      success: true,
+      exists: existingUser.rows.length > 0
+    });
+  } catch (error) {
+    console.error('Error checking user:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error checking user existence',
+      exists: false
+    });
   }
 });
 

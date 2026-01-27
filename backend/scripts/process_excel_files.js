@@ -37,6 +37,7 @@ const headerKeywords = [
   'control objective',
   'control to address',
   'mrc',
+  'remarks',
   'ipe',
   'type of control',
   'nature of control',
@@ -355,7 +356,7 @@ async function processExcelFiles() {
   try {
     // Get all unprocessed files (processed = 0)
     const getUnprocessedQuery = `
-      SELECT id, file_path, file_name, company_identifier, coordinator_email_id, business_process 
+      SELECT id, file_path, file_name, company_identifier, coordinator_email_id, business_process, financial_year, cycle 
       FROM excel_files 
       WHERE processed = 0 
       ORDER BY id ASC;
@@ -378,6 +379,8 @@ async function processExcelFiles() {
       const companyIdentifier = file.company_identifier;
       const coordinatorEmailId = file.coordinator_email_id;
       const businessProcess = file.business_process;
+      const financialYear = file.financial_year;
+      const cycle = file.cycle;
 
       console.log(`Processing file: ${fileName} (ID: ${fileId})`);
       if (companyIdentifier) {
@@ -394,6 +397,16 @@ async function processExcelFiles() {
         console.log(`  Business Process: ${businessProcess}`);
       } else {
         console.log(`  Warning: No business_process found for this file`);
+      }
+      if (financialYear) {
+        console.log(`  Financial Year: ${financialYear}`);
+      } else {
+        console.log(`  Warning: No financial_year found for this file`);
+      }
+      if (cycle) {
+        console.log(`  Cycle: ${cycle}`);
+      } else {
+        console.log(`  Warning: No cycle found for this file`);
       }
 
       try {
@@ -486,9 +499,9 @@ async function processExcelFiles() {
           'type_of_risk_mitigation_method', 'process_owner', 'reviewer_process_supervisor',
           'control_frequency', 'basis_of_sampling', 'docs_to_review_for_dms_audit',
           'type_of_risk_associated', 'financial_reporting', 'checks_performed',
-          'effective_or_not_effective', 'done', 'findings', 'gap_description_resolution',
+          'effective_or_not_effective', 'remarks', 'findings', 'gap_description_resolution',
           'doc_uploaded_by_user', 'active', 'status', 'reason_by_approver',
-          'company_identifier', 'form_id', 'business_process'
+          'company_identifier', 'form_id', 'business_process', 'financial_year', 'cycle'
         ];
 
         const columnList = columns.join(', ');
@@ -530,6 +543,24 @@ async function processExcelFiles() {
             // Use business_process from excel_files table, not from Excel data
             if (col === 'business_process') {
               return businessProcess;
+            }
+            // Use financial_year from Excel data if available, otherwise fall back to excel_files table
+            if (col === 'financial_year') {
+              // Check if Excel row has financial_year column
+              if (row['financial_year'] !== null && row['financial_year'] !== undefined && row['financial_year'] !== '') {
+                return String(row['financial_year']).trim();
+              }
+              // Fall back to value from excel_files table
+              return financialYear || null;
+            }
+            // Use cycle from Excel data if available, otherwise fall back to excel_files table
+            if (col === 'cycle') {
+              // Check if Excel row has cycle column
+              if (row['cycle'] !== null && row['cycle'] !== undefined && row['cycle'] !== '') {
+                return String(row['cycle']).trim();
+              }
+              // Fall back to value from excel_files table
+              return cycle || null;
             }
             return row[col] || null;
           });

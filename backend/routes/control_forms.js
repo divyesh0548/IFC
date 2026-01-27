@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const nodemailer = require('nodemailer');
 const { normalizeColumnName } = require('../utils/column_mapping');
 const { uploadFileToS3 } = require('../utils/s3Upload');
 const { logAuditEvent } = require('../utils/auditLog');
@@ -53,6 +54,34 @@ async function generateUniqueFormId(client) {
   }
   
   return formId;
+}
+
+// Helper function to send email
+async function sendEmail(to, subject, text) {
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: process.env.SMTP_PORT || 587,
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+
+  const mailOptions = {
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: to,
+    subject: subject,
+    text: text
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return false;
+  }
 }
 
 const router = express.Router();
@@ -282,6 +311,24 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
     });
   }
 
+  // Validate financial_year is provided
+  const financialYear = req.body.financialYear;
+  if (!financialYear || financialYear.trim() === '') {
+    return res.status(400).json({
+      success: false,
+      message: 'Financial year is required'
+    });
+  }
+
+  // Validate cycle is provided
+  const cycle = req.body.cycle;
+  if (!cycle || cycle.trim() === '') {
+    return res.status(400).json({
+      success: false,
+      message: 'Cycle is required'
+    });
+  }
+
   const client = await pool.connect();
 
   try {
@@ -305,10 +352,10 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
     const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/control_form_excel_files');
     console.log(`File uploaded to S3 with key: ${s3Key}`);
 
-    // Save S3 key to excel_files table with processed = 0, company_identifier, coordinator_email_id, and business_process
+    // Save S3 key to excel_files table with processed = 0, company_identifier, coordinator_email_id, business_process, financial_year, and cycle
     const insertFileQuery = `
-      INSERT INTO excel_files (file_path, file_name, processed, company_identifier, coordinator_email_id, business_process)
-      VALUES ($1, $2, 0, $3, $4, $5)
+      INSERT INTO excel_files (file_path, file_name, processed, company_identifier, coordinator_email_id, business_process, financial_year, cycle)
+      VALUES ($1, $2, 0, $3, $4, $5, $6, $7)
       RETURNING id;
     `;
 
@@ -317,7 +364,9 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
       fileName,
       companyIdentifier,
       userEmail, // coordinator_email_id
-      businessProcess // business_process
+      businessProcess, // business_process
+      financialYear, // financial_year
+      cycle // cycle
     ]);
 
     await client.query('COMMIT');
@@ -344,10 +393,20 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
   }
 });
 
-// Get all control forms (with optional company_identifier, process_owner, active, and business_process filters)
+// Get all control forms (with optional company_identifier, process_owner, active, business_process, status, financial_year, and cycle filters)
 router.get('/', verifyAuth, async (req, res) => {
   try {
-    const { company_identifier, process_owner, active, business_process } = req.query;
+    const { company_identifier, process_owner, active, business_process, status, financial_year, cycle } = req.query;
+    
+    // Debug logging
+    console.log('Control forms GET request filters:', {
+      company_identifier,
+      active,
+      business_process,
+      status,
+      financial_year,
+      cycle
+    });
     
     let query = 'SELECT * FROM control_forms WHERE 1=1';
     const queryParams = [];
@@ -384,6 +443,44 @@ router.get('/', verifyAuth, async (req, res) => {
         // Inactive: null, empty, or '0'
         query += ` AND (active IS NULL OR active = '' OR active = '0')`;
       }
+    }
+    
+    // Filter by status if provided
+    if (status) {
+      if (status === 'pending') {
+        // Pending: status is null or empty
+        query += ` AND (status IS NULL OR status = '' OR status = 'null')`;
+      } else if (status === 'sent for approval') {
+        // Sent for approval: status is exactly 'sent for approval'
+        query += ` AND status = $${paramIndex}`;
+        queryParams.push('sent for approval');
+        paramIndex++;
+      } else if (status === 'approved') {
+        // Approved: status is exactly 'Approved'
+        query += ` AND status = $${paramIndex}`;
+        queryParams.push('Approved');
+        paramIndex++;
+      } else if (status === 'rejected') {
+        // Rejected: status is exactly 'Rejected'
+        query += ` AND status = $${paramIndex}`;
+        queryParams.push('Rejected');
+        paramIndex++;
+      }
+      // For 'all' or any other value, no status filter is applied
+    }
+
+    // Filter by financial_year if provided
+    if (financial_year) {
+      query += ` AND financial_year IS NOT NULL AND TRIM(financial_year) = $${paramIndex}`;
+      queryParams.push(financial_year.trim());
+      paramIndex++;
+    }
+
+    // Filter by cycle if provided
+    if (cycle) {
+      query += ` AND cycle IS NOT NULL AND TRIM(cycle) = $${paramIndex}`;
+      queryParams.push(cycle.trim());
+      paramIndex++;
     }
     
     query += ' ORDER BY created_at DESC';
@@ -512,7 +609,7 @@ const {
     type_of_risk_mitigation_method, process_owner, reviewer_process_supervisor,
     control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
     type_of_risk_associated, financial_reporting, checks_performed,
-    effective_or_not_effective, done, findings, gap_description_resolution,
+    effective_or_not_effective, remarks, findings, gap_description_resolution,
     doc_uploaded_by_user, active, status, reason_by_approver, remarks_by_user
   } = req.body;
 
@@ -521,11 +618,17 @@ const {
   try {
     await client.query('BEGIN');
 
-    // Check if user is an approver (only approvers can edit checks_performed, effective_or_not_effective, done, findings)
+    // Get current form data to check if active status is changing
+    const getCurrentFormQuery = 'SELECT active, process_owner, description_of_control FROM control_forms WHERE form_id = $1';
+    const currentFormResult = await client.query(getCurrentFormQuery, [form_id]);
+    const currentForm = currentFormResult.rows.length > 0 ? currentFormResult.rows[0] : null;
+    const currentActiveStatus = currentForm?.active && currentForm.active !== '' && currentForm.active !== '0' ? '1' : '0';
+
+    // Check if user is an approver (only approvers can edit checks_performed, effective_or_not_effective, remarks, findings)
     const isApprover = !!req.cookies.approverAuthToken;
     
     // Fields that only approvers can update
-    const approverOnlyFields = ['checks_performed', 'effective_or_not_effective', 'done', 'findings'];
+    const approverOnlyFields = ['checks_performed', 'effective_or_not_effective', 'remarks', 'findings'];
     
     // If user is not an approver, remove approver-only fields from the update
     if (!isApprover) {
@@ -538,7 +641,7 @@ const {
         await client.query('ROLLBACK');
         return res.status(403).json({
           success: false,
-          message: 'You do not have permission to update these fields. Only approvers can update: checks_performed, effective_or_not_effective, done, findings'
+          message: 'You do not have permission to update these fields. Only approvers can update: checks_performed, effective_or_not_effective, remarks, findings'
         });
       }
     }
@@ -556,7 +659,7 @@ const {
       type_of_risk_mitigation_method, process_owner, reviewer_process_supervisor,
       control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
       type_of_risk_associated, financial_reporting, checks_performed,
-      effective_or_not_effective, done, findings, gap_description_resolution,
+      effective_or_not_effective, remarks, findings, gap_description_resolution,
       doc_uploaded_by_user, active, status, reason_by_approver, remarks_by_user
     };
 
@@ -629,6 +732,46 @@ const {
       await logAuditEvent('Sent for approval', req.user.email_id, form_id);
     }
 
+    // Send email to process_owner if active status changed
+    if (active !== undefined && currentForm) {
+      const newActiveStatus = active === '1' || active === 1 || active === true ? '1' : '0';
+      if (newActiveStatus !== currentActiveStatus && currentForm.process_owner) {
+        const processOwnerEmail = currentForm.process_owner.trim();
+        const isActive = newActiveStatus === '1';
+        const formDescription = currentForm.description_of_control || 'Control Form';
+        
+        const emailSubject = `Control Form Status Update - ${isActive ? 'Active' : 'Inactive'}`;
+        const emailText = `
+Dear Process Owner,
+
+This is to inform you that the status of the following control form has been updated:
+
+Form ID: ${form_id}
+Description: ${formDescription}
+New Status: ${isActive ? 'Active' : 'Inactive'}
+
+${isActive 
+  ? 'The form has been set to Active. Please ensure all necessary actions are taken accordingly.'
+  : 'The form has been set to Inactive. Please review and take necessary actions if required.'
+}
+
+Best regards,
+IFC System
+        `;
+
+        // Small delay to ensure user creation email (if user was just created) is sent first
+        // This ensures proper sequencing: user creation email → form status update email
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const emailSent = await sendEmail(processOwnerEmail, emailSubject, emailText);
+        if (!emailSent) {
+          console.warn(`Warning: Failed to send status update email to ${processOwnerEmail}, but form was updated successfully.`);
+        } else {
+          console.log(`✓ Form status update email sent successfully to ${processOwnerEmail}`);
+        }
+      }
+    }
+
     res.status(200).json({
       success: true,
       message: 'Control form updated successfully',
@@ -699,9 +842,105 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
       }
     }
     
+    // Get forms that will be updated (before updating) to send emails
+    // Build SELECT query with same WHERE conditions but correct parameter indices
+    let getFormsQuery = 'SELECT form_id, process_owner, description_of_control, active FROM control_forms WHERE 1=1';
+    const getFormsParams = [];
+    let getFormsParamIndex = 1;
+    
+    // Filter by company_identifier (required for company_co)
+    if (userCompanyIdentifier) {
+      getFormsQuery += ` AND company_identifier = $${getFormsParamIndex}`;
+      getFormsParams.push(userCompanyIdentifier);
+      getFormsParamIndex++;
+    }
+    
+    // Filter by business_process if provided
+    if (business_process && business_process !== 'all') {
+      getFormsQuery += ` AND business_process IS NOT NULL AND LOWER(TRIM(business_process)) = $${getFormsParamIndex}`;
+      getFormsParams.push(business_process.trim().toLowerCase());
+      getFormsParamIndex++;
+    }
+    
+    // Filter by active status if provided (to only update inactive forms, for example)
+    if (active !== undefined) {
+      if (active === 'true' || active === '1') {
+        // Only update forms that are currently active
+        getFormsQuery += ` AND active IS NOT NULL AND active != '' AND active != '0'`;
+      } else if (active === 'false' || active === '0') {
+        // Only update forms that are currently inactive
+        getFormsQuery += ` AND (active IS NULL OR active = '' OR active = '0')`;
+      }
+    }
+    
+    const formsToUpdate = await client.query(getFormsQuery, getFormsParams);
+    
+    // Perform the update
     const result = await client.query(query, queryParams);
     
     await client.query('COMMIT');
+    
+    // Send emails to process owners
+    if (formsToUpdate.rows.length > 0) {
+      const emailPromises = [];
+      const uniqueProcessOwners = new Map(); // Use Map to avoid duplicate emails
+      
+      for (const form of formsToUpdate.rows) {
+        if (form.process_owner && form.process_owner.trim()) {
+          const processOwnerEmail = form.process_owner.trim();
+          const wasActive = form.active && form.active !== '' && form.active !== '0';
+          
+          // Only send email if status is actually changing (from inactive to active)
+          if (!wasActive) {
+            // Avoid sending duplicate emails to the same process owner
+            if (!uniqueProcessOwners.has(processOwnerEmail)) {
+              uniqueProcessOwners.set(processOwnerEmail, []);
+            }
+            uniqueProcessOwners.get(processOwnerEmail).push({
+              form_id: form.form_id,
+              description: form.description_of_control || 'Control Form'
+            });
+          }
+        }
+      }
+      
+      // Small delay to ensure user creation emails (if users were just created) are sent first
+      // This ensures proper sequencing: user creation emails → form status update emails
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Send emails to each unique process owner
+      for (const [email, forms] of uniqueProcessOwners.entries()) {
+        const formList = forms.map(f => `  - Form ID: ${f.form_id}\n    Description: ${f.description}`).join('\n');
+        const emailSubject = `Control Forms Status Update - Set to Active`;
+        const emailText = `
+Dear Process Owner,
+
+This is to inform you that the following control form(s) have been set to Active:
+
+${formList}
+
+Total Forms: ${forms.length}
+
+Please ensure all necessary actions are taken accordingly.
+
+Best regards,
+IFC System
+        `;
+        
+        emailPromises.push(sendEmail(email, emailSubject, emailText));
+      }
+      
+      // Send all emails (don't wait for them to complete)
+      Promise.all(emailPromises).then(results => {
+        const successCount = results.filter(r => r === true).length;
+        const failCount = results.length - successCount;
+        if (failCount > 0) {
+          console.warn(`Warning: Failed to send ${failCount} status update email(s) out of ${results.length} total.`);
+        }
+      }).catch(error => {
+        console.error('Error sending bulk status update emails:', error);
+      });
+    }
     
     res.status(200).json({
       success: true,
@@ -732,13 +971,26 @@ router.post('/', verifyAuth, async (req, res) => {
     type_of_risk_mitigation_method, process_owner, reviewer_process_supervisor,
     control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
     type_of_risk_associated, financial_reporting, checks_performed,
-    effective_or_not_effective, done, findings, gap_description_resolution
+    effective_or_not_effective, remarks, findings, gap_description_resolution,
+    company_identifier, business_process, financial_year, cycle
   } = req.body;
 
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
+
+    // Get user's company_identifier if not provided in request body
+    let userCompanyIdentifier = company_identifier;
+    if (!userCompanyIdentifier) {
+      const userEmail = req.user.email_id;
+      const getUserQuery = 'SELECT company_identifier FROM ifc_users WHERE email_id = $1';
+      const userResult = await client.query(getUserQuery, [userEmail]);
+      
+      if (userResult.rows.length > 0 && userResult.rows[0].company_identifier) {
+        userCompanyIdentifier = userResult.rows[0].company_identifier;
+      }
+    }
 
     // Generate unique form_id
     const formId = await generateUniqueFormId(client);
@@ -752,12 +1004,18 @@ router.post('/', verifyAuth, async (req, res) => {
         type_of_risk_mitigation_method, process_owner, reviewer_process_supervisor,
         control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
         type_of_risk_associated, financial_reporting, checks_performed,
-        effective_or_not_effective, done, findings, gap_description_resolution,
-        form_id
+        effective_or_not_effective, remarks, findings, gap_description_resolution,
+        form_id, company_identifier, business_process, financial_year, cycle
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
       RETURNING *;
     `;
+
+    // Set approver-only fields to null if not provided (these fields are only editable by approvers)
+    const checksPerformedValue = checks_performed !== undefined ? checks_performed : null
+    const effectiveOrNotEffectiveValue = effective_or_not_effective !== undefined ? effective_or_not_effective : null
+    const remarksValue = remarks !== undefined ? remarks : null
+    const findingsValue = findings !== undefined ? findings : null
 
     const result = await client.query(insertQuery, [
       description_of_control, process, sub_process, risk_description,
@@ -766,9 +1024,9 @@ router.post('/', verifyAuth, async (req, res) => {
       relevant_data_elements_of_ipe, type_of_control, nature_of_control,
       type_of_risk_mitigation_method, process_owner, reviewer_process_supervisor,
       control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
-      type_of_risk_associated, financial_reporting, checks_performed,
-      effective_or_not_effective, done, findings, gap_description_resolution,
-      formId
+      type_of_risk_associated, financial_reporting, checksPerformedValue,
+      effectiveOrNotEffectiveValue, remarksValue, findingsValue, gap_description_resolution,
+      formId, userCompanyIdentifier, business_process, financial_year || null, cycle || null
     ]);
 
     await client.query('COMMIT');
@@ -854,6 +1112,87 @@ router.post('/:form_id/upload-document', verifyAuth, uploadUserDoc.single('docum
     res.status(500).json({
       success: false,
       message: 'Error uploading document to S3',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Upload sampling Excel file for a specific form
+router.post('/:form_id/upload-sampling-excel', verifyAuth, upload.single('excelFile'), async (req, res) => {
+  const { form_id } = req.params;
+  const { primary_columns } = req.body;
+  
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      message: 'No file uploaded'
+    });
+  }
+
+  if (!primary_columns || primary_columns.trim() === '') {
+    return res.status(400).json({
+      success: false,
+      message: 'Primary columns are required'
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Verify form exists
+    const formCheckQuery = 'SELECT form_id FROM control_forms WHERE form_id = $1';
+    const formResult = await client.query(formCheckQuery, [form_id]);
+
+    if (formResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Control form not found'
+      });
+    }
+
+    const fileName = req.file.originalname;
+    const fileBuffer = req.file.buffer;
+
+    // Upload file to S3
+    console.log(`Uploading sampling Excel file to S3: ${fileName}`);
+    const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/sampling_excel_files/temp');
+    console.log(`Sampling Excel file uploaded to S3 with key: ${s3Key}`);
+    
+    // Save to sampling_process_temp table
+    const insertQuery = `
+      INSERT INTO sampling_process_temp (excel_file_url, form_id, primary_columns)
+      VALUES ($1, $2, $3)
+      RETURNING *;
+    `;
+
+    const result = await client.query(insertQuery, [s3Key, form_id, primary_columns.trim()]);
+
+    await client.query('COMMIT');
+
+    res.status(200).json({
+      success: true,
+      message: 'Sampling Excel file uploaded successfully',
+      data: {
+        id: result.rows[0].id,
+        excel_file_url: result.rows[0].excel_file_url,
+        form_id: result.rows[0].form_id,
+        primary_columns: result.rows[0].primary_columns,
+        file_name: fileName
+      }
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error uploading sampling Excel file to S3:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading sampling Excel file',
       error: error.message
     });
   } finally {

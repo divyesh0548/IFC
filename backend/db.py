@@ -76,36 +76,6 @@ def create_table_with_constraint(cursor, table_name, create_table_query, constra
         cursor.execute(add_constraint_query)
         print(f"  ✓ Constraint '{constraint_name}' added successfully!")
 
-def create_auditors_table(cursor):
-    """Creates the auditors table if it doesn't exist."""
-    print("\n[auditors]")
-    
-    create_table_query = """
-    CREATE TABLE IF NOT EXISTS public.auditors (
-        id serial NOT NULL,
-        email_id character varying(255) NOT NULL,
-        password character varying(255) NOT NULL,
-        created_at timestamp without time zone NULL DEFAULT (
-            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
-        )
-    );
-    """
-    
-    add_constraint_query = """
-    DO $$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint 
-            WHERE conname = 'auditors_pkey'
-        ) THEN
-            ALTER TABLE public.auditors
-            ADD CONSTRAINT auditors_pkey PRIMARY KEY (id);
-        END IF;
-    END $$;
-    """
-    
-    create_table_with_constraint(cursor, 'auditors', create_table_query, 'auditors_pkey', add_constraint_query)
-
 def create_companies_table(cursor):
     """Creates the companies table if it doesn't exist."""
     print("\n[companies]")
@@ -185,7 +155,10 @@ def create_control_forms_table(cursor):
         company_identifier character varying(255) NULL,
         form_id character varying(255) NULL,
         remarks_by_user text NULL,
-        business_process character varying(255) NULL
+        business_process character varying(255) NULL,
+        financial_year character varying(255) NULL,
+        cycle character varying(255) NULL,
+        sampling_doc character varying(255) NULL
     );
     """
     
@@ -219,7 +192,9 @@ def create_excel_files_table(cursor):
         ),
         company_identifier character varying(255) NULL,
         coordinator_email_id character varying(255) NULL,
-        business_process character varying(255) NULL
+        business_process character varying(255) NULL,
+        cycle character varying(255) NULL,
+        financial_year character varying(255) NULL
     );
     """
     
@@ -270,66 +245,6 @@ def create_ifc_users_table(cursor):
     """
     
     create_table_with_constraint(cursor, 'ifc_users', create_table_query, 'ifc_users_pkey', add_constraint_query)
-
-def create_siteadmin_table(cursor):
-    """Creates the siteadmin table if it doesn't exist."""
-    print("\n[siteadmin]")
-    
-    create_table_query = """
-    CREATE TABLE IF NOT EXISTS public.siteadmin (
-        id serial NOT NULL,
-        email_id character varying(255) NOT NULL,
-        password character varying(255) NOT NULL,
-        created_at timestamp without time zone NULL DEFAULT (
-            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
-        )
-    );
-    """
-    
-    add_constraint_query = """
-    DO $$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint 
-            WHERE conname = 'siteadmin_pkey'
-        ) THEN
-            ALTER TABLE public.siteadmin
-            ADD CONSTRAINT siteadmin_pkey PRIMARY KEY (id);
-        END IF;
-    END $$;
-    """
-    
-    create_table_with_constraint(cursor, 'siteadmin', create_table_query, 'siteadmin_pkey', add_constraint_query)
-
-def create_appover_table(cursor):
-    """Creates the appover table if it doesn't exist."""
-    print("\n[appover]")
-    
-    create_table_query = """
-    CREATE TABLE IF NOT EXISTS public.appover (
-        id serial NOT NULL,
-        email_id character varying(255) NOT NULL,
-        password character varying(255) NOT NULL,
-        created_at timestamp without time zone NULL DEFAULT (
-            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
-        )
-    );
-    """
-    
-    add_constraint_query = """
-    DO $$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint 
-            WHERE conname = 'appover_pkey'
-        ) THEN
-            ALTER TABLE public.appover
-            ADD CONSTRAINT appover_pkey PRIMARY KEY (id);
-        END IF;
-    END $$;
-    """
-    
-    create_table_with_constraint(cursor, 'appover', create_table_query, 'appover_pkey', add_constraint_query)
 
 def create_audit_logs_table(cursor):
     """Creates the audit_logs table if it doesn't exist."""
@@ -390,48 +305,6 @@ def alter_audit_logs_add_form_id(cursor):
             ADD COLUMN form_id character varying(255) NULL;
         """)
         print("  ✓ Column 'form_id' added successfully!")
-
-def alter_excel_files_add_coordinator_email_id(cursor):
-    """Adds coordinator_email_id column to excel_files table if it doesn't exist."""
-    print("\n[excel_files - Adding coordinator_email_id column]")
-    
-    if column_exists(cursor, 'excel_files', 'coordinator_email_id'):
-        print("  ⚠️  Column 'coordinator_email_id' already exists in 'excel_files' table. Skipping.")
-    else:
-        print("  Adding column 'coordinator_email_id' to 'excel_files' table...")
-        cursor.execute("""
-            ALTER TABLE public.excel_files
-            ADD COLUMN coordinator_email_id character varying(255) NULL;
-        """)
-        print("  ✓ Column 'coordinator_email_id' added successfully!")
-
-def alter_excel_files_add_business_process(cursor):
-    """Adds business_process column to excel_files table if it doesn't exist."""
-    print("\n[excel_files - Adding business_process column]")
-    
-    if column_exists(cursor, 'excel_files', 'business_process'):
-        print("  ⚠️  Column 'business_process' already exists in 'excel_files' table. Skipping.")
-    else:
-        print("  Adding column 'business_process' to 'excel_files' table...")
-        cursor.execute("""
-            ALTER TABLE public.excel_files
-            ADD COLUMN business_process character varying(255) NULL;
-        """)
-        print("  ✓ Column 'business_process' added successfully!")
-
-def alter_control_forms_add_business_process(cursor):
-    """Adds business_process column to control_forms table if it doesn't exist."""
-    print("\n[control_forms - Adding business_process column]")
-    
-    if column_exists(cursor, 'control_forms', 'business_process'):
-        print("  ⚠️  Column 'business_process' already exists in 'control_forms' table. Skipping.")
-    else:
-        print("  Adding column 'business_process' to 'control_forms' table...")
-        cursor.execute("""
-            ALTER TABLE public.control_forms
-            ADD COLUMN business_process character varying(255) NULL;
-        """)
-        print("  ✓ Column 'business_process' added successfully!")
 
 def insert_ifc_user(email_id, password, role, company_identifier=None, temp_login=0):
     """
@@ -535,6 +408,80 @@ def insert_ifc_user(email_id, password, role, company_identifier=None, temp_logi
             cursor.close()
             conn.close()
 
+def create_sampling_process_temp_table(cursor):
+    """Creates the sampling_process_temp table if it doesn't exist."""
+    print("\n[sampling_process_temp]")
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.sampling_process_temp (
+        id serial NOT NULL,
+        excel_file_url character varying(500) NOT NULL,
+        form_id character varying(255) NOT NULL,
+        primary_columns character varying(500) NOT NULL,
+        processed integer NULL DEFAULT 0
+    );
+    """
+    
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'sampling_process_temp_pkey'
+        ) THEN
+            ALTER TABLE public.sampling_process_temp
+            ADD CONSTRAINT sampling_process_temp_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+    
+    create_table_with_constraint(cursor, 'sampling_process_temp', create_table_query, 'sampling_process_temp_pkey', add_constraint_query)
+
+def alter_control_forms_add_sampling_doc(cursor):
+    """Adds sampling_doc column to control_forms table if it doesn't exist."""
+    print("\n[control_forms - Adding sampling_doc column]")
+    
+    if column_exists(cursor, 'control_forms', 'sampling_doc'):
+        print("  ⚠️  Column 'sampling_doc' already exists in 'control_forms' table. Skipping.")
+    else:
+        print("  Adding column 'sampling_doc' to 'control_forms' table...")
+        cursor.execute("""
+            ALTER TABLE public.control_forms
+            ADD COLUMN sampling_doc character varying(255) NULL;
+        """)
+        print("  ✓ Column 'sampling_doc' added successfully!")
+
+def alter_sampling_process_temp_add_processed(cursor):
+    """Adds processed column to sampling_process_temp table if it doesn't exist."""
+    print("\n[sampling_process_temp - Adding processed column]")
+    
+    if column_exists(cursor, 'sampling_process_temp', 'processed'):
+        print("  ⚠️  Column 'processed' already exists in 'sampling_process_temp' table. Skipping.")
+    else:
+        print("  Adding column 'processed' to 'sampling_process_temp' table...")
+        cursor.execute("""
+            ALTER TABLE public.sampling_process_temp
+            ADD COLUMN processed integer NULL DEFAULT 0;
+        """)
+        print("  ✓ Column 'processed' added successfully!")
+
+def alter_ifc_users_table(cursor):
+    """Alters the ifc_users table to add new columns."""
+    print("\n[alter_ifc_users]")
+
+    alter_table_query = """
+    ALTER TABLE public.ifc_users
+    ADD COLUMN IF NOT EXISTS emp_code character varying(255) NULL,
+    ADD COLUMN IF NOT EXISTS emp_name character varying(255) NULL,
+    ADD COLUMN IF NOT EXISTS designation character varying(255) NULL,
+    ADD COLUMN IF NOT EXISTS department character varying(255) NULL,
+    ADD COLUMN IF NOT EXISTS mobile character varying(255) NULL;
+    """
+    
+    # Execute the query to alter the table
+    cursor.execute(alter_table_query)
+    print("Table 'ifc_users' altered successfully with new columns.")
+
 def create_all_tables():
     """
     Main function that creates all tables in the database.
@@ -566,19 +513,17 @@ def create_all_tables():
         print("\n" + "=" * 70)
         print("Creating tables...")
         print("=" * 70)
-        
-        create_auditors_table(cursor)
+    
         create_companies_table(cursor)
         create_control_forms_table(cursor)
         create_excel_files_table(cursor)
         create_ifc_users_table(cursor)
-        create_siteadmin_table(cursor)
-        create_appover_table(cursor)
         create_audit_logs_table(cursor)
+        create_sampling_process_temp_table(cursor)
         alter_audit_logs_add_form_id(cursor)
-        alter_excel_files_add_coordinator_email_id(cursor)
-        alter_excel_files_add_business_process(cursor)
-        alter_control_forms_add_business_process(cursor)
+        alter_control_forms_add_sampling_doc(cursor)
+        alter_sampling_process_temp_add_processed(cursor)
+        alter_ifc_users_table(cursor)
         
         print("\n" + "=" * 70)
         print("✓ All tables processed successfully!")

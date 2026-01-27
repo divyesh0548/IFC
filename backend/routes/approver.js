@@ -231,7 +231,7 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
       reason_by_approver,
       checks_performed,
       effective_or_not_effective,
-      done,
+      remarks,
       findings
     } = req.body;
     const approver = req.approver;
@@ -249,7 +249,7 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
       status,
       checks_performed,
       effective_or_not_effective,
-      done,
+      remarks,
       findings
     });
 
@@ -269,8 +269,8 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     updateValues.push(effective_or_not_effective !== undefined ? effective_or_not_effective : null);
     paramIndex++;
     
-    updateFields.push(`done = $${paramIndex}`);
-    updateValues.push(done !== undefined ? done : null);
+    updateFields.push(`remarks = $${paramIndex}`);
+    updateValues.push(remarks !== undefined ? remarks : null);
     paramIndex++;
     
     updateFields.push(`findings = $${paramIndex}`);
@@ -393,9 +393,13 @@ router.get('/control-forms', verifyApproverAuth, async (req, res) => {
     }
 
     if (active !== undefined) {
-      query += ` AND active = $${paramIndex}`;
-      queryParams.push(active === 'true' ? 'true' : 'false');
-      paramIndex++;
+      if (active === 'true' || active === '1') {
+        // Active: not null, not empty, and not '0'
+        query += ` AND active IS NOT NULL AND active != '' AND active != '0'`;
+      } else if (active === 'false' || active === '0') {
+        // Inactive: null, empty, or '0'
+        query += ` AND (active IS NULL OR active = '' OR active = '0')`;
+      }
     }
 
     query += ' ORDER BY created_at DESC';

@@ -25,6 +25,8 @@ function ExcelUpload() {
   const [preview, setPreview] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [businessProcess, setBusinessProcess] = useState('')
+  const [financialYear, setFinancialYear] = useState('')
+  const [cycle, setCycle] = useState('')
 
   const validateAndSetFile = (selectedFile) => {
     if (!selectedFile) {
@@ -113,12 +115,24 @@ function ExcelUpload() {
       return
     }
 
+    if (!financialYear) {
+      toast.error('Please select a financial year')
+      return
+    }
+
+    if (!cycle) {
+      toast.error('Please select a cycle')
+      return
+    }
+
     setLoading(true)
 
     try {
       const formData = new FormData()
       formData.append('excelFile', file)
       formData.append('businessProcess', businessProcess)
+      formData.append('financialYear', financialYear)
+      formData.append('cycle', cycle)
 
       const response = await fetch('http://localhost:3000/api/control-forms/bulk-upload', {
         method: 'POST',
@@ -129,10 +143,12 @@ function ExcelUpload() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        toast.success(`Successfully imported ${data.count} control form(s)!`)
+        toast.success('File uploaded successfully')
         setFile(null)
         setPreview(null)
         setBusinessProcess('')
+        setFinancialYear('')
+        setCycle('')
         // Reset file input
         e.target.reset()
       } else {
@@ -292,6 +308,49 @@ function ExcelUpload() {
                 </Select>
               </FormControl>
 
+              {/* Financial Year Dropdown */}
+              <FormControl 
+                fullWidth 
+                required 
+                sx={{ mb: 3 }}
+                disabled={loading}
+              >
+                <InputLabel id="financial-year-label">Financial Year</InputLabel>
+                <Select
+                  labelId="financial-year-label"
+                  id="financial-year"
+                  value={financialYear}
+                  label="Financial Year"
+                  onChange={(e) => setFinancialYear(e.target.value)}
+                  variant="filled"
+                >
+                  <MenuItem value="2024-25">2024-25</MenuItem>
+                  <MenuItem value="2025-26">2025-26</MenuItem>
+                </Select>
+              </FormControl>
+
+              {/* Cycle Dropdown */}
+              <FormControl 
+                fullWidth 
+                required 
+                sx={{ mb: 3 }}
+                disabled={loading}
+              >
+                <InputLabel id="cycle-label">Cycle</InputLabel>
+                <Select
+                  labelId="cycle-label"
+                  id="cycle"
+                  value={cycle}
+                  label="Cycle"
+                  onChange={(e) => setCycle(e.target.value)}
+                  variant="filled"
+                >
+                  <MenuItem value="1st">1st</MenuItem>
+                  <MenuItem value="2nd">2nd</MenuItem>
+                  <MenuItem value="3rd">3rd</MenuItem>
+                </Select>
+              </FormControl>
+
               {/* Instructions */}
               <Box
                 sx={{
@@ -343,7 +402,7 @@ function ExcelUpload() {
               {/* Submit Button */}
               <Button
                 type="submit"
-                disabled={loading || !file || !businessProcess}
+                disabled={loading || !file || !businessProcess || !financialYear || !cycle}
                 variant="contained"
                 color="secondary"
                 fullWidth

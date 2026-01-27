@@ -1,0 +1,21 @@
+@frontend/src/pages/company_co/FormDetail.jsx Now provide an option to upload sampling excel sheet on each control_forms to comapny_co. 
+
+On upload do some processing on frontend (client-side). 
+After file upload diaplsy all headers based on the first row of an exce sheet. Company_co will select any 2 of them. and click on upload.
+
+After clicking on upload, upload that excel sheet to S3 bucket, with this key = IFC/sampling_excel_files/temp. 
+
+Then save path in 'sampling_process_temp' table in 'excel_file_url' column.
+
+Save selected headers in 'primary_columns' column seperated by comma. And also update form_id in 'form_id' column. it is saved in 'form_id' colunmn of control_forms table.
+
+
+
+Now create a script that will check sampling_process_temp table. 
+
+First it will download excel file using excel_file_url. Then it will get two primary column names from 'primary_columns' column, (comma seperated). 
+
+Now using those columns select any 5 random rows and upload that five rows in an excel file using this s3 key = IFC/sample_docs. After uploading update it's path in control_forms table in 'sampling_doc' column.
+Use form_id for selecting which control_form to update.
+
+Once it is done, delete original file from S3 bucket and also remove row for that form_id from sampling_process_temp table. 
