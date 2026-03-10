@@ -58,7 +58,7 @@ function Login() {
         const role = data.user.role
         const roleRoutes = {
           'user': '/user/dashboard',
-          'company_co': '/company_co/dashboard',
+          'company_co': '/company_co/home',
           'approver': '/approver/dashboard',
           'siteadmin': '/siteadmin/dashboard',
           'auditor': '/auditor/dashboard'

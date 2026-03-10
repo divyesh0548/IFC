@@ -1,0 +1,124 @@
+create form --> Enter racm  (Remove the control form wording)
+
+
+Remove the side bar, and instead display 4 buttons and a button for report which will display current dashboard.
+
+Form can only be active, once sample document is uploaded.
+
+Display control form in sections. First provide 3 dropdowns, then try to include similar things in one section.
+
+
+from Mayank sir :IFC cycle, mail draft
+
+
+Email format : 
+
+First cite major details from control form.
+
+Provide explainer video link.
+
+Display what sample is required for which dates.
+
+Your help required.
+
+provide link to upload samples.
+
+
+
+
+
+What about deadline of control form?
+
+
+
+Home page :
+
+User Management, RACM Management, RACM upload, RACM Assignment Management (can be assigned to different user, maintain audit logs), Reports
+
+
+
+A to Z columns in upload or creation. 
+Two new column : sample size, sample required  (display a note here), Process owner
+
+
+Give dropdowns in all columns where brackets are given with options, Also update drowpdown list if user adds new value by 'other' option. (scope : company level)   (What to do in bulk RACM Creation)
+
+In RACM assignment display user email ID as well as name.
+
+Create a new column in excel file for process owner. It can be empty in some case. But form can't become active without user assignment. On upload if it is empty then diaply warning, and on set Active display error.
+
+
+Last 3 columns will only be filled by approver. After they are filled, it will be visible to users and coordinator.
+
+User remarks is not mendatory.
+
+
+Provide 2 columns to company co : Due date and Reminder frequency. (These are mendatory and included in bulk upload) Can be empty during bulk upload, before RACm assignment these are mendatory.
+
+
+Give an option to duplicate existing RACM with year change. Multiple RACM can be selected for duplication. 
+
+On rejected do not remove resaon and old file. Maintain them in history. 
+
+Provide link of RACM link in Assignemnt email.
+
+
+
+
+
+I suggest we do not include due dae and reminder frequency in excel bulk upload. Instead provide input dropdown just like Business process and FY.
+
+
+
+
+
+
+
+
+
+
+Control Form Schema changes : 
+
+columns to be added : Control number,
+Account balance/ disclosure,
+Risk heat, 
+Process activity and walkthrough details --> process_walkthrough 
+Does the control rely on information produced by the entity? --> control_relies_on_ipe
+Will we obtain audit evidence of the accuracy and completeness of information produced by the entity by testing controls or by performing procedures directly on the information?,  --> audit_evidence_accuracy
+Key Control, 
+Application Name, 
+Control Performer, 
+Control Owner, 
+Procedures performed to evaluate design and determine implementation of the control, --> control_design_procs 
+Conclusion on design of control,   --> control_design_conclusion
+Description of the deficiency identified in control design --> design_deficiency_desc
+Sample Size
+
+
+
+
+columns to be removed : process, control_to_address, mrc_or_not character, source_data_report_logic_report_parameters, type_of_risk_mitigation_method character, reviewer_process_supervisor character, docs_to_review_for_dms_audit, basis_of_sampling, type_of_risk_associated, financial_reporting, checks_performed, type_of_control, findings, gap_description_resolution, accuracy
+
+
+
+
+columns to be altered : 
+valuation --> Valuation & allocation
+ownership_of_rights_and_obligations --> Rights and obligations
+presentation --> Presentation and Disclosure
+description_of_control --> Standard Control Description
+relevant_data_elements_of_ipe  --> IPE Reference
+type_of_control --> Type of Control O_F 
+type_of_control --> Type of Control M_A
+effective_or_not_effective --> Conclusion on design of control
+sampling_doc --> Sample Doc
+
+
+
+
+Excel file processing prompts : 
+Atleast 4 header keywords must match
+Change process_excel_files.js based on column_mapping.js 
+Also chnage control_forms.js based on column_mapping.js
+
+

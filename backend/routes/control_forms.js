@@ -8,8 +8,9 @@ const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
 const { normalizeColumnName } = require('../utils/column_mapping');
-const { uploadFileToS3 } = require('../utils/s3Upload');
+const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
 const { logAuditEvent } = require('../utils/auditLog');
+const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/sample_required');
 
 console.log('✅ control_forms.js module loaded successfully');
 
@@ -81,6 +82,56 @@ async function sendEmail(to, subject, text) {
   } catch (error) {
     console.error('Error sending email:', error);
     return false;
+  }
+}
+
+function buildControlFormStatusEmail(status, businessProcess, processOwnerName, coordinatorName, coordinatorCompanyName) {
+  const recipientName = processOwnerName || 'Process Owner';
+  const coordinatorDisplayName = coordinatorName || 'Company Coordinator';
+  const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
+  switch (status) {
+    case 'Active':
+      return {
+        shouldSend: true,
+        subject: 'Your IFC testing for ' + businessProcess + ' is ready',
+        text: `Hi ${recipientName},
+
+Hope you're having a good week!
+
+I'm reaching out because your Internal Financial Controls assignment for ${businessProcess} is now ready in the system. Nothing complicated; we just need your help to keep things moving.
+
+Here's what we need from you:
+
+1. You'll see the risk and control matrix from last year. Take a quick look through from here (View of the Risk & Control key issues) especially the risks we identified and the controls we put in place. You'll also spot the evidence that was submitted last year, which should give you a good sense of what we're looking for. (You will be able to download the evidence that was submitted last year.)
+
+2. Upload the evidence for this year's testing against each control. The period and the amount of samples can be viewed in the RACM detail page. 
+
+What happens next?
+
+Once you submit your evidence, our tester will review it to check if the control is operating effectively. They'll either pass or fail the control based on what they see. So the clearer your evidence, the smoother that review goes!
+
+Deadline: 27th February 2026
+
+Portal: ${process.env.FRONTEND_URL}
+
+Just shout if you hit any snags or have questions or you have any feedback on the performance of the controls or have noted any significant breaches; I'm happy to help.
+
+Thanks for cooperating.
+
+Regards,
+${coordinatorDisplayName}
+${coordinatorCompanyDisplayName}
+        `
+      };
+    case 'Inactive':
+      // Reserved for future inactive-specific email content.
+      return {
+        shouldSend: false
+      };
+    default:
+      return {
+        shouldSend: false
+      };
   }
 }
 
@@ -320,15 +371,6 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
     });
   }
 
-  // Validate cycle is provided
-  const cycle = req.body.cycle;
-  if (!cycle || cycle.trim() === '') {
-    return res.status(400).json({
-      success: false,
-      message: 'Cycle is required'
-    });
-  }
-
   const client = await pool.connect();
 
   try {
@@ -352,10 +394,10 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
     const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/control_form_excel_files');
     console.log(`File uploaded to S3 with key: ${s3Key}`);
 
-    // Save S3 key to excel_files table with processed = 0, company_identifier, coordinator_email_id, business_process, financial_year, and cycle
+    // Save S3 key to excel_files table with processed = 0, company_identifier, coordinator_email_id, business_process, and financial_year
     const insertFileQuery = `
-      INSERT INTO excel_files (file_path, file_name, processed, company_identifier, coordinator_email_id, business_process, financial_year, cycle)
-      VALUES ($1, $2, 0, $3, $4, $5, $6, $7)
+      INSERT INTO excel_files (file_path, file_name, processed, company_identifier, coordinator_email_id, business_process, financial_year)
+      VALUES ($1, $2, 0, $3, $4, $5, $6)
       RETURNING id;
     `;
 
@@ -366,7 +408,6 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
       userEmail, // coordinator_email_id
       businessProcess, // business_process
       financialYear, // financial_year
-      cycle // cycle
     ]);
 
     await client.query('COMMIT');
@@ -393,13 +434,13 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
   }
 });
 
-// Get all control forms (with optional company_identifier, process_owner, active, business_process, status, financial_year, and cycle filters)
+// Get all RACM forms (with optional company_identifier, process_owner, active, business_process, status, financial_year, and cycle filters)
 router.get('/', verifyAuth, async (req, res) => {
   try {
     const { company_identifier, process_owner, active, business_process, status, financial_year, cycle } = req.query;
     
     // Debug logging
-    console.log('Control forms GET request filters:', {
+    console.log('RACM GET request filters:', {
       company_identifier,
       active,
       business_process,
@@ -408,28 +449,43 @@ router.get('/', verifyAuth, async (req, res) => {
       cycle
     });
     
-    let query = 'SELECT * FROM control_forms WHERE 1=1';
+    let query = `
+      SELECT
+        cf.*,
+        NULLIF(TRIM(u.emp_name), '') AS process_owner_name
+      FROM control_forms cf
+      LEFT JOIN ifc_users u
+        ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.process_owner))
+      WHERE 1=1
+    `;
     const queryParams = [];
     let paramIndex = 1;
-    
-    // Filter by company_identifier if provided
-    if (company_identifier) {
-      query += ` AND company_identifier = $${paramIndex}`;
+
+    // Company coordinator should only see forms for their own company identifier
+    if (req.user.role === 'company_co') {
+      const coordinatorCompanyIdentifier = req.user.company_identifier;
+      if (coordinatorCompanyIdentifier) {
+        query += ` AND cf.company_identifier = $${paramIndex}`;
+        queryParams.push(coordinatorCompanyIdentifier);
+        paramIndex++;
+      }
+    } else if (company_identifier) {
+      query += ` AND cf.company_identifier = $${paramIndex}`;
       queryParams.push(company_identifier);
       paramIndex++;
     }
     
     // Filter by process_owner if provided
     if (process_owner) {
-      query += ` AND process_owner = $${paramIndex}`;
-      queryParams.push(process_owner);
+      query += ` AND LOWER(TRIM(cf.process_owner)) = LOWER(TRIM($${paramIndex}))`;
+      queryParams.push(process_owner.trim());
       paramIndex++;
     }
     
     // Filter by business_process if provided
     if (business_process) {
       // Use case-insensitive comparison and handle NULL values
-      query += ` AND business_process IS NOT NULL AND LOWER(TRIM(business_process)) = $${paramIndex}`;
+      query += ` AND cf.business_process IS NOT NULL AND LOWER(TRIM(cf.business_process)) = $${paramIndex}`;
       queryParams.push(business_process.trim().toLowerCase());
       paramIndex++;
     }
@@ -438,10 +494,10 @@ router.get('/', verifyAuth, async (req, res) => {
     if (active !== undefined) {
       if (active === 'true' || active === '1') {
         // Active: not null, not empty, and not '0'
-        query += ` AND active IS NOT NULL AND active != '' AND active != '0'`;
+        query += ` AND cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'`;
       } else if (active === 'false' || active === '0') {
         // Inactive: null, empty, or '0'
-        query += ` AND (active IS NULL OR active = '' OR active = '0')`;
+        query += ` AND (cf.active IS NULL OR cf.active = '' OR cf.active = '0')`;
       }
     }
     
@@ -449,20 +505,20 @@ router.get('/', verifyAuth, async (req, res) => {
     if (status) {
       if (status === 'pending') {
         // Pending: status is null or empty
-        query += ` AND (status IS NULL OR status = '' OR status = 'null')`;
+        query += ` AND (cf.status IS NULL OR cf.status = '' OR cf.status = 'null')`;
       } else if (status === 'sent for approval') {
         // Sent for approval: status is exactly 'sent for approval'
-        query += ` AND status = $${paramIndex}`;
+        query += ` AND cf.status = $${paramIndex}`;
         queryParams.push('sent for approval');
         paramIndex++;
       } else if (status === 'approved') {
         // Approved: status is exactly 'Approved'
-        query += ` AND status = $${paramIndex}`;
+        query += ` AND cf.status = $${paramIndex}`;
         queryParams.push('Approved');
         paramIndex++;
       } else if (status === 'rejected') {
         // Rejected: status is exactly 'Rejected'
-        query += ` AND status = $${paramIndex}`;
+        query += ` AND cf.status = $${paramIndex}`;
         queryParams.push('Rejected');
         paramIndex++;
       }
@@ -471,19 +527,19 @@ router.get('/', verifyAuth, async (req, res) => {
 
     // Filter by financial_year if provided
     if (financial_year) {
-      query += ` AND financial_year IS NOT NULL AND TRIM(financial_year) = $${paramIndex}`;
+      query += ` AND cf.financial_year IS NOT NULL AND TRIM(cf.financial_year) = $${paramIndex}`;
       queryParams.push(financial_year.trim());
       paramIndex++;
     }
 
     // Filter by cycle if provided
     if (cycle) {
-      query += ` AND cycle IS NOT NULL AND TRIM(cycle) = $${paramIndex}`;
+      query += ` AND cf.cycle IS NOT NULL AND TRIM(cf.cycle) = $${paramIndex}`;
       queryParams.push(cycle.trim());
       paramIndex++;
     }
     
-    query += ' ORDER BY created_at DESC';
+    query += ' ORDER BY cf.created_at DESC';
     
     const result = await pool.query(query, queryParams);
     
@@ -493,10 +549,10 @@ router.get('/', verifyAuth, async (req, res) => {
       count: result.rows.length
     });
   } catch (error) {
-    console.error('Error fetching control forms:', error);
+    console.error('Error fetching RACM records:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching control forms'
+      message: 'Error fetching RACM records'
     });
   }
 });
@@ -570,30 +626,37 @@ router.get('/download-document', verifyAuth, async (req, res) => {
   }
 });
 
-// Get single control form by form_id
+// Get single RACM by form_id
 router.get('/:form_id', verifyAuth, async (req, res) => {
   try {
     const { form_id } = req.params;
     
+    // SELECT * returns all columns including control_design_procs
     const query = 'SELECT * FROM control_forms WHERE form_id = $1';
     const result = await pool.query(query, [form_id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'Control form not found'
+        message: 'RACM not found'
       });
+    }
+    
+    // Verify control_design_procs is in the result (for debugging)
+    const formData = result.rows[0];
+    if (!formData.hasOwnProperty('control_design_procs')) {
+      console.warn(`Warning: control_design_procs column not found in result for form_id: ${form_id}`);
     }
     
     res.status(200).json({
       success: true,
-      data: result.rows[0]
+      data: formData
     });
   } catch (error) {
-    console.error('Error fetching control form:', error);
+    console.error('Error fetching RACM:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching control form'
+      message: 'Error fetching RACM'
     });
   }
 });
@@ -601,16 +664,21 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
 // Update single control form by form_id
 router.put('/:form_id', verifyAuth, async (req, res) => {
   const { form_id } = req.params;
-const {
-    description_of_control, process, sub_process, risk_description,
-    whether_fraud_risks_exist, control_objective, control_to_address,
-    mrc_or_not, source_data_report_logic_report_parameters,
-    relevant_data_elements_of_ipe, type_of_control, nature_of_control,
-    type_of_risk_mitigation_method, process_owner, reviewer_process_supervisor,
-    control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
-    type_of_risk_associated, financial_reporting, checks_performed,
-    effective_or_not_effective, remarks, findings, gap_description_resolution,
-    doc_uploaded_by_user, active, status, reason_by_approver, remarks_by_user
+  const {
+    standard_control_description, sub_process, risk_description,
+    whether_fraud_risks_exist, control_objective, ipe_reference,
+    nature_of_control, process_owner, control_frequency,
+    control_number, account_balance_disclosure,
+    risk_heat, process_walkthrough, control_relies_on_ipe,
+    audit_evidence_accuracy, key_control, application_name,
+    control_performer, control_owner, control_design_procs,
+    control_design_conclusion, design_deficiency_desc,
+    sample_size, control_type_fo, control_type_ma,
+    completeness, existence_occurrence, rights_and_obligation,
+    valuation_and_allocation, presentation_and_disclosure,
+    due_date, reminder_frequency,
+    doc_uploaded_by_user, active, status, reason_by_approver, remarks_by_user,
+    modifiedFields // Array of modified field names from frontend
   } = req.body;
 
   const client = await pool.connect();
@@ -618,17 +686,28 @@ const {
   try {
     await client.query('BEGIN');
 
-    // Get current form data to check if active status is changing
-    const getCurrentFormQuery = 'SELECT active, process_owner, description_of_control FROM control_forms WHERE form_id = $1';
+    // Get current form data (for status/active change logic and history handling)
+    const getCurrentFormQuery = `
+      SELECT 
+        active, 
+        process_owner, 
+        standard_control_description, 
+        business_process,
+        status AS current_status,
+        doc_uploaded_by_user AS current_doc_uploaded_by_user,
+        reason_by_approver AS current_reason_by_approver
+      FROM control_forms 
+      WHERE form_id = $1
+    `;
     const currentFormResult = await client.query(getCurrentFormQuery, [form_id]);
     const currentForm = currentFormResult.rows.length > 0 ? currentFormResult.rows[0] : null;
     const currentActiveStatus = currentForm?.active && currentForm.active !== '' && currentForm.active !== '0' ? '1' : '0';
 
-    // Check if user is an approver (only approvers can edit checks_performed, effective_or_not_effective, remarks, findings)
+    // Check if user is an approver (only approvers can edit conclusion/procedures/deficiency fields)
     const isApprover = !!req.cookies.approverAuthToken;
     
     // Fields that only approvers can update
-    const approverOnlyFields = ['checks_performed', 'effective_or_not_effective', 'remarks', 'findings'];
+    const approverOnlyFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc'];
     
     // If user is not an approver, remove approver-only fields from the update
     if (!isApprover) {
@@ -641,7 +720,7 @@ const {
         await client.query('ROLLBACK');
         return res.status(403).json({
           success: false,
-          message: 'You do not have permission to update these fields. Only approvers can update: checks_performed, effective_or_not_effective, remarks, findings'
+          message: 'You do not have permission to update these fields. Only approvers can update: control_design_procs, control_design_conclusion, design_deficiency_desc'
         });
       }
     }
@@ -651,21 +730,37 @@ const {
     const updateValues = [];
     let paramIndex = 1;
 
+    const derivedSampleSize = control_frequency !== undefined
+      ? getSampleSizeByFrequency(control_frequency ? String(control_frequency).trim() : null)
+      : undefined;
+    const sampleSizeForUpdate = control_frequency !== undefined
+      ? (derivedSampleSize !== null ? String(derivedSampleSize) : null)
+      : undefined;
+
     const fieldsToUpdate = {
-      description_of_control, process, sub_process, risk_description,
-      whether_fraud_risks_exist, control_objective, control_to_address,
-      mrc_or_not, source_data_report_logic_report_parameters,
-      relevant_data_elements_of_ipe, type_of_control, nature_of_control,
-      type_of_risk_mitigation_method, process_owner, reviewer_process_supervisor,
-      control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
-      type_of_risk_associated, financial_reporting, checks_performed,
-      effective_or_not_effective, remarks, findings, gap_description_resolution,
+      standard_control_description, sub_process, risk_description,
+      whether_fraud_risks_exist, control_objective, ipe_reference,
+      nature_of_control, process_owner, control_frequency,
+      control_number, account_balance_disclosure,
+      risk_heat, process_walkthrough, control_relies_on_ipe,
+      audit_evidence_accuracy, key_control, application_name,
+      control_performer, control_owner, control_design_procs,
+      control_design_conclusion, design_deficiency_desc,
+      sample_size: sampleSizeForUpdate, control_type_fo, control_type_ma,
+      completeness, existence_occurrence, rights_and_obligation,
+      valuation_and_allocation, presentation_and_disclosure,
+      due_date, reminder_frequency,
       doc_uploaded_by_user, active, status, reason_by_approver, remarks_by_user
     };
 
     Object.keys(fieldsToUpdate).forEach(field => {
       // Skip approver-only fields if user is not an approver
       if (!isApprover && approverOnlyFields.includes(field)) {
+        return;
+      }
+      
+      // Skip modifiedFields as it's metadata, not a database column
+      if (field === 'modifiedFields') {
         return;
       }
       
@@ -676,8 +771,52 @@ const {
       }
     });
 
-    // Debug: Log the update query
-    console.log('Update query fields:', updateFields);
+    // Debug: Log the update query (before finalizing)
+    console.log('Update query fields (pre-history):', updateFields);
+
+    // If user is resubmitting after rejection with a new document, archive previous doc + reason
+    const isResubmission = status === 'sent for approval'
+      && currentForm
+      && currentForm.current_status === 'Rejected'
+      && doc_uploaded_by_user !== undefined
+      && doc_uploaded_by_user !== null
+      && String(doc_uploaded_by_user).trim() !== '';
+
+    if (isResubmission) {
+      const previousDoc = currentForm.current_doc_uploaded_by_user;
+      const previousReason = currentForm.current_reason_by_approver;
+
+      if (
+        (previousDoc && String(previousDoc).trim() !== '') ||
+        (previousReason && String(previousReason).trim() !== '')
+      ) {
+        try {
+          const historyInsertQuery = `
+            INSERT INTO control_form_history (form_id, doc_uploaded_by_user, reason_by_approver)
+            VALUES ($1, $2, $3)
+          `;
+          await client.query(historyInsertQuery, [
+            form_id,
+            previousDoc || null,
+            previousReason || null
+          ]);
+
+          // Ensure old approver reason is cleared from the live form row on resubmission;
+          // doc_uploaded_by_user will be overwritten by the new value via updateFields.
+          updateFields.push(`reason_by_approver = $${paramIndex}`);
+          updateValues.push(null);
+          paramIndex++;
+        } catch (historyError) {
+          await client.query('ROLLBACK');
+          console.error('Error inserting into control_form_history:', historyError);
+          return res.status(500).json({
+            success: false,
+            message: 'Error archiving previous RACM state',
+            error: historyError.message
+          });
+        }
+      }
+    }
 
     if (updateFields.length === 0) {
       return res.status(400).json({
@@ -721,7 +860,7 @@ const {
       await client.query('ROLLBACK');
       return res.status(404).json({
         success: false,
-        message: 'Control form not found'
+        message: 'RACM not found'
       });
     }
 
@@ -732,59 +871,77 @@ const {
       await logAuditEvent('Sent for approval', req.user.email_id, form_id);
     }
 
+    // Log audit event for form modifications (when fields are modified)
+    if (modifiedFields && Array.isArray(modifiedFields) && modifiedFields.length > 0 && req.user && req.user.email_id) {
+      let refData = `updated columns - ${modifiedFields.join(', ')}`;
+      // Truncate if exceeds 255 characters (database limit)
+      if (refData.length > 255) {
+        refData = refData.substring(0, 252) + '...';
+      }
+      await logAuditEvent('control_form modified', req.user.email_id, form_id, refData);
+    }
+
     // Send email to process_owner if active status changed
     if (active !== undefined && currentForm) {
       const newActiveStatus = active === '1' || active === 1 || active === true ? '1' : '0';
       if (newActiveStatus !== currentActiveStatus && currentForm.process_owner) {
         const processOwnerEmail = currentForm.process_owner.trim();
-        const isActive = newActiveStatus === '1';
-        const formDescription = currentForm.description_of_control || 'Control Form';
-        
-        const emailSubject = `Control Form Status Update - ${isActive ? 'Active' : 'Inactive'}`;
-        const emailText = `
-Dear Process Owner,
+        const formDescription = currentForm.standard_control_description || 'RACM';
+        const businessProcess = currentForm.business_process || '';
+        const getProcessOwnerNameQuery = 'SELECT emp_name FROM ifc_users WHERE email_id = $1 LIMIT 1';
+        const processOwnerResult = await client.query(getProcessOwnerNameQuery, [processOwnerEmail]);
+        const processOwnerName = processOwnerResult.rows[0]?.emp_name?.trim() || '';
+        const coordinatorEmail = req.user?.email_id || '';
+        let coordinatorName = '';
+        let coordinatorCompanyName = '';
+        if (coordinatorEmail) {
+          const getCoordinatorDetailsQuery = 'SELECT emp_name, company_identifier FROM ifc_users WHERE email_id = $1 LIMIT 1';
+          const coordinatorResult = await client.query(getCoordinatorDetailsQuery, [coordinatorEmail]);
+          coordinatorName = coordinatorResult.rows[0]?.emp_name?.trim() || '';
+          const coordinatorCompanyIdentifier = coordinatorResult.rows[0]?.company_identifier || '';
+          if (coordinatorCompanyIdentifier) {
+            const getCompanyNameQuery = 'SELECT company_name FROM companies WHERE company_identifier = $1 LIMIT 1';
+            const companyResult = await client.query(getCompanyNameQuery, [coordinatorCompanyIdentifier]);
+            coordinatorCompanyName = companyResult.rows[0]?.company_name?.trim() || '';
+          }
+        }
+        const statusLabel = newActiveStatus === '1' ? 'Active' : 'Inactive';
+        const emailPayload = buildControlFormStatusEmail(
+          statusLabel,
+          businessProcess,
+          processOwnerName,
+          coordinatorName,
+          coordinatorCompanyName
+        );
 
-This is to inform you that the status of the following control form has been updated:
+        if (emailPayload.shouldSend) {
+          // Small delay to ensure user creation email (if user was just created) is sent first
+          // This ensures proper sequencing: user creation email → form status update email
+          await new Promise(resolve => setTimeout(resolve, 500));
 
-Form ID: ${form_id}
-Description: ${formDescription}
-New Status: ${isActive ? 'Active' : 'Inactive'}
-
-${isActive 
-  ? 'The form has been set to Active. Please ensure all necessary actions are taken accordingly.'
-  : 'The form has been set to Inactive. Please review and take necessary actions if required.'
-}
-
-Best regards,
-IFC System
-        `;
-
-        // Small delay to ensure user creation email (if user was just created) is sent first
-        // This ensures proper sequencing: user creation email → form status update email
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const emailSent = await sendEmail(processOwnerEmail, emailSubject, emailText);
-        if (!emailSent) {
-          console.warn(`Warning: Failed to send status update email to ${processOwnerEmail}, but form was updated successfully.`);
-        } else {
-          console.log(`✓ Form status update email sent successfully to ${processOwnerEmail}`);
+          const emailSent = await sendEmail(processOwnerEmail, emailPayload.subject, emailPayload.text);
+          if (!emailSent) {
+            console.warn(`Warning: Failed to send status update email to ${processOwnerEmail}, but form was updated successfully.`);
+          } else {
+            console.log(`✓ Form status update email sent successfully to ${processOwnerEmail}`);
+          }
         }
       }
     }
 
     res.status(200).json({
       success: true,
-      message: 'Control form updated successfully',
+      message: 'RACM updated successfully',
       data: result.rows[0]
     });
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error updating control form:', error);
+    console.error('Error updating RACM:', error);
     
     res.status(500).json({
       success: false,
-      message: 'Error updating control form',
+      message: 'Error updating RACM',
       error: error.message
     });
   } finally {
@@ -844,7 +1001,7 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     
     // Get forms that will be updated (before updating) to send emails
     // Build SELECT query with same WHERE conditions but correct parameter indices
-    let getFormsQuery = 'SELECT form_id, process_owner, description_of_control, active FROM control_forms WHERE 1=1';
+    let getFormsQuery = 'SELECT form_id, process_owner, standard_control_description, active FROM control_forms WHERE 1=1';
     const getFormsParams = [];
     let getFormsParamIndex = 1;
     
@@ -898,7 +1055,7 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
             }
             uniqueProcessOwners.get(processOwnerEmail).push({
               form_id: form.form_id,
-              description: form.description_of_control || 'Control Form'
+              description: form.standard_control_description || 'Control Form'
             });
           }
         }
@@ -911,11 +1068,11 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
       // Send emails to each unique process owner
       for (const [email, forms] of uniqueProcessOwners.entries()) {
         const formList = forms.map(f => `  - Form ID: ${f.form_id}\n    Description: ${f.description}`).join('\n');
-        const emailSubject = `Control Forms Status Update - Set to Active`;
+        const emailSubject = `RACM Status Update - Set to Active`;
         const emailText = `
 Dear Process Owner,
 
-This is to inform you that the following control form(s) have been set to Active:
+This is to inform you that the following RACM(s) have been set to Active:
 
 ${formList}
 
@@ -961,18 +1118,20 @@ IFC System
   }
 });
 
-// Create single control form
+// Create single RACM
 router.post('/', verifyAuth, async (req, res) => {
   const {
-    description_of_control, process, sub_process, risk_description,
-    whether_fraud_risks_exist, control_objective, control_to_address,
-    mrc_or_not, source_data_report_logic_report_parameters,
-    relevant_data_elements_of_ipe, type_of_control, nature_of_control,
-    type_of_risk_mitigation_method, process_owner, reviewer_process_supervisor,
-    control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
-    type_of_risk_associated, financial_reporting, checks_performed,
-    effective_or_not_effective, remarks, findings, gap_description_resolution,
-    company_identifier, business_process, financial_year, cycle
+    standard_control_description, sub_process, risk_description,
+    whether_fraud_risks_exist, control_objective, ipe_reference,
+    nature_of_control, process_owner, control_frequency,
+    control_number, account_balance_disclosure, risk_heat,
+    process_walkthrough, control_relies_on_ipe, audit_evidence_accuracy,
+    key_control, application_name, control_performer, control_owner,
+    control_design_procs, control_design_conclusion, design_deficiency_desc,
+    sample_size, control_type_fo, control_type_ma,
+    company_identifier, business_process, financial_year,
+    completeness, existence_occurrence, rights_and_obligation,
+    valuation_and_allocation, presentation_and_disclosure
   } = req.body;
 
   const client = await pool.connect();
@@ -995,55 +1154,184 @@ router.post('/', verifyAuth, async (req, res) => {
     // Generate unique form_id
     const formId = await generateUniqueFormId(client);
 
+    // Calculate sample_required based on control_frequency and current timestamp
+    // We use current timestamp which will match the created_at value set by the database
+    const currentTimestamp = new Date();
+    // Ensure control_frequency is a string and handle null/undefined
+    const controlFrequencyValue = control_frequency ? String(control_frequency).trim() : null;
+    const sampleRequired = calculateSampleRequired(controlFrequencyValue, currentTimestamp);
+    const sampleSize = getSampleSizeByFrequency(controlFrequencyValue);
+    console.log('[control_forms POST] control_frequency:', control_frequency, 'normalized:', controlFrequencyValue, 'sample_required result:', sampleRequired);
+
     const insertQuery = `
       INSERT INTO control_forms (
-        description_of_control, process, sub_process, risk_description,
-        whether_fraud_risks_exist, control_objective, control_to_address,
-        mrc_or_not, source_data_report_logic_report_parameters,
-        relevant_data_elements_of_ipe, type_of_control, nature_of_control,
-        type_of_risk_mitigation_method, process_owner, reviewer_process_supervisor,
-        control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
-        type_of_risk_associated, financial_reporting, checks_performed,
-        effective_or_not_effective, remarks, findings, gap_description_resolution,
-        form_id, company_identifier, business_process, financial_year, cycle
+        standard_control_description, sub_process, risk_description,
+        whether_fraud_risks_exist, control_objective, ipe_reference,
+        nature_of_control, process_owner, control_frequency,
+        control_number, account_balance_disclosure, risk_heat,
+        process_walkthrough, control_relies_on_ipe, audit_evidence_accuracy,
+        key_control, application_name, control_performer, control_owner,
+        control_design_procs, control_design_conclusion, design_deficiency_desc,
+        sample_size, control_type_fo, control_type_ma,
+        form_id, company_identifier, business_process, financial_year, sample_required,
+        completeness, existence_occurrence, rights_and_obligation,
+        valuation_and_allocation, presentation_and_disclosure
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)
       RETURNING *;
     `;
 
-    // Set approver-only fields to null if not provided (these fields are only editable by approvers)
-    const checksPerformedValue = checks_performed !== undefined ? checks_performed : null
-    const effectiveOrNotEffectiveValue = effective_or_not_effective !== undefined ? effective_or_not_effective : null
-    const remarksValue = remarks !== undefined ? remarks : null
-    const findingsValue = findings !== undefined ? findings : null
+    // Keep nullable values explicit for new schema columns.
+    const controlDesignConclusionValue = control_design_conclusion !== undefined ? control_design_conclusion : null
+    const designDeficiencyDescValue = design_deficiency_desc !== undefined ? design_deficiency_desc : null
 
     const result = await client.query(insertQuery, [
-      description_of_control, process, sub_process, risk_description,
-      whether_fraud_risks_exist, control_objective, control_to_address,
-      mrc_or_not, source_data_report_logic_report_parameters,
-      relevant_data_elements_of_ipe, type_of_control, nature_of_control,
-      type_of_risk_mitigation_method, process_owner, reviewer_process_supervisor,
-      control_frequency, basis_of_sampling, docs_to_review_for_dms_audit,
-      type_of_risk_associated, financial_reporting, checksPerformedValue,
-      effectiveOrNotEffectiveValue, remarksValue, findingsValue, gap_description_resolution,
-      formId, userCompanyIdentifier, business_process, financial_year || null, cycle || null
+      standard_control_description, sub_process, risk_description,
+      whether_fraud_risks_exist, control_objective, ipe_reference,
+      nature_of_control, process_owner, control_frequency,
+      control_number || null, account_balance_disclosure || null, risk_heat || null,
+      process_walkthrough || null, control_relies_on_ipe || null, audit_evidence_accuracy || null,
+      key_control || null, application_name || null, control_performer || null, control_owner || null,
+      control_design_procs || null, controlDesignConclusionValue, designDeficiencyDescValue,
+      sampleSize !== null ? String(sampleSize) : null, control_type_fo || null, control_type_ma || null,
+      formId, userCompanyIdentifier, business_process, financial_year || null, sampleRequired,
+      completeness || null, existence_occurrence || null, rights_and_obligation || null,
+      valuation_and_allocation || null, presentation_and_disclosure || null
     ]);
+
+    console.log('[control_forms POST] Inserted RACM - sample_required in DB:', result.rows[0]?.sample_required);
 
     await client.query('COMMIT');
 
     res.status(201).json({
       success: true,
-      message: 'Control form created successfully',
+      message: 'RACM created successfully',
       data: result.rows[0]
     });
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error creating control form:', error);
+    console.error('Error creating RACM:', error);
     
     res.status(500).json({
       success: false,
-      message: 'Error creating control form',
+      message: 'Error creating RACM',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Delete a RACM
+router.delete('/:form_id', verifyAuth, async (req, res) => {
+  const { form_id } = req.params;
+  const client = await pool.connect();
+
+  try {
+    // Check if user is company coordinator
+    const userEmail = req.user.email_id;
+    const getUserQuery = 'SELECT role FROM ifc_users WHERE email_id = $1';
+    const userResult = await client.query(getUserQuery, [userEmail]);
+    
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const userRole = userResult.rows[0].role;
+    if (userRole !== 'company_co') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Only company coordinators can delete RACM entries.'
+      });
+    }
+
+    await client.query('BEGIN');
+
+    // Check if form exists (and fetch document columns for cleanup)
+    const checkQuery = `
+      SELECT 
+        id, 
+        company_identifier,
+        doc_uploaded_by_user,
+        sample_doc
+      FROM control_forms 
+      WHERE form_id = $1
+    `;
+    const checkResult = await client.query(checkQuery, [form_id]);
+
+    if (checkResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found'
+      });
+    }
+
+    const form = checkResult.rows[0];
+
+    // Verify that the coordinator can only delete forms from their own company
+    const coordinatorCompanyQuery = 'SELECT company_identifier FROM ifc_users WHERE email_id = $1';
+    const coordinatorResult = await client.query(coordinatorCompanyQuery, [userEmail]);
+    
+    if (coordinatorResult.rows.length > 0) {
+      const coordinatorCompany = coordinatorResult.rows[0].company_identifier;
+      if (form.company_identifier !== coordinatorCompany) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You can only delete forms from your own company.'
+        });
+      }
+    }
+
+    // Delete any associated documents from S3 before deleting the DB row
+    const docUrlsToDelete = [];
+    if (form.doc_uploaded_by_user && String(form.doc_uploaded_by_user).trim() !== '') {
+      docUrlsToDelete.push(String(form.doc_uploaded_by_user).trim());
+    }
+    if (form.sample_doc && String(form.sample_doc).trim() !== '') {
+      docUrlsToDelete.push(String(form.sample_doc).trim());
+    }
+
+    try {
+      for (const s3Key of docUrlsToDelete) {
+        await deleteFileFromS3(s3Key);
+      }
+    } catch (s3Error) {
+      await client.query('ROLLBACK');
+      console.error('Error deleting associated documents from S3 for RACM:', s3Error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error deleting associated documents from storage',
+        error: s3Error.message
+      });
+    }
+
+    // Delete the RACM
+    const deleteQuery = 'DELETE FROM control_forms WHERE form_id = $1';
+    await client.query(deleteQuery, [form_id]);
+
+    await client.query('COMMIT');
+
+    // Log audit event
+    await logAuditEvent('RACM deleted', userEmail, form_id);
+
+    res.status(200).json({
+      success: true,
+      message: 'RACM deleted successfully'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting RACM:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting RACM',
       error: error.message
     });
   } finally {
@@ -1052,6 +1340,8 @@ router.post('/', verifyAuth, async (req, res) => {
 });
 
 // Upload user document for a specific form
+// NOTE: This route now ONLY uploads to S3 and does NOT modify any table columns.
+// The control_forms row is updated later when the user actually resubmits the form.
 router.post('/:form_id/upload-document', verifyAuth, uploadUserDoc.single('document'), async (req, res) => {
   const { form_id } = req.params;
   
@@ -1062,11 +1352,7 @@ router.post('/:form_id/upload-document', verifyAuth, uploadUserDoc.single('docum
     });
   }
 
-  const client = await pool.connect();
-
   try {
-    await client.query('BEGIN');
-
     const fileName = req.file.originalname;
     const fileBuffer = req.file.buffer;
 
@@ -1074,44 +1360,53 @@ router.post('/:form_id/upload-document', verifyAuth, uploadUserDoc.single('docum
     console.log(`Uploading user document to S3: ${fileName}`);
     const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/user_docs');
     console.log(`User document uploaded to S3 with key: ${s3Key}`);
-    
-    // Update the form with the S3 key
-    const updateQuery = `
-      UPDATE control_forms
-      SET doc_uploaded_by_user = $1
-      WHERE form_id = $2
-      RETURNING *;
-    `;
 
-    const result = await client.query(updateQuery, [s3Key, form_id]);
-
-    if (result.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: 'Control form not found'
-      });
-    }
-
-    await client.query('COMMIT');
-
+    // Do NOT update control_forms here; just return the S3 key to the frontend
     res.status(200).json({
       success: true,
       message: 'Document uploaded successfully',
       data: {
-        form_id: result.rows[0].form_id,
-        doc_uploaded_by_user: result.rows[0].doc_uploaded_by_user,
+        form_id,
+        doc_uploaded_by_user: s3Key,
         file_name: fileName
       }
     });
-
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Error uploading document to S3:', error);
     
     res.status(500).json({
       success: false,
       message: 'Error uploading document to S3',
+      error: error.message
+    });
+  }
+});
+
+// Check if sampling document exists for a form
+router.get('/:form_id/check-sampling-exists', verifyAuth, async (req, res) => {
+  const { form_id } = req.params;
+  const client = await pool.connect();
+
+  try {
+    // Check sample_doc column in control_forms table
+    const checkFormQuery = 'SELECT sample_doc FROM control_forms WHERE form_id = $1';
+    const formResult = await client.query(checkFormQuery, [form_id]);
+    
+    let exists = false;
+    if (formResult.rows.length > 0) {
+      const samplingDoc = formResult.rows[0].sample_doc;
+      exists = samplingDoc && samplingDoc.trim() !== '';
+    }
+
+    res.status(200).json({
+      success: true,
+      exists: exists
+    });
+  } catch (error) {
+    console.error('Error checking sampling document:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error checking sampling document',
       error: error.message
     });
   } finally {
@@ -1122,19 +1417,11 @@ router.post('/:form_id/upload-document', verifyAuth, uploadUserDoc.single('docum
 // Upload sampling Excel file for a specific form
 router.post('/:form_id/upload-sampling-excel', verifyAuth, upload.single('excelFile'), async (req, res) => {
   const { form_id } = req.params;
-  const { primary_columns } = req.body;
   
   if (!req.file) {
     return res.status(400).json({
       success: false,
       message: 'No file uploaded'
-    });
-  }
-
-  if (!primary_columns || primary_columns.trim() === '') {
-    return res.status(400).json({
-      success: false,
-      message: 'Primary columns are required'
     });
   }
 
@@ -1158,19 +1445,28 @@ router.post('/:form_id/upload-sampling-excel', verifyAuth, upload.single('excelF
     const fileName = req.file.originalname;
     const fileBuffer = req.file.buffer;
 
-    // Upload file to S3
+    // Upload file to S3 in IFC/sample_docs path
     console.log(`Uploading sampling Excel file to S3: ${fileName}`);
-    const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/sampling_excel_files/temp');
+    const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/sample_docs');
     console.log(`Sampling Excel file uploaded to S3 with key: ${s3Key}`);
     
-    // Save to sampling_process_temp table
-    const insertQuery = `
-      INSERT INTO sampling_process_temp (excel_file_url, form_id, primary_columns)
-      VALUES ($1, $2, $3)
-      RETURNING *;
+    // Update sample_doc column in control_forms table
+    const updateQuery = `
+      UPDATE control_forms
+      SET sample_doc = $1
+      WHERE form_id = $2
+      RETURNING form_id, sample_doc;
     `;
 
-    const result = await client.query(insertQuery, [s3Key, form_id, primary_columns.trim()]);
+    const result = await client.query(updateQuery, [s3Key, form_id]);
+
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Control form not found'
+      });
+    }
 
     await client.query('COMMIT');
 
@@ -1178,10 +1474,8 @@ router.post('/:form_id/upload-sampling-excel', verifyAuth, upload.single('excelF
       success: true,
       message: 'Sampling Excel file uploaded successfully',
       data: {
-        id: result.rows[0].id,
-        excel_file_url: result.rows[0].excel_file_url,
         form_id: result.rows[0].form_id,
-        primary_columns: result.rows[0].primary_columns,
+        sample_doc: result.rows[0].sample_doc,
         file_name: fileName
       }
     });

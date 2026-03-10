@@ -222,7 +222,8 @@ router.post('/login', async (req, res) => {
         id: user.id,
         email_id: user.email_id,
         role: user.role,
-        company_identifier: user.company_identifier
+        company_identifier: user.company_identifier,
+        emp_name: user.emp_name
       },
       requiresPasswordUpdate: user.temp_login === 1 || user.temp_login === true
     });
@@ -263,7 +264,7 @@ router.get('/verify', async (req, res) => {
     const decoded = jwt.verify(decryptedToken, jwtSecret);
     
     // Get user details from database to include role and company_identifier
-    const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
+    const userQuery = 'SELECT id, email_id, role, company_identifier, emp_name FROM ifc_users WHERE email_id = $1';
     const userResult = await pool.query(userQuery, [decoded.email_id]);
     
     if (userResult.rows.length === 0) {
@@ -282,7 +283,8 @@ router.get('/verify', async (req, res) => {
         id: user.id,
         email_id: user.email_id,
         role: user.role,
-        company_identifier: user.company_identifier
+        company_identifier: user.company_identifier,
+        emp_name: user.emp_name
       }
     });
 
@@ -879,7 +881,8 @@ router.post('/user/login', async (req, res) => {
       user: {
         id: user.id,
         email_id: user.email_id,
-        role: user.role
+        role: user.role,
+        emp_name: user.emp_name
       },
       requiresPasswordUpdate: user.temp_login === 1 || user.temp_login === true
     });
@@ -920,7 +923,7 @@ router.get('/user/verify', async (req, res) => {
     const decoded = jwt.verify(decryptedToken, jwtSecret);
     
     // Get user details from database to include company_identifier
-    const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
+    const userQuery = 'SELECT id, email_id, role, company_identifier, emp_name FROM ifc_users WHERE email_id = $1';
     const userResult = await pool.query(userQuery, [decoded.email_id]);
     
     if (userResult.rows.length === 0) {
@@ -939,7 +942,8 @@ router.get('/user/verify', async (req, res) => {
         id: user.id,
         email_id: user.email_id,
         role: user.role,
-        company_identifier: user.company_identifier
+        company_identifier: user.company_identifier,
+        emp_name: user.emp_name
       }
     });
 

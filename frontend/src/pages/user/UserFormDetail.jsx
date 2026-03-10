@@ -246,33 +246,41 @@ function UserFormDetail() {
     }
   }
 
-  // Define field labels mapping
+  const sampleRequiredNotice = '(If not available, upload documents from the preceding or succeeding dates.)'
+
+  // Define field labels mapping for updated RACM schema
   const fieldLabels = {
-    description_of_control: 'Description of Control',
-    process: 'Process',
+    control_number: 'Control Number',
+    account_balance_disclosure: 'Account Balance / Disclosure',
+    risk_heat: 'Risk Heat',
+    standard_control_description: 'Standard Control Description',
     sub_process: 'Sub Process',
     risk_description: 'Risk Description',
     whether_fraud_risks_exist: 'Whether Fraud Risks Exist',
     control_objective: 'Control Objective',
-    control_to_address: 'Control to Address',
-    mrc_or_not: 'MRC or Not',
-    gap_description_resolution: 'Gap Description & Resolution',
-    source_data_report_logic_report_parameters: 'Source Data/Report Logic/Report Parameters',
-    relevant_data_elements_of_ipe: 'Relevant Data Elements of IPE',
-    type_of_control: 'Type of Control',
+    process_walkthrough: 'Process Activity and Walkthrough Details',
+    control_relies_on_ipe: 'Does the Control Rely on IPE?',
+    audit_evidence_accuracy: 'Audit Evidence of Accuracy and Completeness',
+    ipe_reference: 'IPE Reference',
+    key_control: 'Key Control',
+    application_name: 'Application Name',
+    control_performer: 'Control Performer',
+    control_owner: 'Control Owner',
+    control_design_procs: 'Procedures to Evaluate Design and Implementation',
+    control_type_fo: 'Type of Control O_F',
+    control_type_ma: 'Type of Control M_A',
     nature_of_control: 'Nature of Control',
-    type_of_risk_mitigation_method: 'Type of Risk Mitigation Method',
     process_owner: 'Process Owner',
-    reviewer_process_supervisor: 'Reviewer/Process Supervisor',
     control_frequency: 'Control Frequency',
-    basis_of_sampling: 'Basis of Sampling',
-    docs_to_review_for_dms_audit: 'Docs to Review for DMS Audit',
-    type_of_risk_associated: 'Type of Risk Associated',
-    financial_reporting: 'Financial Reporting',
-    checks_performed: 'Checks Performed',
-    effective_or_not_effective: 'Effective or Not Effective',
-    remarks: 'Remarks',
-    findings: 'Findings',
+    sample_size: 'Sample Size',
+    sample_required: 'Sample Required',
+    completeness: 'Completeness',
+    existence_occurrence: 'Existence & Occurrence',
+    rights_and_obligation: 'Rights and Obligations',
+    valuation_and_allocation: 'Valuation & Allocation',
+    presentation_and_disclosure: 'Presentation and Disclosure',
+    control_design_conclusion: 'Conclusion on Design of Control',
+    design_deficiency_desc: 'Description of Deficiency in Control Design',
     doc_uploaded_by_user: 'Doc Uploaded by User',
     remarks_by_user: 'Remarks by User',
     active: 'Active',
@@ -280,33 +288,38 @@ function UserFormDetail() {
     reason_by_approver: 'Reason by Approver',
   }
 
-  // Define field order - gap_description_resolution comes after mrc_or_not
   const fieldOrder = [
-    'description_of_control',
-    'process',
+    'control_number',
+    'account_balance_disclosure',
+    'risk_heat',
+    'standard_control_description',
     'sub_process',
     'risk_description',
     'whether_fraud_risks_exist',
     'control_objective',
-    'control_to_address',
-    'mrc_or_not',
-    'gap_description_resolution',
-    'source_data_report_logic_report_parameters',
-    'relevant_data_elements_of_ipe',
-    'type_of_control',
+    'process_walkthrough',
+    'control_relies_on_ipe',
+    'audit_evidence_accuracy',
+    'ipe_reference',
+    'key_control',
+    'application_name',
+    'control_performer',
+    'control_owner',
+    'control_design_procs',
+    'control_type_fo',
+    'control_type_ma',
     'nature_of_control',
-    'type_of_risk_mitigation_method',
     'process_owner',
-    'reviewer_process_supervisor',
     'control_frequency',
-    'basis_of_sampling',
-    'docs_to_review_for_dms_audit',
-    'type_of_risk_associated',
-    'financial_reporting',
-    'checks_performed',
-    'effective_or_not_effective',
-    'findings',
-    'remarks',
+    'sample_size',
+    'sample_required',
+    'completeness',
+    'existence_occurrence',
+    'rights_and_obligation',
+    'valuation_and_allocation',
+    'presentation_and_disclosure',
+    'control_design_conclusion',
+    'design_deficiency_desc',
     'doc_uploaded_by_user',
     'remarks_by_user'
   ]
@@ -328,15 +341,19 @@ function UserFormDetail() {
   // Fields to hide when status is empty/null or 'sent for approval'
   // Only show them when status is 'Approved' or 'Rejected'
   // Note: remarks_by_user is always displayed (removed from this list)
-  const conditionalHiddenFields = [
-    'effective_or_not_effective',
-    'checks_performed',
-    'findings',
-    'remarks'
-  ]
+  const conditionalHiddenFields = ['control_design_conclusion', 'design_deficiency_desc']
 
   // Check if status should hide conditional fields
   const shouldHideConditionalFields = !formData?.status || formData.status === '' || formData.status === 'sent for approval'
+  
+  // Grouped fields that should be displayed together (only if at least one has a value)
+  const groupedApproverFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
+  
+  // Check if at least one grouped field has a value
+  const hasGroupedFieldValue = formData ? groupedApproverFields.some(key => {
+    const value = formData[key]
+    return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
+  }) : false
 
   if (loading) {
     return (
@@ -366,10 +383,14 @@ function UserFormDetail() {
     )
   }
 
-  // Sort fields according to fieldOrder and filter out conditional hidden fields
+  // Sort fields according to fieldOrder and filter out conditional hidden fields and grouped fields
   const sortedFields = fieldOrder.filter(key => {
     // First check if field exists and is not in excludedFields
     if (!formData.hasOwnProperty(key) || excludedFields.includes(key)) {
+      return false
+    }
+    // Exclude grouped fields from regular display (they'll be shown as a group)
+    if (groupedApproverFields.includes(key)) {
       return false
     }
     // Then check if field should be hidden based on status
@@ -414,7 +435,7 @@ function UserFormDetail() {
               color: 'text.primary'
             }}
           >
-            Control Form
+            RACM
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
@@ -539,36 +560,44 @@ function UserFormDetail() {
                     </Typography>
                   </Box>
 
-                  {/* Reason by Approver */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                    <Typography
-                      variant="caption"
-                      component="label"
-                      sx={{
-                        display: 'block',
-                        fontWeight: 600,
-                        mb: 1,
-                        color: 'text.secondary',
-                        fontSize: '0.75rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                      }}
-                    >
-                      Reason by Approver
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: 'text.primary',
-                        fontWeight: 500,
-                        fontSize: '0.875rem',
-                        lineHeight: 1.6,
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {formData?.reason_by_approver || 'None'}
-                    </Typography>
-                  </Box>
+                  {/* Reason by Approver - show only when non-empty */}
+                  {(() => {
+                    const reason = formData?.reason_by_approver
+                    const hasReason = typeof reason === 'string' && reason.trim() !== ''
+                    if (!hasReason) return null
+
+                    return (
+                      <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                        <Typography
+                          variant="caption"
+                          component="label"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 600,
+                            mb: 1,
+                            color: 'text.secondary',
+                            fontSize: '0.75rem',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                          }}
+                        >
+                          Reason by Approver
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.primary',
+                            fontWeight: 500,
+                            fontSize: '0.875rem',
+                            lineHeight: 1.6,
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {reason}
+                        </Typography>
+                      </Box>
+                    )
+                  })()}
 
                   {/* Sample Document */}
                   <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -628,7 +657,7 @@ function UserFormDetail() {
                     )}
                   </Box>
 
-                  {/* Send for Approval Button */}
+                  {/* Send for Approval / Resubmit Button */}
                   {isEditable && (
                     <Box sx={{ mt: 1, pt: 2, pb: 2 }}>
                       {(() => {
@@ -636,12 +665,23 @@ function UserFormDetail() {
                         const hasExistingDocument = formData?.doc_uploaded_by_user && formData.doc_uploaded_by_user !== ''
                         const hasNewDocument = selectedFile !== null
                         const hasDocument = hasExistingDocument || hasNewDocument
-                        
+
                         // Check if remarks are provided
-                        const hasRemarks = remarksByUser && remarksByUser.trim() !== ''
-                        
-                        // Button is enabled only when both document and remarks are provided
-                        const isButtonDisabled = saving || !hasDocument || !hasRemarks
+                        const hasRemarks = !!(remarksByUser && remarksByUser.trim() !== '')
+
+                        // Detect changes:
+                        // 1) New document selected
+                        const hasDocumentChange = hasNewDocument
+                        // 2) Remarks text changed compared to original value from backend
+                        const originalRemarks = (formData?.remarks_by_user || '').trim()
+                        const currentRemarks = (remarksByUser || '').trim()
+                        const hasRemarksChange = originalRemarks !== currentRemarks
+
+                        // Button is enabled only when:
+                        // - Document and remarks are both present (business rule)
+                        // - AND user has either uploaded a new document or changed remarks
+                        const hasAnyChange = hasDocumentChange || hasRemarksChange
+                        const isButtonDisabled = saving || !hasDocument || !hasRemarks || !hasAnyChange
                         
                         return (
                           <Button
@@ -920,9 +960,109 @@ function UserFormDetail() {
                         >
                           {isEmptyDisplay ? '-' : String(displayValue)}
                         </Typography>
+                        {key === 'sample_required' && (
+                          <Typography
+                            variant="caption"
+                            component="p"
+                            sx={{
+                              color: 'text.secondary',
+                              fontStyle: 'italic',
+                              mt: 0.75,
+                              fontSize: '0.75rem',
+                              opacity: 0.8,
+                            }}
+                          >
+                            {sampleRequiredNotice}
+                          </Typography>
+                        )}
                       </Box>
                     )
                   })}
+                  
+                  {/* Grouped Approver Fields - Display only if at least one has a value */}
+                  {hasGroupedFieldValue && (
+                    <Box
+                      sx={{
+                        gridColumn: { xs: '1', md: '1 / -1' },
+                        pb: 3,
+                        borderTop: '2px solid',
+                        borderBottom: '1px solid',
+                        borderColor: 'divider',
+                        pt: 3,
+                        mt: 2,
+                      }}
+                    >
+                      <Typography
+                        variant="h6"
+                        component="h3"
+                        sx={{
+                          fontWeight: 700,
+                          mb: 3,
+                          color: 'text.primary',
+                          fontSize: '1.125rem',
+                        }}
+                      >
+                        Control Design & Evaluation
+                      </Typography>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 3,
+                        }}
+                      >
+                        {groupedApproverFields.map((key) => {
+                          const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                          const value = formData[key]
+                          const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
+                          const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+
+                          return (
+                            <Box
+                              key={key}
+                              sx={{
+                                pb: 2,
+                                borderBottom: '1px solid',
+                                borderColor: 'divider',
+                                '&:last-child': {
+                                  borderBottom: 'none',
+                                },
+                              }}
+                            >
+                              <Typography
+                                variant="caption"
+                                component="dt"
+                                sx={{
+                                  display: 'block',
+                                  fontWeight: 700,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.5px',
+                                  mb: 1,
+                                  color: 'text.primary',
+                                  fontSize: theme.typography.customSizes.small,
+                                }}
+                              >
+                                {label}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                component="dd"
+                                sx={{
+                                  color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                  wordBreak: 'break-word',
+                                  lineHeight: 1.6,
+                                  fontSize: theme.typography.customSizes.medium,
+                                  whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                                }}
+                              >
+                                {isEmpty ? '-' : String(value)}
+                              </Typography>
+                            </Box>
+                          )
+                        })}
+                      </Box>
+                    </Box>
+                  )}
                 </Box>
               </CardContent>
             </Card>

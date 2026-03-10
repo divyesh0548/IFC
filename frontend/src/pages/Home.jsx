@@ -123,7 +123,6 @@ function Home() {
             <Grid item xs={12} sm={6} sx={{ display: 'flex', justifyContent: 'center' }}>
               <Card
                 sx={{
-                  width: '100%',
                   width: '300px',
                   height: '220px',
                   borderRadius: 3,
@@ -191,7 +190,6 @@ function Home() {
             <Grid item xs={12} sm={6} sx={{ display: 'flex', justifyContent: 'center' }}>
               <Card
                 sx={{
-                  width: '100%',
                   width: '300px',
                   height: '220px',
                   borderRadius: 3,

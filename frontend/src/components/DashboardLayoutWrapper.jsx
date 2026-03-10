@@ -52,8 +52,8 @@ const getNavigationForRole = (role) => {
           icon: <DashboardIcon />,
         },
         {
-          path: '/company_co/create-user',
-          title: 'Create User',
+          path: '/company_co/user-management',
+          title: 'User Management',
           icon: <PersonAddIcon />,
         },
         {

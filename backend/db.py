@@ -1,10 +1,162 @@
 import os
+import argparse
+from datetime import datetime
 import psycopg2
 from psycopg2 import sql
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+
+def parse_cutoff_datetime(value):
+    """
+    Parse cutoff input into datetime.
+    Accepted formats:
+      - YYYY-MM-DD
+      - YYYY-MM-DD HH:MM:SS
+      - YYYY-MM-DD HH:MM:SS.ffffff
+      - ISO format (T separator also supported)
+    """
+    if not value:
+        raise ValueError("Cutoff date is required")
+
+    raw = value.strip()
+    # Try Python's ISO parser first (supports both ' ' and 'T' separators)
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        pass
+
+    # Fallback explicit formats
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+
+    raise ValueError(
+        "Invalid date format. Use 'YYYY-MM-DD' or "
+        "'YYYY-MM-DD HH:MM:SS[.ffffff]'."
+    )
+
+
+def _build_s3_client():
+    """
+    Create and return a boto3 S3 client using environment variables.
+    """
+    try:
+        import boto3
+    except ImportError as exc:
+        raise ImportError(
+            "boto3 is required for S3 cleanup. Install it with: pip install boto3"
+        ) from exc
+
+    aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
+    aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    aws_region = os.getenv("AWS_REGION", "us-east-1")
+
+    if not aws_access_key_id or not aws_secret_access_key:
+        raise ValueError(
+            "AWS credentials are missing. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."
+        )
+
+    return boto3.client(
+        "s3",
+        region_name=aws_region,
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+    )
+
+
+def cleanup_excel_files_before_date(cutoff_input, dry_run=False):
+    """
+    Delete excel_files rows with created_at < cutoff, and delete the S3 object
+    (file_path) before deleting each DB row.
+    """
+    cutoff_dt = parse_cutoff_datetime(cutoff_input)
+    bucket_name = os.getenv("AWS_S3_BUCKET_NAME", "snt-nhit-data")
+
+    print("\n[excel_files cleanup]")
+    print(f"  Cutoff: rows with created_at < {cutoff_dt}")
+    print(f"  S3 bucket: {bucket_name}")
+    print(f"  Dry run: {'Yes' if dry_run else 'No'}")
+
+    db_config = get_db_config()
+    conn = None
+    cursor = None
+
+    try:
+        conn = psycopg2.connect(**db_config)
+        conn.autocommit = False
+        cursor = conn.cursor()
+        cursor.execute("SET timezone = 'Asia/Kolkata'")
+
+        select_query = """
+            SELECT id, file_path, created_at
+            FROM public.excel_files
+            WHERE created_at < %s
+            ORDER BY created_at ASC;
+        """
+        cursor.execute(select_query, (cutoff_dt,))
+        rows = cursor.fetchall()
+
+        if not rows:
+            print("  No rows found for cleanup.")
+            conn.rollback()
+            return {"matched": 0, "deleted": 0, "failed": 0}
+
+        print(f"  Matched rows: {len(rows)}")
+
+        s3_client = None if dry_run else _build_s3_client()
+        deleted = 0
+        failed = 0
+
+        for row_id, file_path, created_at in rows:
+            try:
+                if dry_run:
+                    print(f"  [DRY RUN] id={row_id}, created_at={created_at}, key={file_path}")
+                    deleted += 1
+                    continue
+
+                # Step 1: delete S3 object first (as requested)
+                if file_path and file_path.strip():
+                    s3_client.delete_object(Bucket=bucket_name, Key=file_path.strip())
+                    print(f"  S3 deleted: {file_path}")
+                else:
+                    print(f"  Warning: Empty file_path for id={row_id}; continuing with row delete.")
+
+                # Step 2: delete DB row
+                cursor.execute("DELETE FROM public.excel_files WHERE id = %s;", (row_id,))
+                conn.commit()
+                deleted += 1
+                print(f"  DB row deleted: id={row_id}")
+
+            except Exception as row_error:
+                failed += 1
+                conn.rollback()
+                print(f"  Failed id={row_id}: {row_error}")
+                continue
+
+        if dry_run:
+            conn.rollback()
+            print(f"  Dry run complete. Rows that would be deleted: {deleted}")
+        else:
+            print(f"  Cleanup complete. Deleted={deleted}, Failed={failed}")
+
+        return {"matched": len(rows), "deleted": deleted, "failed": failed}
+
+    except Exception as error:
+        if conn:
+            conn.rollback()
+        print(f"\n❌ Cleanup failed: {error}")
+        raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+            print("  Database connection closed.")
 
 def get_db_config():
     """
@@ -136,6 +288,8 @@ def create_control_forms_table(cursor):
         process_owner character varying(255) NULL,
         reviewer_process_supervisor character varying(255) NULL,
         control_frequency character varying(255) NULL,
+        due_date date NULL,
+        reminder_frequency integer NULL,
         basis_of_sampling character varying(255) NULL,
         docs_to_review_for_dms_audit text NULL,
         type_of_risk_associated character varying(255) NULL,
@@ -157,8 +311,12 @@ def create_control_forms_table(cursor):
         remarks_by_user text NULL,
         business_process character varying(255) NULL,
         financial_year character varying(255) NULL,
-        cycle character varying(255) NULL,
-        sampling_doc character varying(255) NULL
+        sample_required text NULL,
+        completeness character varying(255) NULL,
+        existence_occurrence character varying(255) NULL,
+        rights_and_obligation character varying(255) NULL,
+        valuation_and_allocation character varying(255) NULL,
+        presentation_and_disclosure character varying(255) NULL
     );
     """
     
@@ -193,8 +351,7 @@ def create_excel_files_table(cursor):
         company_identifier character varying(255) NULL,
         coordinator_email_id character varying(255) NULL,
         business_process character varying(255) NULL,
-        cycle character varying(255) NULL,
-        financial_year character varying(255) NULL
+        financial_year character varying(255) NULL,
     );
     """
     
@@ -258,7 +415,8 @@ def create_audit_logs_table(cursor):
         ),
         action character varying(255) NULL,
         user_email_id character varying(255) NULL,
-        form_id character varying(255) NULL
+        form_id character varying(255) NULL,
+        ref_data character varying(255) NULL
     );
     """
     
@@ -292,19 +450,19 @@ def column_exists(cursor, table_name, column_name):
     """, (table_name, column_name))
     return cursor.fetchone()[0]
 
-def alter_audit_logs_add_form_id(cursor):
-    """Adds form_id column to audit_logs table if it doesn't exist."""
-    print("\n[audit_logs - Adding form_id column]")
+def alter_audit_logs_add_ref_data(cursor):
+    """Adds ref_data column to audit_logs table if it doesn't exist."""
+    print("\n[audit_logs - Adding ref_data column]")
     
-    if column_exists(cursor, 'audit_logs', 'form_id'):
-        print("  ⚠️  Column 'form_id' already exists in 'audit_logs' table. Skipping.")
+    if column_exists(cursor, 'audit_logs', 'ref_data'):
+        print("  ⚠️  Column 'ref_data' already exists in 'audit_logs' table. Skipping.")
     else:
-        print("  Adding column 'form_id' to 'audit_logs' table...")
+        print("  Adding column 'ref_data' to 'audit_logs' table...")
         cursor.execute("""
             ALTER TABLE public.audit_logs
-            ADD COLUMN form_id character varying(255) NULL;
+            ADD COLUMN ref_data character varying(255) NULL;
         """)
-        print("  ✓ Column 'form_id' added successfully!")
+        print("  ✓ Column 'ref_data' added successfully!")
 
 def insert_ifc_user(email_id, password, role, company_identifier=None, temp_login=0):
     """
@@ -437,19 +595,99 @@ def create_sampling_process_temp_table(cursor):
     
     create_table_with_constraint(cursor, 'sampling_process_temp', create_table_query, 'sampling_process_temp_pkey', add_constraint_query)
 
-def alter_control_forms_add_sampling_doc(cursor):
-    """Adds sampling_doc column to control_forms table if it doesn't exist."""
-    print("\n[control_forms - Adding sampling_doc column]")
+def alter_control_forms_add_sample_required(cursor):
+    """Adds sample_required column to control_forms table if it doesn't exist."""
+    print("\n[control_forms - Adding sample_required column]")
     
-    if column_exists(cursor, 'control_forms', 'sampling_doc'):
-        print("  ⚠️  Column 'sampling_doc' already exists in 'control_forms' table. Skipping.")
+    if column_exists(cursor, 'control_forms', 'sample_required'):
+        print("  ⚠️  Column 'sample_required' already exists in 'control_forms' table. Skipping.")
     else:
-        print("  Adding column 'sampling_doc' to 'control_forms' table...")
+        print("  Adding column 'sample_required' to 'control_forms' table...")
         cursor.execute("""
             ALTER TABLE public.control_forms
-            ADD COLUMN sampling_doc character varying(255) NULL;
+            ADD COLUMN sample_required text NULL;
         """)
-        print("  ✓ Column 'sampling_doc' added successfully!")
+        print("  ✓ Column 'sample_required' added successfully!")
+
+def alter_control_forms_sample_required_to_text(cursor):
+    """Alters sample_required column from character varying(255) to text if needed."""
+    print("\n[control_forms - Altering sample_required column type]")
+    
+    if not column_exists(cursor, 'control_forms', 'sample_required'):
+        print("  ⚠️  Column 'sample_required' does not exist. Skipping.")
+        return
+    
+    # Check current column type
+    cursor.execute("""
+        SELECT data_type, character_maximum_length
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        AND table_name = 'control_forms'
+        AND column_name = 'sample_required';
+    """)
+    
+    result = cursor.fetchone()
+    if result:
+        current_type = result[0]
+        max_length = result[1]
+        
+        # If it's character varying with a length limit, alter it to text
+        if current_type == 'character varying' and max_length:
+            print(f"  Current type: {current_type}({max_length}), changing to text...")
+            cursor.execute("""
+                ALTER TABLE public.control_forms
+                ALTER COLUMN sample_required TYPE text;
+            """)
+            print("  ✓ Column 'sample_required' altered to text successfully!")
+        elif current_type == 'text':
+            print("  ✓ Column 'sample_required' is already of type text. No change needed.")
+        else:
+            print(f"  ⚠️  Column 'sample_required' has unexpected type: {current_type}. Skipping.")
+    else:
+        print("  ⚠️  Could not determine column type. Skipping.")
+
+def alter_control_forms_add_new_columns(cursor):
+    """Adds new columns (Completeness, Existence & Occurrence, etc.) to control_forms table if they don't exist."""
+    print("\n[control_forms - Adding new columns]")
+    
+    new_columns = [
+        ('completeness', 'character varying(255)'),
+        ('existence_occurrence', 'character varying(255)'),
+        ('rights_and_obligation', 'character varying(255)'),
+        ('valuation_and_allocation', 'character varying(255)'),
+        ('presentation_and_disclosure', 'character varying(255)')
+    ]
+    
+    for column_name, column_type in new_columns:
+        if column_exists(cursor, 'control_forms', column_name):
+            print(f"  ⚠️  Column '{column_name}' already exists in 'control_forms' table. Skipping.")
+        else:
+            print(f"  Adding column '{column_name}' to 'control_forms' table...")
+            cursor.execute(f"""
+                ALTER TABLE public.control_forms
+                ADD COLUMN {column_name} {column_type} NULL;
+            """)
+            print(f"  ✓ Column '{column_name}' added successfully!")
+
+def alter_control_forms_add_due_date_and_reminder_frequency(cursor):
+    """Adds due_date and reminder_frequency columns to control_forms table if they don't exist."""
+    print("\n[control_forms - Adding due_date and reminder_frequency columns]")
+
+    new_columns = [
+        ('due_date', 'date'),
+        ('reminder_frequency', 'integer')
+    ]
+
+    for column_name, column_type in new_columns:
+        if column_exists(cursor, 'control_forms', column_name):
+            print(f"  ⚠️  Column '{column_name}' already exists in 'control_forms' table. Skipping.")
+        else:
+            print(f"  Adding column '{column_name}' to 'control_forms' table...")
+            cursor.execute(f"""
+                ALTER TABLE public.control_forms
+                ADD COLUMN {column_name} {column_type} NULL;
+            """)
+            print(f"  ✓ Column '{column_name}' added successfully!")
 
 def alter_sampling_process_temp_add_processed(cursor):
     """Adds processed column to sampling_process_temp table if it doesn't exist."""
@@ -465,22 +703,68 @@ def alter_sampling_process_temp_add_processed(cursor):
         """)
         print("  ✓ Column 'processed' added successfully!")
 
-def alter_ifc_users_table(cursor):
-    """Alters the ifc_users table to add new columns."""
-    print("\n[alter_ifc_users]")
+def alter_control_forms_ensure_control_frequency_varchar(cursor):
+    """Ensures control_frequency column is VARCHAR(255) type in control_forms table."""
+    print("\n[control_forms - Ensuring control_frequency is VARCHAR]")
+    
+    if not column_exists(cursor, 'control_forms', 'control_frequency'):
+        print("  ⚠️  Column 'control_frequency' does not exist. Skipping.")
+        return
+    
+    # Check current column type
+    cursor.execute("""
+        SELECT data_type, character_maximum_length
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        AND table_name = 'control_forms'
+        AND column_name = 'control_frequency';
+    """)
+    
+    result = cursor.fetchone()
+    if result:
+        current_type = result[0]
+        max_length = result[1]
+        
+        # If it's not character varying(255), alter it to varchar(255)
+        if current_type != 'character varying' or max_length != 255:
+            print(f"  Current type: {current_type}({max_length}), changing to character varying(255)...")
+            cursor.execute("""
+                ALTER TABLE public.control_forms
+                ALTER COLUMN control_frequency TYPE character varying(255);
+            """)
+            print("  ✓ Column 'control_frequency' altered to character varying(255) successfully!")
+        else:
+            print("  ✓ Column 'control_frequency' is already character varying(255). No change needed.")
+    else:
+        print("  ⚠️  Could not determine column type. Skipping.")
 
-    alter_table_query = """
-    ALTER TABLE public.ifc_users
-    ADD COLUMN IF NOT EXISTS emp_code character varying(255) NULL,
-    ADD COLUMN IF NOT EXISTS emp_name character varying(255) NULL,
-    ADD COLUMN IF NOT EXISTS designation character varying(255) NULL,
-    ADD COLUMN IF NOT EXISTS department character varying(255) NULL,
-    ADD COLUMN IF NOT EXISTS mobile character varying(255) NULL;
+def create_control_form_history_table(cursor):
+    """Creates the control_form_history table if it doesn't exist."""
+    print("\n[control_form_history]")
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.control_form_history (
+        id serial NOT NULL,
+        form_id character varying(255) NULL,
+        doc_uploaded_by_user character varying(500) NULL,
+        reason_by_approver text NULL
+    );
     """
     
-    # Execute the query to alter the table
-    cursor.execute(alter_table_query)
-    print("Table 'ifc_users' altered successfully with new columns.")
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'control_form_history_pkey'
+        ) THEN
+            ALTER TABLE public.control_form_history
+            ADD CONSTRAINT control_form_history_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+    
+    create_table_with_constraint(cursor, 'control_form_history', create_table_query, 'control_form_history_pkey', add_constraint_query)
 
 def create_all_tables():
     """
@@ -514,16 +798,20 @@ def create_all_tables():
         print("Creating tables...")
         print("=" * 70)
     
-        create_companies_table(cursor)
-        create_control_forms_table(cursor)
-        create_excel_files_table(cursor)
-        create_ifc_users_table(cursor)
-        create_audit_logs_table(cursor)
-        create_sampling_process_temp_table(cursor)
-        alter_audit_logs_add_form_id(cursor)
-        alter_control_forms_add_sampling_doc(cursor)
-        alter_sampling_process_temp_add_processed(cursor)
-        alter_ifc_users_table(cursor)
+        # create_companies_table(cursor)
+        # create_control_forms_table(cursor)
+        # create_excel_files_table(cursor)
+        # create_ifc_users_table(cursor)
+        # create_audit_logs_table(cursor)
+        # create_sampling_process_temp_table(cursor)
+        create_control_form_history_table(cursor)
+        # alter_audit_logs_add_ref_data(cursor)
+        # alter_control_forms_add_sample_required(cursor)
+        # alter_control_forms_sample_required_to_text(cursor)
+        # alter_control_forms_add_new_columns(cursor)
+        # alter_control_forms_add_due_date_and_reminder_frequency(cursor)
+        # alter_control_forms_ensure_control_frequency_varchar(cursor)
+        # alter_sampling_process_temp_add_processed(cursor)
         
         print("\n" + "=" * 70)
         print("✓ All tables processed successfully!")
@@ -598,5 +886,27 @@ def create_all_tables():
             conn.close()
             print("\nDatabase connection closed.")
 
+
+
+
 if __name__ == "__main__":
-    create_all_tables()
+    parser = argparse.ArgumentParser(description="Database utilities for IFC backend")
+    parser.add_argument(
+        "--cleanup-excel-files-before",
+        dest="cleanup_excel_files_before",
+        help=(
+            "Delete rows from excel_files where created_at is older than the given "
+            "date/datetime. Format: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS[.ffffff]"
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview rows/S3 keys to delete without deleting anything.",
+    )
+    args = parser.parse_args()
+
+    if args.cleanup_excel_files_before:
+        cleanup_excel_files_before_date(args.cleanup_excel_files_before, dry_run=args.dry_run)
+    else:
+        create_all_tables()

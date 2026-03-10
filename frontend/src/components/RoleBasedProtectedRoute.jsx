@@ -70,7 +70,7 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
     // Redirect based on role to appropriate dashboard
     const roleDashboards = {
       'user': '/user/dashboard',
-      'company_co': '/company_co/dashboard',
+      'company_co': '/company_co/home',
       'approver': '/approver/dashboard',
       'siteadmin': '/siteadmin/dashboard',
       'auditor': '/auditor/dashboard'

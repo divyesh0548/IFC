@@ -1,82 +1,117 @@
 // Simple column mapping for most columns (exact/simple matching)
 const simpleColumnMapping = {
-  'description of control': 'description_of_control',
-  'process': 'process',
+  'control number': 'control_number',
+  'sub process': 'sub_process',
   'sub-process': 'sub_process',
+  'risk': 'risk_description',
+  'risk heat': 'risk_heat',
+  'whether fraud risk': 'whether_fraud_risks_exist',
+  'whether fraud risks': 'whether_fraud_risks_exist',
   'whether fraud risks exist': 'whether_fraud_risks_exist',
+  'completeness': 'completeness',
+  'existence occurrence': 'existence_occurrence',
+  'valuation allocation': 'valuation_and_allocation',
   'control objective': 'control_objective',
-  'gap description & resolution': 'gap_description_resolution',
-  'relevant data elements of ipe': 'relevant_data_elements_of_ipe',
+  'ipe reference': 'ipe_reference',
+  'application name': 'application_name',
+  'control performer': 'control_performer',
   'process owner': 'process_owner',
-  'basis of sampling': 'basis_of_sampling',
-  'checks performed': 'checks_performed',
-  'effective or not effective': 'effective_or_not_effective',
-  'remarks': 'remarks',
-  'findings': 'findings'
+  'control owner': 'control_owner',
 };
+
+// Columns that should never be imported from Excel into control_forms
+const ignoredControlFormImportColumns = new Set([
+  'control_design_procs',
+  'control_design_conclusion',
+  'design_deficiency_desc',
+]);
+
+function isIgnoredControlFormImportColumn(dbColumn) {
+  return ignoredControlFormImportColumns.has(dbColumn);
+}
+
+function hasKeywordMatch(normalizedHeader, keyword) {
+  const tokens = normalizedHeader.split(' ').filter(Boolean);
+  const keywordLower = keyword.toLowerCase();
+  if (keywordLower.length <= 2) {
+    return tokens.some((token) => token === keywordLower);
+  }
+  return tokens.some((token) => token === keywordLower || token.startsWith(keywordLower));
+}
 
 const columnPatterns = [
   {
-    keywords: ['risk', 'description', 'what could go wrong', 'misstatement', 'misrepresentation'],
-    dbColumn: 'risk_description',
+    keywords: ['account', 'balance', 'disclosure'],
+    dbColumn: 'account_balance_disclosure',
     priority: 1
   },
   {
-    keywords: ['control', 'address', 'what could go wrong'],
-    dbColumn: 'control_to_address',
+    keywords: ['business', 'cycle', 'process'],
+    dbColumn: 'business_process',
     priority: 1
   },
   {
-    keywords: ['management', 'review', 'control', 'mrc'],
-    dbColumn: 'mrc_or_not',
+    keywords: ['risk','heat'],
+    dbColumn: 'risk_heat',
+    priority: 2
+  },
+  {
+    keywords: ['rights', 'obligations'],
+    dbColumn: 'rights_and_obligation',
     priority: 1
   },
   {
-    keywords: ['information', 'produced', 'entity', 'ipe', 'source data', 'report logic', 'report parameters'],
-    dbColumn: 'source_data_report_logic_report_parameters',
+    keywords: ['presentation', 'disclosure'],
+    dbColumn: 'presentation_and_disclosure',
     priority: 1
   },
   {
-    keywords: ['type', 'of', 'control', 'preventive', 'detective'],
-    dbColumn: 'type_of_control',
+    keywords: ['standard', 'control', 'description'],
+    dbColumn: 'standard_control_description',
     priority: 1
   },
   {
-    keywords: ['nature', 'of', 'control', 'manual', 'automated'],
+    keywords: ['process', 'activity', 'walkthrough', 'details'],
+    dbColumn: 'process_walkthrough',
+    priority: 1
+  },
+  {
+    keywords: ['type', 'operational', 'financial'],
+    dbColumn: 'control_type_fo',
+    priority: 1
+  },
+  {
+    keywords: ['rely', 'information', 'produced', 'entity'],
+    dbColumn: 'control_relies_on_ipe',
+    priority: 1
+  },
+  {
+    keywords: ['audit', 'evidence', 'accuracy', 'completeness'],
+    dbColumn: 'audit_evidence_accuracy',
+    priority: 1
+  },
+  {
+    keywords: ['nature', 'preventive', 'detective'],
     dbColumn: 'nature_of_control',
     priority: 1
   },
   {
-    keywords: ['risk', 'mitigation', 'method', 'insurance', 'hedging', 'sign off', 'approvals'],
-    dbColumn: 'type_of_risk_mitigation_method',
+    keywords: ['type', 'manual', 'automated'],
+    dbColumn: 'control_type_ma',
     priority: 1
   },
   {
-    keywords: ['reviewer', 'process', 'supervisor'],
-    dbColumn: 'reviewer_process_supervisor',
+    keywords: ['key', 'control', 'yes', 'no'],
+    dbColumn: 'key_control',
     priority: 1
   },
   {
-    keywords: ['control', 'frequency', 'recurring', 'weekly', 'monthly'],
-    dbColumn: 'control_frequency',
-    priority: 1
-  },
-  {
-    keywords: ['documents', 'reviewed', 'dms', 'audit'],
-    dbColumn: 'docs_to_review_for_dms_audit',
-    priority: 1
-  },
-  {
-    keywords: ['type', 'risk', 'associated', 'process', 'flow'],
-    dbColumn: 'type_of_risk_associated',
-    priority: 2
-  },
-  {
-    keywords: ['financial', 'reporting', 'bs', 'pl'],
-    dbColumn: 'financial_reporting',
+    keywords: ['fraud', 'risk', 'whether'],
+    dbColumn: 'whether_fraud_risks_exist',
     priority: 1
   }
-];
+]
+
 
 // Function to normalize column names
 function normalizeColumnName(excelColumnName) {
@@ -84,19 +119,29 @@ function normalizeColumnName(excelColumnName) {
   
   const trimmed = excelColumnName.trim();
   const normalized = trimmed.toLowerCase()
-    .replace(/[\/\(\)&]/g, ' ') // Replace special chars with spaces
+    .replace(/[\/\(\)&-]/g, ' ') // Replace special chars with spaces
     .replace(/\s+/g, ' ') // Normalize multiple spaces
     .trim();
+
+  // Strict detection for control_frequency:
+  // map only when ALL 3 words are present in the header.
+  const requiredFrequencyWords = ['frequency', 'control', 'of'];
+  const hasAllFrequencyWords = requiredFrequencyWords.every((word) => hasKeywordMatch(normalized, word));
+  if (hasAllFrequencyWords) {
+    return 'control_frequency';
+  }
   
   // First, try simple exact/normalized matching
   if (simpleColumnMapping[normalized]) {
-    return simpleColumnMapping[normalized];
+    const mappedColumn = simpleColumnMapping[normalized];
+    return isIgnoredControlFormImportColumn(mappedColumn) ? null : mappedColumn;
   }
   
   // Also check with underscores
   const withUnderscores = normalized.replace(/\s+/g, '_');
   if (simpleColumnMapping[withUnderscores]) {
-    return simpleColumnMapping[withUnderscores];
+    const mappedColumn = simpleColumnMapping[withUnderscores];
+    return isIgnoredControlFormImportColumn(mappedColumn) ? null : mappedColumn;
   }
   
   // For complex columns, try pattern matching
@@ -107,7 +152,7 @@ function normalizeColumnName(excelColumnName) {
     // Count how many keywords match
     let matchCount = 0;
     for (const keyword of pattern.keywords) {
-      if (normalized.includes(keyword.toLowerCase())) {
+      if (hasKeywordMatch(normalized, keyword)) {
         matchCount++;
       }
     }
@@ -124,11 +169,12 @@ function normalizeColumnName(excelColumnName) {
   
   // If we found a good match (at least 50% of keywords), return it
   if (bestMatch && bestScore >= 0.5) {
-    return bestMatch;
+    return isIgnoredControlFormImportColumn(bestMatch) ? null : bestMatch;
   }
   
   // Fallback: convert to snake_case
-  return normalized.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+  const fallbackColumn = normalized.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+  return isIgnoredControlFormImportColumn(fallbackColumn) ? null : fallbackColumn;
 }
 
 module.exports = {

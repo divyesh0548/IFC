@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const XLSX = require('xlsx');
 const { downloadFileFromS3, uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
+const { getSampleSizeByFrequency } = require('../utils/sample_required');
 require('dotenv').config();
 
 // Database connection pool
@@ -132,52 +133,12 @@ async function processSamplingExcel() {
         const controlFrequency = controlFrequencyResult.rows[0].control_frequency || '';
         console.log(`  ✓ Found control_frequency: "${controlFrequency}"`);
         
-        // Mapping of control_frequency values to number of samples (case-insensitive)
-        const frequencyMapping = {
-          'yearly': 1,
-          'quarterly': 4,
-          'half yearly': 2,
-          'half-yearly': 2,
-          'monthly': 12,
-          'as & when needed': 1,
-          'as and when needed': 1,
-          'as & when required': 1,
-          'as and when required': 1,
-          'recurring and daily': 40,
-          'recurring & daily': 40,
-        };
-        
-        // Get number of samples based on control_frequency (case-insensitive comparison)
-        const frequencyLower = controlFrequency.toLowerCase().trim();
-        let numSamples = 5; // Default to 5 if no match found
-        let matchedKey = null;
-        
-        // Try to find matching frequency - check exact match first, then partial matches
-        for (const [key, value] of Object.entries(frequencyMapping)) {
-          const keyLower = key.toLowerCase();
-          if (frequencyLower === keyLower) {
-            // Exact match
-            numSamples = value;
-            matchedKey = key;
-            break;
-          }
-        }
-        
-        // If no exact match, try partial matching
-        if (!matchedKey) {
-          for (const [key, value] of Object.entries(frequencyMapping)) {
-            const keyLower = key.toLowerCase();
-            // Check if frequency contains key or key contains frequency
-            if (frequencyLower.includes(keyLower) || keyLower.includes(frequencyLower)) {
-              numSamples = value;
-              matchedKey = key;
-              break;
-            }
-          }
-        }
-        
-        if (matchedKey) {
-          console.log(`  ✓ Matched frequency "${matchedKey}" -> ${numSamples} samples`);
+        // Get number of samples from shared control_frequency -> sample_size mapping.
+        const mappedSampleSize = getSampleSizeByFrequency(controlFrequency);
+        const numSamples = mappedSampleSize ?? 5; // Default to 5 if no match found
+
+        if (mappedSampleSize !== null) {
+          console.log(`  ✓ Matched control_frequency -> ${numSamples} samples`);
         } else if (controlFrequency) {
           console.log(`  ⚠️  No match found for control_frequency "${controlFrequency}", using default: 5 samples`);
         } else {

@@ -15,6 +15,7 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { toast } from 'react-hot-toast'
+import * as XLSX from 'xlsx'
 
 function ExcelUpload() {
   const theme = useTheme()
@@ -26,7 +27,6 @@ function ExcelUpload() {
   const [isDragging, setIsDragging] = useState(false)
   const [businessProcess, setBusinessProcess] = useState('')
   const [financialYear, setFinancialYear] = useState('')
-  const [cycle, setCycle] = useState('')
 
   const validateAndSetFile = (selectedFile) => {
     if (!selectedFile) {
@@ -102,6 +102,62 @@ function ExcelUpload() {
     }
   }
 
+  const normalizeHeader = (value) => String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+
+  /**
+   * Check if "Process Owner" column exists and gather its non-empty values.
+   * Returns an object: { hasColumn: boolean, hasAnyValue: boolean, nonEmptyValues: string[] }.
+   */
+  const checkProcessOwnerColumn = async (inputFile) => {
+    if (!inputFile) {
+      return { hasColumn: false, hasAnyValue: false, nonEmptyValues: [] }
+    }
+
+    const buffer = await inputFile.arrayBuffer()
+    const workbook = XLSX.read(buffer, { type: 'array' })
+    const firstSheetName = workbook.SheetNames?.[0]
+    if (!firstSheetName) {
+      return { hasColumn: false, hasAnyValue: false, nonEmptyValues: [] }
+    }
+
+    const worksheet = workbook.Sheets[firstSheetName]
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false })
+    const headerRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : []
+
+    if (!Array.isArray(headerRow) || headerRow.length === 0) {
+      return { hasColumn: false, hasAnyValue: false, nonEmptyValues: [] }
+    }
+
+    // Find index of "Process Owner" column (normalized)
+    const processOwnerIndex = headerRow.findIndex(
+      (header) => normalizeHeader(header) === 'process owner'
+    )
+
+    if (processOwnerIndex === -1) {
+      // Column does not exist
+      return { hasColumn: false, hasAnyValue: false, nonEmptyValues: [] }
+    }
+
+    // Collect non-empty values from data rows for this column
+    const dataRows = Array.isArray(rows) && rows.length > 1 ? rows.slice(1) : []
+    const nonEmptyValues = []
+
+    dataRows.forEach((row) => {
+      if (!Array.isArray(row)) return
+      const cellValue = row[processOwnerIndex]
+      if (cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '') {
+        nonEmptyValues.push(String(cellValue).trim())
+      }
+    })
+
+    const hasAnyValue = nonEmptyValues.length > 0
+
+    return { hasColumn: true, hasAnyValue, nonEmptyValues }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
 
@@ -120,9 +176,25 @@ function ExcelUpload() {
       return
     }
 
-    if (!cycle) {
-      toast.error('Please select a cycle')
-      return
+    try {
+      const { hasColumn, hasAnyValue, nonEmptyValues } = await checkProcessOwnerColumn(file)
+
+      if (!hasColumn || !hasAnyValue) {
+        // Missing column OR column present but all values empty -> warn, but continue upload.
+        toast("Process Owner column is empty.", { icon: '⚠️' })
+      } else {
+        // Column exists and has at least one value: validate all non-empty entries as emails.
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        const invalidEmails = nonEmptyValues.filter((val) => !emailRegex.test(val))
+
+        if (invalidEmails.length > 0) {
+          // Block upload if any invalid email is found.
+          toast.error('Email of Process Owner is not valid. Please correct it before uploading.')
+          return
+        }
+      }
+    } catch (validationError) {
+      console.warn('Could not validate Process Owner column in uploaded file:', validationError)
     }
 
     setLoading(true)
@@ -132,7 +204,6 @@ function ExcelUpload() {
       formData.append('excelFile', file)
       formData.append('businessProcess', businessProcess)
       formData.append('financialYear', financialYear)
-      formData.append('cycle', cycle)
 
       const response = await fetch('http://localhost:3000/api/control-forms/bulk-upload', {
         method: 'POST',
@@ -148,7 +219,6 @@ function ExcelUpload() {
         setPreview(null)
         setBusinessProcess('')
         setFinancialYear('')
-        setCycle('')
         // Reset file input
         e.target.reset()
       } else {
@@ -193,7 +263,7 @@ function ExcelUpload() {
                 textAlign: 'center',
               }}
             >
-              Upload Control Forms from Excel
+              Upload RACM from Excel
             </Typography>
 
             <form onSubmit={handleSubmit}>
@@ -329,28 +399,6 @@ function ExcelUpload() {
                 </Select>
               </FormControl>
 
-              {/* Cycle Dropdown */}
-              <FormControl 
-                fullWidth 
-                required 
-                sx={{ mb: 3 }}
-                disabled={loading}
-              >
-                <InputLabel id="cycle-label">Cycle</InputLabel>
-                <Select
-                  labelId="cycle-label"
-                  id="cycle"
-                  value={cycle}
-                  label="Cycle"
-                  onChange={(e) => setCycle(e.target.value)}
-                  variant="filled"
-                >
-                  <MenuItem value="1st">1st</MenuItem>
-                  <MenuItem value="2nd">2nd</MenuItem>
-                  <MenuItem value="3rd">3rd</MenuItem>
-                </Select>
-              </FormControl>
-
               {/* Instructions */}
               <Box
                 sx={{
@@ -393,7 +441,7 @@ function ExcelUpload() {
                 >
                   <li>First row should contain column headers</li>
                   <li>Column names should match the form fields (case-insensitive)</li>
-                  <li>Each subsequent row represents one control form entry</li>
+                  <li>Each subsequent row represents one RACM entry</li>
                   <li>Empty cells will be stored as null values</li>
                   <li>Supported column names include: Description of Control, Process, Sub-process, Risk Description, etc.</li>
                 </Box>
@@ -402,7 +450,7 @@ function ExcelUpload() {
               {/* Submit Button */}
               <Button
                 type="submit"
-                disabled={loading || !file || !businessProcess || !financialYear || !cycle}
+                disabled={loading || !file || !businessProcess || !financialYear}
                 variant="contained"
                 color="secondary"
                 fullWidth

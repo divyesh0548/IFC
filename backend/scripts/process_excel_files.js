@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { normalizeColumnName } = require('../utils/column_mapping');
 const { downloadFileFromS3 } = require('../utils/s3Upload');
 const { logAuditEvent } = require('../utils/auditLog');
+const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/sample_required');
 
 // Database connection pool
 const dbHost = process.env.DB_HOST || 'localhost';
@@ -30,27 +31,26 @@ pool.on('connect', async (client) => {
 
 // Keywords to identify header row (case-insensitive)
 const headerKeywords = [
-  'description of control',
-  'process',
-  'sub-process',
-  'risk description',
+  'control number',
+  'sub process',
+  'risk',
+  'risk heat',
   'control objective',
-  'control to address',
-  'mrc',
-  'remarks',
-  'ipe',
-  'type of control',
-  'nature of control',
-  'process owner',
+  'standard control description',
+  'ipe reference',
   'control frequency',
-  'financial reporting',
-  'findings'
+  'nature of control',
+  'control performer',
+  'control owner',
+  'process owner',
 ];
 
 // Function to normalize text for comparison
 function normalizeText(text) {
   if (!text) return '';
-  return String(text).toLowerCase().trim().replace(/[\/\(\)&]/g, ' ').replace(/\s+/g, ' ');
+  return String(text).toLowerCase().trim()
+    .replace(/[\/\(\)&-]/g, ' ')
+    .replace(/\s+/g, ' ');
 }
 
 // Function to find header row location
@@ -98,7 +98,7 @@ function findHeaderRow(worksheet) {
     }
     
     // If this row has more matches than previous best, update
-    if (matchCount > bestMatchCount && matchCount >= 3) {
+    if (matchCount > bestMatchCount && matchCount >= 4) {
       bestMatchCount = matchCount;
       bestHeaderRow = row;
       headerStartCol = firstNonEmptyCol;
@@ -328,6 +328,77 @@ function countEmptyValues(row) {
   return emptyCount;
 }
 
+// Function to check if a duplicate form exists
+// Compares all relevant columns except system/metadata columns
+async function checkDuplicateForm(client, row, companyIdentifier, businessProcess, financialYear) {
+  // Columns to compare for duplicate detection
+  // Excluding: checks_performed, effective_or_not_effective, remarks, findings
+  // Also excluding: id, form_id, created_at, doc_uploaded_by_user, active, status, 
+  // reason_by_approver, sampling_doc, sample_required (calculated field)
+  const compareColumns = [
+    'standard_control_description', 'sub_process', 'risk_description',
+    'whether_fraud_risks_exist', 'control_objective', 'ipe_reference',
+    'nature_of_control', 'process_owner', 'control_frequency', 'control_number',
+    'account_balance_disclosure', 'risk_heat', 'process_walkthrough',
+    'control_relies_on_ipe', 'audit_evidence_accuracy', 'key_control',
+    'application_name', 'control_performer', 'control_owner',
+    'control_design_procs', 'control_design_conclusion', 'design_deficiency_desc',
+    'sample_size', 'control_type_fo', 'control_type_ma',
+    'company_identifier', 'business_process', 'financial_year',
+    'completeness', 'existence_occurrence', 'rights_and_obligation',
+    'valuation_and_allocation', 'presentation_and_disclosure'
+  ];
+
+  // Build WHERE clause conditions using IS NOT DISTINCT FROM for proper NULL handling
+  const conditions = [];
+  const params = [];
+  let paramIndex = 1;
+
+  for (const col of compareColumns) {
+    let value;
+    
+    // Handle special columns
+    if (col === 'company_identifier') {
+      value = companyIdentifier;
+    } else if (col === 'business_process') {
+      value = businessProcess;
+    } else if (col === 'financial_year') {
+      // Use value from row if available, otherwise from excel_files table
+      value = row['financial_year'] !== null && row['financial_year'] !== undefined && row['financial_year'] !== ''
+        ? String(row['financial_year']).trim()
+        : financialYear || null;
+    } else {
+      value = row[col] !== null && row[col] !== undefined && row[col] !== ''
+        ? String(row[col]).trim()
+        : null;
+    }
+
+    // Use IS NOT DISTINCT FROM for proper NULL comparison
+    // This handles NULL = NULL correctly (returns true)
+    // Treat empty strings and NULL as equivalent for comparison
+    if (value === null || value === '') {
+      // Compare both NULL and empty string cases - treat them as equivalent
+      conditions.push(`(COALESCE(NULLIF(${col}, ''), NULL) IS NOT DISTINCT FROM NULL)`);
+    } else {
+      conditions.push(`(COALESCE(NULLIF(${col}, ''), NULL) IS NOT DISTINCT FROM $${paramIndex})`);
+      params.push(value);
+      paramIndex++;
+    }
+  }
+
+  const whereClause = conditions.join(' AND ');
+
+  const checkQuery = `
+    SELECT id, form_id 
+    FROM control_forms 
+    WHERE ${whereClause}
+    LIMIT 1;
+  `;
+
+  const result = await client.query(checkQuery, params);
+  return result.rows.length > 0;
+}
+
 // Function to transform Excel data to database format
 function transformExcelData(excelRows) {
   return excelRows.map(row => {
@@ -356,7 +427,7 @@ async function processExcelFiles() {
   try {
     // Get all unprocessed files (processed = 0)
     const getUnprocessedQuery = `
-      SELECT id, file_path, file_name, company_identifier, coordinator_email_id, business_process, financial_year, cycle 
+      SELECT id, file_path, file_name, company_identifier, coordinator_email_id, business_process, financial_year 
       FROM excel_files 
       WHERE processed = 0 
       ORDER BY id ASC;
@@ -380,7 +451,6 @@ async function processExcelFiles() {
       const coordinatorEmailId = file.coordinator_email_id;
       const businessProcess = file.business_process;
       const financialYear = file.financial_year;
-      const cycle = file.cycle;
 
       console.log(`Processing file: ${fileName} (ID: ${fileId})`);
       if (companyIdentifier) {
@@ -402,11 +472,6 @@ async function processExcelFiles() {
         console.log(`  Financial Year: ${financialYear}`);
       } else {
         console.log(`  Warning: No financial_year found for this file`);
-      }
-      if (cycle) {
-        console.log(`  Cycle: ${cycle}`);
-      } else {
-        console.log(`  Warning: No cycle found for this file`);
       }
 
       try {
@@ -492,16 +557,18 @@ async function processExcelFiles() {
 
         // Prepare insert query
         const columns = [
-          'description_of_control', 'process', 'sub_process', 'risk_description',
-          'whether_fraud_risks_exist', 'control_objective', 'control_to_address',
-          'mrc_or_not', 'source_data_report_logic_report_parameters',
-          'relevant_data_elements_of_ipe', 'type_of_control', 'nature_of_control',
-          'type_of_risk_mitigation_method', 'process_owner', 'reviewer_process_supervisor',
-          'control_frequency', 'basis_of_sampling', 'docs_to_review_for_dms_audit',
-          'type_of_risk_associated', 'financial_reporting', 'checks_performed',
-          'effective_or_not_effective', 'remarks', 'findings', 'gap_description_resolution',
+          'standard_control_description', 'sub_process', 'risk_description',
+          'whether_fraud_risks_exist', 'control_objective', 'ipe_reference',
+          'nature_of_control', 'process_owner', 'control_frequency',
+          'control_number', 'account_balance_disclosure', 'risk_heat',
+          'process_walkthrough', 'control_relies_on_ipe', 'audit_evidence_accuracy',
+          'key_control', 'application_name', 'control_performer', 'control_owner',
+          'control_design_procs', 'control_design_conclusion', 'design_deficiency_desc',
+          'sample_size', 'control_type_fo', 'control_type_ma',
           'doc_uploaded_by_user', 'active', 'status', 'reason_by_approver',
-          'company_identifier', 'form_id', 'business_process', 'financial_year', 'cycle'
+          'company_identifier', 'form_id', 'business_process', 'financial_year', 'sample_required',
+          'completeness', 'existence_occurrence', 'rights_and_obligation',
+          'valuation_and_allocation', 'presentation_and_disclosure'
         ];
 
         const columnList = columns.join(', ');
@@ -516,72 +583,108 @@ async function processExcelFiles() {
         console.log(`\n=== Inserting data into database ===`);
         let insertedCount = 0;
         let skippedCount = 0;
+        let errorCount = 0;
+        let duplicateCount = 0;
         
         for (let i = 0; i < transformedData.length; i++) {
           const row = transformedData[i];
           
-          // Check if row has more than 10 empty values
+          // Check if row has more than 15 empty values
           const emptyCount = countEmptyValues(row);
-          if (emptyCount > 10) {
+          if (emptyCount > 15) {
             skippedCount++;
-            console.log(`  Skipping row ${i + 1}: ${emptyCount} empty values (threshold: 10)`);
+            console.log(`  Skipping row ${i + 1}: ${emptyCount} empty values (threshold: 15)`);
             continue;
           }
           
-          // Generate unique form_id for this row
-          const formId = await generateUniqueFormId(client);
-          
-          const values = columns.map(col => {
-            // Use company_identifier from excel_files table, not from Excel data
-            if (col === 'company_identifier') {
-              return companyIdentifier;
+          try {
+            // Check for duplicate form before inserting
+            const isDuplicate = await checkDuplicateForm(client, row, companyIdentifier, businessProcess, financialYear);
+            if (isDuplicate) {
+              duplicateCount++;
+              console.log(`  Skipping row ${i + 1}: Duplicate form found (same values already exist)`);
+              continue;
             }
-            // Use generated form_id
-            if (col === 'form_id') {
-              return formId;
-            }
-            // Use business_process from excel_files table, not from Excel data
-            if (col === 'business_process') {
-              return businessProcess;
-            }
-            // Use financial_year from Excel data if available, otherwise fall back to excel_files table
-            if (col === 'financial_year') {
-              // Check if Excel row has financial_year column
-              if (row['financial_year'] !== null && row['financial_year'] !== undefined && row['financial_year'] !== '') {
-                return String(row['financial_year']).trim();
+            
+            // Generate unique form_id for this row
+            const formId = await generateUniqueFormId(client);
+            
+            // Calculate sample_required based on control_frequency and current timestamp
+            // We use current timestamp which will match the created_at value set by the database
+            const currentTimestamp = new Date();
+            // Get control_frequency from row, normalize it
+            const controlFrequencyRaw = row['control_frequency'] || null;
+            const controlFrequency = controlFrequencyRaw ? String(controlFrequencyRaw).trim() : null;
+            const sampleRequired = calculateSampleRequired(controlFrequency, currentTimestamp);
+            const sampleSize = getSampleSizeByFrequency(controlFrequency);
+            console.log(`[process_excel] Row ${i + 1} - control_frequency raw: "${controlFrequencyRaw}", normalized: "${controlFrequency}", sample_required result: "${sampleRequired}"`);
+            
+            const values = columns.map(col => {
+              // Use company_identifier from excel_files table, not from Excel data
+              if (col === 'company_identifier') {
+                return companyIdentifier;
               }
-              // Fall back to value from excel_files table
-              return financialYear || null;
-            }
-            // Use cycle from Excel data if available, otherwise fall back to excel_files table
-            if (col === 'cycle') {
-              // Check if Excel row has cycle column
-              if (row['cycle'] !== null && row['cycle'] !== undefined && row['cycle'] !== '') {
-                return String(row['cycle']).trim();
+              // Use generated form_id
+              if (col === 'form_id') {
+                return formId;
               }
-              // Fall back to value from excel_files table
-              return cycle || null;
+              // Use business_process from excel_files table, not from Excel data
+              if (col === 'business_process') {
+                return businessProcess;
+              }
+              // Use financial_year from Excel data if available, otherwise fall back to excel_files table
+              if (col === 'financial_year') {
+                // Check if Excel row has financial_year column
+                if (row['financial_year'] !== null && row['financial_year'] !== undefined && row['financial_year'] !== '') {
+                  return String(row['financial_year']).trim();
+                }
+                // Fall back to value from excel_files table
+                return financialYear || null;
+              }
+              // Calculate sample_required based on control_frequency
+              if (col === 'sample_required') {
+                return sampleRequired;
+              }
+              // Derive sample_size from control_frequency to keep it consistent.
+              if (col === 'sample_size') {
+                return sampleSize !== null ? String(sampleSize) : null;
+              }
+              return row[col] || null;
+            });
+            
+            // Insert row into database
+            await client.query(insertQuery, values);
+            insertedCount++;
+            
+        // Log audit event for RACM creation
+            if (coordinatorEmailId) {
+            await logAuditEvent('RACM created', coordinatorEmailId, formId);
             }
-            return row[col] || null;
-          });
-          
-          // Insert row into database
-          await client.query(insertQuery, values);
-          insertedCount++;
-          
-          // Log audit event for control form creation
-          if (coordinatorEmailId) {
-            await logAuditEvent('Control form created', coordinatorEmailId, formId);
+          } catch (rowError) {
+            // Log error for this specific row but continue processing
+            errorCount++;
+            console.error(`  ✗ Error inserting row ${i + 1}: ${rowError.message}`);
+            console.error(`    Row data: form_id would be generated, control_frequency: "${row['control_frequency'] || 'N/A'}"`);
+            // Continue to next row instead of stopping
+            continue;
           }
           
           // Log progress for every 10 rows
           if ((i + 1) % 10 === 0 || i === transformedData.length - 1) {
-            console.log(`  Processed ${i + 1}/${transformedData.length} rows (Inserted: ${insertedCount}, Skipped: ${skippedCount})...`);
+            console.log(`  Processed ${i + 1}/${transformedData.length} rows (Inserted: ${insertedCount}, Skipped: ${skippedCount}, Duplicates: ${duplicateCount}, Errors: ${errorCount})...`);
           }
         }
         
         if (skippedCount > 0) {
-          console.log(`\n  Total skipped rows: ${skippedCount} (rows with more than 10 empty values)`);
+          console.log(`\n  Total skipped rows: ${skippedCount} (rows with more than 15 empty values)`);
+        }
+        
+        if (duplicateCount > 0) {
+          console.log(`\n  Total duplicate rows: ${duplicateCount} (rows with same values already exist)`);
+        }
+        
+        if (errorCount > 0) {
+          console.log(`\n  Total error rows: ${errorCount} (rows that failed to insert)`);
         }
 
         // Update excel_files table: set processed = 1

@@ -1,0 +1,55 @@
+CREATE TABLE
+  public.control_forms (
+    id serial NOT NULL,
+    standard_control_description text NULL,
+    sub_process character varying(255) NULL,
+    risk_description text NULL,
+    whether_fraud_risks_exist character varying(255) NULL,
+    control_objective text NULL,
+    ipe_reference text NULL,
+    nature_of_control character varying(255) NULL,
+    process_owner character varying(255) NULL,
+    control_frequency character varying(255) NULL,
+    conclusion_on_control_design character varying(255) NULL,
+    remarks character varying(255) NULL,
+    doc_uploaded_by_user character varying(255) NULL,
+    active character varying(255) NULL,
+    status character varying(255) NULL,
+    reason_by_approver text NULL,
+    created_at timestamp without time zone NULL DEFAULT (
+      CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'::text
+    ),
+    company_identifier character varying(255) NULL,
+    form_id character varying(255) NULL,
+    remarks_by_user text NULL,
+    business_process character varying(255) NULL,
+    financial_year character varying(255) NULL,
+    sample_doc character varying(255) NULL,
+    sample_required text NULL,
+    completeness character varying(255) NULL,
+    existence_occurrence character varying(255) NULL,
+    rights_and_obligation character varying(255) NULL,
+    valuation_and_allocation character varying(255) NULL,
+    presentation_and_disclosure character varying(255) NULL,
+    control_number character varying(255) NULL,
+    account_balance_disclosure text NULL,
+    risk_heat character varying(255) NULL,
+    process_walkthrough text NULL,
+    control_relies_on_ipe character varying(255) NULL,
+    audit_evidence_accuracy character varying(255) NULL,
+    key_control character varying(255) NULL,
+    application_name character varying(255) NULL,
+    control_performer text NULL,
+    control_owner text NULL,
+    control_design_procs text NULL,
+    control_design_conclusion character varying(255) NULL,
+    design_deficiency_desc character varying(255) NULL,
+    sample_size character varying(255) NULL,
+    control_type_fo character varying(255) NULL,
+    control_type_ma character varying(255) NULL
+  );
+
+ALTER TABLE
+  public.control_forms
+ADD
+  CONSTRAINT control_forms_pkey PRIMARY KEY (id)

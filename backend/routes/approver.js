@@ -196,10 +196,10 @@ router.get('/dashboard', verifyApproverAuth, async (req, res) => {
   }
 });
 
-// Protected route: Get pending control forms for approval
+// Protected route: Get pending RACMs for approval
 router.get('/pending-approvals', verifyApproverAuth, async (req, res) => {
   try {
-    // Get control forms that are pending approval
+    // Get RACMs that are pending approval
     const query = `
       SELECT * FROM control_forms 
       WHERE status IS NULL OR status = '' OR status = 'sent for approval'
@@ -222,17 +222,16 @@ router.get('/pending-approvals', verifyApproverAuth, async (req, res) => {
   }
 });
 
-// Protected route: Approve or reject a control form
+// Protected route: Approve or reject an RACM
 router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
   try {
     const { form_id } = req.params;
     const { 
       status, 
       reason_by_approver,
-      checks_performed,
-      effective_or_not_effective,
-      remarks,
-      findings
+      control_design_procs,
+      control_design_conclusion,
+      design_deficiency_desc
     } = req.body;
     const approver = req.approver;
 
@@ -247,10 +246,9 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     console.log('Approver form update - Received fields:', {
       form_id,
       status,
-      checks_performed,
-      effective_or_not_effective,
-      remarks,
-      findings
+      control_design_procs,
+      control_design_conclusion,
+      design_deficiency_desc
     });
 
     // Build dynamic update query to include optional fields
@@ -261,26 +259,22 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     // Always include approver-editable fields (even if empty strings)
     // This ensures the fields are always updated when approver approves/rejects
     // Preserve empty strings as they are (don't convert to null)
-    updateFields.push(`checks_performed = $${paramIndex}`);
-    updateValues.push(checks_performed !== undefined ? checks_performed : null);
+    updateFields.push(`control_design_procs = $${paramIndex}`);
+    updateValues.push(control_design_procs !== undefined ? control_design_procs : null);
+    paramIndex++;
+
+    updateFields.push(`control_design_conclusion = $${paramIndex}`);
+    updateValues.push(control_design_conclusion !== undefined ? control_design_conclusion : null);
     paramIndex++;
     
-    updateFields.push(`effective_or_not_effective = $${paramIndex}`);
-    updateValues.push(effective_or_not_effective !== undefined ? effective_or_not_effective : null);
-    paramIndex++;
-    
-    updateFields.push(`remarks = $${paramIndex}`);
-    updateValues.push(remarks !== undefined ? remarks : null);
-    paramIndex++;
-    
-    updateFields.push(`findings = $${paramIndex}`);
-    updateValues.push(findings !== undefined ? findings : null);
+    updateFields.push(`design_deficiency_desc = $${paramIndex}`);
+    updateValues.push(design_deficiency_desc !== undefined ? design_deficiency_desc : null);
     paramIndex++;
 
     // Add form_id as the last parameter
     updateValues.push(form_id);
 
-    // Update the control form
+    // Update the RACM
     const updateQuery = `
       UPDATE control_forms 
       SET ${updateFields.join(', ')}
@@ -296,7 +290,7 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'Control form not found'
+        message: 'RACM not found'
       });
     }
 
@@ -306,27 +300,27 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     // Send email to process owner if email exists
     if (processOwnerEmail) {
       const statusText = status === 'Approved' ? 'approved' : 'rejected';
-      const emailSubject = `Control Form ${status}`;
+      const emailSubject = `RACM ${status}`;
       
       let emailBody = `Dear Process Owner,\n\n`;
-      emailBody += `Your control form has been ${statusText} by the approver.\n\n`;
+      emailBody += `Your RACM has been ${statusText} by the approver.\n\n`;
       
       if (reason_by_approver) {
         emailBody += `Reason/Comments from Approver:\n${reason_by_approver}\n\n`;
       }
       
       emailBody += `Form Details:\n`;
-      if (updatedForm.description_of_control) {
-        emailBody += `- Description: ${updatedForm.description_of_control}\n`;
+      if (updatedForm.standard_control_description) {
+        emailBody += `- Description: ${updatedForm.standard_control_description}\n`;
       }
-      if (updatedForm.process) {
-        emailBody += `- Process: ${updatedForm.process}\n`;
+      if (updatedForm.business_process) {
+        emailBody += `- Process: ${updatedForm.business_process}\n`;
       }
       
       emailBody += `\n`;
       
       if (status === 'Rejected') {
-        emailBody += `You can review the feedback above, make necessary changes, and resubmit the form for approval.\n\n`;
+        emailBody += `You can review the feedback above, make necessary changes, and resubmit the RACM for approval.\n\n`;
       }
       
       emailBody += `Thank you for using the IFC system.\n\n`;
@@ -348,12 +342,12 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     }
 
     // Log audit event for form approval/rejection
-    const action = status === 'Approved' ? 'Form Approved' : 'Form Rejected';
+    const action = status === 'Approved' ? 'RACM Approved' : 'RACM Rejected';
     await logAuditEvent(action, approver.email_id, form_id);
 
     res.status(200).json({
       success: true,
-      message: `Form ${status.toLowerCase()} successfully`,
+      message: `RACM ${status.toLowerCase()} successfully`,
       data: updatedForm
     });
   } catch (error) {
@@ -365,12 +359,22 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
   }
 });
 
-// Protected route: Get all control forms (with filter options)
+// Protected route: Get all RACMs (with filter options)
 router.get('/control-forms', verifyApproverAuth, async (req, res) => {
   try {
     const { status, active } = req.query;
     
-    let query = 'SELECT * FROM control_forms WHERE 1=1';
+    // Join with companies table to get company_name and with ifc_users to get process_owner_name
+    let query = `
+      SELECT 
+        cf.*,
+        c.company_name,
+        NULLIF(TRIM(u.emp_name), '') AS process_owner_name
+      FROM control_forms cf
+      LEFT JOIN companies c ON cf.company_identifier = c.company_identifier
+      LEFT JOIN ifc_users u ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.process_owner))
+      WHERE 1=1
+    `;
     const queryParams = [];
     let paramIndex = 1;
 
@@ -380,7 +384,7 @@ router.get('/control-forms', verifyApproverAuth, async (req, res) => {
     if (status) {
       // Validate that the requested status is one of the allowed statuses
       if (allowedStatuses.includes(status)) {
-        query += ` AND status = $${paramIndex}`;
+        query += ` AND cf.status = $${paramIndex}`;
         queryParams.push(status);
         paramIndex++;
       } else {
@@ -389,30 +393,30 @@ router.get('/control-forms', verifyApproverAuth, async (req, res) => {
       }
     } else {
       // When no status filter is provided, show all allowed statuses
-      query += ` AND status IN ('sent for approval', 'Approved', 'Rejected')`;
+      query += ` AND cf.status IN ('sent for approval', 'Approved', 'Rejected')`;
     }
 
     if (active !== undefined) {
       if (active === 'true' || active === '1') {
         // Active: not null, not empty, and not '0'
-        query += ` AND active IS NOT NULL AND active != '' AND active != '0'`;
+        query += ` AND cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'`;
       } else if (active === 'false' || active === '0') {
         // Inactive: null, empty, or '0'
-        query += ` AND (active IS NULL OR active = '' OR active = '0')`;
+        query += ` AND (cf.active IS NULL OR cf.active = '' OR cf.active = '0')`;
       }
     }
 
-    query += ' ORDER BY created_at DESC';
+    query += ' ORDER BY cf.created_at DESC';
 
     const result = await pool.query(query, queryParams);
 
     res.status(200).json({
       success: true,
-      message: 'Control forms retrieved successfully',
+      message: 'RACMs retrieved successfully',
       data: result.rows
     });
   } catch (error) {
-    console.error('Get control forms error:', error);
+    console.error('Get RACMs error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -420,28 +424,36 @@ router.get('/control-forms', verifyApproverAuth, async (req, res) => {
   }
 });
 
-// Protected route: Get a specific control form by form_id
+// Protected route: Get a specific RACM by form_id
 router.get('/control-forms/:form_id', verifyApproverAuth, async (req, res) => {
   try {
     const { form_id } = req.params;
     
-    const query = 'SELECT * FROM control_forms WHERE form_id = $1';
+    const query = `
+      SELECT
+        cf.*,
+        NULLIF(TRIM(u.emp_name), '') AS process_owner_name
+      FROM control_forms cf
+      LEFT JOIN ifc_users u
+        ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.process_owner))
+      WHERE cf.form_id = $1
+    `;
     const result = await pool.query(query, [form_id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'Control form not found'
+        message: 'RACM not found'
       });
     }
 
     res.status(200).json({
       success: true,
-      message: 'Control form retrieved successfully',
+      message: 'RACM retrieved successfully',
       data: result.rows[0]
     });
   } catch (error) {
-    console.error('Get control form error:', error);
+    console.error('Get RACM error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

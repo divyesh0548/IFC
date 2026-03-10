@@ -109,8 +109,14 @@ function ApproverDashboard() {
   const formsToDisplay = filter === 'pending' ? pendingForms : allForms
 
   return (
-    <div className="container mx-auto px-4 py-8">
-
+    <Box
+      sx={{
+        maxWidth: '100%',
+        mx: 'auto',
+        px: 2,
+        py: 4,
+      }}
+    >
         {/* Filter Buttons */}
         <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
           <Button
@@ -160,10 +166,14 @@ function ApproverDashboard() {
         </Box>
 
         {/* Forms Section */}
-        <Card>
+        <Card
+          sx={{
+            maxWidth: '100%',
+          }}
+        >
           <CardContent>
             <Typography variant="h6" component="h2" sx={{ fontWeight: 600, mb: 3, color: 'text.primary' }}>
-              {filter === 'pending' ? 'Pending Approvals' : filter === 'approved' ? 'Approved Forms' : filter === 'rejected' ? 'Rejected Forms' : 'All Control Forms'}
+              {filter === 'pending' ? 'Pending Approvals' : filter === 'approved' ? 'Approved Forms' : filter === 'rejected' ? 'Rejected Forms' : 'All RACM'}
             </Typography>
 
             {loading ? (
@@ -181,14 +191,18 @@ function ApproverDashboard() {
                     <TableRow sx={{ backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : '#f8f9fa' }}>
                       <TableCell sx={{ fontWeight: 600 }}>#</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Description</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Process</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Business Process</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Company</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Process Owner</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Approval Status</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Created At</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {formsToDisplay.map((form, index) => {
-                      const approvalStatus = form.status || 'Pending'
+                      const approvalStatus = form.status === 'sent for approval'
+                        ? 'pending'
+                        : (form.status || 'Pending')
                       const isPending = !form.status || form.status === '' || form.status === 'sent for approval'
                       const isApproved = form.status === 'Approved'
                       const isRejected = form.status === 'Rejected'
@@ -201,8 +215,10 @@ function ApproverDashboard() {
                           onClick={() => handleFormClick(form.form_id)}
                         >
                           <TableCell>{index + 1}</TableCell>
-                          <TableCell>{form.description_of_control || 'N/A'}</TableCell>
-                          <TableCell>{form.process || 'N/A'}</TableCell>
+                          <TableCell>{form.standard_control_description || 'N/A'}</TableCell>
+                          <TableCell>{form.business_process || 'N/A'}</TableCell>
+                          <TableCell>{form.company_name || 'N/A'}</TableCell>
+                          <TableCell>{form.process_owner_name || form.process_owner || 'N/A'}</TableCell>
                           <TableCell>
                             <Chip
                               label={approvalStatus}
@@ -234,7 +250,7 @@ function ApproverDashboard() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </Box>
   )
 }
 

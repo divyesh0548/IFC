@@ -26,17 +26,18 @@ pool.on('connect', async (client) => {
  * @param {string} action - The action being logged (e.g., 'Logged In', 'Logged Out', 'Form Approved', 'Form Rejected')
  * @param {string} userEmailId - The email ID of the user performing the action
  * @param {string|null} formId - Optional form_id for form-related actions (null for login/logout)
+ * @param {string|null} refData - Optional reference data (e.g., modified columns list)
  * @returns {Promise<boolean>} - Returns true if logging was successful, false otherwise
  */
-async function logAuditEvent(action, userEmailId, formId = null) {
+async function logAuditEvent(action, userEmailId, formId = null, refData = null) {
   try {
     // Explicitly set timestamp in IST timezone
     const query = `
-      INSERT INTO public.audit_logs (timestamp, action, user_email_id, form_id)
-      VALUES (NOW() AT TIME ZONE 'Asia/Kolkata', $1, $2, $3)
+      INSERT INTO public.audit_logs (timestamp, action, user_email_id, form_id, ref_data)
+      VALUES (NOW() AT TIME ZONE 'Asia/Kolkata', $1, $2, $3, $4)
     `;
     
-    await pool.query(query, [action, userEmailId, formId]);
+    await pool.query(query, [action, userEmailId, formId, refData]);
     return true;
   } catch (error) {
     // Log error but don't throw - we don't want audit logging to break the main flow

@@ -96,13 +96,16 @@ function User_dashboard() {
     if (!status || status === '' || status === null) {
       return 'Pending'
     }
+    if (status === 'sent for approval') {
+      return 'pending'
+    }
     // Capitalize first letter, keep rest as is
     return status.charAt(0).toUpperCase() + status.slice(1)
   }
 
   const getStatusColor = (status) => {
     const formattedStatus = formatStatus(status)
-    if (formattedStatus === 'Pending') {
+    if (formattedStatus === 'Pending' || formattedStatus === 'pending') {
       return { bg: '#fef3c7', color: '#f59e0b' }
     } else if (formattedStatus === 'Approved') {
       return { bg: '#d1fae5', color: '#10b981' }
@@ -193,7 +196,7 @@ function User_dashboard() {
               mb: 3
             }}
           >
-            My Control Forms
+            My RACM
           </Typography>
 
           {loading ? (
@@ -278,7 +281,7 @@ function User_dashboard() {
                         color: theme.palette.text.secondary,
                       }}
                     >
-                      Process
+                      Business Process
                     </Box>
                     <Box
                       component="th"
@@ -351,7 +354,7 @@ function User_dashboard() {
                             color: theme.palette.text.primary,
                           }}
                         >
-                          {form.description_of_control || 'N/A'}
+                          {form.standard_control_description || 'N/A'}
                         </Box>
                         <Box
                           component="td"
@@ -363,7 +366,7 @@ function User_dashboard() {
                             color: theme.palette.text.primary,
                           }}
                         >
-                          {form.process || 'N/A'}
+                          {form.business_process || 'N/A'}
                         </Box>
                         <Box
                           component="td"

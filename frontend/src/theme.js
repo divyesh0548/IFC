@@ -27,7 +27,7 @@ const theme = createTheme({
   },
   typography: {
     fontFamily: [
-      '"Lexend"',
+      '"Archivo"',
       '-apple-system',
       'BlinkMacSystemFont',
       '"Segoe UI"',
@@ -44,37 +44,37 @@ const theme = createTheme({
       small: '0.75rem',       // For captions, labels, small text
     },
     h1: {
-      fontFamily: '"Aldrich", sans-serif',
+      fontFamily: '"Roboto", sans-serif',
       fontWeight: 400,
       color: '#0369a1',
       fontSize: '2rem', // Uses customSizes.bigHeader
     },
     h2: {
-      fontFamily: '"Aldrich", sans-serif',
+      fontFamily: '"Roboto", sans-serif',
       fontWeight: 400,
       color: '#0369a1',
       fontSize: '2rem', // Uses customSizes.bigHeader
     },
     h3: {
-      fontFamily: '"Aldrich", sans-serif',
+      fontFamily: '"Roboto", sans-serif',
       fontWeight: 400,
       color: '#0369a1',
       fontSize: '2rem', // Uses customSizes.bigHeader
     },
     h4: {
-      fontFamily: '"Lexend", sans-serif',
+      fontFamily: '"Roboto", sans-serif',
       fontWeight: 600,
       color: '#0369a1',
       fontSize: '1.5rem', // Uses customSizes.header
     },
     h5: {
-      fontFamily: '"Lexend", sans-serif',
+      fontFamily: '"Roboto", sans-serif',
       fontWeight: 600,
       color: '#0369a1',
       fontSize: '1.5rem', // Uses customSizes.header
     },
     h6: {
-      fontFamily: '"Lexend", sans-serif',
+      fontFamily: '"Roboto", sans-serif',
       fontWeight: 600,
       color: '#0369a1',
       fontSize: '1.5rem', // Uses customSizes.header

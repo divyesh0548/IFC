@@ -118,7 +118,7 @@ function Control_form() {
       <div className="max-w-6xl mx-auto">
         <div className="bg-white rounded-lg shadow-lg p-8">
           <h1 className="text-3xl font-bold text-secondary mb-8 text-center">
-            Control Form
+            RACM
           </h1>
 
           {error && (

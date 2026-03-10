@@ -7,6 +7,10 @@ import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import IconButton from '@mui/material/IconButton';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -25,10 +29,9 @@ function ApproverFormDetail() {
   
   // Editable fields for approver (only editable when status is pending)
   const [editableFields, setEditableFields] = useState({
-    checks_performed: '',
-    effective_or_not_effective: '',
-    remarks: '',
-    findings: ''
+    control_design_procs: '',
+    control_design_conclusion: '',
+    design_deficiency_desc: ''
   })
 
   const toastId = useRef(null)
@@ -52,10 +55,9 @@ function ApproverFormDetail() {
         setFormData(data.data)
         // Initialize editable fields
         setEditableFields({
-          checks_performed: data.data.checks_performed || '',
-          effective_or_not_effective: data.data.effective_or_not_effective || '',
-          remarks: data.data.remarks || '',
-          findings: data.data.findings || ''
+          control_design_procs: data.data.control_design_procs || '',
+          control_design_conclusion: data.data.control_design_conclusion || '',
+          design_deficiency_desc: data.data.design_deficiency_desc || ''
         })
       } else {
         setError(data.message || 'Failed to fetch form data')
@@ -89,10 +91,9 @@ function ApproverFormDetail() {
         body: JSON.stringify({
           status: 'Approved',
           reason_by_approver: reasonByApprover || '',
-          checks_performed: editableFields.checks_performed,
-          effective_or_not_effective: editableFields.effective_or_not_effective,
-          remarks: editableFields.remarks,
-          findings: editableFields.findings
+          control_design_procs: editableFields.control_design_procs,
+          control_design_conclusion: editableFields.control_design_conclusion,
+          design_deficiency_desc: editableFields.design_deficiency_desc
         }),
       })
 
@@ -103,10 +104,9 @@ function ApproverFormDetail() {
         setReasonByApprover('')
         // Clear editable fields
         setEditableFields({
-          checks_performed: '',
-          effective_or_not_effective: '',
-          remarks: '',
-          findings: ''
+          control_design_procs: '',
+          control_design_conclusion: '',
+          design_deficiency_desc: ''
         })
         // Update form data immediately to hide approval action card
         setFormData(data.data)
@@ -140,10 +140,9 @@ function ApproverFormDetail() {
         body: JSON.stringify({
           status: 'Rejected',
           reason_by_approver: reasonByApprover || '',
-          checks_performed: editableFields.checks_performed,
-          effective_or_not_effective: editableFields.effective_or_not_effective,
-          remarks: editableFields.remarks,
-          findings: editableFields.findings
+          control_design_procs: editableFields.control_design_procs,
+          control_design_conclusion: editableFields.control_design_conclusion,
+          design_deficiency_desc: editableFields.design_deficiency_desc
         }),
       })
 
@@ -154,10 +153,9 @@ function ApproverFormDetail() {
         setReasonByApprover('')
         // Clear editable fields
         setEditableFields({
-          checks_performed: '',
-          effective_or_not_effective: '',
-          remarks: '',
-          findings: ''
+          control_design_procs: '',
+          control_design_conclusion: '',
+          design_deficiency_desc: ''
         })
         // Update form data immediately to hide approval action card
         setFormData(data.data)
@@ -256,33 +254,41 @@ function ApproverFormDetail() {
     }
   }
 
-  // Define field labels mapping
+  const sampleRequiredNotice = '(If not available, upload documents from the preceding or succeeding dates.)'
+
+  // Define field labels mapping for updated RACM schema
   const fieldLabels = {
-    description_of_control: 'Description of Control',
-    process: 'Process',
+    control_number: 'Control Number',
+    account_balance_disclosure: 'Account Balance / Disclosure',
+    risk_heat: 'Risk Heat',
+    standard_control_description: 'Standard Control Description',
     sub_process: 'Sub Process',
     risk_description: 'Risk Description',
     whether_fraud_risks_exist: 'Whether Fraud Risks Exist',
     control_objective: 'Control Objective',
-    control_to_address: 'Control to Address',
-    mrc_or_not: 'MRC or Not',
-    gap_description_resolution: 'Gap Description & Resolution',
-    source_data_report_logic_report_parameters: 'Source Data/Report Logic/Report Parameters',
-    relevant_data_elements_of_ipe: 'Relevant Data Elements of IPE',
-    type_of_control: 'Type of Control',
+    process_walkthrough: 'Process Activity and Walkthrough Details',
+    control_relies_on_ipe: 'Does the Control Rely on IPE?',
+    audit_evidence_accuracy: 'Audit Evidence of Accuracy and Completeness',
+    ipe_reference: 'IPE Reference',
+    key_control: 'Key Control',
+    application_name: 'Application Name',
+    control_performer: 'Control Performer',
+    control_owner: 'Control Owner',
+    control_design_procs: 'Procedures to Evaluate Design and Implementation',
+    control_type_fo: 'Type of Control O_F',
+    control_type_ma: 'Type of Control M_A',
     nature_of_control: 'Nature of Control',
-    type_of_risk_mitigation_method: 'Type of Risk Mitigation Method',
     process_owner: 'Process Owner',
-    reviewer_process_supervisor: 'Reviewer/Process Supervisor',
     control_frequency: 'Control Frequency',
-    basis_of_sampling: 'Basis of Sampling',
-    docs_to_review_for_dms_audit: 'Docs to Review for DMS Audit',
-    type_of_risk_associated: 'Type of Risk Associated',
-    financial_reporting: 'Financial Reporting',
-    checks_performed: 'Checks Performed',
-    effective_or_not_effective: 'Effective or Not Effective',
-    remarks: 'Remarks',
-    findings: 'Findings',
+    sample_size: 'Sample Size',
+    sample_required: 'Sample Required',
+    completeness: 'Completeness',
+    existence_occurrence: 'Existence & Occurrence',
+    rights_and_obligation: 'Rights and Obligations',
+    valuation_and_allocation: 'Valuation & Allocation',
+    presentation_and_disclosure: 'Presentation and Disclosure',
+    control_design_conclusion: 'Conclusion on Design of Control (Effective/ Not effective)',
+    design_deficiency_desc: 'Description of Deficiency in Control Design',
     doc_uploaded_by_user: 'Doc Uploaded by User',
     remarks_by_user: 'Remarks by User',
     active: 'Active',
@@ -290,39 +296,47 @@ function ApproverFormDetail() {
     reason_by_approver: 'Reason by Approver',
   }
 
-  // Define field order - gap_description_resolution comes after mrc_or_not
   const fieldOrder = [
-    'description_of_control',
-    'process',
+    'control_number',
+    'account_balance_disclosure',
+    'risk_heat',
+    'standard_control_description',
     'sub_process',
     'risk_description',
     'whether_fraud_risks_exist',
     'control_objective',
-    'control_to_address',
-    'mrc_or_not',
-    'gap_description_resolution',
-    'source_data_report_logic_report_parameters',
-    'relevant_data_elements_of_ipe',
-    'type_of_control',
+    'process_walkthrough',
+    'control_relies_on_ipe',
+    'audit_evidence_accuracy',
+    'ipe_reference',
+    'key_control',
+    'application_name',
+    'control_performer',
+    'control_owner',
+    'control_design_procs',
+    'control_type_fo',
+    'control_type_ma',
     'nature_of_control',
-    'type_of_risk_mitigation_method',
     'process_owner',
-    'reviewer_process_supervisor',
     'control_frequency',
-    'basis_of_sampling',
-    'docs_to_review_for_dms_audit',
-    'type_of_risk_associated',
-    'financial_reporting',
-    'checks_performed',
-    'effective_or_not_effective',
-    'remarks',
-    'findings',
+    'sample_size',
+    'sample_required',
+    'completeness',
+    'existence_occurrence',
+    'rights_and_obligation',
+    'valuation_and_allocation',
+    'presentation_and_disclosure',
+    'control_design_conclusion',
+    'design_deficiency_desc',
     'doc_uploaded_by_user',
     'remarks_by_user'
   ]
 
   // Fields to exclude from display
   const excludedFields = ['id', 'form_id', 'company_identifier', 'created_at', 'active', 'approved_rejected', 'reason_by_approver']
+  
+  // Grouped fields that should be displayed together and are editable by approver
+  const groupedApproverFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
 
   if (loading) {
     return (
@@ -392,7 +406,7 @@ function ApproverFormDetail() {
               color: 'text.primary'
             }}
           >
-            Control Form
+            RACM
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
@@ -510,6 +524,36 @@ function ApproverFormDetail() {
                     </Typography>
                   </Box>
 
+                  {/* Process Owner */}
+                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Process Owner
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formData?.process_owner_name || formData?.process_owner || '-'}
+                    </Typography>
+                  </Box>
+
                   {/* Approval Status */}
                   <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
                     <Typography
@@ -536,40 +580,58 @@ function ApproverFormDetail() {
                         lineHeight: 1.5,
                       }}
                     >
-                      {formData?.status || '-'}
+                      {(() => {
+                        const status = formData?.status || ''
+                        if (status === 'sent for approval') {
+                          return 'Pending'
+                        }
+                        if (!status || status === '') {
+                          return '-'
+                        }
+                        // Capitalize first letter
+                        return status.charAt(0).toUpperCase() + status.slice(1)
+                      })()}
                     </Typography>
                   </Box>
 
-                  {/* Reason by Approver */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                    <Typography
-                      variant="caption"
-                      component="label"
-                      sx={{
-                        display: 'block',
-                        fontWeight: 600,
-                        mb: 1,
-                        color: 'text.secondary',
-                        fontSize: '0.75rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                      }}
-                    >
-                      Reason by Approver
-                    </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
-                        color: 'text.primary',
-                        fontWeight: 500,
-                        fontSize: '0.875rem',
-                        lineHeight: 1.6,
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {formData?.reason_by_approver || 'None'}
-                    </Typography>
-                  </Box>
+                  {/* Reason by Approver - show only when non-empty */}
+                  {(() => {
+                    const reason = formData?.reason_by_approver
+                    const hasReason = typeof reason === 'string' && reason.trim() !== ''
+                    if (!hasReason) return null
+
+                    return (
+                      <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                        <Typography
+                          variant="caption"
+                          component="label"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 600,
+                            mb: 1,
+                            color: 'text.secondary',
+                            fontSize: '0.75rem',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                          }}
+                        >
+                          Reason by Approver
+                        </Typography>
+                        <Typography 
+                          variant="body2" 
+                          sx={{ 
+                            color: 'text.primary',
+                            fontWeight: 500,
+                            fontSize: '0.875rem',
+                            lineHeight: 1.6,
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {reason}
+                        </Typography>
+                      </Box>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             </Box>
@@ -607,8 +669,13 @@ function ApproverFormDetail() {
                       const isEmpty = value === null || value === undefined || value === ''
                       const isFileField = key === 'doc_uploaded_by_user'
                       
+                      // Exclude grouped fields from regular display (they'll be shown as a group)
+                      if (groupedApproverFields.includes(key)) {
+                        return null
+                      }
+                      
                       // Check if this is an editable field for approver (only when pending)
-                      const editableFieldKeys = ['checks_performed', 'effective_or_not_effective', 'remarks', 'findings']
+                      const editableFieldKeys = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
                       const isEditableField = editableFieldKeys.includes(key)
                       const isEditable = isPending && isEditableField
 
@@ -628,43 +695,73 @@ function ApproverFormDetail() {
                             },
                           }}
                         >
-                          <Typography
-                            variant="caption"
-                            component="dt"
-                            sx={{
-                              display: 'block',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.5px',
-                              mb: 1,
-                              color: 'text.primary',
-                              fontSize: theme.typography.customSizes.small,
-                            }}
-                          >
-                            {label}
-                          </Typography>
-                          {isEditable ? (
-                            // Editable TextField for approver (only when pending)
-                            <TextField
-                              label={label}
-                              variant="outlined"
-                              value={editableFields[key]}
-                              onChange={(e) => handleFieldChange(key, e.target.value)}
-                              fullWidth
-                              multiline={key === 'findings'}
-                              rows={key === 'findings' ? 4 : 1}
+                          {!isEditable && (
+                            <Typography
+                              variant="caption"
+                              component="dt"
                               sx={{
-                                '& .MuiOutlinedInput-root': {
-                                  backgroundColor: 'transparent',
-                                  '&:hover': {
-                                    backgroundColor: 'transparent',
-                                  },
-                                  '&.Mui-focused': {
-                                    backgroundColor: 'transparent',
-                                  },
-                                },
+                                display: 'block',
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                mb: 1,
+                                color: 'text.primary',
+                                fontSize: theme.typography.customSizes.small,
                               }}
-                            />
+                            >
+                              {label}
+                            </Typography>
+                          )}
+                          {isEditable ? (
+                            // Editable field for approver (only when pending)
+                            key === 'control_design_conclusion' ? (
+                              // Dropdown for control_design_conclusion
+                              <FormControl fullWidth>
+                                <InputLabel id={`${key}-label`}>{label}</InputLabel>
+                                <Select
+                                  labelId={`${key}-label`}
+                                  value={editableFields[key] || ''}
+                                  label={label}
+                                  onChange={(e) => handleFieldChange(key, e.target.value)}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      backgroundColor: 'transparent',
+                                      '&:hover': {
+                                        backgroundColor: 'transparent',
+                                      },
+                                      '&.Mui-focused': {
+                                        backgroundColor: 'transparent',
+                                      },
+                                    },
+                                  }}
+                                >
+                                  <MenuItem value="Effective">Effective</MenuItem>
+                                  <MenuItem value="Not Effective">Not Effective</MenuItem>
+                                </Select>
+                              </FormControl>
+                            ) : (
+                              // TextField for other editable fields
+                              <TextField
+                                label={label}
+                                variant="outlined"
+                                value={editableFields[key]}
+                                onChange={(e) => handleFieldChange(key, e.target.value)}
+                                fullWidth
+                                multiline={['control_design_procs', 'design_deficiency_desc'].includes(key)}
+                                rows={['control_design_procs', 'design_deficiency_desc'].includes(key) ? 4 : 1}
+                                sx={{
+                                  '& .MuiOutlinedInput-root': {
+                                    backgroundColor: 'transparent',
+                                    '&:hover': {
+                                      backgroundColor: 'transparent',
+                                    },
+                                    '&.Mui-focused': {
+                                      backgroundColor: 'transparent',
+                                    },
+                                  },
+                                }}
+                              />
+                            )
                           ) : isFileField && !isEmpty ? (
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <Typography
@@ -694,22 +791,178 @@ function ApproverFormDetail() {
                               </IconButton>
                             </Box>
                           ) : (
-                            <Typography
-                              variant="body2"
-                              component="dd"
-                              sx={{
-                                color: isEmpty ? 'text.disabled' : 'text.secondary',
-                                wordBreak: 'break-word',
-                                lineHeight: 1.6,
-                                fontSize: theme.typography.customSizes.medium,
-                              }}
-                            >
-                              {isEmpty ? '-' : String(value)}
-                            </Typography>
+                            <Box>
+                              <Typography
+                                variant="body2"
+                                component="dd"
+                                sx={{
+                                  color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                  wordBreak: 'break-word',
+                                  lineHeight: 1.6,
+                                  fontSize: theme.typography.customSizes.medium,
+                                }}
+                              >
+                                {isEmpty ? '-' : String(value)}
+                              </Typography>
+                              {key === 'sample_required' && (
+                                <Typography
+                                  variant="caption"
+                                  component="p"
+                                  sx={{
+                                    color: 'text.secondary',
+                                    fontStyle: 'italic',
+                                    mt: 0.75,
+                                    fontSize: '0.75rem',
+                                    opacity: 0.8,
+                                  }}
+                                >
+                                  {sampleRequiredNotice}
+                                </Typography>
+                              )}
+                            </Box>
                           )}
                         </Box>
                       )
                     })}
+                  
+                  {/* Grouped Approver Fields - Always displayed for approvers */}
+                  <Box
+                    sx={{
+                      gridColumn: { xs: '1', md: '1 / -1' },
+                      pb: 3,
+                      borderTop: '2px solid',
+                      borderBottom: '1px solid',
+                      borderColor: 'divider',
+                      pt: 3,
+                      mt: 2,
+                    }}
+                  >
+                    <Typography
+                      variant="h6"
+                      component="h3"
+                      sx={{
+                        fontWeight: 700,
+                        mb: 3,
+                        color: 'text.primary',
+                        fontSize: '1.125rem',
+                      }}
+                    >
+                      Control Design & Evaluation
+                    </Typography>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 3,
+                      }}
+                    >
+                      {groupedApproverFields.map((key) => {
+                        const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                        const value = formData[key]
+                        const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
+                        const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+                        const isEditable = isPending
+                        
+                        return (
+                          <Box
+                            key={key}
+                            sx={{
+                              pb: 2,
+                              borderBottom: '1px solid',
+                              borderColor: 'divider',
+                              '&:last-child': {
+                                borderBottom: 'none',
+                              },
+                            }}
+                          >
+                            {isEditable ? (
+                              // Editable field for approver
+                              key === 'control_design_conclusion' ? (
+                                // Dropdown for control_design_conclusion
+                                <FormControl fullWidth>
+                                  <InputLabel id={`${key}-label`}>{label}</InputLabel>
+                                  <Select
+                                    labelId={`${key}-label`}
+                                    value={editableFields[key] || ''}
+                                    label={label}
+                                    onChange={(e) => handleFieldChange(key, e.target.value)}
+                                    sx={{
+                                      '& .MuiOutlinedInput-root': {
+                                        backgroundColor: 'transparent',
+                                        '&:hover': {
+                                          backgroundColor: 'transparent',
+                                        },
+                                        '&.Mui-focused': {
+                                          backgroundColor: 'transparent',
+                                        },
+                                      },
+                                    }}
+                                  >
+                                    <MenuItem value="Effective">Effective</MenuItem>
+                                    <MenuItem value="Not Effective">Not Effective</MenuItem>
+                                  </Select>
+                                </FormControl>
+                              ) : (
+                                // TextField for control_design_procs and design_deficiency_desc
+                                <TextField
+                                  label={label}
+                                  variant="outlined"
+                                  value={editableFields[key] || ''}
+                                  onChange={(e) => handleFieldChange(key, e.target.value)}
+                                  fullWidth
+                                  multiline={isTextArea}
+                                  rows={isTextArea ? 4 : 1}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      backgroundColor: 'transparent',
+                                      '&:hover': {
+                                        backgroundColor: 'transparent',
+                                      },
+                                      '&.Mui-focused': {
+                                        backgroundColor: 'transparent',
+                                      },
+                                    },
+                                  }}
+                                />
+                              )
+                            ) : (
+                              // Read-only display
+                              <>
+                                <Typography
+                                  variant="caption"
+                                  component="dt"
+                                  sx={{
+                                    display: 'block',
+                                    fontWeight: 700,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                    mb: 1,
+                                    color: 'text.primary',
+                                    fontSize: theme.typography.customSizes.small,
+                                  }}
+                                >
+                                  {label}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  component="dd"
+                                  sx={{
+                                    color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.6,
+                                    fontSize: theme.typography.customSizes.medium,
+                                    whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                                  }}
+                                >
+                                  {isEmpty ? '-' : String(value)}
+                                </Typography>
+                              </>
+                            )}
+                          </Box>
+                        )
+                      })}
+                    </Box>
+                  </Box>
                 </Box>
               </CardContent>
             </Card>

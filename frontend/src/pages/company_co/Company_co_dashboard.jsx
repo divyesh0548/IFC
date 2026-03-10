@@ -14,6 +14,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
+import Tooltip from '@mui/material/Tooltip'
 import { toast } from 'react-hot-toast'
 
 function Company_Co_dashboard() {
@@ -25,7 +26,7 @@ function Company_Co_dashboard() {
   const [filterActive, setFilterActive] = useState('all') // 'all', 'active', 'inactive'
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
-  const [filterCycle, setFilterCycle] = useState('all') // 'all' or specific cycle
+  const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
   const [bulkUpdating, setBulkUpdating] = useState(false)
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
@@ -42,19 +43,6 @@ function Company_Co_dashboard() {
     'Financial Statement Closure Process',
     'Information Technology General Controls',
     'Entity Level Controls'
-  ]
-
-  // Financial year options
-  const financialYearOptions = [
-    '2024-25',
-    '2025-26'
-  ]
-
-  // Cycle options
-  const cycleOptions = [
-    '1st',
-    '2nd',
-    '3rd'
   ]
 
   useEffect(() => {
@@ -85,7 +73,55 @@ function Company_Co_dashboard() {
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterActive, filterBusinessProcess, filterFinancialYear, filterCycle])
+  }, [companyIdentifier, filterActive, filterBusinessProcess, filterFinancialYear])
+
+  useEffect(() => {
+    if (companyIdentifier) {
+      loadFinancialYearOptions(companyIdentifier)
+    }
+  }, [companyIdentifier])
+
+  const getFinancialYearStorageKey = (companyId) => `ifc_financial_year_options_${companyId}`
+
+  const extractUniqueFinancialYears = (rows) => {
+    return [...new Set(
+      (rows || [])
+        .map(form => form.financial_year?.toString().trim())
+        .filter(year => year && year !== '')
+    )]
+  }
+
+  const loadFinancialYearOptions = async (companyId) => {
+    const storageKey = getFinancialYearStorageKey(companyId)
+    try {
+      const cached = localStorage.getItem(storageKey)
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setFinancialYearOptions(parsed)
+          return
+        }
+      }
+    } catch (error) {
+      console.error('Error reading financial year options from localStorage:', error)
+    }
+
+    try {
+      const url = `http://localhost:3000/api/control-forms?company_identifier=${encodeURIComponent(companyId)}`
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      })
+      const data = await response.json()
+      if (response.ok && data.success) {
+        const years = extractUniqueFinancialYears(data.data)
+        setFinancialYearOptions(years)
+        localStorage.setItem(storageKey, JSON.stringify(years))
+      }
+    } catch (error) {
+      console.error('Error bootstrapping financial year options:', error)
+    }
+  }
 
   const fetchForms = async () => {
     if (!companyIdentifier) return
@@ -105,13 +141,9 @@ function Company_Co_dashboard() {
       if (filterBusinessProcess !== 'all') {
         url += `&business_process=${encodeURIComponent(filterBusinessProcess)}`
       }
-      
+
       if (filterFinancialYear !== 'all') {
         url += `&financial_year=${encodeURIComponent(filterFinancialYear)}`
-      }
-      
-      if (filterCycle !== 'all') {
-        url += `&cycle=${encodeURIComponent(filterCycle)}`
       }
       
       const response = await fetch(url, {
@@ -129,6 +161,18 @@ function Company_Co_dashboard() {
           return dateB - dateA // Descending order (newest first)
         })
         setForms(sortedForms)
+
+        // Keep cached financial year options updated with any newly seen values
+        const latestYears = extractUniqueFinancialYears(data.data)
+        if (latestYears.length > 0) {
+          const mergedYears = [...new Set([...(financialYearOptions || []), ...latestYears])]
+          if (mergedYears.length !== financialYearOptions.length) {
+            setFinancialYearOptions(mergedYears)
+            if (companyIdentifier) {
+              localStorage.setItem(getFinancialYearStorageKey(companyIdentifier), JSON.stringify(mergedYears))
+            }
+          }
+        }
       } else {
         console.error('Error fetching forms:', data.message)
       }
@@ -266,102 +310,26 @@ function Company_Co_dashboard() {
     const isActive = form.active && form.active !== '' && form.active !== '0'
     return isActive
   })
+  const tooltipSx = {
+    bgcolor: theme.palette.mode === 'dark' ? 'rgba(17, 24, 39, 0.96)' : 'rgba(17, 24, 39, 0.92)',
+    color: '#ffffff',
+    fontSize: '0.75rem',
+    lineHeight: 1.4,
+    borderRadius: '8px',
+    px: 1.25,
+    py: 0.75,
+    maxWidth: 420,
+    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.25)',
+  }
+  const truncatedTextSx = {
+    display: 'block',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  }
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 2, py: 4 }}>
-        {/* Financial Year and Cycle Filters - Top Section */}
-        <Box sx={{ 
-          display: 'flex', 
-          flexDirection: { xs: 'column', sm: 'row' }, 
-          gap: 2,
-          alignItems: { xs: 'stretch', sm: 'center' },
-          mb: 3
-        }}>
-            {/* Financial Year Filter */}
-            <FormControl 
-              variant="outlined" 
-              sx={{ 
-                minWidth: '160px',
-                '& .MuiOutlinedInput-root': {
-                  backgroundColor: 'transparent',
-                  '& fieldset': {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                  },
-                  '&:hover fieldset': {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                  },
-                },
-                '& .MuiInputLabel-root': {
-                  color: theme.palette.text.primary,
-                },
-                '& .MuiSelect-root': {
-                  color: theme.palette.text.primary,
-                },
-              }}
-            >
-              <InputLabel id="financial-year-filter-label">Financial Year</InputLabel>
-              <Select
-                labelId="financial-year-filter-label"
-                id="financial-year-filter"
-                value={filterFinancialYear}
-                label="Financial Year"
-                onChange={(e) => setFilterFinancialYear(e.target.value)}
-              >
-                <MenuItem value="all">All</MenuItem>
-                {financialYearOptions.map((option) => (
-                  <MenuItem key={option} value={option}>
-                    {option}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            
-            {/* Cycle Filter */}
-            <FormControl 
-              variant="outlined" 
-              sx={{ 
-                minWidth: '160px',
-                '& .MuiOutlinedInput-root': {
-                  backgroundColor: 'transparent',
-                  '& fieldset': {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                  },
-                  '&:hover fieldset': {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                  },
-                },
-                '& .MuiInputLabel-root': {
-                  color: theme.palette.text.primary,
-                },
-                '& .MuiSelect-root': {
-                  color: theme.palette.text.primary,
-                },
-              }}
-            >
-              <InputLabel id="cycle-filter-label">Cycle</InputLabel>
-              <Select
-                labelId="cycle-filter-label"
-                id="cycle-filter"
-                value={filterCycle}
-                label="Cycle"
-                onChange={(e) => setFilterCycle(e.target.value)}
-              >
-                <MenuItem value="all">All</MenuItem>
-                {cycleOptions.map((option) => (
-                  <MenuItem key={option} value={option}>
-                    {option}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-        </Box>
-
         {/* Forms Section */}
         <Paper 
           elevation={3}
@@ -387,7 +355,7 @@ function Company_Co_dashboard() {
                   color: theme.palette.secondary.main,
                 }}
               >
-                Control Forms
+                RACM
               </Typography>
               
               {/* Set All Active Button */}
@@ -452,6 +420,48 @@ function Company_Co_dashboard() {
                 >
                   <MenuItem value="all">All</MenuItem>
                   {businessProcessOptions.map((option) => (
+                    <MenuItem key={option} value={option}>
+                      {option}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              {/* Financial Year Filter */}
+              <FormControl
+                variant="outlined"
+                sx={{
+                  minWidth: '80px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: 'transparent',
+                    '& fieldset': {
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                    },
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: theme.palette.text.primary,
+                  },
+                  '& .MuiSelect-root': {
+                    color: theme.palette.text.primary,
+                  },
+                }}
+              >
+                <InputLabel id="financial-year-filter-label">Financial Year</InputLabel>
+                <Select
+                  labelId="financial-year-filter-label"
+                  id="financial-year-filter"
+                  value={filterFinancialYear}
+                  label="Financial Year"
+                  onChange={(e) => setFilterFinancialYear(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  {financialYearOptions.map((option) => (
                     <MenuItem key={option} value={option}>
                       {option}
                     </MenuItem>
@@ -583,9 +593,12 @@ function Company_Co_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '320px',
+                        minWidth: '320px',
+                        maxWidth: '320px',
                       }}
                     >
-                      #
+                      Standard Control Description
                     </Box>
                     <Box
                       component="th"
@@ -598,36 +611,9 @@ function Company_Co_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                      }}
-                    >
-                      Description
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                      }}
-                    >
-                      Process
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
+                        width: '220px',
+                        minWidth: '220px',
+                        maxWidth: '220px',
                       }}
                     >
                       Business Process
@@ -643,6 +629,45 @@ function Company_Co_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '220px',
+                        minWidth: '220px',
+                        maxWidth: '220px',
+                      }}
+                    >
+                      Sub Process
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                        width: '120px',
+                        minWidth: '120px',
+                        maxWidth: '120px',
+                      }}
+                    >
+                      Financial Year
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                        width: '120px',
+                        minWidth: '120px',
+                        maxWidth: '120px',
                       }}
                     >
                       Status
@@ -658,6 +683,9 @@ function Company_Co_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '140px',
+                        minWidth: '140px',
+                        maxWidth: '140px',
                       }}
                     >
                       Created At
@@ -665,7 +693,7 @@ function Company_Co_dashboard() {
                   </Box>
                 </Box>
                 <Box component="tbody">
-                  {forms.map((form, index) => {
+                  {forms.map((form) => {
                     const isActive = form.active && form.active !== '' && form.active !== '0'
                     return (
                       <Box
@@ -688,35 +716,20 @@ function Company_Co_dashboard() {
                             px: 3,
                             py: 2,
                             whiteSpace: 'nowrap',
-                            fontSize: '0.875rem',
-                            fontWeight: 500,
-                            color: theme.palette.text.primary,
-                          }}
-                        >
-                          {index + 1}
-                        </Box>
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            width: '320px',
+                            minWidth: '320px',
+                            maxWidth: '320px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                           }}
                         >
-                          {form.description_of_control || 'N/A'}
-                        </Box>
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            fontSize: '0.875rem',
-                            color: theme.palette.text.primary,
-                          }}
-                        >
-                          {form.process || 'N/A'}
+                          <Tooltip title={form.standard_control_description || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                            <Box component="span" sx={truncatedTextSx}>
+                              {form.standard_control_description || 'N/A'}
+                            </Box>
+                          </Tooltip>
                         </Box>
                         <Box
                           component="td"
@@ -724,11 +737,18 @@ function Company_Co_dashboard() {
                             px: 3,
                             py: 2,
                             whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            width: '220px',
+                            minWidth: '220px',
+                            maxWidth: '220px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                           }}
                         >
-                          {form.business_process || 'N/A'}
+                          <Box component="span" sx={truncatedTextSx}>
+                            {form.business_process || 'N/A'}
+                          </Box>
                         </Box>
                         <Box
                           component="td"
@@ -736,6 +756,49 @@ function Company_Co_dashboard() {
                             px: 3,
                             py: 2,
                             whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            width: '220px',
+                            minWidth: '220px',
+                            maxWidth: '220px',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          }}
+                        >
+                          <Tooltip title={form.sub_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                            <Box component="span" sx={truncatedTextSx}>
+                              {form.sub_process || 'N/A'}
+                            </Box>
+                          </Tooltip>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            width: '120px',
+                            minWidth: '120px',
+                            maxWidth: '120px',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          }}
+                        >
+                          <Box component="span" sx={truncatedTextSx}>
+                            {form.financial_year || 'N/A'}
+                          </Box>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
+                            width: '120px',
+                            minWidth: '120px',
+                            maxWidth: '120px',
                           }}
                         >
                           <Box
@@ -764,13 +827,20 @@ function Company_Co_dashboard() {
                             px: 3,
                             py: 2,
                             whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            width: '140px',
+                            minWidth: '140px',
+                            maxWidth: '140px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                           }}
                         >
-                          {form.created_at
-                            ? new Date(form.created_at).toLocaleDateString()
-                            : 'N/A'}
+                          <Box component="span" sx={truncatedTextSx}>
+                            {form.created_at
+                              ? new Date(form.created_at).toLocaleDateString()
+                              : 'N/A'}
+                          </Box>
                         </Box>
                       </Box>
                     )
@@ -844,6 +914,18 @@ function Company_Co_dashboard() {
                   }}
                 >
                   Business Process: <strong>{filterBusinessProcess}</strong>
+                </Typography>
+              )}
+              {filterFinancialYear !== 'all' && (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: theme.palette.text.primary,
+                    fontWeight: 500,
+                    mb: 1,
+                  }}
+                >
+                  Financial Year: <strong>{filterFinancialYear}</strong>
                 </Typography>
               )}
               {filterActive !== 'all' && (

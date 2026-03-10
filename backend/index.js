@@ -10,6 +10,7 @@ const companiesRoutes = require('./routes/companies');
 const companyCoRoutes = require('./routes/company_co');
 const controlFormsRoutes = require('./routes/control_forms');
 const approverRoutes = require('./routes/approver');
+const statsRoutes = require('./routes/stats');
 const { processExcelFiles } = require('./scripts/process_excel_files');
 const { processSamplingExcel } = require('./scripts/process_sampling_excel');
 const { Pool } = require('pg');
@@ -77,40 +78,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Stats endpoint - Get counts of companies and users (defined before other routes)
-app.get('/api/stats', async (req, res) => {
-  try {
-    console.log('Fetching stats...');
-    
-    // Get company count
-    const companiesResult = await pool.query('SELECT COUNT(*) as count FROM companies');
-    const companyCount = parseInt(companiesResult.rows[0].count, 10);
-    console.log('Company count:', companyCount);
 
-    // Get user count
-    const usersResult = await pool.query('SELECT COUNT(*) as count FROM ifc_users');
-    const userCount = parseInt(usersResult.rows[0].count, 10);
-    console.log('User count:', userCount);
-
-    const responseData = {
-      success: true,
-      data: {
-        companies: companyCount,
-        users: userCount
-      }
-    };
-    
-    console.log('Sending stats response:', responseData);
-    res.status(200).json(responseData);
-  } catch (error) {
-    console.error('Error fetching stats:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching statistics',
-      error: error.message
-    });
-  }
-});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -118,7 +86,7 @@ app.use('/api/companies', companiesRoutes);
 app.use('/api/company-co', companyCoRoutes);
 app.use('/api/control-forms', controlFormsRoutes);
 app.use('/api/approver', approverRoutes);
-
+app.use('/api/stats', statsRoutes);
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });

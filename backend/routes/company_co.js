@@ -117,13 +117,28 @@ async function verifyCompanyCoordinator(req, res, next) {
 
 // Helper function to send email
 async function sendEmail(to, subject, text) {
+  // Check if SMTP credentials are configured
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.error('SMTP credentials not configured. Please set SMTP_USER and SMTP_PASS environment variables.');
+    return false;
+  }
+
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: process.env.SMTP_PORT || 587,
-    secure: false,
+    port: parseInt(process.env.SMTP_PORT) || 587,
+    secure: false, // true for 465, false for other ports
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
+    },
+    // Connection timeout settings (increased to handle slow connections)
+    connectionTimeout: 20000, // 20 seconds
+    greetingTimeout: 20000, // 20 seconds
+    socketTimeout: 20000, // 20 seconds
+    // TLS options
+    tls: {
+      rejectUnauthorized: false, // Allow self-signed certificates (set to true in production)
+      ciphers: 'SSLv3'
     }
   });
 
@@ -139,9 +154,68 @@ async function sendEmail(to, subject, text) {
     return true;
   } catch (error) {
     console.error('Error sending email:', error);
+    
+    // Provide more detailed error information
+    if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
+      console.error(`SMTP Connection Error: Cannot connect to ${process.env.SMTP_HOST || 'smtp.gmail.com'}:${process.env.SMTP_PORT || 587}`);
+      console.error('Possible causes:');
+      console.error('1. SMTP server is not accessible (check firewall/network)');
+      console.error('2. Incorrect SMTP_HOST or SMTP_PORT');
+      console.error('3. SMTP server is down or unreachable');
+      console.error('4. Network connectivity issues');
+      console.error('5. For Gmail: Check if "Less secure app access" is enabled or use App Password');
+    } else if (error.code === 'EAUTH') {
+      console.error('SMTP Authentication Error: Invalid credentials');
+      console.error('Please check SMTP_USER and SMTP_PASS environment variables');
+      console.error('For Gmail: Use App Password instead of regular password');
+    } else if (error.responseCode === 535) {
+      console.error('SMTP Authentication Error: Invalid username or password');
+      console.error('For Gmail: Make sure to use App Password, not your regular Gmail password');
+    } else {
+      console.error('SMTP Error Details:', {
+        code: error.code,
+        command: error.command,
+        response: error.response,
+        responseCode: error.responseCode
+      });
+    }
+    
     return false;
   }
 }
+
+// Get users for current company coordinator's company
+router.get('/users', verifyCompanyCoordinator, async (req, res) => {
+  try {
+    const companyIdentifier = req.user.company_identifier;
+
+    if (!companyIdentifier) {
+      return res.status(200).json({
+        success: true,
+        users: []
+      });
+    }
+
+    const usersQuery = `
+      SELECT email_id, role, emp_name, designation, department, mobile
+      FROM ifc_users
+      WHERE company_identifier = $1
+      ORDER BY created_at DESC
+    `;
+    const usersResult = await pool.query(usersQuery, [companyIdentifier]);
+
+    res.status(200).json({
+      success: true,
+      users: usersResult.rows
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch users'
+    });
+  }
+});
 
 // Create User for Company API endpoint
 router.post('/create-user', verifyCompanyCoordinator, async (req, res) => {
@@ -235,25 +309,62 @@ router.post('/create-user', verifyCompanyCoordinator, async (req, res) => {
 
     const newUser = userResult.rows[0];
 
+    // Fetch company coordinator name from ifc_users table using coordinator's id
+    let company_coordinator_name = '';
+    if (coordinator.id){
+      const company_coordinator_name_query = `
+        SELECT emp_name
+        FROM ifc_users
+        WHERE id = $1
+      `;
+      const company_coordinator_name_result = await client.query(company_coordinator_name_query, [coordinator.id]);
+      company_coordinator_name = company_coordinator_name_result.rows[0]?.emp_name || '';
+      console.log('Company coordinator id:', coordinator.id);
+      console.log('Company coordinator name:', company_coordinator_name);
+    }
+
+
+    // Fetch company name from companies table using coordinator's company_identifier
+    let companyName = '';
+    if (companyIdentifier) {
+      const companyQuery = `
+        SELECT company_name
+        FROM companies
+        WHERE company_identifier = $1
+        LIMIT 1
+      `;
+      const companyResult = await client.query(companyQuery, [companyIdentifier]);
+
+      console.log('Company result:', companyResult.rows[0]);
+      companyName = companyResult.rows[0]?.company_name || '';
+    }
+    const companyDisplayName = companyName || 'your company';
+
     // Send email with temporary password
-    const emailSubject = 'Welcome - Your Temporary Login Credentials';
-    const emailText = `
-Dear User,
+    const emailSubject = 'Welcome to IFC - Let\'s get started';
+    const emailText = `Hi ${emp_name},
 
-Your account has been created successfully.
+Hope you're having a good week!
 
-Your temporary login credentials:
-Email: ${email_id}
-Temporary Password: ${tempPassword}
+I am ${company_coordinator_name} at ${companyDisplayName} organization. We have been engaged to carry out an internal financial control review. This is a yearly exercise. If you have not participated before, we’ve put together a short introductory video (just a few minutes) to get you up to speed. You can watch it here: [Video Link]
 
-IMPORTANT: Please login using these credentials and update your password immediately for security purposes.
+Here is a brief overview of Internal Financial Controls.
 
-Login URL: http://localhost:5173/user/login
+Internal financial controls are the everyday steps we take to keep our financial information accurate and safe. IFC testing checks whether those steps are working.
 
-After logging in, you will be prompted to update your temporary password to a permanent one.
+The control flow is as follows: You upload evidence that you've performed the control. Our tester reviews it and passes or fails the control based on whether it is working effectively. That's it!
 
-Best regards,
-IFC System
+Your evidence is the proof that shows our controls are doing their job.
+
+Here are your login credentials. (This is a temporary password, please change it after logging in.)
+
+Email ID: ${email_id}
+Password: ${tempPassword}
+Portal: ${process.env.FRONTEND_URL}
+
+Thanks & Regards,
+${company_coordinator_name}
+Sharp and Tannan Associates
     `;
 
     // Send email with temporary password (wait for it to complete)
@@ -335,4 +446,3 @@ router.get('/check-user/:email', verifyCompanyCoordinator, async (req, res) => {
 });
 
 module.exports = router;
-
