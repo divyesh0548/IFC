@@ -32,11 +32,15 @@ function CreateControlForm() {
     'Entity Level Controls'
   ]
 
-  // Financial year options
-  const financialYearOptions = [
-    '2024-25',
-    '2025-26'
-  ]
+  // Financial year options - dynamically based on current year
+  // Example: if current year is 2026 → [ '2025-26', '2026-27', '2027-28' ]
+  const currentYear = new Date().getFullYear()
+  const baseFYStart = currentYear - 1
+  const financialYearOptions = Array.from({ length: 3 }, (_, i) => {
+    const startYear = baseFYStart + i
+    const endYearShort = String((startYear + 1) % 100).padStart(2, '0')
+    return `${startYear}-${endYearShort}`
+  })
 
   // Form state - all fields that coordinators can create
   const [formData, setFormData] = useState({
@@ -73,26 +77,22 @@ function CreateControlForm() {
   })
 
   const dropdownOptions = {
-    risk_heat: ['High', 'Low', 'Medium', 'Other'],
-    control_type_fo: ['Financial', 'Operational', 'Other'],
-    control_type_ma: ['Manual', 'Automated', 'Other'],
-    key_control: ['Yes', 'No', 'Other'],
+  risk_heat: ['High', 'Low', 'Medium', 'Other'],
+  control_type_fo: ['Financial', 'Operational', 'Other'],
+  control_type_ma: ['Manual', 'Automated', 'Other'],
+  nature_of_control: ['Preventive', 'Detective'],
+  key_control: ['Yes', 'No', 'Other'],
     control_frequency: [
       'Yearly',
       'Quarterly',
       'Half Yearly',
-      'Half-Yearly',
       'Monthly',
       'Weekly',
       'Fortnightly',
-      'As & When Needed',
-      'As & When Required',
-      'Recurring & Periodic',
+      'As and When Needed',
       'Recurring and Periodic',
-      'Recurring & Daily',
       'Recurring and Daily',
       'Daily',
-      'Other'
     ],
     whether_fraud_risks_exist: ['Yes', 'No', 'Other']
   }
@@ -164,6 +164,14 @@ function CreateControlForm() {
     }
   }
 
+  const validateEmail = (email) => {
+    if (!email || email.trim() === '') {
+      return false
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return emailRegex.test(email.trim())
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
 
@@ -175,6 +183,14 @@ function CreateControlForm() {
     if (!formData.financial_year) {
       toast.error('Please select a financial year')
       return
+    }
+
+    // Validate Process Owner email if provided
+    if (formData.process_owner && formData.process_owner.trim() !== '') {
+      if (!validateEmail(formData.process_owner)) {
+        toast.error('Please enter a valid email address for Process Owner')
+        return
+      }
     }
 
     setLoading(true)
@@ -221,50 +237,54 @@ function CreateControlForm() {
 
   // Field labels
   const fieldLabels = {
-    business_process: 'Business Process',
-    financial_year: 'Financial Year',
-    control_number: 'Control Number',
-    account_balance_disclosure: 'Account Balance / Disclosure',
-    risk_heat: 'Risk Heat',
-    standard_control_description: 'Standard Control Description',
-    sub_process: 'Sub Process',
-    risk_description: 'Risk Description',
-    whether_fraud_risks_exist: 'Whether Fraud Risks Exist',
-    control_objective: 'Control Objective',
-    process_walkthrough: 'Process Activity and Walkthrough Details',
-    control_relies_on_ipe: 'Does the Control Rely on IPE?',
-    audit_evidence_accuracy: 'Audit Evidence of Accuracy and Completeness',
-    ipe_reference: 'IPE Reference',
-    key_control: 'Key Control',
-    application_name: 'Application Name',
-    control_performer: 'Control Performer',
-    control_owner: 'Control Owner',
-    control_design_procs: 'Procedures to Evaluate Design and Implementation',
-    control_type_fo: 'Type of Control O_F',
-    control_type_ma: 'Type of Control M_A',
-    nature_of_control: 'Nature of Control',
-    process_owner: 'Process Owner',
-    control_frequency: 'Control Frequency',
-    sample_size: 'Sample Size',
-    completeness: 'Completeness',
-    existence_occurrence: 'Existence & Occurrence',
-    rights_and_obligation: 'Rights and Obligations',
-    valuation_and_allocation: 'Valuation & Allocation',
-    presentation_and_disclosure: 'Presentation and Disclosure'
+  business_process: 'Business Process',
+  financial_year: 'Financial Year',
+  control_number: 'Control Number',
+  account_balance_disclosure: 'Account Balance / Disclosure',
+  risk_heat: 'Risk Heat',
+  standard_control_description: 'Standard Control Description',
+  sub_process: 'Sub Process',
+  risk_description: 'Risk Description',
+  whether_fraud_risks_exist: 'Whether Fraud Risks Exist',
+  control_objective: 'Control Objective',
+  process_walkthrough: 'Process Activity and Walkthrough Details',
+  control_relies_on_ipe: 'Does the Control Rely on IPE?',
+  audit_evidence_accuracy: 'Audit Evidence of Accuracy and Completeness',
+  ipe_reference: 'IPE Reference',
+  key_control: 'Key Control',
+  application_name: 'Application Name',
+  control_performer: 'Control Performer',
+  control_owner: 'Control Owner',
+  control_design_procs: 'Procedures to Evaluate Design and Implementation',
+  control_type_fo: 'Type of control (Operational/Financial)',
+  control_type_ma: 'Type of control (Manual/ Automated)',
+  nature_of_control: 'Nature of Control',
+  process_owner: 'Process Owner',
+  control_frequency: 'Control Frequency',
+  sample_size: 'Sample Size',
+  completeness: 'Completeness',
+  existence_occurrence: 'Existence & Occurrence',
+  rights_and_obligation: 'Rights and Obligations',
+  valuation_and_allocation: 'Valuation & Allocation',
+  presentation_and_disclosure: 'Presentation and Disclosure'
   }
 
-  // Field order
+  // Field order – base order used inside sections
   const fieldOrder = [
     'business_process',
     'financial_year',
     'control_number',
     'account_balance_disclosure',
-    'risk_heat',
-    'standard_control_description',
     'sub_process',
     'risk_description',
+    'risk_heat',
+    'completeness',
+    'existence_occurrence',
+    'valuation_and_allocation',
+    'rights_and_obligation',
+    'presentation_and_disclosure',
+    'standard_control_description',
     'whether_fraud_risks_exist',
-    'control_objective',
     'process_walkthrough',
     'control_relies_on_ipe',
     'audit_evidence_accuracy',
@@ -280,11 +300,6 @@ function CreateControlForm() {
     'process_owner',
     'control_frequency',
     'sample_size',
-    'completeness',
-    'existence_occurrence',
-    'rights_and_obligation',
-    'valuation_and_allocation',
-    'presentation_and_disclosure'
   ]
 
   return (
@@ -310,7 +325,7 @@ function CreateControlForm() {
         >
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <IconButton
-              onClick={() => navigate('/company_co/dashboard')}
+              onClick={() => navigate('/company_co/upload-excel')}
               sx={{
                 mr: 2,
                 color: theme.palette.text.primary,
@@ -338,132 +353,328 @@ function CreateControlForm() {
           </Box>
 
           <form onSubmit={handleSubmit}>
+            {/* Top section: Business Process & Financial Year */}
             <Box
               sx={{
+                mb: 4,
                 display: 'grid',
                 gridTemplateColumns: {
                   xs: '1fr',
                   md: 'repeat(2, 1fr)',
                 },
                 gap: 3,
-                mb: 3,
               }}
             >
-              {fieldOrder.map((field) => {
-                const label = fieldLabels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+              {['business_process', 'financial_year'].map((field) => {
+                const label = fieldLabels[field]
                 const value = formData[field] || ''
-                const isMultiline = multilineFields.includes(field)
-                const isSelect = field === 'business_process' || field === 'financial_year'
-                const isConfiguredDropdown = Object.prototype.hasOwnProperty.call(dropdownOptions, field)
+                const options = field === 'business_process' ? businessProcessOptions : financialYearOptions
 
-                if (isSelect) {
-                  let options = []
-                  if (field === 'business_process') {
-                    options = businessProcessOptions
-                  } else if (field === 'financial_year') {
-                    options = financialYearOptions
+                return (
+                  <FormControl
+                    key={field}
+                    fullWidth
+                    required
+                  >
+                    <InputLabel id={`${field}-label`}>{label}</InputLabel>
+                    <Select
+                      labelId={`${field}-label`}
+                      id={field}
+                      name={field}
+                      value={value}
+                      label={label}
+                      onChange={handleChange}
+                      variant="outlined"
+                      disabled={loading}
+                    >
+                      {options.map((option) => (
+                        <MenuItem key={option} value={option}>
+                          {option}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )
+              })}
+            </Box>
+
+            {/* Process and risk section */}
+            <Box
+              sx={{
+                mb: 4,
+                borderTop: '2px solid',
+                borderColor: 'divider',
+                pt: 3,
+              }}
+            >
+              <Typography
+                variant="h6"
+                component="h2"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: 'text.primary',
+                  fontSize: '1.125rem',
+                }}
+              >
+                Process and risk
+              </Typography>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: 'repeat(2, 1fr)',
+                  },
+                  gap: 3,
+                }}
+              >
+                {['control_number', 'account_balance_disclosure', 'sub_process', 'risk_heat', 'risk_description'].map((field) => {
+                  const label = fieldLabels[field]
+                  const value = formData[field] || ''
+                  const isMultiline = multilineFields.includes(field)
+                  const isConfiguredDropdown = Object.prototype.hasOwnProperty.call(dropdownOptions, field)
+
+                  if (isConfiguredDropdown) {
+                    const options = dropdownOptions[field]
+                    const selectedValue = dropdownSelections[field] || (options.includes(value) ? value : '')
+                    const isOtherSelected = selectedValue === 'Other'
+
+                    return (
+                      <Box key={field}>
+                        <FormControl fullWidth disabled={loading}>
+                          <InputLabel id={`${field}-label`}>{label}</InputLabel>
+                          <Select
+                            labelId={`${field}-label`}
+                            id={field}
+                            name={field}
+                            value={selectedValue}
+                            label={label}
+                            onChange={(e) => handleDropdownChange(field, e.target.value)}
+                            variant="outlined"
+                          >
+                            {options.map((option) => (
+                              <MenuItem key={option} value={option}>
+                                {option}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        {isOtherSelected && (
+                          <TextField
+                            sx={{ mt: 1.5 }}
+                            fullWidth
+                            label={`${label} (Other)`}
+                            value={otherValues[field] || value || ''}
+                            onChange={(e) => handleOtherValueChange(field, e.target.value)}
+                            disabled={loading}
+                          />
+                        )}
+                      </Box>
+                    )
                   }
 
                   return (
-                    <FormControl 
+                    <TextField
                       key={field}
-                      fullWidth 
-                      required
+                      name={field}
+                      label={label}
+                      value={value}
+                      onChange={handleChange}
+                      fullWidth
+                      multiline={isMultiline}
+                      rows={isMultiline ? 4 : 1}
+                      variant="outlined"
+                      disabled={loading}
                       sx={{
-                        gridColumn: {
-                          xs: '1',
-                          md: field === 'business_process' ? '1 / -1' : undefined
-                        }
+                        gridColumn: isMultiline
+                          ? {
+                              xs: '1',
+                              md: '1 / -1',
+                            }
+                          : undefined,
                       }}
-                    >
-                      <InputLabel id={`${field}-label`}>{label}</InputLabel>
-                      <Select
-                        labelId={`${field}-label`}
-                        id={field}
-                        name={field}
-                        value={value}
-                        label={label}
-                        onChange={handleChange}
-                        variant="outlined"
-                        disabled={loading}
-                      >
-                        {options.map((option) => (
-                          <MenuItem key={option} value={option}>
-                            {option}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
+                    />
                   )
-                }
+                })}
+              </Box>
+            </Box>
 
-                if (isConfiguredDropdown) {
-                  const options = dropdownOptions[field]
-                  const selectedValue = dropdownSelections[field] || (options.includes(value) ? value : '')
-                  const isOtherSelected = selectedValue === 'Other'
+            {/* Assertions section */}
+            <Box
+              sx={{
+                mb: 4,
+                borderTop: '2px solid',
+                borderColor: 'divider',
+                pt: 3,
+              }}
+            >
+              <Typography
+                variant="h6"
+                component="h2"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: 'text.primary',
+                  fontSize: '1.125rem',
+                }}
+              >
+                Assertions
+              </Typography>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: 'repeat(2, 1fr)',
+                  },
+                  gap: 3,
+                }}
+              >
+                {['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure'].map((field) => {
+                  const label = fieldLabels[field]
+                  const value = formData[field] || ''
 
                   return (
-                    <Box key={field}>
-                      <FormControl fullWidth disabled={loading}>
-                        <InputLabel id={`${field}-label`}>{label}</InputLabel>
-                        <Select
-                          labelId={`${field}-label`}
-                          id={field}
-                          name={field}
-                          value={selectedValue}
-                          label={label}
-                          onChange={(e) => handleDropdownChange(field, e.target.value)}
-                          variant="outlined"
-                        >
-                          {options.map((option) => (
-                            <MenuItem key={option} value={option}>
-                              {option}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                      {isOtherSelected && (
-                        <TextField
-                          sx={{ mt: 1.5 }}
-                          fullWidth
-                          label={`${label} (Other)`}
-                          value={otherValues[field] || value || ''}
-                          onChange={(e) => handleOtherValueChange(field, e.target.value)}
-                          disabled={loading}
-                        />
-                      )}
-                    </Box>
+                    <TextField
+                      key={field}
+                      name={field}
+                      label={label}
+                      value={value}
+                      onChange={handleChange}
+                      fullWidth
+                      variant="outlined"
+                      disabled={loading}
+                    />
                   )
-                }
+                })}
+              </Box>
+            </Box>
 
-                return (
-                  <TextField
-                    key={field}
-                    name={field}
-                    label={label}
-                    value={value}
-                    onChange={handleChange}
-                    fullWidth
-                    multiline={isMultiline}
-                    rows={isMultiline ? 4 : 1}
-                    variant="outlined"
-                    disabled={loading}
-                    sx={{
-                      gridColumn: isMultiline ? {
-                        xs: '1',
-                        md: '1 / -1'
-                      } : undefined,
-                    }}
-                  />
-                )
-              })}
+            {/* Remaining fields section – Control */}
+            <Box
+              sx={{
+                borderTop: '2px solid',
+                borderColor: 'divider',
+                pt: 3,
+                mb: 3,
+              }}
+            >
+              <Typography
+                variant="h6"
+                component="h2"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: 'text.primary',
+                  fontSize: '1.125rem',
+                }}
+              >
+                Control
+              </Typography>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: 'repeat(2, 1fr)',
+                  },
+                  gap: 3,
+                }}
+              >
+                {fieldOrder
+                  .filter((field) =>
+                    !['business_process',
+                      'financial_year',
+                      'control_number',
+                      'account_balance_disclosure',
+                      'sub_process',
+                      'risk_description',
+                      'risk_heat',
+                      'completeness',
+                      'existence_occurrence',
+                      'valuation_and_allocation',
+                      'rights_and_obligation',
+                      'presentation_and_disclosure',
+                      'sample_size', // Exclude sample_size as it's computed automatically
+                    ].includes(field)
+                  )
+                  .map((field) => {
+                    const label = fieldLabels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                    const value = formData[field] || ''
+                    const isMultiline = multilineFields.includes(field)
+                    const isConfiguredDropdown = Object.prototype.hasOwnProperty.call(dropdownOptions, field)
+
+                    if (isConfiguredDropdown) {
+                      const options = dropdownOptions[field]
+                      const selectedValue = dropdownSelections[field] || (options.includes(value) ? value : '')
+                      const isOtherSelected = selectedValue === 'Other'
+
+                      return (
+                        <Box key={field}>
+                          <FormControl fullWidth disabled={loading}>
+                            <InputLabel id={`${field}-label`}>{label}</InputLabel>
+                            <Select
+                              labelId={`${field}-label`}
+                              id={field}
+                              name={field}
+                              value={selectedValue}
+                              label={label}
+                              onChange={(e) => handleDropdownChange(field, e.target.value)}
+                              variant="outlined"
+                            >
+                              {options.map((option) => (
+                                <MenuItem key={option} value={option}>
+                                  {option}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          {isOtherSelected && (
+                            <TextField
+                              sx={{ mt: 1.5 }}
+                              fullWidth
+                              label={`${label} (Other)`}
+                              value={otherValues[field] || value || ''}
+                              onChange={(e) => handleOtherValueChange(field, e.target.value)}
+                              disabled={loading}
+                            />
+                          )}
+                        </Box>
+                      )
+                    }
+
+                    return (
+                      <TextField
+                        key={field}
+                        name={field}
+                        label={label}
+                        value={value}
+                        onChange={handleChange}
+                        fullWidth
+                        multiline={isMultiline}
+                        rows={isMultiline ? 4 : 1}
+                        variant="outlined"
+                        disabled={loading}
+                        sx={{
+                          gridColumn: isMultiline
+                            ? {
+                                xs: '1',
+                                md: '1 / -1',
+                              }
+                            : undefined,
+                        }}
+                      />
+                    )
+                  })}
+              </Box>
             </Box>
 
             {/* Submit and Cancel Buttons */}
             <Box sx={{ display: 'flex', gap: 2, mt: 4 }}>
               <Button
                 type="button"
-                onClick={() => navigate('/company_co/dashboard')}
+                onClick={() => navigate('/company_co/upload-excel')}
                 variant="outlined"
                 sx={{
                   flex: 1,

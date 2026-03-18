@@ -414,9 +414,19 @@ Sharp and Tannan Associates
   }
 });
 
-// Check if user exists API endpoint
+// Check if user exists for the current coordinator's company with role = 'user'
 router.get('/check-user/:email', verifyCompanyCoordinator, async (req, res) => {
-  const { email } = req.params;
+  let { email } = req.params;
+
+  // Decode URL-encoded email (e.g., %40 becomes @)
+  try {
+    email = decodeURIComponent(email);
+  } catch (decodeError) {
+    console.warn('Failed to decode email parameter, using as-is:', decodeError);
+  }
+
+  // Trim whitespace and convert to lowercase for comparison
+  email = email.trim().toLowerCase();
 
   // Validate email format
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -428,8 +438,33 @@ router.get('/check-user/:email', verifyCompanyCoordinator, async (req, res) => {
   }
 
   try {
-    const checkUserQuery = 'SELECT * FROM ifc_users WHERE email_id = $1';
-    const existingUser = await pool.query(checkUserQuery, [email]);
+    const companyIdentifier = (req.user && req.user.company_identifier) || null;
+
+    // If coordinator does not have a company_identifier, we cannot match any company users
+    if (!companyIdentifier) {
+      console.warn('Company coordinator does not have company_identifier');
+      return res.status(200).json({
+        success: true,
+        exists: false
+      });
+    }
+
+    // Only consider users:
+    // - with the same company_identifier as the logged-in company coordinator
+    // - and with role = 'user'
+    // Use case-insensitive comparison and trim whitespace for email_id
+    const checkUserQuery = `
+      SELECT 1
+      FROM ifc_users
+      WHERE LOWER(TRIM(email_id)) = $1
+        AND company_identifier = $2
+        AND role = 'user'
+      LIMIT 1
+    `;
+
+    const existingUser = await pool.query(checkUserQuery, [email, companyIdentifier]);
+
+    console.log(`User check for ${email} in company ${companyIdentifier}: ${existingUser.rows.length > 0 ? 'FOUND' : 'NOT FOUND'}`);
 
     res.status(200).json({
       success: true,

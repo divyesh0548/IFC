@@ -185,7 +185,28 @@ function Company_Management() {
         ) : (
           <Grid container spacing={2.5}>
             {companies.map((company) => (
-              <Grid item xs={12} sm={6} lg={4} xl={3} key={company.id}>
+              <Grid
+                item
+                xs={12}
+                sm={6}
+                md={4}
+                lg={3}
+                key={company.id}
+                sx={{
+                  flexBasis: {
+                    xs: '100%',
+                    sm: '50%',
+                    md: '33.33%',
+                    lg: '25%',
+                  },
+                  maxWidth: {
+                    xs: '100%',
+                    sm: '50%',
+                    md: '33.33%',
+                    lg: '25%',
+                  },
+                }}
+              >
                 <Card
                   onClick={() => navigate(`/siteadmin/company/${company.company_identifier}`)}
                   sx={{
@@ -249,12 +270,15 @@ function Company_Management() {
                         </Typography>
                         <Typography
                           variant="body2"
+                          noWrap
                           sx={{
                             color: theme.palette.text.primary,
                             fontSize: '0.875rem',
                             fontWeight: 500,
                             fontFamily: 'monospace',
                             letterSpacing: '0.5px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
                           }}
                         >
                           {company.company_identifier || 'N/A'}
@@ -278,11 +302,13 @@ function Company_Management() {
                         </Typography>
                         <Typography
                           variant="body2"
+                          noWrap
                           sx={{
                             color: theme.palette.text.primary,
                             fontSize: '0.875rem',
-                            wordBreak: 'break-word',
                             lineHeight: 1.5,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
                           }}
                         >
                           {company.registered_email || 'N/A'}

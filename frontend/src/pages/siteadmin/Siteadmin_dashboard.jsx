@@ -17,6 +17,7 @@ function Siteadmin_Dashboard() {
     const [pieData, setPieData] = useState([]);
     const [monthlyData, setMonthlyData] = useState([])
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [years, setYears] = useState([new Date().getFullYear()]);
     
     const barChartHeight = isMobile ? 350 : isTablet ? 420 : 450
     const pieChartSize = isMobile ? 280 : isTablet ? 320 : 360
@@ -56,16 +57,41 @@ function Siteadmin_Dashboard() {
         }
     };
 
+    // Load year range for user stats from backend
+    useEffect(() => {
+        const fetchYearRange = async () => {
+            try {
+                const response = await fetch('http://localhost:3000/api/stats/users/year-range');
+                const result = await response.json();
+
+                if (response.ok && result.success && result.data && Array.isArray(result.data.years) && result.data.years.length > 0) {
+                    setYears(result.data.years);
+
+                    // If current selected year is outside the range, clamp to latestYear
+                    const { earliestYear, latestYear } = result.data;
+                    if (selectedYear < earliestYear || selectedYear > latestYear) {
+                        setSelectedYear(latestYear);
+                    }
+                } else {
+                    // Fallback to last 5 years if API returns no data
+                    const currentYear = new Date().getFullYear();
+                    setYears(Array.from({ length: 5 }, (_, i) => currentYear - i).reverse());
+                }
+            } catch (err) {
+                console.error('Error fetching user year range:', err);
+                const currentYear = new Date().getFullYear();
+                setYears(Array.from({ length: 5 }, (_, i) => currentYear - i).reverse());
+            }
+        };
+
+        fetchYearRange();
+    }, []);
+
     useEffect(() => {
         fetchCompanies()
-        console.log(selectedYear);
         fetchMonthlyData(selectedYear);
         fetchCompanyUserData();
     }, [selectedYear])
-
-    const years = Array.from({ length: 5 }, (_, i) =>
-        new Date().getFullYear() - i
-    ); // 2026, 2025, 2024, 2023, 2022
 
     const fetchCompanies = async () => {
         setLoading(true)
@@ -91,19 +117,6 @@ function Siteadmin_Dashboard() {
         }
     }
 
-    function SVGStar({ className, color }) {
-        return (
-            <svg viewBox="-7.423 -7.423 14.846 14.846">
-                <path
-                    className={className}
-                    d="M0,-7.528L1.69,-2.326L7.16,-2.326L2.735,0.889L4.425,6.09L0,2.875L-4.425,6.09L-2.735,0.889L-7.16,-2.326L-1.69,-2.326Z"
-                    fill={color}
-                />
-            </svg>
-        );
-    }
-
-
     return (
         <Box sx={{ 
             width: '100%', 
@@ -119,10 +132,154 @@ function Siteadmin_Dashboard() {
                 mx: 'auto',
                 width: '100%'
             }}>
+                {/* Quick Navigation Tiles */}
+                <Box
+                    sx={{
+                        display: 'flex',
+                        flexDirection: { xs: 'column', lg: 'row' },
+                        gap: 2.5,
+                        mb: 3,
+                    }}
+                >
+                    <Box sx={{ width: { xs: '100%', lg: '50%' }, flexShrink: 0 }}>
+                        <Card
+                            variant="outlined"
+                            sx={{
+                                flex: 1,
+                                borderRadius: 2,
+                                px: 2,
+                                py: 2,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'space-between',
+                                cursor: 'pointer',
+                                backgroundColor: theme => theme.palette.background.paper,
+                                borderColor: theme => theme.palette.divider,
+                                boxShadow: 'none',
+                                transition: 'background-color 0.15s ease, border-color 0.15s ease',
+                                '&:hover': {
+                                    backgroundColor: theme => theme.palette.action.hover,
+                                    borderColor: theme => theme.palette.text.disabled,
+                                },
+                            }}
+                            onClick={() => navigate('/siteadmin/company-management')}
+                        >
+                        <Box>
+                            <Typography
+                                variant="subtitle2"
+                                sx={{
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.14em',
+                                    fontSize: '0.72rem',
+                                    color: theme => theme.palette.mode === 'dark'
+                                        ? 'rgba(226,232,240,0.9)'
+                                        : 'rgba(30,64,175,0.9)',
+                                    mb: 0.5,
+                                }}
+                            >
+                                Administration
+                            </Typography>
+                            <Typography
+                                variant="h5"
+                                sx={{
+                                    fontWeight: 800,
+                                    color: theme => theme.palette.mode === 'dark'
+                                        ? '#e5f2ff'
+                                        : '#0f172a',
+                                    letterSpacing: 0.2,
+                                    fontSize: { xs: '1.18rem', sm: '1.36rem', md: '1.45rem' },
+                                }}
+                            >
+                                Company Management
+                            </Typography>
+                            <Typography
+                                variant="body2"
+                                sx={{
+                                    mt: 0.75,
+                                    color: theme => theme.palette.mode === 'dark'
+                                        ? 'rgba(226,232,240,0.85)'
+                                        : 'rgba(15,23,42,0.7)',
+                                    fontSize: '0.82rem',
+                                }}
+                            >
+                                Configure and manage all client entities in one place.
+                            </Typography>
+                        </Box>
+                    </Card>
+                    </Box>
+
+                    <Box sx={{ width: { xs: '100%', lg: '50%' }, flexShrink: 0 }}>
+                        <Card
+                            variant="outlined"
+                            sx={{
+                                flex: 1,
+                                borderRadius: 2,
+                                px: 2,
+                                py: 2,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'space-between',
+                                cursor: 'pointer',
+                                backgroundColor: theme => theme.palette.background.paper,
+                                borderColor: theme => theme.palette.divider,
+                                boxShadow: 'none',
+                                transition: 'background-color 0.15s ease, border-color 0.15s ease',
+                                '&:hover': {
+                                    backgroundColor: theme => theme.palette.action.hover,
+                                    borderColor: theme => theme.palette.text.disabled,
+                                },
+                            }}
+                            onClick={() => navigate('/siteadmin/create-company')}
+                        >
+                        <Box>
+                            <Typography
+                                variant="subtitle2"
+                                sx={{
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.14em',
+                                    fontSize: '0.72rem',
+                                    color: theme => theme.palette.mode === 'dark'
+                                        ? 'rgba(237,233,254,0.95)'
+                                        : 'rgba(91,33,182,0.95)',
+                                    mb: 0.5,
+                                }}
+                            >
+                                Onboarding
+                            </Typography>
+                            <Typography
+                                variant="h5"
+                                sx={{
+                                    fontWeight: 800,
+                                    color: theme => theme.palette.mode === 'dark'
+                                        ? '#f5ecff'
+                                        : '#111827',
+                                    letterSpacing: 0.2,
+                                    fontSize: { xs: '1.18rem', sm: '1.36rem', md: '1.45rem' },
+                                }}
+                            >
+                                Company Creation
+                            </Typography>
+                            <Typography
+                                variant="body2"
+                                sx={{
+                                    mt: 0.75,
+                                    color: theme => theme.palette.mode === 'dark'
+                                        ? 'rgba(237,233,254,0.9)'
+                                        : 'rgba(30,64,175,0.78)',
+                                    fontSize: '0.82rem',
+                                }}
+                            >
+                                Quickly set up new organizations and start their IFC journey.
+                            </Typography>
+                        </Box>
+                    </Card>
+                    </Box>
+                </Box>
+
                 <Box sx={{ 
                     display: 'flex', 
                     flexDirection: { xs: 'column', lg: 'row' },
-                    gap: 3,
+                    gap: 2.5,
                     width: '100%',
                     alignItems: 'stretch'
                 }}>

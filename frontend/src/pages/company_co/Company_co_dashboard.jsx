@@ -9,13 +9,8 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogContentText from '@mui/material/DialogContentText'
-import DialogActions from '@mui/material/DialogActions'
 import Tooltip from '@mui/material/Tooltip'
-import { toast } from 'react-hot-toast'
+import { FILTER_DROPDOWN_MIN_WIDTH_SM, FILTER_DROPDOWN_MIN_WIDTH_LG } from '../../uiConstants'
 
 function Company_Co_dashboard() {
   const theme = useTheme()
@@ -28,10 +23,6 @@ function Company_Co_dashboard() {
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
-  const [bulkUpdating, setBulkUpdating] = useState(false)
-  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
-  const [missingUsersDialogOpen, setMissingUsersDialogOpen] = useState(false)
-  const [missingProcessOwners, setMissingProcessOwners] = useState([])
 
   // Business process options (matching ExcelUpload.jsx)
   const businessProcessOptions = [
@@ -186,132 +177,8 @@ function Company_Co_dashboard() {
   const handleFormClick = (formId) => {
     navigate(`/company_co/form/${formId}`)
   }
-
-  const handleBulkSetActiveClick = () => {
-    if (forms.length === 0) {
-      toast.error('No forms to update')
-      return
-    }
-    setConfirmDialogOpen(true)
-  }
-
-  const handleBulkSetActiveCancel = () => {
-    setConfirmDialogOpen(false)
-  }
-
-  const checkUserExists = async (email) => {
-    if (!email || !email.trim()) return false
-    
-    try {
-      const response = await fetch(`http://localhost:3000/api/company-co/check-user/${encodeURIComponent(email.trim())}`, {
-        method: 'GET',
-        credentials: 'include',
-      })
-
-      const data = await response.json()
-      return data.success && data.exists
-    } catch (error) {
-      console.error('Error checking user:', error)
-      return false
-    }
-  }
-
-  const handleBulkSetActiveConfirm = async () => {
-    setConfirmDialogOpen(false)
-    
-    if (!companyIdentifier) {
-      toast.error('Company identifier not found')
-      return
-    }
-
-    // First, check all process owners
-    const processOwnerEmails = forms
-      .map(form => form.process_owner?.trim())
-      .filter(email => email && email !== '')
-    
-    // Remove duplicates
-    const uniqueProcessOwnerEmails = [...new Set(processOwnerEmails)]
-    
-    // Check which process owners don't exist
-    const missingEmails = []
-    for (const email of uniqueProcessOwnerEmails) {
-      const exists = await checkUserExists(email)
-      if (!exists) {
-        missingEmails.push(email)
-      }
-    }
-
-    // If there are missing users, show dialog
-    if (missingEmails.length > 0) {
-      setMissingProcessOwners(missingEmails)
-      setMissingUsersDialogOpen(true)
-      return
-    }
-
-    // If all users exist, proceed with setting forms to active
-    await performBulkSetActive()
-  }
-
-  const performBulkSetActive = async () => {
-    if (!companyIdentifier) {
-      toast.error('Company identifier not found')
-      return
-    }
-
-    setBulkUpdating(true)
-    try {
-      const requestBody = {
-        company_identifier: companyIdentifier
-      }
-
-      // Add business_process filter if not 'all'
-      if (filterBusinessProcess !== 'all') {
-        requestBody.business_process = filterBusinessProcess
-      }
-
-      // Add active filter if not 'all' (to only update inactive forms, for example)
-      if (filterActive !== 'all') {
-        requestBody.active = filterActive === 'active' ? 'true' : 'false'
-      }
-
-      const response = await fetch('http://localhost:3000/api/control-forms/bulk-set-active', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(requestBody)
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        toast.success(data.message || `Successfully set ${data.count} form(s) to active`)
-        // Refresh the forms list
-        fetchForms()
-      } else {
-        toast.error(data.message || 'Failed to set forms to active')
-      }
-    } catch (error) {
-      console.error('Error bulk setting forms to active:', error)
-      toast.error('Error setting forms to active')
-    } finally {
-      setBulkUpdating(false)
-    }
-  }
-
-  const handleMissingUsersCancel = () => {
-    setMissingUsersDialogOpen(false)
-    setMissingProcessOwners([])
-  }
-
-  // Check if all filtered forms are already active
-  const allFormsActive = forms.length > 0 && forms.every(form => {
-    const isActive = form.active && form.active !== '' && form.active !== '0'
-    return isActive
-  })
   const tooltipSx = {
-    bgcolor: theme.palette.mode === 'dark' ? 'rgba(17, 24, 39, 0.96)' : 'rgba(17, 24, 39, 0.92)',
+    bgcolor: 'rgba(17, 24, 39, 0.94)',
     color: '#ffffff',
     fontSize: '0.75rem',
     lineHeight: 1.4,
@@ -335,46 +202,38 @@ function Company_Co_dashboard() {
           elevation={3}
           sx={{
             p: 3,
-            backgroundColor: theme.palette.background.paper,
             borderRadius: 2,
           }}
         >
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: { xs: 'column', sm: 'row' }, 
-            justifyContent: 'space-between', 
-            alignItems: 'center', 
-            mb: 3 
-          }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
+              justifyContent: 'space-between',
+              alignItems: { xs: 'flex-start', sm: 'center' },
+              mb: 3,
+              gap: 2,
+            }}
+          >
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography 
                 variant="h5" 
                 component="h2"
                 sx={{ 
                   fontWeight: 700, 
-                  color: theme.palette.secondary.main,
+                  color: theme.palette.text.primary,
                 }}
               >
                 RACM
               </Typography>
-              
-              {/* Set All Active Button */}
-              <Button
-                onClick={handleBulkSetActiveClick}
-                disabled={bulkUpdating || loading || forms.length === 0 || allFormsActive}
-                variant="contained"
-                color="secondary"
-                size="small"
+              <Typography
+                variant="body2"
                 sx={{
-                  minWidth: '140px',
-                  textTransform: 'none',
-                  fontSize: '0.75rem',
-                  py: 0.5,
-                  alignSelf: 'flex-start',
+                  color: theme.palette.text.secondary,
                 }}
               >
-                {bulkUpdating ? 'Setting...' : 'Set All Active'}
-              </Button>
+                Analyze and monitor RACM for your company.
+              </Typography>
             </Box>
             
             {/* Filter Options */}
@@ -389,25 +248,7 @@ function Company_Co_dashboard() {
               <FormControl 
                 variant="outlined" 
                 sx={{ 
-                  minWidth: '80px',
-                  '& .MuiOutlinedInput-root': {
-                    backgroundColor: 'transparent',
-                    '& fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                    },
-                    '&:hover fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                    },
-                  },
-                  '& .MuiInputLabel-root': {
-                    color: theme.palette.text.primary,
-                  },
-                  '& .MuiSelect-root': {
-                    color: theme.palette.text.primary,
-                  },
+                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
                 }}
               >
                 <InputLabel id="business-process-filter-label">Business Process</InputLabel>
@@ -431,25 +272,7 @@ function Company_Co_dashboard() {
               <FormControl
                 variant="outlined"
                 sx={{
-                  minWidth: '80px',
-                  '& .MuiOutlinedInput-root': {
-                    backgroundColor: 'transparent',
-                    '& fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                    },
-                    '&:hover fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                    },
-                  },
-                  '& .MuiInputLabel-root': {
-                    color: theme.palette.text.primary,
-                  },
-                  '& .MuiSelect-root': {
-                    color: theme.palette.text.primary,
-                  },
+                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_SM,
                 }}
               >
                 <InputLabel id="financial-year-filter-label">Financial Year</InputLabel>
@@ -469,87 +292,26 @@ function Company_Co_dashboard() {
                 </Select>
               </FormControl>
               
-              {/* Active/Inactive Filter Buttons */}
-              <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                onClick={() => setFilterActive('all')}
-                variant={filterActive === 'all' ? 'contained' : 'outlined'}
-                color={filterActive === 'all' ? 'secondary' : 'inherit'}
+              {/* Active / Inactive Filter (Status) */}
+              <FormControl
+                variant="outlined"
                 sx={{
-                  minWidth: '80px',
-                  textTransform: 'none',
-                  ...(filterActive === 'all' && {
-                    backgroundColor: '#0369a1',
-                    color: '#ffffff',
-                    '&:hover': {
-                      backgroundColor: '#075985',
-                    },
-                  }),
-                  ...(filterActive !== 'all' && {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                    color: theme.palette.text.primary,
-                    '&:hover': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#f3f4f6',
-                    },
-                  }),
+                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_SM,
                 }}
               >
-                All
-              </Button>
-              <Button
-                onClick={() => setFilterActive('active')}
-                variant={filterActive === 'active' ? 'contained' : 'outlined'}
-                color={filterActive === 'active' ? 'secondary' : 'inherit'}
-                sx={{
-                  minWidth: '80px',
-                  textTransform: 'none',
-                  ...(filterActive === 'active' && {
-                    backgroundColor: '#0369a1',
-                    color: '#ffffff',
-                    '&:hover': {
-                      backgroundColor: '#075985',
-                    },
-                  }),
-                  ...(filterActive !== 'active' && {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                    color: theme.palette.text.primary,
-                    '&:hover': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#f3f4f6',
-                    },
-                  }),
-                }}
-              >
-                Active
-              </Button>
-              <Button
-                onClick={() => setFilterActive('inactive')}
-                variant={filterActive === 'inactive' ? 'contained' : 'outlined'}
-                color={filterActive === 'inactive' ? 'secondary' : 'inherit'}
-                sx={{
-                  minWidth: '80px',
-                  textTransform: 'none',
-                  ...(filterActive === 'inactive' && {
-                    backgroundColor: '#0369a1',
-                    color: '#ffffff',
-                    '&:hover': {
-                      backgroundColor: '#075985',
-                    },
-                  }),
-                  ...(filterActive !== 'inactive' && {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                    color: theme.palette.text.primary,
-                    '&:hover': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#f3f4f6',
-                    },
-                  }),
-                }}
-              >
-                Inactive
-              </Button>
-              </Box>
+                <InputLabel id="active-status-filter-label">Status</InputLabel>
+                <Select
+                  labelId="active-status-filter-label"
+                  id="active-status-filter"
+                  value={filterActive}
+                  label="Status"
+                  onChange={(e) => setFilterActive(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  <MenuItem value="active">Active</MenuItem>
+                  <MenuItem value="inactive">Inactive</MenuItem>
+                </Select>
+              </FormControl>
             </Box>
           </Box>
 
@@ -576,9 +338,7 @@ function Company_Co_dashboard() {
                 <Box
                   component="thead"
                   sx={{
-                    backgroundColor: theme.palette.mode === 'dark' 
-                      ? 'rgba(255, 255, 255, 0.05)' 
-                      : '#f9fafb',
+                    backgroundColor: theme.palette.action.hover,
                   }}
                 >
                   <Box component="tr">
@@ -704,9 +464,7 @@ function Company_Co_dashboard() {
                           cursor: 'pointer',
                           transition: 'background-color 0.2s',
                           '&:hover': {
-                            backgroundColor: theme.palette.mode === 'dark' 
-                              ? 'rgba(255, 255, 255, 0.05)' 
-                              : '#f9fafb',
+                            backgroundColor: theme.palette.action.hover,
                           },
                         }}
                       >
@@ -810,12 +568,8 @@ function Company_Co_dashboard() {
                               fontSize: '0.75rem',
                               fontWeight: 600,
                               borderRadius: '9999px',
-                              backgroundColor: isActive
-                                ? (theme.palette.mode === 'dark' ? 'rgba(34, 197, 94, 0.2)' : '#d1fae5')
-                                : (theme.palette.mode === 'dark' ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2'),
-                              color: isActive
-                                ? (theme.palette.mode === 'dark' ? '#4ade80' : '#065f46')
-                                : (theme.palette.mode === 'dark' ? '#f87171' : '#991b1b'),
+                              backgroundColor: isActive ? '#d1fae5' : '#fee2e2',
+                              color: isActive ? '#065f46' : '#991b1b',
                             }}
                           >
                             {isActive ? 'Active' : 'Inactive'}
@@ -850,277 +604,6 @@ function Company_Co_dashboard() {
             </Box>
           )}
         </Paper>
-
-        {/* Set All Active Confirmation Dialog */}
-        <Dialog
-          open={confirmDialogOpen}
-          onClose={handleBulkSetActiveCancel}
-          aria-labelledby="set-active-dialog-title"
-          aria-describedby="set-active-dialog-description"
-          PaperProps={{
-            sx: {
-              borderRadius: 2,
-              minWidth: { xs: '90%', sm: '400px' },
-              boxShadow: theme.palette.mode === 'dark'
-                ? '0 8px 32px rgba(0, 0, 0, 0.4)'
-                : '0 8px 32px rgba(0, 0, 0, 0.12)',
-            },
-          }}
-        >
-          <DialogTitle 
-            id="set-active-dialog-title"
-            sx={{
-              pb: 2.5,
-              pt: 3,
-              px: 3,
-              fontWeight: 600,
-              fontSize: '1.25rem',
-              color: theme.palette.text.primary,
-            }}
-          >
-            Confirm Set All Active
-          </DialogTitle>
-          <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
-            <DialogContentText 
-              id="set-active-dialog-description"
-              sx={{
-                color: theme.palette.text.secondary,
-                fontSize: '0.9375rem',
-                lineHeight: 1.5,
-                m: 0,
-                mb: 2,
-              }}
-            >
-              Are you sure you want to set all forms to active?
-            </DialogContentText>
-            <Box sx={{ mt: 2 }}>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: theme.palette.text.primary,
-                  fontWeight: 500,
-                  mb: 1,
-                }}
-              >
-                Number of forms: <strong>{forms.length}</strong>
-              </Typography>
-              {filterBusinessProcess !== 'all' && (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: theme.palette.text.primary,
-                    fontWeight: 500,
-                    mb: 1,
-                  }}
-                >
-                  Business Process: <strong>{filterBusinessProcess}</strong>
-                </Typography>
-              )}
-              {filterFinancialYear !== 'all' && (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: theme.palette.text.primary,
-                    fontWeight: 500,
-                    mb: 1,
-                  }}
-                >
-                  Financial Year: <strong>{filterFinancialYear}</strong>
-                </Typography>
-              )}
-              {filterActive !== 'all' && (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: theme.palette.text.primary,
-                    fontWeight: 500,
-                  }}
-                >
-                  Current Status Filter: <strong>{filterActive === 'active' ? 'Active' : 'Inactive'}</strong>
-                </Typography>
-              )}
-            </Box>
-          </DialogContent>
-          <DialogActions 
-            sx={{ 
-              px: 3, 
-              pb: 3, 
-              pt: 2.5,
-              gap: 1.5,
-              borderTop: '1px solid',
-              borderColor: 'divider',
-            }}
-          >
-            <Button 
-              onClick={handleBulkSetActiveCancel}
-              variant="outlined"
-              sx={{
-                textTransform: 'none',
-                px: 3,
-                py: 1,
-                minWidth: '100px',
-                borderColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.23)' 
-                  : 'rgba(0, 0, 0, 0.23)',
-                color: theme.palette.text.primary,
-                '&:hover': {
-                  borderColor: theme.palette.mode === 'dark' 
-                    ? 'rgba(255, 255, 255, 0.3)' 
-                    : 'rgba(0, 0, 0, 0.3)',
-                  backgroundColor: theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.05)'
-                    : 'rgba(0, 0, 0, 0.04)',
-                },
-              }}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleBulkSetActiveConfirm} 
-              variant="contained" 
-              color="secondary"
-              autoFocus
-              sx={{
-                textTransform: 'none',
-                px: 3,
-                py: 1,
-                minWidth: '100px',
-                fontWeight: 600,
-                boxShadow: theme.palette.mode === 'dark'
-                  ? '0 4px 12px rgba(3, 105, 161, 0.3)'
-                  : '0 4px 12px rgba(3, 105, 161, 0.2)',
-                '&:hover': {
-                  boxShadow: theme.palette.mode === 'dark'
-                    ? '0 6px 16px rgba(3, 105, 161, 0.4)'
-                    : '0 6px 16px rgba(3, 105, 161, 0.3)',
-                },
-              }}
-            >
-              Set Active
-            </Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Missing Process Owners Dialog */}
-        <Dialog
-          open={missingUsersDialogOpen}
-          onClose={handleMissingUsersCancel}
-          aria-labelledby="missing-users-dialog-title"
-          aria-describedby="missing-users-dialog-description"
-          PaperProps={{
-            sx: {
-              borderRadius: 2,
-              minWidth: { xs: '90%', sm: '500px' },
-              maxWidth: { xs: '90%', sm: '600px' },
-              boxShadow: theme.palette.mode === 'dark'
-                ? '0 8px 32px rgba(0, 0, 0, 0.4)'
-                : '0 8px 32px rgba(0, 0, 0, 0.12)',
-            },
-          }}
-        >
-          <DialogTitle 
-            id="missing-users-dialog-title"
-            sx={{
-              pb: 2.5,
-              pt: 3,
-              px: 3,
-              fontWeight: 600,
-              fontSize: '1.25rem',
-              color: theme.palette.text.primary,
-            }}
-          >
-            Create Missing Users
-          </DialogTitle>
-          <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
-            <DialogContentText 
-              id="missing-users-dialog-description"
-              sx={{
-                color: theme.palette.text.secondary,
-                fontSize: '0.9375rem',
-                lineHeight: 1.5,
-                m: 0,
-                mb: 2,
-              }}
-            >
-              The following Process Owner email addresses do not exist in the system. Please create user accounts for these emails separately from the Create User screen before trying to set these forms to active again.
-            </DialogContentText>
-            <Box sx={{ mt: 2, mb: 2 }}>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: theme.palette.text.primary,
-                  fontWeight: 500,
-                  mb: 1.5,
-                }}
-              >
-                Missing Process Owners ({missingProcessOwners.length}):
-              </Typography>
-              <Box
-                sx={{
-                  maxHeight: '300px',
-                  overflowY: 'auto',
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 1,
-                  p: 2,
-                  backgroundColor: theme.palette.mode === 'dark' 
-                    ? 'rgba(255, 255, 255, 0.05)' 
-                    : 'rgba(0, 0, 0, 0.02)',
-                }}
-              >
-                {missingProcessOwners.map((email, index) => (
-                  <Typography
-                    key={index}
-                    variant="body2"
-                    sx={{
-                      color: theme.palette.text.primary,
-                      py: 0.5,
-                      borderBottom: index < missingProcessOwners.length - 1 ? '1px solid' : 'none',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    {email}
-                  </Typography>
-                ))}
-              </Box>
-            </Box>
-          </DialogContent>
-          <DialogActions 
-            sx={{ 
-              px: 3, 
-              pb: 3, 
-              pt: 2.5,
-              gap: 1.5,
-              borderTop: '1px solid',
-              borderColor: 'divider',
-            }}
-          >
-            <Button 
-              onClick={handleMissingUsersCancel}
-              variant="outlined"
-              sx={{
-                textTransform: 'none',
-                px: 3,
-                py: 1,
-                minWidth: '100px',
-                borderColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.23)' 
-                  : 'rgba(0, 0, 0, 0.23)',
-                color: theme.palette.text.primary,
-                '&:hover': {
-                  borderColor: theme.palette.mode === 'dark' 
-                    ? 'rgba(255, 255, 255, 0.3)' 
-                    : 'rgba(0, 0, 0, 0.3)',
-                  backgroundColor: theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.05)'
-                    : 'rgba(0, 0, 0, 0.04)',
-                },
-              }}
-            >
-              Close
-            </Button>
-          </DialogActions>
-        </Dialog>
       </Box>
   )
 }

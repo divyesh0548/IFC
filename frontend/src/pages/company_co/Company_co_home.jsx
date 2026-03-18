@@ -23,7 +23,7 @@ function Company_co_home() {
     },
     {
       title: 'RACM Management',
-      path: '/company_co/create-form',
+      path: '/company_co/racm-management',
       icon: <FactCheckRoundedIcon sx={{ fontSize: 38 }} />,
     },
     {
@@ -71,8 +71,6 @@ function Company_co_home() {
         px: { xs: 1, sm: 2 },
         py: 2,
         minHeight: 'calc(100vh - 64px)',
-        background: `linear-gradient(135deg, ${alpha(theme.palette.secondary.main, 0.1)} 0%, ${alpha(theme.palette.background.default, 0.95)} 45%, ${alpha(theme.palette.primary.main, 0.06)} 100%)`,
-        borderRadius: 2,
       }}
     >
       <Paper
@@ -81,7 +79,11 @@ function Company_co_home() {
           p: { xs: 2.5, sm: 3.5 },
           mb: 3,
           borderRadius: 3,
-          background: `linear-gradient(120deg, ${alpha(theme.palette.secondary.main, 0.16)} 0%, ${alpha(theme.palette.background.paper, 0.9)} 70%)`,
+          // Soft horizontal gradient based purely on theme colors
+          background: `linear-gradient(90deg, ${alpha(
+            theme.palette.background.paper,
+            0.95
+          )} 0%, ${alpha(theme.palette.primary.main, 0.12)} 70%)`,
           backdropFilter: 'blur(2px)',
         }}
       >
@@ -132,12 +134,12 @@ function Company_co_home() {
               gap: 2,
               borderRadius: 3,
               cursor: 'pointer',
-              transition: 'all 0.25s ease',
+              transition: 'transform 200ms ease-out, background-color 200ms ease-out',
+              // Use theme-provided paper color with a slight transparency
               backgroundColor: alpha(theme.palette.background.paper, 0.9),
-              boxShadow: `0 10px 20px ${alpha(theme.palette.common.black, 0.06)}`,
               '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: `0 14px 28px ${alpha(theme.palette.secondary.main, 0.2)}`,
+                backgroundColor: alpha(theme.palette.background.paper, 1),
+                transform: 'translateY(-3px)',
               },
             }}
           >
@@ -148,8 +150,14 @@ function Company_co_home() {
                 borderRadius: '14px',
                 display: 'grid',
                 placeItems: 'center',
-                color: theme.palette.secondary.main,
-                backgroundColor: alpha(theme.palette.secondary.main, 0.12),
+                color:
+                  theme.palette.mode === 'dark'
+                    ? theme.palette.primary.light
+                    : theme.palette.secondary.main,
+                backgroundColor:
+                  theme.palette.mode === 'dark'
+                    ? alpha(theme.palette.primary.light, 0.2)
+                    : alpha(theme.palette.secondary.main, 0.12),
                 flexShrink: 0,
               }}
             >

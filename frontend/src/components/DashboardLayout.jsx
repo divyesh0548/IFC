@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react'
+import React, { memo, useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
@@ -19,6 +19,7 @@ import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import { useThemeMode } from '../contexts/ThemeContext'
 import { toast } from 'react-hot-toast'
+import { STORAGE_KEYS } from '../storageKeys'
 
 const getHomePath = (pathname) => {
   if (pathname.startsWith('/company_co')) return '/company_co/home'
@@ -35,11 +36,16 @@ function DashboardLayout() {
   const location = useLocation()
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
   const { mode, toggleTheme } = useThemeMode()
+  const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || '')
   const homePath = getHomePath(location.pathname)
   const isAtHome = location.pathname === homePath
   const contentPaddingX = { xs: 2, sm: 3, md: 4 }
   const contentInnerInsetX = { xs: 1, sm: 2, md: 2 }
   const navbarPaddingX = { xs: 3, sm: 5, md: 6 }
+
+  useEffect(() => {
+    setCompanyName(localStorage.getItem(STORAGE_KEYS.companyName) || '')
+  }, [location.pathname])
 
   const handleUnifiedLogout = async () => {
     try {
@@ -49,6 +55,8 @@ function DashboardLayout() {
       })
       const data = await response.json()
       if (response.ok && data.success) {
+        localStorage.removeItem(STORAGE_KEYS.companyName)
+        localStorage.removeItem(STORAGE_KEYS.companyIdentifier)
         toast.success('Logged out successfully')
         navigate('/login')
       } else {
@@ -68,9 +76,10 @@ function DashboardLayout() {
       <AppBar
         position="fixed"
         sx={{
-          backgroundColor: theme.palette.background.paper,
-          color: theme.palette.text.primary,
-          boxShadow:
+          // Restore original custom navbar colors
+          backgroundColor: theme.palette.mode === 'dark' ? '#030303' : '#F1EFEC',
+          color: theme.palette.mode === 'dark' ? '#F1EFEC' : '#030303',
+          boxShadow: (theme) =>
             theme.palette.mode === 'dark'
               ? '0 2px 8px rgba(0, 0, 0, 0.3)'
               : '0 2px 8px rgba(0, 0, 0, 0.1)',
@@ -92,7 +101,7 @@ function DashboardLayout() {
               color: theme.palette.text.primary,
             }}
           >
-            Internal Financial Control
+            {companyName ? `IFC - ${companyName}` : 'IFC'}
           </Typography>
           <Tooltip title={mode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'} arrow>
             <IconButton
@@ -223,16 +232,6 @@ function DashboardLayout() {
               py: 1,
               minWidth: '100px',
               fontWeight: 600,
-              boxShadow:
-                theme.palette.mode === 'dark'
-                  ? '0 4px 12px rgba(3, 105, 161, 0.3)'
-                  : '0 4px 12px rgba(3, 105, 161, 0.2)',
-              '&:hover': {
-                boxShadow:
-                  theme.palette.mode === 'dark'
-                    ? '0 6px 16px rgba(3, 105, 161, 0.4)'
-                    : '0 6px 16px rgba(3, 105, 161, 0.3)',
-              },
             }}
           >
             Log out
@@ -247,7 +246,8 @@ function DashboardLayout() {
           px: contentPaddingX,
           py: 3,
           width: '100%',
-          backgroundColor: theme.palette.background.default,
+          // Let the global body background show through
+          backgroundColor: 'transparent',
           minHeight: '100vh',
         }}
       >

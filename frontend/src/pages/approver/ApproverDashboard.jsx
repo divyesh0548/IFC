@@ -14,6 +14,11 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Paper from '@mui/material/Paper'
 import Chip from '@mui/material/Chip'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
+import { FILTER_DROPDOWN_MIN_WIDTH_SM } from '../../uiConstants'
 
 function ApproverDashboard() {
   const theme = useTheme()
@@ -117,54 +122,6 @@ function ApproverDashboard() {
         py: 4,
       }}
     >
-        {/* Filter Buttons */}
-        <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
-          <Button
-            onClick={() => setFilter('all')}
-            variant={filter === 'all' ? 'contained' : 'outlined'}
-            color={filter === 'all' ? 'secondary' : 'inherit'}
-            sx={{
-              minWidth: '100px',
-              textTransform: 'none',
-            }}
-          >
-            All
-          </Button>
-          <Button
-            onClick={() => setFilter('pending')}
-            variant={filter === 'pending' ? 'contained' : 'outlined'}
-            color={filter === 'pending' ? 'secondary' : 'inherit'}
-            sx={{
-              minWidth: '100px',
-              textTransform: 'none',
-            }}
-          >
-            Pending
-          </Button>
-          <Button
-            onClick={() => setFilter('approved')}
-            variant={filter === 'approved' ? 'contained' : 'outlined'}
-            color={filter === 'approved' ? 'secondary' : 'inherit'}
-            sx={{
-              minWidth: '100px',
-              textTransform: 'none',
-            }}
-          >
-            Approved
-          </Button>
-          <Button
-            onClick={() => setFilter('rejected')}
-            variant={filter === 'rejected' ? 'contained' : 'outlined'}
-            color={filter === 'rejected' ? 'secondary' : 'inherit'}
-            sx={{
-              minWidth: '100px',
-              textTransform: 'none',
-            }}
-          >
-            Rejected
-          </Button>
-        </Box>
-
         {/* Forms Section */}
         <Card
           sx={{
@@ -172,9 +129,43 @@ function ApproverDashboard() {
           }}
         >
           <CardContent>
-            <Typography variant="h6" component="h2" sx={{ fontWeight: 600, mb: 3, color: 'text.primary' }}>
-              {filter === 'pending' ? 'Pending Approvals' : filter === 'approved' ? 'Approved Forms' : filter === 'rejected' ? 'Rejected Forms' : 'All RACM'}
-            </Typography>
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: { xs: 'column', sm: 'row' },
+                justifyContent: 'space-between',
+                alignItems: { xs: 'flex-start', sm: 'center' },
+                gap: 2,
+                mb: 3,
+              }}
+            >
+              <Typography variant="h6" component="h2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                {filter === 'pending' ? 'Pending Approvals' : filter === 'approved' ? 'Approved Forms' : filter === 'rejected' ? 'Rejected Forms' : 'All RACM'}
+              </Typography>
+
+              {/* Status Filter */}
+              <Box sx={{ minWidth: { xs: '100%', sm: FILTER_DROPDOWN_MIN_WIDTH_SM } }}>
+                <FormControl
+                  variant="outlined"
+                  fullWidth
+                  size="small"
+                >
+                  <InputLabel id="approver-status-filter-label">Status</InputLabel>
+                  <Select
+                    labelId="approver-status-filter-label"
+                    id="approver-status-filter"
+                    value={filter}
+                    label="Status"
+                    onChange={(e) => setFilter(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="pending">Pending</MenuItem>
+                    <MenuItem value="approved">Approved</MenuItem>
+                    <MenuItem value="rejected">Rejected</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+            </Box>
 
             {loading ? (
               <Typography variant="body1" sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>

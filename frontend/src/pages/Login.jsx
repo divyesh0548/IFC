@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
@@ -13,6 +13,7 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import Alert from '@mui/material/Alert'
 import { toast } from 'react-hot-toast'
+import { STORAGE_KEYS } from '../storageKeys'
 
 function Login() {
   const theme = useTheme()
@@ -22,6 +23,66 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // If user is already authenticated (token cookie valid), redirect away from Login
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      try {
+        const response = await fetch('http://localhost:3000/api/auth/verify', {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        const data = await response.json()
+
+        if (response.ok && data.success) {
+          const companyIdentifier = data.user?.company_identifier
+          if (companyIdentifier) {
+            try {
+              const companyRes = await fetch(`http://localhost:3000/api/companies/${encodeURIComponent(companyIdentifier)}`, {
+                method: 'GET',
+                credentials: 'include',
+              })
+              const companyData = await companyRes.json()
+              if (companyRes.ok && companyData?.success && companyData?.data?.company_name) {
+                localStorage.setItem(STORAGE_KEYS.companyIdentifier, companyIdentifier)
+                localStorage.setItem(STORAGE_KEYS.companyName, String(companyData.data.company_name))
+              }
+            } catch (e) {
+              console.warn('Failed to prefetch company name:', e)
+            }
+          }
+
+          // Check if there's a redirect parameter in the URL
+          const urlParams = new URLSearchParams(window.location.search)
+          const redirectPath = urlParams.get('redirect')
+          
+          if (redirectPath) {
+            // Redirect to the specified path
+            navigate(decodeURIComponent(redirectPath), { replace: true })
+          } else {
+            // Default role-based redirect
+            const role = data.user?.role
+            const roleRoutes = {
+              user: '/user/dashboard',
+              company_co: '/company_co/home',
+              approver: '/approver/dashboard',
+              siteadmin: '/siteadmin/dashboard',
+              auditor: '/auditor/dashboard',
+            }
+            const defaultRedirectPath = roleRoutes[role]
+            if (defaultRedirectPath) {
+              navigate(defaultRedirectPath, { replace: true })
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error checking existing session on Login:', err)
+      }
+    }
+
+    checkExistingSession()
+  }, [navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -47,29 +108,56 @@ function Login() {
         // Login successful - token is stored in httpOnly cookie
         console.log('Login successful:', data.user)
         toast.success('Login successful!')
-        
+
+        // Prefetch company name once and store in localStorage
+        const companyIdentifier = data.user?.company_identifier
+        if (companyIdentifier) {
+          try {
+            const companyRes = await fetch(`http://localhost:3000/api/companies/${encodeURIComponent(companyIdentifier)}`, {
+              method: 'GET',
+              credentials: 'include',
+            })
+            const companyData = await companyRes.json()
+            if (companyRes.ok && companyData?.success && companyData?.data?.company_name) {
+              localStorage.setItem(STORAGE_KEYS.companyIdentifier, companyIdentifier)
+              localStorage.setItem(STORAGE_KEYS.companyName, String(companyData.data.company_name))
+            }
+          } catch (e) {
+            console.warn('Failed to fetch company name after login:', e)
+          }
+        }
+
         // Check if password update is required
         if (data.requiresPasswordUpdate) {
           navigate('/update-password')
           return
         }
 
-        // Redirect based on role
-        const role = data.user.role
-        const roleRoutes = {
-          'user': '/user/dashboard',
-          'company_co': '/company_co/home',
-          'approver': '/approver/dashboard',
-          'siteadmin': '/siteadmin/dashboard',
-          'auditor': '/auditor/dashboard'
-        }
-
-        const redirectPath = roleRoutes[role]
+        // Check if there's a redirect parameter in the URL
+        const urlParams = new URLSearchParams(window.location.search)
+        const redirectPath = urlParams.get('redirect')
+        
         if (redirectPath) {
-          navigate(redirectPath)
+          // Redirect to the specified path
+          navigate(decodeURIComponent(redirectPath), { replace: true })
         } else {
-          toast.error('Invalid user role')
-          setError('Invalid user role')
+          // Default role-based redirect
+          const role = data.user.role
+          const roleRoutes = {
+            'user': '/user/dashboard',
+            'company_co': '/company_co/home',
+            'approver': '/approver/dashboard',
+            'siteadmin': '/siteadmin/dashboard',
+            'auditor': '/auditor/dashboard'
+          }
+
+          const defaultRedirectPath = roleRoutes[role]
+          if (defaultRedirectPath) {
+            navigate(defaultRedirectPath)
+          } else {
+            toast.error('Invalid user role')
+            setError('Invalid user role')
+          }
         }
       } else {
         const errorMessage = data.message || 'Login failed'

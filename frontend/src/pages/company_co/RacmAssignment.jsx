@@ -26,6 +26,7 @@ function RacmAssignment() {
   const [filterAssignment, setFilterAssignment] = useState('assigned') // 'assigned' or 'unassigned'
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
+  const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
   const [selectedForm, setSelectedForm] = useState(null)
@@ -51,11 +52,15 @@ function RacmAssignment() {
     'Entity Level Controls'
   ]
 
-  // Financial year options
-  const financialYearOptions = [
-    '2024-25',
-    '2025-26'
-  ]
+  const getFinancialYearStorageKey = (companyId) => `ifc_financial_year_options_${companyId}`
+
+  const extractUniqueFinancialYears = (rows) => {
+    return [...new Set(
+      (rows || [])
+        .map(form => form.financial_year?.toString().trim())
+        .filter(year => year && year !== '')
+    )]
+  }
 
   useEffect(() => {
     // Fetch user role and company_identifier on component mount
@@ -79,6 +84,44 @@ function RacmAssignment() {
 
     fetchUserInfo()
   }, [])
+
+  useEffect(() => {
+    if (companyIdentifier) {
+      loadFinancialYearOptions(companyIdentifier)
+    }
+  }, [companyIdentifier])
+
+  const loadFinancialYearOptions = async (companyId) => {
+    const storageKey = getFinancialYearStorageKey(companyId)
+    try {
+      const cached = localStorage.getItem(storageKey)
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setFinancialYearOptions(parsed)
+          return
+        }
+      }
+    } catch (error) {
+      console.error('Error reading financial year options from localStorage (RacmAssignment):', error)
+    }
+
+    try {
+      const url = `http://localhost:3000/api/control-forms?company_identifier=${encodeURIComponent(companyId)}`
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      })
+      const data = await response.json()
+      if (response.ok && data.success) {
+        const years = extractUniqueFinancialYears(data.data)
+        setFinancialYearOptions(years)
+        localStorage.setItem(storageKey, JSON.stringify(years))
+      }
+    } catch (error) {
+      console.error('Error bootstrapping financial year options (RacmAssignment):', error)
+    }
+  }
 
   useEffect(() => {
     // Fetch forms when company_identifier is available
@@ -125,6 +168,18 @@ function RacmAssignment() {
         })
 
         setForms(assignmentFilteredForms)
+
+        // Keep cached financial year options updated with any newly seen values
+        const latestYears = extractUniqueFinancialYears(data.data)
+        if (latestYears.length > 0) {
+          const mergedYears = [...new Set([...(financialYearOptions || []), ...latestYears])]
+          if (mergedYears.length !== financialYearOptions.length) {
+            setFinancialYearOptions(mergedYears)
+            if (companyIdentifier) {
+              localStorage.setItem(getFinancialYearStorageKey(companyIdentifier), JSON.stringify(mergedYears))
+            }
+          }
+        }
       } else {
         console.error('Error fetching forms:', data.message)
       }
@@ -338,25 +393,11 @@ function RacmAssignment() {
               <Button
                 onClick={() => setFilterAssignment('assigned')}
                 variant={filterAssignment === 'assigned' ? 'contained' : 'outlined'}
-                color={filterAssignment === 'assigned' ? 'secondary' : 'inherit'}
+                color="secondary"
                 sx={{
-                  minWidth: '80px',
+                  minWidth: '90px',
                   textTransform: 'none',
-                  ...(filterAssignment === 'assigned' && {
-                    backgroundColor: '#0369a1',
-                    color: '#ffffff',
-                    '&:hover': {
-                      backgroundColor: '#075985',
-                    },
-                  }),
-                  ...(filterAssignment !== 'assigned' && {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                    color: theme.palette.text.primary,
-                    '&:hover': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#f3f4f6',
-                    },
-                  }),
+                  fontSize: '0.8rem',
                 }}
               >
                 Assigned
@@ -364,25 +405,11 @@ function RacmAssignment() {
               <Button
                 onClick={() => setFilterAssignment('unassigned')}
                 variant={filterAssignment === 'unassigned' ? 'contained' : 'outlined'}
-                color={filterAssignment === 'unassigned' ? 'secondary' : 'inherit'}
+                color="secondary"
                 sx={{
-                  minWidth: '80px',
+                  minWidth: '90px',
                   textTransform: 'none',
-                  ...(filterAssignment === 'unassigned' && {
-                    backgroundColor: '#0369a1',
-                    color: '#ffffff',
-                    '&:hover': {
-                      backgroundColor: '#075985',
-                    },
-                  }),
-                  ...(filterAssignment !== 'unassigned' && {
-                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                    color: theme.palette.text.primary,
-                    '&:hover': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#f3f4f6',
-                    },
-                  }),
+                  fontSize: '0.8rem',
                 }}
               >
                 Unassigned
@@ -621,7 +648,14 @@ function RacmAssignment() {
                 </Typography>
 
                 <Autocomplete
-                  options={assignableUsers}
+                  options={
+                    assignableUsers.filter((user) => {
+                      const currentOwner = (selectedForm?.process_owner || '').trim().toLowerCase()
+                      const userEmail = (user.email_id || '').trim().toLowerCase()
+                      // Exclude the user who is already assigned as process owner for this RACM
+                      return currentOwner === '' || userEmail !== currentOwner
+                    })
+                  }
                   loading={usersLoading}
                   value={selectedUser}
                   inputValue={userSearchText}

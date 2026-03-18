@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Box, Container, Typography, Button, Card, CardContent, IconButton, Grid, Tooltip } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
 import LightModeIcon from '@mui/icons-material/LightMode'
@@ -13,9 +13,13 @@ function Home() {
   const { toggleTheme, mode } = useThemeMode()
   const [stats, setStats] = useState({ companies: 0, users: 0 })
   const [loading, setLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [userRole, setUserRole] = useState(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     fetchStats()
+    checkAuthOnHome()
   }, [])
 
   const fetchStats = async () => {
@@ -45,6 +49,58 @@ function Home() {
       console.error('Error fetching stats:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const checkAuthOnHome = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/auth/verify', {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setIsAuthenticated(true)
+        setUserRole(data.user?.role || null)
+      } else {
+        setIsAuthenticated(false)
+        setUserRole(null)
+      }
+    } catch (error) {
+      console.error('Error verifying auth token on Home:', error)
+      setIsAuthenticated(false)
+      setUserRole(null)
+    }
+  }
+
+  const getDashboardPath = () => {
+    if (!userRole) return '/login'
+    if (userRole === 'company_co') {
+      return '/company_co/home'
+    }
+    // For other roles, use /{role}/dashboard
+    return `/${userRole}/dashboard`
+  }
+
+  const handleLogout = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      })
+
+      // Even if logout fails, clear local auth state
+      if (!response.ok) {
+        console.error('Logout failed with status:', response.status)
+      }
+    } catch (error) {
+      console.error('Error during logout:', error)
+    } finally {
+      setIsAuthenticated(false)
+      setUserRole(null)
+      navigate('/', { replace: true })
     }
   }
 
@@ -255,36 +311,79 @@ function Home() {
             </Grid>
           </Grid>
 
-          {/* Login Button */}
-          <Box sx={{ textAlign: 'center' }}>
-            <Button
-              component={Link}
-              to="/login"
-              variant="contained"
-              color="secondary"
-              size="large"
-              sx={{
-                minWidth: '200px',
-                py: 1.75,
-                px: 4,
-                textTransform: 'none',
-                fontWeight: 600,
-                fontSize: '1rem',
-                borderRadius: 2,
-                boxShadow: theme.palette.mode === 'dark'
-                  ? '0 4px 12px rgba(3, 105, 161, 0.3)'
-                  : '0 2px 8px rgba(3, 105, 161, 0.2)',
-                '&:hover': {
-                  boxShadow: theme.palette.mode === 'dark'
-                    ? '0 6px 16px rgba(3, 105, 161, 0.4)'
-                    : '0 4px 12px rgba(3, 105, 161, 0.3)',
-                  transform: 'translateY(-2px)',
-                },
-                transition: 'all 0.2s ease-in-out',
-              }}
-            >
-              Login
-            </Button>
+          {/* Auth Buttons */}
+          <Box
+            sx={{
+              textAlign: 'center',
+              display: 'flex',
+              justifyContent: 'center',
+              gap: 2,
+              mt: 1,
+            }}
+          >
+            {!isAuthenticated && (
+              <Button
+                component={Link}
+                to="/login"
+                variant="contained"
+                color="secondary"
+                size="large"
+                sx={{
+                  minWidth: '200px',
+                  py: 1.75,
+                  px: 4,
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                  borderRadius: 2,
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                  },
+                  transition: 'transform 0.2s ease-in-out',
+                }}
+              >
+                Login
+              </Button>
+            )}
+
+            {isAuthenticated && (
+              <>
+                <Button
+                  variant="contained"
+                  color="secondary"
+                  size="large"
+                  onClick={() => navigate(getDashboardPath())}
+                  sx={{
+                    minWidth: '200px',
+                    py: 1.5,
+                    px: 3,
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    fontSize: '1rem',
+                    borderRadius: 2,
+                  }}
+                >
+                  Go to Dashboard
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  size="large"
+                  onClick={handleLogout}
+                  sx={{
+                    minWidth: '140px',
+                    py: 1.5,
+                    px: 3,
+                    textTransform: 'none',
+                    fontWeight: 500,
+                    fontSize: '0.95rem',
+                    borderRadius: 2,
+                  }}
+                >
+                  Logout
+                </Button>
+              </>
+            )}
           </Box>
         </Box>
       </Container>

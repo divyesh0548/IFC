@@ -1,16 +1,3 @@
-create form --> Enter racm  (Remove the control form wording)
-
-
-Remove the side bar, and instead display 4 buttons and a button for report which will display current dashboard.
-
-Form can only be active, once sample document is uploaded.
-
-Display control form in sections. First provide 3 dropdowns, then try to include similar things in one section.
-
-
-from Mayank sir :IFC cycle, mail draft
-
-
 Email format : 
 
 First cite major details from control form.
@@ -69,6 +56,9 @@ Provide link of RACM link in Assignemnt email.
 I suggest we do not include due dae and reminder frequency in excel bulk upload. Instead provide input dropdown just like Business process and FY.
 
 
+Block the excel file upload if email_id is not valid in process owner column.
+
+
 
 
 
@@ -116,9 +106,32 @@ sampling_doc --> Sample Doc
 
 
 
-Excel file processing prompts : 
-Atleast 4 header keywords must match
-Change process_excel_files.js based on column_mapping.js 
-Also chnage control_forms.js based on column_mapping.js
+Scenarios to consider:
+
+RACM assignment can't be changed once it is Approved.
+
+Should be send emails to Approver when user sends RACM for approval.
 
 
+
+
+
+Add auto user creation functionality on RACM active
+
+Save sample required in excel file.
+
+Add a bulk assign functionality.
+
+Occupy full width in RACM display, Put left sidebar on top.
+
+Add functionality to revert the action by approver. (Only for next 15 days of approval/rejection)
+
+add a button for word wrap in dashboard, for Standard control description.
+
+Implement a way to store user preference, like word wrap.
+
+Provide a way to see audit logs of a specific RACM. like approval dates
+
+Save old and new column values in audit logs.
+
+Add size limit and file type limit in upload. Also corupt file detection.

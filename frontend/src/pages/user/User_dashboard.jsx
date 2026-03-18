@@ -6,6 +6,11 @@ import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import FormControl from '@mui/material/FormControl'
+import { FILTER_DROPDOWN_MIN_WIDTH_SM, FILTER_DROPDOWN_MIN_WIDTH_LG } from '../../uiConstants'
+import InputLabel from '@mui/material/InputLabel'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
 
 function User_dashboard() {
   const theme = useTheme()
@@ -15,6 +20,29 @@ function User_dashboard() {
   const [forms, setForms] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all') // 'all', 'pending', 'sent for approval', 'approved', 'rejected'
+  const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
+  const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
+  const [financialYearOptions, setFinancialYearOptions] = useState([])
+
+  // Business process options (matching other pages)
+  const businessProcessOptions = [
+    'Purchase to Pay',
+    'Order to Cash',
+    'Hire to Retire',
+    'Capital Expenditure',
+    'Treasury',
+    'Financial Statement Closure Process',
+    'Information Technology General Controls',
+    'Entity Level Controls'
+  ]
+
+  const extractUniqueFinancialYears = (rows) => {
+    return [...new Set(
+      (rows || [])
+        .map(form => form.financial_year?.toString().trim())
+        .filter(year => year && year !== '')
+    )]
+  }
 
   useEffect(() => {
     // Fetch user info on component mount
@@ -44,19 +72,29 @@ function User_dashboard() {
     if (userEmail) {
       fetchForms()
     }
-  }, [userEmail, filter])
+  }, [userEmail, filter, filterBusinessProcess, filterFinancialYear])
 
   const fetchForms = async () => {
     if (!userEmail) return
     
     setLoading(true)
     try {
-      // Build URL with process_owner and active filters
+      // Build URL with process_owner, active, and optional filters
       let url = `http://localhost:3000/api/control-forms?process_owner=${encodeURIComponent(userEmail)}&active=true`
       
       // Add status filter parameter to API (API handles all filtering)
       if (filter !== 'all') {
         url += `&status=${encodeURIComponent(filter)}`
+      }
+
+      // Add business process filter if selected
+      if (filterBusinessProcess !== 'all') {
+        url += `&business_process=${encodeURIComponent(filterBusinessProcess)}`
+      }
+
+      // Add financial year filter if selected
+      if (filterFinancialYear !== 'all') {
+        url += `&financial_year=${encodeURIComponent(filterFinancialYear)}`
       }
       
       const response = await fetch(url, {
@@ -75,6 +113,15 @@ function User_dashboard() {
         })
         
         setForms(sortedForms)
+
+        // Update financial year options based on fetched data
+        const latestYears = extractUniqueFinancialYears(data.data)
+        if (latestYears.length > 0) {
+          // No localStorage caching here; just derive from current data
+          setFinancialYearOptions(latestYears)
+        } else {
+          setFinancialYearOptions([])
+        }
       } else {
         console.error('Error fetching forms:', data.message)
         setForms([])
@@ -119,65 +166,6 @@ function User_dashboard() {
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 2, py: 4 }}>
-        {/* Filter Buttons */}
-        <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
-          <Button
-            onClick={() => setFilter('all')}
-            variant={filter === 'all' ? 'contained' : 'outlined'}
-            color={filter === 'all' ? 'secondary' : 'inherit'}
-            sx={{
-              minWidth: '100px',
-              textTransform: 'none',
-            }}
-          >
-            All
-          </Button>
-          <Button
-            onClick={() => setFilter('pending')}
-            variant={filter === 'pending' ? 'contained' : 'outlined'}
-            color={filter === 'pending' ? 'secondary' : 'inherit'}
-            sx={{
-              minWidth: '100px',
-              textTransform: 'none',
-            }}
-          >
-            Pending
-          </Button>
-          <Button
-            onClick={() => setFilter('sent for approval')}
-            variant={filter === 'sent for approval' ? 'contained' : 'outlined'}
-            color={filter === 'sent for approval' ? 'secondary' : 'inherit'}
-            sx={{
-              minWidth: '100px',
-              textTransform: 'none',
-            }}
-          >
-            Sent for Approval
-          </Button>
-          <Button
-            onClick={() => setFilter('approved')}
-            variant={filter === 'approved' ? 'contained' : 'outlined'}
-            color={filter === 'approved' ? 'secondary' : 'inherit'}
-            sx={{
-              minWidth: '100px',
-              textTransform: 'none',
-            }}
-          >
-            Approved
-          </Button>
-          <Button
-            onClick={() => setFilter('rejected')}
-            variant={filter === 'rejected' ? 'contained' : 'outlined'}
-            color={filter === 'rejected' ? 'secondary' : 'inherit'}
-            sx={{
-              minWidth: '100px',
-              textTransform: 'none',
-            }}
-          >
-            Rejected
-          </Button>
-        </Box>
-
         {/* Forms Section */}
         <Paper 
           elevation={3}
@@ -187,17 +175,111 @@ function User_dashboard() {
             borderRadius: 2,
           }}
         >
-          <Typography 
-            variant="h5" 
-            component="h2"
+          <Box 
             sx={{ 
-              fontWeight: 700, 
-              color: theme.palette.secondary.main,
-              mb: 3
+              display: 'flex', 
+              flexDirection: { xs: 'column', sm: 'row' }, 
+              justifyContent: 'space-between', 
+              alignItems: { xs: 'flex-start', sm: 'center' },
+              mb: 3,
+              gap: 2
             }}
           >
-            My RACM
-          </Typography>
+            <Typography 
+              variant="h5" 
+              component="h2"
+              sx={{ 
+                fontWeight: 700, 
+                color: theme.palette.text.primary,
+              }}
+            >
+              My RACM
+            </Typography>
+
+            {/* In-container filters */}
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: { xs: 'column', sm: 'row' },
+                gap: 2,
+                alignItems: { xs: 'stretch', sm: 'center' },
+                width: { xs: '100%', sm: 'auto' },
+              }}
+            >
+              {/* Status Filter */}
+              <Box sx={{ minWidth: { xs: '100%', sm: FILTER_DROPDOWN_MIN_WIDTH_SM } }}>
+                <FormControl
+                  variant="outlined"
+                  fullWidth
+                  size="small"
+                >
+                  <InputLabel id="status-filter-label">Status</InputLabel>
+                  <Select
+                    labelId="status-filter-label"
+                    id="status-filter"
+                    value={filter}
+                    label="Status"
+                    onChange={(e) => setFilter(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="pending">Pending</MenuItem>
+                    <MenuItem value="sent for approval">Sent for Approval</MenuItem>
+                    <MenuItem value="approved">Approved</MenuItem>
+                    <MenuItem value="rejected">Rejected</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+              {/* Business Process Filter */}
+              <Box sx={{ minWidth: { xs: '100%', sm: FILTER_DROPDOWN_MIN_WIDTH_LG } }}>
+                <FormControl
+                  variant="outlined"
+                  fullWidth
+                  size="small"
+                >
+                  <InputLabel id="business-process-filter-label">Business Process</InputLabel>
+                  <Select
+                    labelId="business-process-filter-label"
+                    id="business-process-filter"
+                    value={filterBusinessProcess}
+                    label="Business Process"
+                    onChange={(e) => setFilterBusinessProcess(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    {businessProcessOptions.map((option) => (
+                      <MenuItem key={option} value={option}>
+                        {option}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+
+              {/* Financial Year Filter */}
+              <Box sx={{ minWidth: { xs: '100%', sm: FILTER_DROPDOWN_MIN_WIDTH_SM } }}>
+                <FormControl
+                  variant="outlined"
+                  fullWidth
+                  size="small"
+                >
+                  <InputLabel id="financial-year-filter-label">Financial Year</InputLabel>
+                  <Select
+                    labelId="financial-year-filter-label"
+                    id="financial-year-filter"
+                    value={filterFinancialYear}
+                    label="Financial Year"
+                    onChange={(e) => setFilterFinancialYear(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    {financialYearOptions.map((option) => (
+                      <MenuItem key={option} value={option}>
+                        {option}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+            </Box>
+          </Box>
 
           {loading ? (
             <Box sx={{ textAlign: 'center', py: 4 }}>
@@ -266,7 +348,7 @@ function User_dashboard() {
                         color: theme.palette.text.secondary,
                       }}
                     >
-                      Description
+                      Business Process
                     </Box>
                     <Box
                       component="th"
@@ -281,7 +363,22 @@ function User_dashboard() {
                         color: theme.palette.text.secondary,
                       }}
                     >
-                      Business Process
+                      Sub Process
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
+                      Description
                     </Box>
                     <Box
                       component="th"
@@ -350,11 +447,12 @@ function User_dashboard() {
                           sx={{
                             px: 3,
                             py: 2,
+                            whiteSpace: 'nowrap',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                           }}
                         >
-                          {form.standard_control_description || 'N/A'}
+                          {form.business_process || 'N/A'}
                         </Box>
                         <Box
                           component="td"
@@ -366,7 +464,18 @@ function User_dashboard() {
                             color: theme.palette.text.primary,
                           }}
                         >
-                          {form.business_process || 'N/A'}
+                          {form.sub_process || 'N/A'}
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          }}
+                        >
+                          {form.standard_control_description || 'N/A'}
                         </Box>
                         <Box
                           component="td"

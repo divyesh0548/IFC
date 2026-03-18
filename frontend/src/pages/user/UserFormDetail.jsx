@@ -29,8 +29,34 @@ function UserFormDetail() {
   // Removed editableFields state - users can only edit remarks_by_user
 
   useEffect(() => {
-    fetchFormData()
-  }, [form_id])
+    const checkAuthAndFetch = async () => {
+      // First check authentication
+      try {
+        const authResponse = await fetch('http://localhost:3000/api/auth/verify', {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        const authData = await authResponse.json()
+
+        if (!authResponse.ok || !authData.success) {
+          // Not authenticated - redirect to login with redirect param
+          const redirectUrl = encodeURIComponent(`/user/form/${form_id}`)
+          navigate(`/login?redirect=${redirectUrl}`, { replace: true })
+          return
+        }
+
+        // Authenticated - now fetch form data
+        await fetchFormData()
+      } catch (error) {
+        console.error('Auth check error:', error)
+        const redirectUrl = encodeURIComponent(`/user/form/${form_id}`)
+        navigate(`/login?redirect=${redirectUrl}`, { replace: true })
+      }
+    }
+
+    checkAuthAndFetch()
+  }, [form_id, navigate])
 
   const fetchFormData = async () => {
     setLoading(true)
@@ -47,6 +73,10 @@ function UserFormDetail() {
         setFormData(data.data)
         // Initialize remarks by user (only editable field for users)
         setRemarksByUser(data.data.remarks_by_user || '')
+      } else if (response.status === 403) {
+        // User is authenticated but not authorized (different email)
+        toast.error('You are not authorized to access this form')
+        navigate('/user/dashboard', { replace: true })
       } else {
         setError(data.message || 'Failed to fetch form data')
       }
@@ -267,8 +297,8 @@ function UserFormDetail() {
     control_performer: 'Control Performer',
     control_owner: 'Control Owner',
     control_design_procs: 'Procedures to Evaluate Design and Implementation',
-    control_type_fo: 'Type of Control O_F',
-    control_type_ma: 'Type of Control M_A',
+    control_type_fo: 'Type of control (Operational/Financial)',
+    control_type_ma: 'Type of control (Manual/ Automated)',
     nature_of_control: 'Nature of Control',
     process_owner: 'Process Owner',
     control_frequency: 'Control Frequency',
@@ -291,12 +321,12 @@ function UserFormDetail() {
   const fieldOrder = [
     'control_number',
     'account_balance_disclosure',
-    'risk_heat',
-    'standard_control_description',
     'sub_process',
     'risk_description',
-    'whether_fraud_risks_exist',
+    'risk_heat',
+    'standard_control_description',
     'control_objective',
+    'whether_fraud_risks_exist',
     'process_walkthrough',
     'control_relies_on_ipe',
     'audit_evidence_accuracy',
@@ -326,9 +356,6 @@ function UserFormDetail() {
 
   // Fields to exclude from display
   const excludedFields = ['id', 'form_id', 'company_identifier', 'created_at', 'active', 'status', 'reason_by_approver']
-
-  // Editable fields list - users can only edit remarks_by_user
-  const editableFieldKeys = ['remarks_by_user']
 
   // Check if form is sent for approval, approved, or rejected
   const isSentForApproval = formData?.status === 'sent for approval'
@@ -438,41 +465,53 @@ function UserFormDetail() {
             RACM
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
-          {/* Left Sidebar - 25% */}
-          <Box sx={{ width: { xs: '100%', lg: '25%' } }}>
-            <Box
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {/* Top summary card (matches coordinator design) */}
+          <Box sx={{ width: '100%' }}>
+            <Card
               sx={{
-                position: 'sticky',
-                top: { xs: 64, lg: 80 }, // Account for AppBar height (64px) + some padding
-                zIndex: 1,
-                alignSelf: 'flex-start',
-                maxHeight: { xs: 'calc(100vh - 64px)', lg: 'calc(100vh - 80px)' },
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.12)'
+                  : 'rgba(0, 0, 0, 0.08)',
+                display: 'flex',
+                flexDirection: 'column',
               }}
             >
-              <Card 
-                sx={{ 
-                  height: 'fit-content',
-                  borderRadius: 3,
-                  boxShadow: theme.palette.mode === 'dark'
-                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                    : '0 2px 12px rgba(0, 0, 0, 0.08)',
-                  border: '1px solid',
-                  borderColor: theme.palette.mode === 'dark' 
-                    ? 'rgba(255, 255, 255, 0.12)' 
-                    : 'rgba(0, 0, 0, 0.08)',
+              <CardContent
+                sx={{
+                  px: 3.5,
+                  pt: 4,
+                  pb: 4,
                   display: 'flex',
                   flexDirection: 'column',
+                  gap: 0,
                 }}
               >
-                <CardContent sx={{ 
-                  p: 3.5, 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  gap: 0,
-                }}>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      sm: 'repeat(2, 1fr)',
+                      md: 'repeat(3, 1fr)',
+                    },
+                    gap: 2,
+                  }}
+                >
                   {/* Status */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
                     <Typography
                       variant="caption"
                       component="label"
@@ -488,10 +527,15 @@ function UserFormDetail() {
                     >
                       Status
                     </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
-                        color: 'text.primary',
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: (() => {
+                          const status = formData?.status || ''
+                          if (status === 'Approved') return '#10b981'
+                          if (status === 'Rejected') return '#ef4444'
+                          return 'text.primary'
+                        })(),
                         fontWeight: 500,
                         fontSize: '0.9375rem',
                       }}
@@ -501,7 +545,14 @@ function UserFormDetail() {
                   </Box>
 
                   {/* Business Process */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
                     <Typography
                       variant="caption"
                       component="label"
@@ -517,9 +568,9 @@ function UserFormDetail() {
                     >
                       Business Process
                     </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
+                    <Typography
+                      variant="body2"
+                      sx={{
                         color: 'text.primary',
                         fontWeight: 500,
                         fontSize: '0.9375rem',
@@ -530,8 +581,15 @@ function UserFormDetail() {
                     </Typography>
                   </Box>
 
-                  {/* Creation Time */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  {/* Created At */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
                     <Typography
                       variant="caption"
                       component="label"
@@ -547,9 +605,9 @@ function UserFormDetail() {
                     >
                       Created At
                     </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
+                    <Typography
+                      variant="body2"
+                      sx={{
                         color: 'text.primary',
                         fontWeight: 500,
                         fontSize: '0.875rem',
@@ -560,14 +618,21 @@ function UserFormDetail() {
                     </Typography>
                   </Box>
 
-                  {/* Reason by Approver - show only when non-empty */}
+                  {/* Reason by Approver (when present) */}
                   {(() => {
                     const reason = formData?.reason_by_approver
                     const hasReason = typeof reason === 'string' && reason.trim() !== ''
                     if (!hasReason) return null
 
                     return (
-                      <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                      <Box
+                        sx={{
+                          p: 2,
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider',
+                        }}
+                      >
                         <Typography
                           variant="caption"
                           component="label"
@@ -600,7 +665,14 @@ function UserFormDetail() {
                   })()}
 
                   {/* Sample Document */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
                     <Typography
                       variant="caption"
                       component="label"
@@ -616,7 +688,7 @@ function UserFormDetail() {
                     >
                       Sample Document
                     </Typography>
-                    {formData?.sampling_doc && formData.sampling_doc.trim() !== '' ? (
+                    {formData?.sample_doc && String(formData.sample_doc).trim() !== '' ? (
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Typography
                           variant="body2"
@@ -628,10 +700,10 @@ function UserFormDetail() {
                             wordBreak: 'break-word',
                           }}
                         >
-                          {getFileName(formData.sampling_doc)}
+                          {getFileName(String(formData.sample_doc))}
                         </Typography>
                         <IconButton
-                          onClick={() => handleDownloadSampleDocument(formData.sampling_doc)}
+                          onClick={() => handleDownloadSampleDocument(formData.sample_doc)}
                           size="small"
                           sx={{
                             color: 'primary.main',
@@ -659,30 +731,30 @@ function UserFormDetail() {
 
                   {/* Send for Approval / Resubmit Button */}
                   {isEditable && (
-                    <Box sx={{ mt: 1, pt: 2, pb: 2 }}>
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
                       {(() => {
-                        // Check if document exists (either existing or newly selected)
                         const hasExistingDocument = formData?.doc_uploaded_by_user && formData.doc_uploaded_by_user !== ''
                         const hasNewDocument = selectedFile !== null
                         const hasDocument = hasExistingDocument || hasNewDocument
 
-                        // Check if remarks are provided
-                        const hasRemarks = !!(remarksByUser && remarksByUser.trim() !== '')
-
-                        // Detect changes:
-                        // 1) New document selected
                         const hasDocumentChange = hasNewDocument
-                        // 2) Remarks text changed compared to original value from backend
                         const originalRemarks = (formData?.remarks_by_user || '').trim()
                         const currentRemarks = (remarksByUser || '').trim()
                         const hasRemarksChange = originalRemarks !== currentRemarks
 
-                        // Button is enabled only when:
-                        // - Document and remarks are both present (business rule)
-                        // - AND user has either uploaded a new document or changed remarks
                         const hasAnyChange = hasDocumentChange || hasRemarksChange
-                        const isButtonDisabled = saving || !hasDocument || !hasRemarks || !hasAnyChange
-                        
+                        const isButtonDisabled = saving || !hasDocument || !hasAnyChange
+
                         return (
                           <Button
                             onClick={handleSendForApproval}
@@ -712,34 +784,51 @@ function UserFormDetail() {
                               transition: 'all 0.2s ease-in-out',
                             }}
                           >
-                            {saving 
-                              ? (isRejected ? 'Resubmitting...' : 'Sending...') 
-                              : (isRejected ? 'Resubmit for Approval' : 'Send for Approval')
-                            }
+                            {saving
+                              ? (isRejected ? 'Resubmitting...' : 'Sending...')
+                              : (isRejected ? 'Resubmit for Approval' : 'Send for Approval')}
                           </Button>
                         )
                       })()}
                     </Box>
                   )}
-                </CardContent>
-              </Card>
-            </Box>
+                </Box>
+              </CardContent>
+            </Card>
           </Box>
 
-          {/* Vertical Divider */}
-          <Box
-            sx={{
-              display: { xs: 'none', lg: 'block' },
-              width: '1px',
-              backgroundColor: 'divider',
-              alignSelf: 'stretch',
-            }}
-          />
-
-          {/* Right Side - 75% */}
-          <Box sx={{ width: { xs: '100%', lg: '75%' }, flex: 1 }}>
-            <Card>
+          {/* Main content – matches coordinator card styling */}
+          <Box sx={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {/* Process and risk section */}
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
               <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Process and Risk
+                </Typography>
                 <Box
                   sx={{
                     display: 'grid',
@@ -748,79 +837,34 @@ function UserFormDetail() {
                       md: 'repeat(2, 1fr)',
                     },
                     gap: 3,
+                    mt: 2,
                   }}
                 >
-                  {sortedFields.map((key) => {
-                    const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-                    const value = formData[key]
-                    const isEmpty = value === null || value === undefined || value === ''
-                    const isEditableField = editableFieldKeys.includes(key)
-
-                    // Editable fields - only remarks_by_user is editable by users
-                    if (isEditableField && isEditable) {
-                      // Only remarks_by_user is editable
-                      const fieldValue = remarksByUser
-                      const handleChange = (e) => setRemarksByUser(e.target.value)
+                  {['control_number', 'account_balance_disclosure', 'sub_process', 'risk_description', 'risk_heat']
+                    .filter((key) => sortedFields.includes(key))
+                    .map((key) => {
+                      const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                      const value = formData[key]
+                      const isEmpty = value === null || value === undefined || value === ''
 
                       return (
                         <Box
                           key={key}
                           sx={{
-                            pb: 3,
-                            borderBottom: '1px solid',
-                            borderColor: 'divider',
-                            gridColumn: {
-                              xs: '1',
-                              md: '1 / -1'
-                            },
-                          }}
-                        >
-                          <TextField
-                            label={label}
-                            variant="outlined"
-                            value={fieldValue}
-                            onChange={handleChange}
-                            fullWidth
-                            multiline={key === 'remarks_by_user'}
-                            rows={key === 'remarks_by_user' ? 4 : 1}
-                            disabled={!isEditable}
-                            sx={{
-                              '& .MuiOutlinedInput-root': {
-                                backgroundColor: 'transparent',
-                                '&:hover': {
-                                  backgroundColor: 'transparent',
-                                },
-                                '&.Mui-focused': {
-                                  backgroundColor: 'transparent',
-                                },
-                              },
-                            }}
-                          />
-                        </Box>
-                      )
-                    }
-
-                    // Special handling for doc_uploaded_by_user (but in normal grid layout)
-                    if (key === 'doc_uploaded_by_user') {
-                      // Extract filename from path
-                      const getFileName = (path) => {
-                        if (!path) return null
-                        // Handle both Windows and Unix paths
-                        const parts = path.split(/[/\\]/)
-                        return parts[parts.length - 1]
-                      }
-
-                      const currentFileName = formData.doc_uploaded_by_user ? getFileName(formData.doc_uploaded_by_user) : null
-
-                      return (
-                        <Box
-                          key={key}
-                          sx={{
-                            pb: 3,
-                            borderBottom: '1px solid',
-                            borderColor: 'divider',
-                            '&:last-child': {
-                              borderBottom: 'none',
+                            p: 2.5,
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
+                            transition: 'all 0.2s ease-in-out',
+                            '&:hover': {
+                              backgroundColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.05)'
+                                : 'rgba(0, 0, 0, 0.04)',
                             },
                           }}
                         >
@@ -832,89 +876,198 @@ function UserFormDetail() {
                               fontWeight: 700,
                               textTransform: 'uppercase',
                               letterSpacing: '0.5px',
-                              mb: 1,
+                              mb: 1.5,
                               color: 'text.primary',
                               fontSize: theme.typography.customSizes.small,
                             }}
                           >
                             {label}
                           </Typography>
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            {currentFileName && !selectedFile && (
-                              <Typography
-                                variant="body2"
-                                sx={{
-                                  color: 'text.secondary',
-                                  wordBreak: 'break-word',
-                                  lineHeight: 1.6,
-                                  fontSize: theme.typography.customSizes.medium,
-                                }}
-                              >
-                                {currentFileName}
-                              </Typography>
-                            )}
-                            {selectedFile && (
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    color: 'text.secondary',
-                                    flex: 1,
-                                    wordBreak: 'break-word',
-                                    lineHeight: 1.6,
-                                    fontSize: theme.typography.customSizes.medium,
-                                  }}
-                                >
-                                  {fileName}
-                                </Typography>
-                                <IconButton
-                                  size="small"
-                                  onClick={handleRemoveFile}
-                                  disabled={!isEditable}
-                                  sx={{ color: 'error.main' }}
-                                >
-                                  <CloseIcon fontSize="small" />
-                                </IconButton>
-                              </Box>
-                            )}
-                            {!currentFileName && !selectedFile && (
-                              <Typography
-                                variant="body2"
-                                sx={{
-                                  color: 'text.disabled',
-                                  lineHeight: 1.6,
-                                  fontSize: theme.typography.customSizes.medium,
-                                }}
-                              >
-                                No document selected
-                              </Typography>
-                            )}
-                            {isEditable && (
-                              <label>
-                                <input
-                                  type="file"
-                                  style={{ display: 'none' }}
-                                  onChange={handleFileSelect}
-                                  disabled={!isEditable}
-                                />
-                                <IconButton
-                                  component="span"
-                                  disabled={!isEditable}
-                                  color="secondary"
-                                  sx={{
-                                    border: '1px solid',
-                                    borderColor: 'divider',
-                                    mt: 0.5
-                                  }}
-                                >
-                                  <AttachFileIcon />
-                                </IconButton>
-                              </label>
-                            )}
-                          </Box>
+                          <Typography
+                            variant="body2"
+                            component="dd"
+                            sx={{
+                              color: isEmpty ? 'text.disabled' : 'text.secondary',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
+                            }}
+                          >
+                            {isEmpty ? '-' : String(value)}
+                          </Typography>
                         </Box>
                       )
-                    }
+                    })}
+                </Box>
+              </CardContent>
+            </Card>
+
+            {/* Assertions section */}
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Assertions
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: 'repeat(2, 1fr)',
+                    },
+                    gap: 3,
+                    mt: 2,
+                  }}
+                >
+                  {['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure']
+                    .filter((key) => sortedFields.includes(key))
+                    .map((key) => {
+                      const label = fieldLabels[key]
+                      const value = formData[key]
+                      const isEmpty = value === null || value === undefined || value === ''
+
+                      return (
+                        <Box
+                          key={key}
+                          sx={{
+                            p: 2.5,
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
+                            transition: 'all 0.2s ease-in-out',
+                            '&:hover': {
+                              backgroundColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.05)'
+                                : 'rgba(0, 0, 0, 0.04)',
+                            },
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            component="dt"
+                            sx={{
+                              display: 'block',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              mb: 1.5,
+                              color: 'text.primary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            {label}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            component="dd"
+                            sx={{
+                              color: isEmpty ? 'text.disabled' : 'text.secondary',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
+                            }}
+                          >
+                            {isEmpty ? '-' : String(value)}
+                          </Typography>
+                        </Box>
+                      )
+                    })}
+                </Box>
+              </CardContent>
+            </Card>
+
+            {/* Control Details section */}
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Control Details
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: 'repeat(2, 1fr)',
+                    },
+                    gap: 3,
+                    mt: 2,
+                  }}
+                >
+                  {sortedFields
+                    .filter((key) =>
+                      ![
+                        'control_number',
+                        'account_balance_disclosure',
+                        'sub_process',
+                        'risk_description',
+                        'risk_heat',
+                        'completeness',
+                        'existence_occurrence',
+                        'valuation_and_allocation',
+                        'rights_and_obligation',
+                        'presentation_and_disclosure',
+                        // handled in Approval section
+                        'doc_uploaded_by_user',
+                        'remarks_by_user',
+                      ].includes(key)
+                    )
+                    .map((key) => {
+                    const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                    const value = formData[key]
+                    const isEmpty = value === null || value === undefined || value === ''
 
                     // Read-only fields (including editable fields when form is not editable)
                     // Always use formData values for read-only display (saved database values)
@@ -925,11 +1078,20 @@ function UserFormDetail() {
                       <Box
                         key={key}
                         sx={{
-                          pb: 3,
-                          borderBottom: '1px solid',
-                          borderColor: 'divider',
-                          '&:last-child': {
-                            borderBottom: 'none',
+                          p: 2.5,
+                          borderRadius: 2,
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.03)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                          border: '1px solid',
+                          borderColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : 'rgba(0, 0, 0, 0.06)',
+                          transition: 'all 0.2s ease-in-out',
+                          '&:hover': {
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.05)'
+                              : 'rgba(0, 0, 0, 0.04)',
                           },
                         }}
                       >
@@ -941,7 +1103,7 @@ function UserFormDetail() {
                             fontWeight: 700,
                             textTransform: 'uppercase',
                             letterSpacing: '0.5px',
-                            mb: 1,
+                            mb: 1.5,
                             color: 'text.primary',
                             fontSize: theme.typography.customSizes.small,
                           }}
@@ -978,91 +1140,355 @@ function UserFormDetail() {
                       </Box>
                     )
                   })}
-                  
-                  {/* Grouped Approver Fields - Display only if at least one has a value */}
-                  {hasGroupedFieldValue && (
-                    <Box
+                </Box>
+              </CardContent>
+            </Card>
+
+            {/* Grouped Approver Fields - Display only if at least one has a value */}
+            {hasGroupedFieldValue && (
+              <Card
+                sx={{
+                  borderRadius: 3,
+                  boxShadow: theme.palette.mode === 'dark'
+                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                    : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid',
+                  borderColor: theme.palette.mode === 'dark' 
+                    ? 'rgba(255, 255, 255, 0.12)' 
+                    : 'rgba(0, 0, 0, 0.08)',
+                  overflow: 'hidden',
+                }}
+              >
+                <CardContent sx={{ p: 4 }}>
+                  <Typography
+                    variant="h6"
+                    component="h3"
+                    sx={{
+                      fontWeight: 700,
+                      mb: 3,
+                      color: 'text.primary',
+                      fontSize: '1.25rem',
+                      pb: 2,
+                      borderBottom: '2px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    Design and Implementation
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 3,
+                      mt: 2,
+                    }}
+                  >
+                    {groupedApproverFields.map((key) => {
+                      const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                      const value = formData[key]
+                      const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
+                      const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+
+                      return (
+                        <Box
+                          key={key}
+                          sx={{
+                            p: 2.5,
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
+                            transition: 'all 0.2s ease-in-out',
+                            '&:hover': {
+                              backgroundColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.05)'
+                                : 'rgba(0, 0, 0, 0.04)',
+                            },
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            component="dt"
+                            sx={{
+                              display: 'block',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              mb: 1.5,
+                              color: 'text.primary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            {label}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            component="dd"
+                            sx={{
+                              color: isEmpty ? 'text.disabled' : 'text.secondary',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
+                              whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                            }}
+                          >
+                            {isEmpty ? '-' : String(value)}
+                          </Typography>
+                        </Box>
+                      )
+                    })}
+                  </Box>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Approval section – Doc Uploaded By User & Remarks By User */}
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Approval
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: 'repeat(2, 1fr)',
+                    },
+                    gap: 3,
+                    mt: 2,
+                  }}
+                >
+                  {/* Doc Uploaded By User */}
+                  <Box
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.03)'
+                        : 'rgba(0, 0, 0, 0.02)',
+                      border: '1px solid',
+                      borderColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.06)',
+                      transition: 'all 0.2s ease-in-out',
+                      '&:hover': {
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.05)'
+                          : 'rgba(0, 0, 0, 0.04)',
+                      },
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="dt"
                       sx={{
-                        gridColumn: { xs: '1', md: '1 / -1' },
-                        pb: 3,
-                        borderTop: '2px solid',
-                        borderBottom: '1px solid',
-                        borderColor: 'divider',
-                        pt: 3,
-                        mt: 2,
+                        display: 'block',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        mb: 1.5,
+                        color: 'text.primary',
+                        fontSize: theme.typography.customSizes.small,
                       }}
                     >
-                      <Typography
-                        variant="h6"
-                        component="h3"
-                        sx={{
-                          fontWeight: 700,
-                          mb: 3,
-                          color: 'text.primary',
-                          fontSize: '1.125rem',
-                        }}
-                      >
-                        Control Design & Evaluation
-                      </Typography>
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 3,
-                        }}
-                      >
-                        {groupedApproverFields.map((key) => {
-                          const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-                          const value = formData[key]
-                          const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
-                          const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+                      {fieldLabels.doc_uploaded_by_user}
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {(() => {
+                        const path = formData.doc_uploaded_by_user
+                        const hasExisting = !!(path && path !== '')
+                        const hasNew = !!selectedFile
 
-                          return (
-                            <Box
-                              key={key}
-                              sx={{
-                                pb: 2,
-                                borderBottom: '1px solid',
-                                borderColor: 'divider',
-                                '&:last-child': {
-                                  borderBottom: 'none',
-                                },
-                              }}
-                            >
-                              <Typography
-                                variant="caption"
-                                component="dt"
-                                sx={{
-                                  display: 'block',
-                                  fontWeight: 700,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.5px',
-                                  mb: 1,
-                                  color: 'text.primary',
-                                  fontSize: theme.typography.customSizes.small,
-                                }}
-                              >
-                                {label}
-                              </Typography>
+                        const getName = () => {
+                          if (hasNew) return fileName
+                          if (!hasExisting) return null
+                          return getFileName(path)
+                        }
+
+                        const currentName = getName()
+
+                        return (
+                          <>
+                            {currentName && (
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    color: 'text.secondary',
+                                    flex: 1,
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.6,
+                                    fontSize: theme.typography.customSizes.medium,
+                                  }}
+                                >
+                                  {currentName}
+                                </Typography>
+                                {hasNew && (
+                                  <IconButton
+                                    size="small"
+                                    onClick={handleRemoveFile}
+                                    disabled={!isEditable}
+                                    sx={{ color: 'error.main' }}
+                                  >
+                                    <CloseIcon fontSize="small" />
+                                  </IconButton>
+                                )}
+                              </Box>
+                            )}
+                            {!currentName && (
                               <Typography
                                 variant="body2"
-                                component="dd"
                                 sx={{
-                                  color: isEmpty ? 'text.disabled' : 'text.secondary',
-                                  wordBreak: 'break-word',
+                                  color: 'text.disabled',
                                   lineHeight: 1.6,
                                   fontSize: theme.typography.customSizes.medium,
-                                  whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
                                 }}
                               >
-                                {isEmpty ? '-' : String(value)}
+                                No document selected
                               </Typography>
-                            </Box>
-                          )
-                        })}
-                      </Box>
+                            )}
+                          </>
+                        )
+                      })()}
+
+                      {isEditable && (
+                        <label>
+                          <input
+                            type="file"
+                            style={{ display: 'none' }}
+                            onChange={handleFileSelect}
+                            disabled={!isEditable}
+                          />
+                          <IconButton
+                            component="span"
+                            disabled={!isEditable}
+                            color="secondary"
+                            sx={{
+                              border: '1px solid',
+                              borderColor: 'divider',
+                              mt: 0.5,
+                            }}
+                          >
+                            <AttachFileIcon />
+                          </IconButton>
+                        </label>
+                      )}
                     </Box>
-                  )}
+                  </Box>
+
+                  {/* Remarks By User */}
+                  <Box
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.03)'
+                        : 'rgba(0, 0, 0, 0.02)',
+                      border: '1px solid',
+                      borderColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.06)',
+                      gridColumn: {
+                        xs: '1',
+                        md: '1 / -1',
+                      },
+                      transition: 'all 0.2s ease-in-out',
+                      '&:hover': {
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.05)'
+                          : 'rgba(0, 0, 0, 0.04)',
+                      },
+                    }}
+                  >
+                    {isEditable ? (
+                      <TextField
+                        label={fieldLabels.remarks_by_user}
+                        variant="outlined"
+                        value={remarksByUser}
+                        onChange={(e) => setRemarksByUser(e.target.value)}
+                        fullWidth
+                        multiline
+                        rows={4}
+                        disabled={!isEditable}
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            backgroundColor: 'transparent',
+                            '&:hover': {
+                              backgroundColor: 'transparent',
+                            },
+                            '&.Mui-focused': {
+                              backgroundColor: 'transparent',
+                            },
+                          },
+                        }}
+                      />
+                    ) : (
+                      <>
+                        <Typography
+                          variant="caption"
+                          component="dt"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            mb: 1.5,
+                            color: 'text.primary',
+                            fontSize: theme.typography.customSizes.small,
+                          }}
+                        >
+                          {fieldLabels.remarks_by_user}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          component="dd"
+                          sx={{
+                            color:
+                              (formData?.remarks_by_user || '').trim() === ''
+                                ? 'text.disabled'
+                                : 'text.secondary',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            fontSize: theme.typography.customSizes.medium,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {(formData?.remarks_by_user || '').trim() === ''
+                            ? '-'
+                            : formData.remarks_by_user}
+                        </Typography>
+                      </>
+                    )}
+                  </Box>
                 </Box>
               </CardContent>
             </Card>

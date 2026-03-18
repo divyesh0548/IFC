@@ -1,29 +1,36 @@
 import { createTheme } from '@mui/material/styles';
 
-// Sky Blue Theme with White Text
+// Color Hunt palette: https://colorhunt.co/palette/f1efecd4c9be123458030303
+const LIGHT_BACKGROUND = '#F1EFEC'; // very light background
+const LIGHT_SURFACE = '#D4C9BE';    // card / subtle surface
+const ACCENT_DARK = '#123458';      // primary accent
+const ACCENT_DARKEST = '#030303';   // near-black
+
 const theme = createTheme({
   palette: {
+    mode: 'light',
     primary: {
-      main: '#0ea5e9', // Sky blue
-      light: '#7dd3fc', // Light sky blue
-      dark: '#0284c7', // Darker sky blue
-      contrastText: '#ffffff', // White text
+      main: ACCENT_DARK,
+      light: LIGHT_SURFACE,
+      dark: ACCENT_DARKEST,
+      contrastText: LIGHT_BACKGROUND,
     },
     secondary: {
-      main: '#0369a1', // Deep sky blue
-      light: '#0ea5e9', // Sky blue
-      dark: '#075985', // Dark blue
-      contrastText: '#ffffff', // White text
+      main: LIGHT_SURFACE,
+      light: LIGHT_BACKGROUND,
+      dark: ACCENT_DARK,
+      contrastText: ACCENT_DARKEST,
     },
     background: {
-      default: '#f0f9ff', // Very light sky blue
-      paper: '#ffffff', // White
+      default: LIGHT_BACKGROUND,
+      paper: '#ffffff',
     },
     text: {
-      primary: '#000000', // Black for primary text
-      secondary: '#6b7280', // Gray for secondary text (form data)
-      disabled: '#9ca3af', // Gray for disabled text
+      primary: ACCENT_DARKEST,
+      secondary: ACCENT_DARK,
+      disabled: '#9e9e9e',
     },
+    divider: '#e0d7cd',
   },
   typography: {
     fontFamily: [
@@ -36,57 +43,59 @@ const theme = createTheme({
       'Arial',
       'sans-serif',
     ].join(','),
-    // Custom text size variables for consistent sizing across the website
     customSizes: {
-      bigHeader: '2rem',      // For h1, h2, h3 - large headings
-      header: '1.5rem',       // For h4, h5, h6 - medium headings
-      medium: '1rem',         // For body text, buttons, standard content
-      small: '0.75rem',       // For captions, labels, small text
+      bigHeader: '2rem',
+      header: '1.5rem',
+      medium: '1rem',
+      small: '0.75rem',
     },
     h1: {
       fontFamily: '"Roboto", sans-serif',
       fontWeight: 400,
-      color: '#0369a1',
-      fontSize: '2rem', // Uses customSizes.bigHeader
+      color: ACCENT_DARK,
+      fontSize: '2rem',
     },
     h2: {
       fontFamily: '"Roboto", sans-serif',
       fontWeight: 400,
-      color: '#0369a1',
-      fontSize: '2rem', // Uses customSizes.bigHeader
+      color: ACCENT_DARK,
+      fontSize: '2rem',
     },
     h3: {
       fontFamily: '"Roboto", sans-serif',
       fontWeight: 400,
-      color: '#0369a1',
-      fontSize: '2rem', // Uses customSizes.bigHeader
+      color: ACCENT_DARK,
+      fontSize: '2rem',
     },
     h4: {
       fontFamily: '"Roboto", sans-serif',
       fontWeight: 600,
-      color: '#0369a1',
-      fontSize: '1.5rem', // Uses customSizes.header
+      color: ACCENT_DARK,
+      fontSize: '1.5rem',
     },
     h5: {
       fontFamily: '"Roboto", sans-serif',
       fontWeight: 600,
-      color: '#0369a1',
-      fontSize: '1.5rem', // Uses customSizes.header
+      color: ACCENT_DARK,
+      fontSize: '1.5rem',
     },
     h6: {
       fontFamily: '"Roboto", sans-serif',
       fontWeight: 600,
-      color: '#0369a1',
-      fontSize: '1.5rem', // Uses customSizes.header
+      color: ACCENT_DARK,
+      fontSize: '1.5rem',
     },
     body1: {
-      fontSize: '1rem', // Uses customSizes.medium
+      fontSize: '1rem',
+      color: ACCENT_DARKEST,
     },
     body2: {
-      fontSize: '0.9375rem', // Slightly smaller than medium for secondary text
+      fontSize: '0.9375rem',
+      color: ACCENT_DARKEST,
     },
     caption: {
-      fontSize: '0.75rem', // Uses customSizes.small
+      fontSize: '0.75rem',
+      color: ACCENT_DARK,
     },
   },
   components: {
@@ -97,17 +106,18 @@ const theme = createTheme({
           borderRadius: 8,
         },
         containedPrimary: {
-          backgroundColor: '#0ea5e9',
-          color: '#ffffff',
+          backgroundColor: ACCENT_DARK,
+          color: LIGHT_BACKGROUND,
           '&:hover': {
-            backgroundColor: '#0284c7',
+            backgroundColor: ACCENT_DARKEST,
           },
         },
         containedSecondary: {
-          backgroundColor: '#0369a1',
-          color: '#ffffff',
+          backgroundColor: LIGHT_SURFACE,
+          color: ACCENT_DARKEST,
           '&:hover': {
-            backgroundColor: '#075985',
+            backgroundColor: ACCENT_DARK,
+            color: LIGHT_BACKGROUND,
           },
         },
       },
@@ -115,8 +125,8 @@ const theme = createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          backgroundColor: '#ffffff', // White background
-          color: '#000000', // Black text
+          backgroundColor: LIGHT_BACKGROUND,
+          color: ACCENT_DARKEST,
         },
       },
     },

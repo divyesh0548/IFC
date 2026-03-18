@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import './index.css'
 import Home from './pages/Home'
 import Login from './pages/Login'
@@ -18,6 +17,7 @@ import CreateUser from './pages/company_co/CreateUser'
 import ExcelUpload from './pages/forms/ExcelUpload'
 import FormDetail from './pages/company_co/FormDetail'
 import CreateControlForm from './pages/company_co/CreateControlForm'
+import RacmManagementDashboard from './pages/company_co/RacmManagementDashboard'
 import ApproverDashboard from './pages/approver/ApproverDashboard'
 import ApproverFormDetail from './pages/approver/ApproverFormDetail'
 import UserFormDetail from './pages/user/UserFormDetail'
@@ -26,7 +26,6 @@ import Company_co_home from './pages/company_co/Company_co_home'
 import { Toaster } from 'react-hot-toast';
 
 function App() {
-
   return (
     <>
     <div className='scrollbar'>
@@ -109,6 +108,7 @@ function App() {
         >
           <Route path="home" element={<Company_co_home />} />
           <Route path="dashboard" element={<Company_Co_dashboard />} />
+          <Route path="racm-management" element={<RacmManagementDashboard />} />
           <Route path="racm-assignment" element={<RacmAssignment />} />
           <Route path="user-management" element={<CreateUser />} />
           <Route path="upload-excel" element={<ExcelUpload />} />

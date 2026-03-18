@@ -85,10 +85,54 @@ async function sendEmail(to, subject, text) {
   }
 }
 
-function buildControlFormStatusEmail(status, businessProcess, processOwnerName, coordinatorName, coordinatorCompanyName) {
+function formatDueDateDisplay(dueDateRaw) {
+  if (!dueDateRaw) return 'TBD';
+
+  // Expecting YYYY-MM-DD, but be defensive
+  let year, month, day;
+  const str = String(dueDateRaw).trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const parts = str.split('-');
+    year = Number(parts[0]);
+    month = Number(parts[1]); // 1–12
+    day = Number(parts[2]);
+  } else {
+    const dt = new Date(str);
+    if (Number.isNaN(dt.getTime())) return 'TBD';
+    year = dt.getFullYear();
+    month = dt.getMonth() + 1;
+    day = dt.getDate();
+  }
+
+  if (!year || !month || !day) return 'TBD';
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+  const monthName = monthNames[month - 1] || '';
+
+  const getOrdinal = (n) => {
+    const v = n % 100;
+    if (v >= 11 && v <= 13) return `${n}th`;
+    switch (n % 10) {
+      case 1: return `${n}st`;
+      case 2: return `${n}nd`;
+      case 3: return `${n}rd`;
+      default: return `${n}th`;
+    }
+  };
+
+  return `${getOrdinal(day)} ${monthName}, ${year}`;
+}
+
+function buildControlFormStatusEmail(status, businessProcess, processOwnerName, coordinatorName, coordinatorCompanyName, dueDate, formId) {
   const recipientName = processOwnerName || 'Process Owner';
   const coordinatorDisplayName = coordinatorName || 'Company Coordinator';
   const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
+  const formattedDueDate = formatDueDateDisplay(dueDate);
+  const formUrl = formId ? `${process.env.FRONTEND_URL}/user/form/${formId}` : null;
   switch (status) {
     case 'Active':
       return {
@@ -110,9 +154,9 @@ What happens next?
 
 Once you submit your evidence, our tester will review it to check if the control is operating effectively. They'll either pass or fail the control based on what they see. So the clearer your evidence, the smoother that review goes!
 
-Deadline: 27th February 2026
+Deadline: ${formattedDueDate}
 
-Portal: ${process.env.FRONTEND_URL}
+${formUrl ? `Access your RACM: ${formUrl}\n\n` : ''}Portal: ${process.env.FRONTEND_URL}
 
 Just shout if you hit any snags or have questions or you have any feedback on the performance of the controls or have noted any significant breaches; I'm happy to help.
 
@@ -630,6 +674,8 @@ router.get('/download-document', verifyAuth, async (req, res) => {
 router.get('/:form_id', verifyAuth, async (req, res) => {
   try {
     const { form_id } = req.params;
+    const loggedInUserEmail = req.user.email_id;
+    const loggedInUserRole = req.user.role;
     
     // SELECT * returns all columns including control_design_procs
     const query = 'SELECT * FROM control_forms WHERE form_id = $1';
@@ -642,8 +688,23 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
       });
     }
     
-    // Verify control_design_procs is in the result (for debugging)
     const formData = result.rows[0];
+    
+    // Authorization check: For users with role 'user', verify they are the process_owner
+    // company_co and approver roles can still access (existing behavior)
+    if (loggedInUserRole === 'user') {
+      const processOwnerEmail = (formData.process_owner || '').trim().toLowerCase();
+      const userEmail = loggedInUserEmail.trim().toLowerCase();
+      
+      if (processOwnerEmail !== userEmail) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You are not authorized to view this form.'
+        });
+      }
+    }
+    
+    // Verify control_design_procs is in the result (for debugging)
     if (!formData.hasOwnProperty('control_design_procs')) {
       console.warn(`Warning: control_design_procs column not found in result for form_id: ${form_id}`);
     }
@@ -911,7 +972,9 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
           businessProcess,
           processOwnerName,
           coordinatorName,
-          coordinatorCompanyName
+          coordinatorCompanyName,
+          currentForm.due_date,
+          form_id
         );
 
         if (emailPayload.shouldSend) {
@@ -1218,6 +1281,161 @@ router.post('/', verifyAuth, async (req, res) => {
       message: 'Error creating RACM',
       error: error.message
     });
+  } finally {
+    client.release();
+  }
+});
+
+// Replicate RACMs (bulk)
+// Creates new control_forms rows copied from selected form_ids, excluding specific columns,
+// generating a new form_id, and setting financial_year to the provided target.
+router.post('/replicate', verifyAuth, async (req, res) => {
+  const { form_ids, financial_year } = req.body || {};
+
+  if (!Array.isArray(form_ids) || form_ids.length === 0) {
+    return res.status(400).json({ success: false, message: 'form_ids is required' });
+  }
+  if (!financial_year || String(financial_year).trim() === '') {
+    return res.status(400).json({ success: false, message: 'financial_year is required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    // Check if user is company coordinator
+    const userEmail = req.user.email_id;
+    const getUserQuery = 'SELECT role, company_identifier FROM ifc_users WHERE email_id = $1';
+    const userResult = await client.query(getUserQuery, [userEmail]);
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ success: false, message: 'User not found' });
+    }
+    const userRole = userResult.rows[0].role;
+    const coordinatorCompany = userResult.rows[0].company_identifier;
+    if (userRole !== 'company_co') {
+      return res.status(403).json({ success: false, message: 'Access denied. Only company coordinators can replicate RACMs.' });
+    }
+
+    await client.query('BEGIN');
+
+    // Fetch selected forms (ensure they belong to coordinator company)
+    const placeholders = form_ids.map((_, idx) => `$${idx + 1}`).join(', ');
+    const selectQuery = `SELECT * FROM control_forms WHERE form_id IN (${placeholders})`;
+    const selectResult = await client.query(selectQuery, form_ids);
+
+    if (selectResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'No RACMs found to replicate' });
+    }
+
+    // Ensure all belong to same company (coordinator company)
+    if (coordinatorCompany) {
+      const invalid = selectResult.rows.find(r => r.company_identifier !== coordinatorCompany);
+      if (invalid) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ success: false, message: 'Access denied. You can only replicate RACMs from your own company.' });
+      }
+    }
+
+    const excludedColumns = new Set([
+      'id',
+      'process_owner',
+      'doc_uploaded_by_user',
+      'active',
+      'status',
+      'reason_by_approver',
+      'remarks_by_user',
+      'sample_doc',
+      'due_date',
+      // Design / conclusion fields should not be carried over on replication
+      'control_design_procs',
+      'control_design_conclusion',
+      'design_deficiency_desc',
+      // created_at handled by DB default (current timestamp)
+      'created_at',
+    ]);
+
+    const createdFormIds = [];
+
+    // Helper: extract first 4-digit year from a FY string like "2025-26"
+    const extractStartYear = (fy) => {
+      if (!fy) return null;
+      const match = String(fy).match(/(\d{4})/);
+      return match ? Number(match[1]) : null;
+    };
+
+    for (const row of selectResult.rows) {
+      // Build insert columns dynamically based on fetched row keys
+      const insertObj = {};
+      for (const [key, value] of Object.entries(row)) {
+        if (excludedColumns.has(key)) continue;
+        insertObj[key] = value;
+      }
+
+      // Override required fields
+      insertObj.form_id = await generateUniqueFormId(client);
+      insertObj.financial_year = String(financial_year).trim();
+
+      // Adjust Sample Required text years based on FY shift, if possible
+      try {
+        const originalFY = row.financial_year ? String(row.financial_year).trim() : null;
+        const targetFY = insertObj.financial_year;
+        const sourceYear = extractStartYear(originalFY);
+        const targetYear = extractStartYear(targetFY);
+
+        if (
+          typeof insertObj.sample_required === 'string' &&
+          insertObj.sample_required.trim() !== '' &&
+          sourceYear &&
+          targetYear
+        ) {
+          const yearDelta = targetYear - sourceYear;
+          if (yearDelta !== 0) {
+            insertObj.sample_required = insertObj.sample_required.replace(/\d{4}/g, (match) => {
+              const num = Number(match);
+              if (Number.isNaN(num)) return match;
+              return String(num + yearDelta);
+            });
+          }
+        }
+      } catch (e) {
+        console.error('[control_forms replicate] sample_required year-shift error:', e);
+      }
+
+      // Recompute sample_size if it exists in schema (based on control_frequency)
+      const currentTimestamp = new Date();
+      const controlFrequencyValue = insertObj.control_frequency ? String(insertObj.control_frequency).trim() : null;
+      try {
+        if ('sample_size' in insertObj) {
+          const sampleSize = getSampleSizeByFrequency(controlFrequencyValue);
+          insertObj.sample_size = sampleSize !== null ? String(sampleSize) : null;
+        }
+      } catch (e) {
+        // Don't fail replication if sample util fails; keep copied values
+        console.error('[control_forms replicate] sample calc error:', e);
+      }
+
+      const columns = Object.keys(insertObj);
+      const values = Object.values(insertObj);
+      const insertPlaceholders = columns.map((_, idx) => `$${idx + 1}`).join(', ');
+      const insertQuery = `INSERT INTO control_forms (${columns.join(', ')}) VALUES (${insertPlaceholders}) RETURNING form_id`;
+      const insertResult = await client.query(insertQuery, values);
+      createdFormIds.push(insertResult.rows[0].form_id);
+    }
+
+    await client.query('COMMIT');
+
+    await logAuditEvent('RACM replicated', userEmail, `count=${createdFormIds.length}`);
+
+    res.status(201).json({
+      success: true,
+      message: 'RACMs replicated successfully',
+      count: createdFormIds.length,
+      data: { form_ids: createdFormIds },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error replicating RACMs:', error);
+    res.status(500).json({ success: false, message: 'Error replicating RACMs', error: error.message });
   } finally {
     client.release();
   }

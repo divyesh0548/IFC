@@ -11,6 +11,7 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import IconButton from '@mui/material/IconButton'
+import Divider from '@mui/material/Divider'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -124,38 +125,70 @@ function ExcelUpload() {
     }
 
     const worksheet = workbook.Sheets[firstSheetName]
-    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false })
-    const headerRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : []
-
-    if (!Array.isArray(headerRow) || headerRow.length === 0) {
-      return { hasColumn: false, hasAnyValue: false, nonEmptyValues: [] }
-    }
-
-    // Find index of "Process Owner" column (normalized)
-    const processOwnerIndex = headerRow.findIndex(
-      (header) => normalizeHeader(header) === 'process owner'
-    )
-
-    if (processOwnerIndex === -1) {
-      // Column does not exist
-      return { hasColumn: false, hasAnyValue: false, nonEmptyValues: [] }
-    }
-
-    // Collect non-empty values from data rows for this column
-    const dataRows = Array.isArray(rows) && rows.length > 1 ? rows.slice(1) : []
     const nonEmptyValues = []
 
-    dataRows.forEach((row) => {
-      if (!Array.isArray(row)) return
-      const cellValue = row[processOwnerIndex]
-      if (cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '') {
-        nonEmptyValues.push(String(cellValue).trim())
+    // Strategy A: Read as array-of-arrays (header row + data rows)
+    try {
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' })
+      const headerRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : []
+
+      if (Array.isArray(headerRow) && headerRow.length > 0) {
+        const processOwnerIndex = headerRow.findIndex(
+          (header) => normalizeHeader(header) === 'process owner'
+        )
+
+        if (processOwnerIndex !== -1) {
+          const dataRows = Array.isArray(rows) && rows.length > 1 ? rows.slice(1) : []
+          dataRows.forEach((row) => {
+            if (!Array.isArray(row)) return
+            const cellValue = row[processOwnerIndex]
+            if (cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '') {
+              nonEmptyValues.push(String(cellValue).trim())
+            }
+          })
+        }
       }
-    })
+    } catch (err) {
+      // Ignore and fall back to object-based parsing
+      console.warn('Process Owner validation (header-based) failed:', err)
+    }
 
-    const hasAnyValue = nonEmptyValues.length > 0
+    // Strategy B: Read as array-of-objects (most reliable for `"Process Owner": "abcd12345"` cases)
+    let hasColumn = false
+    try {
+      const objectRows = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: '' })
+      if (Array.isArray(objectRows) && objectRows.length > 0) {
+        // Find the actual column key that maps to "process owner"
+        const sampleRow = objectRows[0] || {}
+        const processOwnerKey = Object.keys(sampleRow).find(
+          (key) => normalizeHeader(key) === 'process owner'
+        )
 
-    return { hasColumn: true, hasAnyValue, nonEmptyValues }
+        if (processOwnerKey) {
+          hasColumn = true
+          objectRows.forEach((row) => {
+            if (!row || typeof row !== 'object') return
+            const val = row[processOwnerKey]
+            if (val !== undefined && val !== null && String(val).trim() !== '') {
+              nonEmptyValues.push(String(val).trim())
+            }
+          })
+        }
+      }
+    } catch (err) {
+      console.warn('Process Owner validation (object-based) failed:', err)
+    }
+
+    // Determine hasColumn: either object-based found it OR header-based found values OR header contains it
+    // If we collected any values, we definitely have the column.
+    if (nonEmptyValues.length > 0) {
+      hasColumn = true
+    }
+
+    const uniqueNonEmptyValues = [...new Set(nonEmptyValues)]
+    const hasAnyValue = uniqueNonEmptyValues.length > 0
+
+    return { hasColumn, hasAnyValue, nonEmptyValues: uniqueNonEmptyValues }
   }
 
   const handleSubmit = async (e) => {
@@ -179,10 +212,12 @@ function ExcelUpload() {
     try {
       const { hasColumn, hasAnyValue, nonEmptyValues } = await checkProcessOwnerColumn(file)
 
-      if (!hasColumn || !hasAnyValue) {
-        // Missing column OR column present but all values empty -> warn, but continue upload.
-        toast("Process Owner column is empty.", { icon: '⚠️' })
-      } else {
+      if (hasColumn && !hasAnyValue) {
+        // Column present but empty -> warn, but continue upload.
+        toast('Process Owner column is empty.', { icon: '⚠️' })
+      }
+
+      if (hasColumn && hasAnyValue) {
         // Column exists and has at least one value: validate all non-empty entries as emails.
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
         const invalidEmails = nonEmptyValues.filter((val) => !emailRegex.test(val))
@@ -491,6 +526,36 @@ function ExcelUpload() {
                 }}
               >
                 Back to Dashboard
+              </Button>
+
+              {/* Other Actions (separate from upload) */}
+              <Divider sx={{ my: 3 }} />
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  fontWeight: 700,
+                  mb: 1.5,
+                  color: theme.palette.text.secondary,
+                }}
+              >
+                Other actions
+              </Typography>
+              <Button
+                type="button"
+                onClick={() => navigate('/company_co/create-form')}
+                variant="outlined"
+                color="secondary"
+                fullWidth
+                sx={{
+                  py: 1.5,
+                  fontSize: theme.typography.customSizes.medium,
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  borderWidth: 2,
+                  '&:hover': { borderWidth: 2 },
+                }}
+              >
+                Create RACM Manually
               </Button>
             </form>
           </Paper>

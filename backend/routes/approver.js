@@ -301,20 +301,62 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     if (processOwnerEmail) {
       const statusText = status === 'Approved' ? 'approved' : 'rejected';
       const emailSubject = `RACM ${status}`;
+
+      // Look up process owner name from ifc_users for a personalized greeting
+      let processOwnerName = 'Process Owner';
+      try {
+        const ownerQuery = `
+          SELECT emp_name 
+          FROM ifc_users 
+          WHERE LOWER(TRIM(email_id)) = LOWER(TRIM($1))
+          LIMIT 1
+        `;
+        const ownerResult = await pool.query(ownerQuery, [processOwnerEmail]);
+        const rawName = ownerResult.rows[0]?.emp_name;
+        if (rawName && String(rawName).trim() !== '') {
+          processOwnerName = String(rawName).trim();
+        }
+      } catch (nameError) {
+        console.error('Error fetching process owner name for email notification:', nameError);
+        // Fallback to generic 'Process Owner' if lookup fails
+      }
+
+      // Look up company name from companies table using process owner's company_identifier
+      let companyName = '';
+      try {
+        const companyQuery = `
+          SELECT c.company_name
+          FROM ifc_users u
+          INNER JOIN companies c ON u.company_identifier = c.company_identifier
+          WHERE LOWER(TRIM(u.email_id)) = LOWER(TRIM($1))
+          LIMIT 1
+        `;
+        const companyResult = await pool.query(companyQuery, [processOwnerEmail]);
+        const rawCompanyName = companyResult.rows[0]?.company_name;
+        if (rawCompanyName && String(rawCompanyName).trim() !== '') {
+          companyName = String(rawCompanyName).trim();
+        }
+      } catch (companyError) {
+        console.error('Error fetching company name for email notification:', companyError);
+        // Fallback to default company name if lookup fails
+      }
       
-      let emailBody = `Dear Process Owner,\n\n`;
-      emailBody += `Your RACM has been ${statusText} by the approver.\n\n`;
+      let emailBody = `Dear ${processOwnerName},\n\n`;
+      emailBody += `Your RACM has been ${statusText}.\n\n`;
       
       if (reason_by_approver) {
         emailBody += `Reason/Comments from Approver:\n${reason_by_approver}\n\n`;
       }
       
       emailBody += `Form Details:\n`;
+      if (updatedForm.business_process) {
+        emailBody += `- BusinessProcess: ${updatedForm.business_process}\n`;
+      }
+      if (updatedForm.sub_process) {
+        emailBody += `- SubProcess: ${updatedForm.sub_process}\n`;
+      }
       if (updatedForm.standard_control_description) {
         emailBody += `- Description: ${updatedForm.standard_control_description}\n`;
-      }
-      if (updatedForm.business_process) {
-        emailBody += `- Process: ${updatedForm.business_process}\n`;
       }
       
       emailBody += `\n`;
@@ -324,7 +366,7 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
       }
       
       emailBody += `Thank you for using the IFC system.\n\n`;
-      emailBody += `Best regards,\nSharp & Tannan Associates`;
+      emailBody += `Best regards,\n${companyName}`;
 
       try {
         const emailSent = await sendEmail(processOwnerEmail, emailSubject, emailBody);

@@ -17,6 +17,7 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
+import Autocomplete from '@mui/material/Autocomplete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -48,6 +49,13 @@ function FormDetail() {
   })
   const [savingSchedule, setSavingSchedule] = useState(false)
   const fileInputRef = useRef(null)
+  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
+  const [companyUsers, setCompanyUsers] = useState([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [selectedUser, setSelectedUser] = useState(null)
+  const [userSearchText, setUserSearchText] = useState('')
+  const [processOwnerName, setProcessOwnerName] = useState('-')
+  const [sampleMissingDialogOpen, setSampleMissingDialogOpen] = useState(false)
 
   useEffect(() => {
     fetchFormData()
@@ -105,6 +113,19 @@ function FormDetail() {
     const isCurrentlyActive = formData.active && formData.active !== '' && formData.active !== '0'
     const newActiveStatus = isCurrentlyActive ? '0' : '1'
 
+    // If setting to active and sample document is missing, show confirmation dialog first
+    if (
+      newActiveStatus === '1' &&
+      (!formData.sample_doc || formData.sample_doc.trim() === '')
+    ) {
+      setSampleMissingDialogOpen(true)
+      return
+    }
+
+    await validateAndToggleActive(newActiveStatus)
+  }
+
+  const validateAndToggleActive = async (newActiveStatus) => {
     // Only validate when setting to active
     if (newActiveStatus === '1') {
       // Check if required fields are empty
@@ -112,20 +133,15 @@ function FormDetail() {
       const reminderFrequency = formData.reminder_frequency?.trim()
       const processOwnerEmailValue = formData.process_owner?.trim()
 
-      const missingFields = []
-      if (!dueDate || dueDate === '') {
-        missingFields.push('Due Date')
-      }
-      if (!reminderFrequency || reminderFrequency === '') {
-        missingFields.push('Reminder Frequency')
-      }
+      // 1) If process owner is missing, show assignment message regardless of other fields
       if (!processOwnerEmailValue || processOwnerEmailValue === '') {
-        missingFields.push('Process Owner')
+        toast.error('RACM Assignment is remaining')
+        return
       }
 
-      // If any required fields are missing, show toast and return
-      if (missingFields.length > 0) {
-        toast.error(`Please update the following fields before setting the form to Active: ${missingFields.join(', ')}`)
+      // 2) If process owner is present but reminder settings are missing, show reminder message
+      if (!dueDate || dueDate === '' || !reminderFrequency || reminderFrequency === '') {
+        toast.error('Configure Reminder settings')
         return
       }
 
@@ -343,6 +359,109 @@ function FormDetail() {
       setSavingSchedule(false)
     }
   }
+
+  const fetchCompanyUsers = async () => {
+    setUsersLoading(true)
+    try {
+      const response = await fetch('http://localhost:3000/api/company-co/users', {
+        method: 'GET',
+        credentials: 'include',
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setCompanyUsers(Array.isArray(data.users) ? data.users : [])
+      } else {
+        setCompanyUsers([])
+      }
+    } catch (error) {
+      console.error('Error fetching company users:', error)
+      setCompanyUsers([])
+    } finally {
+      setUsersLoading(false)
+    }
+  }
+
+  const assignableUsers = companyUsers.filter((user) => {
+    const formCompany = (formData?.company_identifier || '').trim()
+    const userCompany = (user.company_identifier || '').trim()
+    const isSameCompany = !userCompany || userCompany === formCompany
+    return isSameCompany && user.role === 'user'
+  })
+
+  const handleOpenAssignmentDialog = async () => {
+    setSelectedUser(null)
+    setUserSearchText('')
+    setAssignmentDialogOpen(true)
+
+    if (companyUsers.length === 0) {
+      await fetchCompanyUsers()
+    }
+  }
+
+  const handleCloseAssignmentDialog = () => {
+    if (updating) return
+    setAssignmentDialogOpen(false)
+    setSelectedUser(null)
+    setUserSearchText('')
+  }
+
+  const handleUpdateAssignment = async () => {
+    if (!form_id || !selectedUser?.email_id) return
+
+    setUpdating(true)
+    try {
+      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          process_owner: selectedUser.email_id,
+          modifiedFields: ['process_owner'],
+        }),
+      })
+
+      const data = await response.json()
+      if (response.ok && data.success) {
+        toast.success('Sucessfully Updated RACM Assignment')
+        handleCloseAssignmentDialog()
+        fetchFormData()
+      } else {
+        toast.error(data.message || 'Failed to update RACM assignment')
+      }
+    } catch (error) {
+      console.error('Error updating assignment:', error)
+      toast.error('Failed to update RACM assignment')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  // Ensure company users are loaded when we have a process owner (for name lookup)
+  useEffect(() => {
+    if (formData?.process_owner && companyUsers.length === 0) {
+      fetchCompanyUsers()
+    }
+  }, [formData?.process_owner]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Derive process owner display name from company users using email_id
+  useEffect(() => {
+    const email = (formData?.process_owner || '').trim().toLowerCase()
+    if (!email) {
+      setProcessOwnerName('-')
+      return
+    }
+    const match = companyUsers.find(
+      (user) => (user.email_id || '').trim().toLowerCase() === email
+    )
+    if (match && match.emp_name) {
+      setProcessOwnerName(match.emp_name)
+    } else {
+      setProcessOwnerName('-')
+    }
+  }, [formData?.process_owner, companyUsers])
 
   const handleSaveChanges = async () => {
     // Check status again before saving
@@ -616,8 +735,8 @@ function FormDetail() {
     control_performer: 'Control Performer',
     control_owner: 'Control Owner',
     control_design_procs: 'Procedures to Evaluate Design and Implementation',
-    control_type_fo: 'Type of Control O_F',
-    control_type_ma: 'Type of Control M_A',
+    control_type_fo: 'Type of control (Operational/Financial)',
+    control_type_ma: 'Type of control (Manual/ Automated)',
     nature_of_control: 'Nature of Control',
     process_owner: 'Process Owner',
     control_frequency: 'Control Frequency',
@@ -640,12 +759,12 @@ function FormDetail() {
   const fieldOrder = [
     'control_number',
     'account_balance_disclosure',
-    'risk_heat',
-    'standard_control_description',
     'sub_process',
     'risk_description',
-    'whether_fraud_risks_exist',
+    'risk_heat',
+    'standard_control_description',
     'control_objective',
+    'whether_fraud_risks_exist',
     'process_walkthrough',
     'control_relies_on_ipe',
     'audit_evidence_accuracy',
@@ -745,7 +864,7 @@ function FormDetail() {
     <Box
       sx={{
         width: '100%',
-        maxWidth: '1500px',
+        maxWidth: '1400px',
         mx: 'auto',
         px: { xs: 2, sm: 3, md: 4 },
         py: 3,
@@ -802,244 +921,318 @@ function FormDetail() {
           Delete
         </Button>
       </Box>
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
-        {/* Left Sidebar - 25% */}
-        <Box sx={{ width: { xs: '100%', lg: '25%' } }}>
-          <Box
-            sx={{
-              position: { xs: 'static', lg: 'sticky' },
-              top: { lg: 80 },
-              zIndex: 1,
-              alignSelf: 'flex-start',
-              maxHeight: { lg: 'calc(100vh - 96px)' },
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {/* Top Sidebar (now full width) */}
+        <Box sx={{ width: '100%' }}>
+          <Card 
+            sx={{ 
+              borderRadius: 3,
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                : '0 2px 12px rgba(0, 0, 0, 0.08)',
+              border: '1px solid',
+              borderColor: theme.palette.mode === 'dark' 
+                ? 'rgba(255, 255, 255, 0.12)' 
+                : 'rgba(0, 0, 0, 0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
             }}
           >
-            <Card 
-              sx={{ 
-                height: { xs: 'auto', lg: 'calc(100vh - 96px)' },
-                borderRadius: 3,
-                boxShadow: theme.palette.mode === 'dark'
-                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
-                border: '1px solid',
-                borderColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.12)' 
-                  : 'rgba(0, 0, 0, 0.08)',
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-              }}
-            >
-              <CardContent sx={{ 
-                px: 3.5,
-                pt: 4,
-                pb: 4,
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: 0,
-                height: '100%',
-                overflow: 'hidden',
-              }}>
+            <CardContent sx={{ 
+              px: 3.5,
+              pt: 4,
+              pb: 4,
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: 0,
+            }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 3,
+                }}
+              >
+                {/* Top metrics in equal-width grid */}
                 <Box
                   sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 0,
-                    height: '100%',
-                    overflowY: { xs: 'visible', lg: 'auto' },
-                    pr: { lg: 1.5 },
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      sm: 'repeat(2, 1fr)',
+                      md: 'repeat(4, 1fr)',
+                    },
+                    gap: 2,
                   }}
                 >
-                {/* Form Status */}
-                <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                  <Typography
-                    variant="caption"
-                    component="label"
+                  {/* Form Status */}
+                  <Box
                     sx={{
-                      display: 'block',
-                      fontWeight: 600,
-                      mb: 1,
-                      color: 'text.secondary',
-                      fontSize: '0.75rem',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
                     }}
                   >
-                    Form Status
-                  </Typography>
-                  <Typography
-                    variant="body2"
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Form Status
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: isActive ? '#10b981' : '#ef4444',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                      }}
+                    >
+                      {isActive ? 'Active' : 'Inactive'}
+                    </Typography>
+                  </Box>
+
+                  {/* Business Process */}
+                  <Box
                     sx={{
-                      color: isActive ? '#10b981' : '#ef4444',
-                      fontWeight: 500,
-                      fontSize: '0.9375rem',
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
                     }}
                   >
-                    {isActive ? 'Active' : 'Inactive'}
-                  </Typography>
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Business Process
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formData?.business_process || '-'}
+                    </Typography>
+                  </Box>
+
+                  {/* Financial Year */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Financial Year
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formData?.financial_year || '-'}
+                    </Typography>
+                  </Box>
+
+                  {/* Approval Status */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Approval Status
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: (() => {
+                          const status = formData?.status
+                          if (status === 'Approved') return '#10b981'
+                          if (status === 'Rejected') return '#ef4444'
+                          return 'text.primary'
+                        })(),
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formatStatus(formData?.status)}
+                    </Typography>
+                  </Box>
                 </Box>
 
-                {/* Business Process */}
-                <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                  <Typography
-                    variant="caption"
-                    component="label"
-                    sx={{
-                      display: 'block',
-                      fontWeight: 600,
-                      mb: 1,
-                      color: 'text.secondary',
-                      fontSize: '0.75rem',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                    }}
-                  >
-                    Business Process
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: 'text.primary',
-                      fontWeight: 500,
-                      fontSize: '0.9375rem',
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {formData?.business_process || '-'}
-                  </Typography>
-                </Box>
-
-                {/* Financial Year */}
-                <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                  <Typography
-                    variant="caption"
-                    component="label"
-                    sx={{
-                      display: 'block',
-                      fontWeight: 600,
-                      mb: 1,
-                      color: 'text.secondary',
-                      fontSize: '0.75rem',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                    }}
-                  >
-                    Financial Year
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: 'text.primary',
-                      fontWeight: 500,
-                      fontSize: '0.9375rem',
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {formData?.financial_year || '-'}
-                  </Typography>
-                </Box>
-
-                {/* Creation Time */}
-                <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                  <Typography
-                    variant="caption"
-                    component="label"
-                    sx={{
-                      display: 'block',
-                      fontWeight: 600,
-                      mb: 1,
-                      color: 'text.secondary',
-                      fontSize: '0.75rem',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                    }}
-                  >
-                    Created At
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: 'text.primary',
-                      fontWeight: 500,
-                      fontSize: '0.875rem',
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {formatDateTime(formData?.created_at)}
-                  </Typography>
-                </Box>
-
-                {/* Approved/Rejected */}
-                <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                  <Typography
-                    variant="caption"
-                    component="label"
-                    sx={{
-                      display: 'block',
-                      fontWeight: 600,
-                      mb: 1,
-                      color: 'text.secondary',
-                      fontSize: '0.75rem',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                    }}
-                  >
-                    Approval Status
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: 'text.primary',
-                      fontWeight: 500,
-                      fontSize: '0.9375rem', lineHeight: 1.5,
-                    }}
-                  >
-                    {formatStatus(formData?.status)}
-                  </Typography>
-                </Box>
-
-                {/* Reason by Approver - show only when non-empty */}
-                {(() => {
-                  const reason = formData?.reason_by_approver
-                  const hasReason = typeof reason === 'string' && reason.trim() !== ''
-                  if (!hasReason) return null
-
-                  return (
-                    <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                {/* Reminder Settings + RACM Assignment (50/50, aligned) */}
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
+                    gap: 3,
+                    alignItems: 'flex-start',
+                  }}
+                >
+                  {/* Reminder Settings */}
+                  {!isEditMode && (
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 1.5,
+                      }}
+                    >
                       <Typography
                         variant="caption"
                         component="label"
                         sx={{
                           display: 'block',
                           fontWeight: 600,
-                          mb: 1,
+                          mb: 1.5,
                           color: 'text.secondary',
                           fontSize: '0.75rem',
                           textTransform: 'uppercase',
                           letterSpacing: '0.5px',
                         }}
                       >
-                        Reason by Approver
+                        Reminder Settings
                       </Typography>
-                      <Typography
-                        variant="body2"
+
+                      <Box
                         sx={{
-                          color: 'text.primary',
-                          fontWeight: 500,
-                          fontSize: '0.875rem',
-                          lineHeight: 1.6,
-                          wordBreak: 'break-word',
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+                          gap: 1.5,
+                          alignItems: 'center',
                         }}
                       >
-                        {reason}
-                      </Typography>
-                    </Box>
-                  )
-                })()}
+                        <TextField
+                          type="date"
+                          label="Due Date"
+                          value={scheduleFields.due_date}
+                          onChange={(e) => handleScheduleFieldChange('due_date', e.target.value)}
+                          fullWidth
+                          size="small"
+                          InputLabelProps={{ shrink: true }}
+                          inputProps={{ min: getTomorrowDateString() }}
+                        />
 
-                {/* Modify Button */}
-                {!isEditMode && (
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel id="reminder-frequency-label">Reminder Frequency</InputLabel>
+                          <Select
+                            labelId="reminder-frequency-label"
+                            value={scheduleFields.reminder_frequency}
+                            label="Reminder Frequency"
+                            onChange={(e) => handleScheduleFieldChange('reminder_frequency', e.target.value)}
+                          >
+                            <MenuItem value="Daily">Daily</MenuItem>
+                            <MenuItem value="Weekly">Weekly</MenuItem>
+                            <MenuItem value="Monthly">Monthly</MenuItem>
+                            <MenuItem value="Other">Other</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
+
+                      {scheduleFields.reminder_frequency === 'Other' && (
+                        <TextField
+                          type="number"
+                          label="Custom Days"
+                          value={scheduleFields.custom_days}
+                          onChange={(e) => handleScheduleFieldChange('custom_days', e.target.value)}
+                          fullWidth
+                          size="small"
+                          inputProps={{ min: 1 }}
+                          sx={{ mb: 1.5 }}
+                        />
+                      )}
+
+                      {(
+                        scheduleFields.due_date !== formatDateForInput(formData?.due_date) ||
+                        scheduleFields.reminder_frequency !== parseReminderFrequency(formData.reminder_frequency).reminder_frequency ||
+                        (scheduleFields.reminder_frequency === 'Other' &&
+                          scheduleFields.custom_days !== parseReminderFrequency(formData.reminder_frequency).custom_days)
+                      ) && (
+                        <Button
+                          onClick={handleSaveSchedule}
+                          disabled={savingSchedule}
+                          fullWidth
+                          variant="outlined"
+                          size="small"
+                          sx={{
+                            textTransform: 'none',
+                            fontWeight: 600,
+                            borderRadius: 2,
+                          }}
+                        >
+                          {savingSchedule ? 'Saving...' : 'Save Reminder Settings'}
+                        </Button>
+                      )}
+                    </Box>
+                  )}
+
+                  {/* RACM Assignment */}
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1.5,
+                    }}
+                  >
                     <Typography
                       variant="caption"
                       component="label"
@@ -1053,154 +1246,28 @@ function FormDetail() {
                         letterSpacing: '0.5px',
                       }}
                     >
-                      Reminder Settings
+                      RACM Assignment
                     </Typography>
-
-                    <TextField
-                      type="date"
-                      label="Due Date"
-                      value={scheduleFields.due_date}
-                      onChange={(e) => handleScheduleFieldChange('due_date', e.target.value)}
-                      fullWidth
-                      size="small"
-                      InputLabelProps={{ shrink: true }}
-                      inputProps={{ min: getTomorrowDateString() }}
-                      sx={{ mb: 1.5 }}
-                    />
-
-                    <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
-                      <InputLabel id="reminder-frequency-label">Reminder Frequency</InputLabel>
-                      <Select
-                        labelId="reminder-frequency-label"
-                        value={scheduleFields.reminder_frequency}
-                        label="Reminder Frequency"
-                        onChange={(e) => handleScheduleFieldChange('reminder_frequency', e.target.value)}
-                      >
-                        <MenuItem value="Daily">Daily</MenuItem>
-                        <MenuItem value="Weekly">Weekly</MenuItem>
-                        <MenuItem value="Monthly">Monthly</MenuItem>
-                        <MenuItem value="Other">Other</MenuItem>
-                      </Select>
-                    </FormControl>
-
-                    {scheduleFields.reminder_frequency === 'Other' && (
-                      <TextField
-                        type="number"
-                        label="Custom Days"
-                        value={scheduleFields.custom_days}
-                        onChange={(e) => handleScheduleFieldChange('custom_days', e.target.value)}
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Button
+                        onClick={handleOpenAssignmentDialog}
                         fullWidth
-                        size="small"
-                        inputProps={{ min: 1 }}
-                        sx={{ mb: 1.5 }}
-                      />
-                    )}
-
-                    <Button
-                      onClick={handleSaveSchedule}
-                      disabled={savingSchedule}
-                      fullWidth
-                      variant="outlined"
-                      sx={{
-                        textTransform: 'none',
-                        fontWeight: 600,
-                        borderRadius: 2,
-                      }}
-                    >
-                      {savingSchedule ? 'Saving...' : 'Save Reminder Settings'}
-                    </Button>
+                        variant="outlined"
+                        size="medium"
+                        sx={{
+                          textTransform: 'none',
+                          fontWeight: 600,
+                          borderRadius: 1,
+                          padding:0.8
+                        }}
+                      >
+                        RACM Assignment
+                      </Button>
+                    </Box>
                   </Box>
-                )}
+                </Box>
 
-                {!isEditMode && (
-                  <Box sx={{ mt: 1, pt: 2, pb: 2, }}>
-                    <Button
-                      onClick={handleModifyClick}
-                      fullWidth
-                      variant="contained"
-                      color="secondary"
-                      sx={{
-                        py: 1.75,
-                        fontWeight: 600,
-                        textTransform: 'none',
-                        fontSize: '0.9375rem',
-                        borderRadius: 2,
-                        boxShadow: theme.palette.mode === 'dark'
-                          ? '0 4px 12px rgba(3, 105, 161, 0.3)'
-                          : '0 2px 8px rgba(3, 105, 161, 0.2)',
-                        '&:hover': {
-                          boxShadow: theme.palette.mode === 'dark'
-                            ? '0 6px 16px rgba(3, 105, 161, 0.4)'
-                            : '0 4px 12px rgba(3, 105, 161, 0.3)',
-                          transform: 'translateY(-1px)',
-                        },
-                        transition: 'all 0.2s ease-in-out',
-                      }}
-                    >
-                      Modify
-                    </Button>
-                  </Box>
-                )}
-
-                {/* Upload Sampling Excel Button */}
-                {!isEditMode && (
-                  <Box sx={{ mt: 2 }}>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                      onChange={handleSamplingFileChange}
-                      style={{ display: 'none' }}
-                      disabled={(formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists || uploadingSampling}
-                    />
-                    <Button
-                      onClick={handleSamplingUploadClick}
-                      disabled={(formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists || uploadingSampling}
-                      fullWidth
-                      variant="outlined"
-                      startIcon={(formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists ? <CheckCircleIcon /> : <CloudUploadIcon />}
-                      sx={{
-                        py: 1.75,
-                        fontWeight: 600,
-                        textTransform: 'none',
-                        fontSize: '0.9375rem',
-                        borderRadius: 2,
-                        borderWidth: 1.5,
-                        borderColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.23)'
-                          : 'rgba(0, 0, 0, 0.23)',
-                        '&:hover': {
-                          borderWidth: 1.5,
-                          borderColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.3)'
-                            : 'rgba(0, 0, 0, 0.3)',
-                          backgroundColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.05)'
-                            : 'rgba(0, 0, 0, 0.04)',
-                          transform: 'translateY(-1px)',
-                        },
-                        '&:disabled': {
-                          borderColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.12)'
-                            : 'rgba(0, 0, 0, 0.12)',
-                          color: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.5)'
-                            : 'rgba(0, 0, 0, 0.5)',
-                          backgroundColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.03)'
-                            : 'rgba(0, 0, 0, 0.02)',
-                          cursor: 'not-allowed',
-                          transform: 'none',
-                        },
-                        transition: 'all 0.2s ease-in-out',
-                      }}
-                    >
-                      {uploadingSampling ? 'Uploading...' : ((formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists ? 'Sample Document Uploaded' : 'Upload Sample Document')}
-                    </Button>
-                  </Box>
-                )}
-
-                {/* Save/Cancel Buttons when in edit mode */}
+                {/* Buttons shown when in edit mode */}
                 {isEditMode && (
                   <Box sx={{ mt: 1, pt: 3, pb: 2, borderTop: '2px solid', borderColor: 'divider', display: 'flex', gap: 2 }}>
                     <Button
@@ -1261,15 +1328,115 @@ function FormDetail() {
                   </Box>
                 )}
 
-                {/* Toggle Button at Bottom */}
-                <Box sx={{ mt: 2, pt: 3, borderTop: '2px solid', borderColor: 'divider' }}>
+                {/* Bottom action buttons (3 columns, equal width) */}
+                <Box
+                  sx={{
+                    mt: 2,
+                    pt: 3,
+                    borderTop: '2px solid',
+                    borderColor: 'divider',
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+                    gap: 2,
+                  }}
+                >
+                  {/* Modify */}
+                  <Button
+                    onClick={handleModifyClick}
+                    disabled={isEditMode}
+                    variant="contained"
+                    color="secondary"
+                    sx={{
+                      width: '100%',
+                      py: 1.5,
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      fontSize: '0.9375rem',
+                      borderRadius: 2,
+                      boxShadow: theme.palette.mode === 'dark'
+                        ? '0 4px 12px rgba(3, 105, 161, 0.3)'
+                        : '0 2px 8px rgba(3, 105, 161, 0.2)',
+                      '&:hover': {
+                        boxShadow: theme.palette.mode === 'dark'
+                          ? '0 6px 16px rgba(3, 105, 161, 0.4)'
+                          : '0 4px 12px rgba(3, 105, 161, 0.3)',
+                        transform: 'translateY(-1px)',
+                      },
+                      ...(isEditMode && {
+                        opacity: 0.5,
+                        cursor: 'not-allowed',
+                        transform: 'none',
+                      }),
+                      transition: 'all 0.2s ease-in-out',
+                    }}
+                  >
+                    Modify
+                  </Button>
+
+                  {/* Upload Sampling Excel */}
+                  <Box sx={{ width: '100%' }}>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                      onChange={handleSamplingFileChange}
+                      style={{ display: 'none' }}
+                      disabled={(formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists || uploadingSampling}
+                    />
+                    <Button
+                      onClick={handleSamplingUploadClick}
+                      disabled={(formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists || uploadingSampling || isEditMode}
+                      fullWidth
+                      variant="outlined"
+                      startIcon={(formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists ? <CheckCircleIcon /> : <CloudUploadIcon />}
+                      sx={{
+                        py: 1.5,
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        fontSize: '0.9375rem',
+                        borderRadius: 2,
+                        borderWidth: 1.5,
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.23)'
+                          : 'rgba(0, 0, 0, 0.23)',
+                        '&:hover': {
+                          borderWidth: 1.5,
+                          borderColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.3)'
+                            : 'rgba(0, 0, 0, 0.3)',
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.05)'
+                            : 'rgba(0, 0, 0, 0.04)',
+                          transform: 'translateY(-1px)',
+                        },
+                        '&:disabled': {
+                          borderColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.12)'
+                            : 'rgba(0, 0, 0, 0.12)',
+                          color: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.5)'
+                            : 'rgba(0, 0, 0, 0.5)',
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.03)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                          cursor: 'not-allowed',
+                          transform: 'none',
+                        },
+                        transition: 'all 0.2s ease-in-out',
+                      }}
+                    >
+                      {uploadingSampling ? 'Uploading...' : ((formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists ? 'Sample Document Uploaded' : 'Upload Sample Document')}
+                    </Button>
+                  </Box>
+
+                  {/* Toggle Active */}
                   <Button
                     onClick={handleToggleActive}
                     disabled={updating || isEditMode}
-                    fullWidth
                     variant="contained"
                     sx={{
-                      py: 1.75,
+                      width: '100%',
+                      py: 1.5,
                       fontWeight: 600,
                       textTransform: 'none',
                       fontSize: '0.9375rem',
@@ -1309,26 +1476,43 @@ function FormDetail() {
                     {updating ? 'Updating...' : (isActive ? 'Set Inactive' : 'Set Active')}
                   </Button>
                 </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Box>
+              </Box>
+            </CardContent>
+          </Card>
         </Box>
 
-        {/* Vertical Divider */}
-        <Box
-          sx={{
-            display: { xs: 'none', lg: 'block' },
-            width: '1px',
-            backgroundColor: 'divider',
-            alignSelf: 'stretch',
-          }}
-        />
-
-        {/* Right Side - 75% */}
-        <Box sx={{ width: { xs: '100%', lg: '75%' }, flex: 1 }}>
-          <Card>
+        {/* Main Content (below sidebar, full width) */}
+        <Box sx={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {/* Process and risk section */}
+          <Card
+            sx={{
+              borderRadius: 3,
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                : '0 2px 12px rgba(0, 0, 0, 0.08)',
+              border: '1px solid',
+              borderColor: theme.palette.mode === 'dark' 
+                ? 'rgba(255, 255, 255, 0.12)' 
+                : 'rgba(0, 0, 0, 0.08)',
+              overflow: 'hidden',
+            }}
+          >
             <CardContent sx={{ p: 4 }}>
+              <Typography
+                variant="h6"
+                component="h3"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: 'text.primary',
+                  fontSize: '1.25rem',
+                  pb: 2,
+                  borderBottom: '2px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                Process and Risk
+              </Typography>
               <Box
                 sx={{
                   display: 'grid',
@@ -1337,12 +1521,296 @@ function FormDetail() {
                     md: 'repeat(2, 1fr)',
                   },
                   gap: 3,
+                  mt: 2,
+                }}
+              >
+                {['control_number', 'account_balance_disclosure', 'sub_process', 'risk_description', 'risk_heat'].map((key) => {
+                  if (!formData.hasOwnProperty(key) || excludedFields.includes(key)) return null
+
+                  const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                  const value = formData[key]
+                  const isEmpty = value === null || value === undefined || value === ''
+                  const isEditable = isEditMode && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)
+                  const isTextArea = ['risk_description'].includes(key)
+
+                  return (
+                    <Box
+                      key={key}
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.03)'
+                          : 'rgba(0, 0, 0, 0.02)',
+                        border: '1px solid',
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
+                        gridColumn: isEditable && isTextArea
+                          ? {
+                              xs: '1',
+                              md: '1 / -1',
+                            }
+                          : undefined,
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': {
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.05)'
+                            : 'rgba(0, 0, 0, 0.04)',
+                        },
+                      }}
+                    >
+                      {!isEditable && (
+                        <Typography
+                          variant="caption"
+                          component="dt"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            mb: 1.5,
+                            color: 'text.primary',
+                            fontSize: theme.typography.customSizes.small,
+                          }}
+                        >
+                          {label}
+                        </Typography>
+                      )}
+                      {isEditable ? (
+                        <TextField
+                          label={label}
+                          variant="outlined"
+                          value={editableFields[key] || ''}
+                          onChange={(e) => handleFieldChange(key, e.target.value)}
+                          fullWidth
+                          multiline={isTextArea}
+                          rows={isTextArea ? 4 : 1}
+                          disabled={saving}
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              backgroundColor: 'transparent',
+                              '&:hover': {
+                                backgroundColor: 'transparent',
+                              },
+                              '&.Mui-focused': {
+                                backgroundColor: 'transparent',
+                              },
+                            },
+                          }}
+                        />
+                      ) : (
+                        <Typography
+                          variant="body2"
+                          component="dd"
+                          sx={{
+                            color: isEmpty ? 'text.disabled' : 'text.secondary',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            fontSize: theme.typography.customSizes.medium,
+                          }}
+                        >
+                          {isEmpty ? '-' : String(value)}
+                        </Typography>
+                      )}
+                    </Box>
+                  )
+                })}
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* Assertions section */}
+          <Card
+            sx={{
+              borderRadius: 3,
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                : '0 2px 12px rgba(0, 0, 0, 0.08)',
+              border: '1px solid',
+              borderColor: theme.palette.mode === 'dark' 
+                ? 'rgba(255, 255, 255, 0.12)' 
+                : 'rgba(0, 0, 0, 0.08)',
+              overflow: 'hidden',
+            }}
+          >
+            <CardContent sx={{ p: 4 }}>
+              <Typography
+                variant="h6"
+                component="h3"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: 'text.primary',
+                  fontSize: '1.25rem',
+                  pb: 2,
+                  borderBottom: '2px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                Assertions
+              </Typography>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: 'repeat(2, 1fr)',
+                  },
+                  gap: 3,
+                  mt: 2,
+                }}
+              >
+                {['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure'].map((key) => {
+                  if (!formData.hasOwnProperty(key) || excludedFields.includes(key)) return null
+
+                  const label = fieldLabels[key]
+                  const value = formData[key]
+                  const isEmpty = value === null || value === undefined || value === ''
+                  const isEditable = isEditMode && !approverOnlyFields.includes(key)
+
+                  return (
+                    <Box
+                      key={key}
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.03)'
+                          : 'rgba(0, 0, 0, 0.02)',
+                        border: '1px solid',
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': {
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.05)'
+                            : 'rgba(0, 0, 0, 0.04)',
+                        },
+                      }}
+                    >
+                      {!isEditable && (
+                        <Typography
+                          variant="caption"
+                          component="dt"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            mb: 1.5,
+                            color: 'text.primary',
+                            fontSize: theme.typography.customSizes.small,
+                          }}
+                        >
+                          {label}
+                        </Typography>
+                      )}
+                      {isEditable ? (
+                        <TextField
+                          label={label}
+                          variant="outlined"
+                          value={editableFields[key] || ''}
+                          onChange={(e) => handleFieldChange(key, e.target.value)}
+                          fullWidth
+                          disabled={saving}
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              backgroundColor: 'transparent',
+                              '&:hover': {
+                                backgroundColor: 'transparent',
+                              },
+                              '&.Mui-focused': {
+                                backgroundColor: 'transparent',
+                              },
+                            },
+                          }}
+                        />
+                      ) : (
+                        <Typography
+                          variant="body2"
+                          component="dd"
+                          sx={{
+                            color: isEmpty ? 'text.disabled' : 'text.secondary',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            fontSize: theme.typography.customSizes.medium,
+                          }}
+                        >
+                          {isEmpty ? '-' : String(value)}
+                        </Typography>
+                      )}
+                    </Box>
+                  )
+                })}
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* Control Details section */}
+          <Card
+            sx={{
+              borderRadius: 3,
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                : '0 2px 12px rgba(0, 0, 0, 0.08)',
+              border: '1px solid',
+              borderColor: theme.palette.mode === 'dark' 
+                ? 'rgba(255, 255, 255, 0.12)' 
+                : 'rgba(0, 0, 0, 0.08)',
+              overflow: 'hidden',
+            }}
+          >
+            <CardContent sx={{ p: 4 }}>
+              <Typography
+                variant="h6"
+                component="h3"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: 'text.primary',
+                  fontSize: '1.25rem',
+                  pb: 2,
+                  borderBottom: '2px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                Control Details
+              </Typography>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: 'repeat(2, 1fr)',
+                  },
+                  gap: 3,
+                  mt: 2,
                 }}
               >
                 {fieldOrder
-                  .filter(key => {
-                    // Exclude grouped fields from regular display
-                    if (groupedApproverFields.includes(key)) {
+                  .filter((key) => {
+                    if (groupedApproverFields.includes(key)) return false
+                    // already shown in Process and risk / Assertions
+                    if (
+                      [
+                        'control_number',
+                        'account_balance_disclosure',
+                        'sub_process',
+                        'risk_description',
+                        'risk_heat',
+                        'completeness',
+                        'existence_occurrence',
+                        'valuation_and_allocation',
+                        'rights_and_obligation',
+                        'presentation_and_disclosure',
+                      ].includes(key)
+                    ) {
+                      return false
+                    }
+                    // Doc & remarks are handled in Approval section
+                    if (['doc_uploaded_by_user', 'remarks_by_user'].includes(key)) {
                       return false
                     }
                     return formData.hasOwnProperty(key) && !excludedFields.includes(key)
@@ -1351,11 +1819,9 @@ function FormDetail() {
                     const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                     const value = formData[key]
                     const isEmpty = value === null || value === undefined || value === ''
-                    // Coordinator cannot edit approver-only fields or doc_uploaded_by_user
                     const isEditable = isEditMode && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)
                     const isTextArea = [
                       'standard_control_description',
-                      'risk_description',
                       'control_objective',
                       'process_walkthrough',
                       'audit_evidence_accuracy',
@@ -1368,15 +1834,26 @@ function FormDetail() {
                       <Box
                         key={key}
                         sx={{
-                          pb: 3,
-                          borderBottom: '1px solid',
-                          borderColor: 'divider',
-                          gridColumn: isEditable ? {
-                            xs: '1',
-                            md: '1 / -1'
-                          } : undefined,
-                          '&:last-child': {
-                            borderBottom: 'none',
+                          p: 2.5,
+                          borderRadius: 2,
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.03)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                          border: '1px solid',
+                          borderColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : 'rgba(0, 0, 0, 0.06)',
+                          gridColumn: isEditable && isTextArea
+                            ? {
+                                xs: '1',
+                                md: '1 / -1',
+                              }
+                            : undefined,
+                          transition: 'all 0.2s ease-in-out',
+                          '&:hover': {
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.05)'
+                              : 'rgba(0, 0, 0, 0.04)',
                           },
                         }}
                       >
@@ -1389,7 +1866,7 @@ function FormDetail() {
                               fontWeight: 700,
                               textTransform: 'uppercase',
                               letterSpacing: '0.5px',
-                              mb: 1,
+                              mb: 1.5,
                               color: 'text.primary',
                               fontSize: theme.typography.customSizes.small,
                             }}
@@ -1438,126 +1915,383 @@ function FormDetail() {
                           </Box>
                         ) : (
                           <Box>
-                            <Typography
-                              variant="body2"
-                              component="dd"
-                              sx={{
-                                color: isEmpty ? 'text.disabled' : 'text.secondary',
-                                wordBreak: 'break-word',
-                                lineHeight: 1.6,
-                                fontSize: theme.typography.customSizes.medium,
-                              }}
-                            >
-                              {isEmpty ? '-' : String(value)}
-                            </Typography>
-                            {key === 'sample_required' && (
-                              <Typography
-                                variant="caption"
-                                component="p"
-                                sx={{
-                                  color: 'text.secondary',
-                                  fontStyle: 'italic',
-                                  mt: 0.75,
-                                  fontSize: '0.75rem',
-                                  opacity: 0.8,
-                                }}
-                              >
-                                {sampleRequiredNotice}
-                              </Typography>
+                            {key === 'process_owner' ? (
+                              <Box>
+                                <Typography
+                                  variant="body2"
+                                  component="dd"
+                                  sx={{
+                                    color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.6,
+                                    fontSize: theme.typography.customSizes.medium,
+                                  }}
+                                >
+                                  {isEmpty ? '-' : String(value)}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  component="p"
+                                  sx={{
+                                    color: 'text.secondary',
+                                    mt: 0.25,
+                                    fontSize: '0.8rem',
+                                  }}
+                                >
+                                  {processOwnerName && processOwnerName !== '-'
+                                    ? `Name: ${processOwnerName}`
+                                    : 'Name: -'}
+                                </Typography>
+                              </Box>
+                            ) : (
+                              <Box>
+                                <Typography
+                                  variant="body2"
+                                  component="dd"
+                                  sx={{
+                                    color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.6,
+                                    fontSize: theme.typography.customSizes.medium,
+                                  }}
+                                >
+                                  {isEmpty ? '-' : String(value)}
+                                </Typography>
+                                {key === 'sample_required' && (
+                                  <Typography
+                                    variant="caption"
+                                    component="p"
+                                    sx={{
+                                      color: 'text.secondary',
+                                      fontStyle: 'italic',
+                                      mt: 0.75,
+                                      fontSize: '0.75rem',
+                                      opacity: 0.8,
+                                    }}
+                                  >
+                                    {sampleRequiredNotice}
+                                  </Typography>
+                                )}
+                              </Box>
                             )}
                           </Box>
                         )}
                       </Box>
                     )
                   })}
-                
-                {/* Grouped Approver Fields - Display only if at least one has a value */}
-                {hasGroupedFieldValue && (
-                  <Box
-                    sx={{
-                      gridColumn: { xs: '1', md: '1 / -1' },
-                      pb: 3,
-                      borderTop: '2px solid',
-                      borderBottom: '1px solid',
-                      borderColor: 'divider',
-                      pt: 3,
-                      mt: 2,
-                    }}
-                  >
-                    <Typography
-                      variant="h6"
-                      component="h3"
-                      sx={{
-                        fontWeight: 700,
-                        mb: 3,
-                        color: 'text.primary',
-                        fontSize: '1.125rem',
-                      }}
-                    >
-                      Control Design & Evaluation
-                    </Typography>
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 3,
-                      }}
-                    >
-                      {groupedApproverFields.map((key) => {
-                        const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-                        const value = formData[key]
-                        const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
-                        const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
-
-                        return (
-                          <Box
-                            key={key}
-                            sx={{
-                              pb: 2,
-                              borderBottom: '1px solid',
-                              borderColor: 'divider',
-                              '&:last-child': {
-                                borderBottom: 'none',
-                              },
-                            }}
-                          >
-                            <Typography
-                              variant="caption"
-                              component="dt"
-                              sx={{
-                                display: 'block',
-                                fontWeight: 700,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px',
-                                mb: 1,
-                                color: 'text.primary',
-                                fontSize: theme.typography.customSizes.small,
-                              }}
-                            >
-                              {label}
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              component="dd"
-                              sx={{
-                                color: isEmpty ? 'text.disabled' : 'text.secondary',
-                                wordBreak: 'break-word',
-                                lineHeight: 1.6,
-                                fontSize: theme.typography.customSizes.medium,
-                                whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
-                              }}
-                            >
-                              {isEmpty ? '-' : String(value)}
-                            </Typography>
-                          </Box>
-                        )
-                      })}
-                    </Box>
-                  </Box>
-                )}
               </Box>
             </CardContent>
           </Card>
+
+          {/* Grouped Approver Fields - Display only if at least one has a value */}
+          {hasGroupedFieldValue && (
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Design and Implementation
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                    mt: 2,
+                  }}
+                >
+                  {groupedApproverFields.map((key) => {
+                    const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                    const value = formData[key]
+                    const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
+                    const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+
+                    return (
+                      <Box
+                        key={key}
+                        sx={{
+                          p: 2.5,
+                          borderRadius: 2,
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.03)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                          border: '1px solid',
+                          borderColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : 'rgba(0, 0, 0, 0.06)',
+                          transition: 'all 0.2s ease-in-out',
+                          '&:hover': {
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.05)'
+                              : 'rgba(0, 0, 0, 0.04)',
+                          },
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          component="dt"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            mb: 1.5,
+                            color: 'text.primary',
+                            fontSize: theme.typography.customSizes.small,
+                          }}
+                        >
+                          {label}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          component="dd"
+                          sx={{
+                            color: isEmpty ? 'text.disabled' : 'text.secondary',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            fontSize: theme.typography.customSizes.medium,
+                            whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                          }}
+                        >
+                          {isEmpty ? '-' : String(value)}
+                        </Typography>
+                      </Box>
+                    )
+                  })}
+                </Box>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Approval section – doc/remarks/reason */}
+          {(formData.doc_uploaded_by_user || formData.remarks_by_user || formData.reason_by_approver) && (
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Approval
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                    mt: 2,
+                  }}
+                >
+                  {/* Doc Uploaded By User */}
+                  {formData.doc_uploaded_by_user && (
+                    <Box
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.03)'
+                          : 'rgba(0, 0, 0, 0.02)',
+                        border: '1px solid',
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': {
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.05)'
+                            : 'rgba(0, 0, 0, 0.04)',
+                        },
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        component="dt"
+                        sx={{
+                          display: 'block',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          mb: 1.5,
+                          color: 'text.primary',
+                          fontSize: theme.typography.customSizes.small,
+                        }}
+                      >
+                        {fieldLabels.doc_uploaded_by_user}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        component="dd"
+                        sx={{
+                          color: 'text.secondary',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.6,
+                          fontSize: theme.typography.customSizes.medium,
+                        }}
+                      >
+                        {String(formData.doc_uploaded_by_user)}
+                      </Typography>
+                    </Box>
+                  )}
+
+                  {/* Remarks By User if present on payload */}
+                  {typeof formData.remarks_by_user !== 'undefined' && (
+                    <Box
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.03)'
+                          : 'rgba(0, 0, 0, 0.02)',
+                        border: '1px solid',
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': {
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.05)'
+                            : 'rgba(0, 0, 0, 0.04)',
+                        },
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        component="dt"
+                        sx={{
+                          display: 'block',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          mb: 1.5,
+                          color: 'text.primary',
+                          fontSize: theme.typography.customSizes.small,
+                        }}
+                      >
+                        Remarks By User
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        component="dd"
+                        sx={{
+                          color:
+                            !formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
+                              ? 'text.disabled'
+                              : 'text.secondary',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.6,
+                          fontSize: theme.typography.customSizes.medium,
+                        }}
+                      >
+                        {!formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
+                          ? '-'
+                          : String(formData.remarks_by_user)}
+                      </Typography>
+                    </Box>
+                  )}
+
+                  {/* Reason by Approver - show only when non-empty */}
+                  {(() => {
+                    const reason = formData?.reason_by_approver
+                    const hasReason = typeof reason === 'string' && reason.trim() !== ''
+                    if (!hasReason) return null
+
+                    return (
+                      <Box
+                        sx={{
+                          p: 2.5,
+                          borderRadius: 2,
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.03)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                          border: '1px solid',
+                          borderColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : 'rgba(0, 0, 0, 0.06)',
+                          transition: 'all 0.2s ease-in-out',
+                          '&:hover': {
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.05)'
+                              : 'rgba(0, 0, 0, 0.04)',
+                          },
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          component="dt"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            mb: 1.5,
+                            color: 'text.primary',
+                            fontSize: theme.typography.customSizes.small,
+                          }}
+                        >
+                          Reason by Approver
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          component="dd"
+                          sx={{
+                            color: 'text.primary',
+                            fontWeight: 500,
+                            fontSize: '0.875rem',
+                            lineHeight: 1.6,
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {reason}
+                        </Typography>
+                      </Box>
+                    )
+                  })()}
+                </Box>
+              </CardContent>
+            </Card>
+          )}
         </Box>
       </Box>
 
@@ -1601,7 +2335,7 @@ function FormDetail() {
               mb: 2,
             }}
           >
-            User with email <strong>{processOwnerEmail}</strong> does not exist in the system. Please create a user account to proceed with setting the form to active.
+          User with email <strong>{processOwnerEmail}</strong> does not exist as a user in your company (with role set to &quot;user&quot;). Please create a user account to proceed with setting the RACM to Active.
           </DialogContentText>
         </DialogContent>
         <DialogActions
@@ -1660,6 +2394,212 @@ function FormDetail() {
             }}
           >
             Create User
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* RACM Assignment Dialog */}
+      <Dialog
+        open={assignmentDialogOpen}
+        onClose={handleCloseAssignmentDialog}
+        aria-labelledby="racm-assignment-dialog-title"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '460px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="racm-assignment-dialog-title"
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 700,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          RACM Assignment
+        </DialogTitle>
+        <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
+          {formData && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Typography variant="body2">
+                <strong>Standard Control Description:</strong>{' '}
+                {formData.standard_control_description || 'N/A'}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Business Process:</strong> {formData.business_process || 'N/A'}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Financial Year:</strong> {formData.financial_year || 'N/A'}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Current Process Owner Email:</strong>{' '}
+                {formData.process_owner || '-'}
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 2 }}>
+                <strong>Current Process Owner Name:</strong>{' '}
+                {formData.process_owner_name || '-'}
+              </Typography>
+
+              <Autocomplete
+                options={assignableUsers}
+                loading={usersLoading}
+                value={selectedUser}
+                inputValue={userSearchText}
+                onInputChange={(_, newInputValue) => setUserSearchText(newInputValue)}
+                onChange={(_, newValue) => setSelectedUser(newValue)}
+                getOptionLabel={(option) => option?.emp_name || option?.email_id || ''}
+                isOptionEqualToValue={(option, value) => option.email_id === value.email_id}
+                filterOptions={(options, state) => {
+                  const input = state.inputValue.trim().toLowerCase()
+                  if (!input) return options
+                  return options.filter((user) =>
+                    (user.emp_name || '').toLowerCase().includes(input)
+                  )
+                }}
+                renderOption={(props, option) => (
+                  <Box component="li" {...props}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                      <Typography variant="body2">{option.emp_name || '-'}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {option.email_id || '-'}
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Search Username"
+                    placeholder="Type username..."
+                  />
+                )}
+              />
+
+              <Typography variant="caption" color="text.secondary">
+                {selectedUser?.email_id || ' '}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={handleCloseAssignmentDialog} disabled={updating}>
+            Cancel
+          </Button>
+          {selectedUser?.email_id && (
+            <Button
+              variant="contained"
+              color="secondary"
+              onClick={handleUpdateAssignment}
+              disabled={updating}
+            >
+              {updating ? 'Updating...' : 'Update Assignment'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Sample Missing Confirmation Dialog */}
+      <Dialog
+        open={sampleMissingDialogOpen}
+        onClose={() => setSampleMissingDialogOpen(false)}
+        aria-labelledby="sample-missing-dialog-title"
+        aria-describedby="sample-missing-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '400px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="sample-missing-dialog-title"
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 600,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          Sample Document Missing
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContentText
+            id="sample-missing-dialog-description"
+            sx={{
+              color: theme.palette.text.secondary,
+              fontSize: '0.9375rem',
+              lineHeight: 1.5,
+              m: 0,
+              mb: 2,
+            }}
+          >
+            Sample document is missing for this RACM. Are you sure you want to set this RACM to Active?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            pt: 2.5,
+            gap: 1.5,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Button
+            onClick={() => setSampleMissingDialogOpen(false)}
+            variant="outlined"
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '100px',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.23)'
+                : 'rgba(0, 0, 0, 0.23)',
+              color: theme.palette.text.primary,
+              '&:hover': {
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.3)'
+                  : 'rgba(0, 0, 0, 0.3)',
+                backgroundColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.05)'
+                  : 'rgba(0, 0, 0, 0.04)',
+              },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={async () => {
+              setSampleMissingDialogOpen(false)
+              await validateAndToggleActive('1')
+            }}
+            variant="contained"
+            color="secondary"
+            autoFocus
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '120px',
+              fontWeight: 600,
+            }}
+          >
+            Yes, Set Active
           </Button>
         </DialogActions>
       </Dialog>

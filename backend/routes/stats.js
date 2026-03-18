@@ -142,10 +142,47 @@ router.get('/companies/user-distribution', async (req, res) => {
       });
     }
   });
-  
-  
-  
 
+// Get earliest and latest user creation years from ifc_users
+router.get('/users/year-range', async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        MIN(EXTRACT(YEAR FROM created_at AT TIME ZONE 'Asia/Kolkata'))::int AS earliest_year,
+        MAX(EXTRACT(YEAR FROM created_at AT TIME ZONE 'Asia/Kolkata'))::int AS latest_year
+      FROM ifc_users;
+    `;
+
+    const result = await pool.query(query);
+    const row = result.rows[0] || {};
+
+    // If there are no users, return the current year as both earliest and latest
+    const currentYear = new Date().getFullYear();
+    const earliestYear = row.earliest_year || currentYear;
+    const latestYear = row.latest_year || currentYear;
+
+    // Build full inclusive list of years, oldest -> newest
+    const years = [];
+    for (let y = earliestYear; y <= latestYear; y += 1) {
+      years.push(y);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        earliestYear,
+        latestYear,
+        years,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching user year range:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user year range',
+    });
+  }
+});
 
 module.exports = router;
 

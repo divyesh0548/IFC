@@ -275,8 +275,8 @@ function ApproverFormDetail() {
     control_performer: 'Control Performer',
     control_owner: 'Control Owner',
     control_design_procs: 'Procedures to Evaluate Design and Implementation',
-    control_type_fo: 'Type of Control O_F',
-    control_type_ma: 'Type of Control M_A',
+    control_type_fo: 'Type of control (Operational/Financial)',
+    control_type_ma: 'Type of control (Manual/ Automated)',
     nature_of_control: 'Nature of Control',
     process_owner: 'Process Owner',
     control_frequency: 'Control Frequency',
@@ -299,12 +299,12 @@ function ApproverFormDetail() {
   const fieldOrder = [
     'control_number',
     'account_balance_disclosure',
-    'risk_heat',
-    'standard_control_description',
     'sub_process',
     'risk_description',
-    'whether_fraud_risks_exist',
+    'risk_heat',
+    'standard_control_description',
     'control_objective',
+    'whether_fraud_risks_exist',
     'process_walkthrough',
     'control_relies_on_ipe',
     'audit_evidence_accuracy',
@@ -409,34 +409,54 @@ function ApproverFormDetail() {
             RACM
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
-          {/* Left Sidebar - 25% */}
-          <Box sx={{ width: { xs: '100%', lg: '25%' } }}>
-            <Box
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {/* Top summary card (matches coordinator design) */}
+          <Box sx={{ width: '100%' }}>
+            <Card
               sx={{
-                position: 'sticky',
-                top: { xs: 64, lg: 80 }, // Account for AppBar height (64px) + some padding
-                zIndex: 1,
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.12)'
+                  : 'rgba(0, 0, 0, 0.08)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
               }}
             >
-              <Card 
-                sx={{ 
-                  height: 'fit-content',
-                  maxHeight: { xs: 'calc(100vh - 64px - 24px)', lg: 'calc(100vh - 80px - 24px)' },
-                  overflowY: 'hidden',
-                  borderRadius: 3,
-                  boxShadow: theme.palette.mode === 'dark'
-                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                    : '0 2px 12px rgba(0, 0, 0, 0.08)',
-                  border: '1px solid',
-                  borderColor: theme.palette.mode === 'dark' 
-                    ? 'rgba(255, 255, 255, 0.12)' 
-                    : 'rgba(0, 0, 0, 0.08)',
+              <CardContent
+                sx={{
+                  px: 3.5,
+                  pt: 4,
+                  pb: 4,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 0,
                 }}
               >
-                <CardContent sx={{ p: 3.5, display: 'flex', flexDirection: 'column', gap: 0 }}>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      sm: 'repeat(2, 1fr)',
+                      md: 'repeat(3, 1fr)',
+                    },
+                    gap: 2,
+                  }}
+                >
                   {/* Form Status */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
                     <Typography
                       variant="caption"
                       component="label"
@@ -452,9 +472,9 @@ function ApproverFormDetail() {
                     >
                       Form Status
                     </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
+                    <Typography
+                      variant="body2"
+                      sx={{
                         color: isActive ? '#10b981' : '#ef4444',
                         fontWeight: 500,
                         fontSize: '0.9375rem',
@@ -465,7 +485,14 @@ function ApproverFormDetail() {
                   </Box>
 
                   {/* Business Process */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
                     <Typography
                       variant="caption"
                       component="label"
@@ -481,9 +508,9 @@ function ApproverFormDetail() {
                     >
                       Business Process
                     </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
+                    <Typography
+                      variant="body2"
+                      sx={{
                         color: 'text.primary',
                         fontWeight: 500,
                         fontSize: '0.9375rem',
@@ -494,8 +521,15 @@ function ApproverFormDetail() {
                     </Typography>
                   </Box>
 
-                  {/* Creation Time */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  {/* Created At */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
                     <Typography
                       variant="caption"
                       component="label"
@@ -511,9 +545,9 @@ function ApproverFormDetail() {
                     >
                       Created At
                     </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
+                    <Typography
+                      variant="body2"
+                      sx={{
                         color: 'text.primary',
                         fontWeight: 500,
                         fontSize: '0.875rem',
@@ -524,38 +558,15 @@ function ApproverFormDetail() {
                     </Typography>
                   </Box>
 
-                  {/* Process Owner */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                    <Typography
-                      variant="caption"
-                      component="label"
-                      sx={{
-                        display: 'block',
-                        fontWeight: 600,
-                        mb: 1,
-                        color: 'text.secondary',
-                        fontSize: '0.75rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                      }}
-                    >
-                      Process Owner
-                    </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
-                        color: 'text.primary',
-                        fontWeight: 500,
-                        fontSize: '0.9375rem',
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {formData?.process_owner_name || formData?.process_owner || '-'}
-                    </Typography>
-                  </Box>
-
                   {/* Approval Status */}
-                  <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
                     <Typography
                       variant="caption"
                       component="label"
@@ -571,10 +582,15 @@ function ApproverFormDetail() {
                     >
                       Approval Status
                     </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
-                        color: 'text.primary',
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: (() => {
+                          const status = formData?.status || ''
+                          if (status === 'Approved') return '#10b981'
+                          if (status === 'Rejected') return '#ef4444'
+                          return 'text.primary'
+                        })(),
                         fontWeight: 500,
                         fontSize: '0.9375rem',
                         lineHeight: 1.5,
@@ -588,20 +604,63 @@ function ApproverFormDetail() {
                         if (!status || status === '') {
                           return '-'
                         }
-                        // Capitalize first letter
                         return status.charAt(0).toUpperCase() + status.slice(1)
                       })()}
                     </Typography>
                   </Box>
 
-                  {/* Reason by Approver - show only when non-empty */}
+                  {/* Process Owner */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Process Owner
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formData?.process_owner_name || formData?.process_owner || '-'}
+                    </Typography>
+                  </Box>
+
+                  {/* Reason by Approver (only when present) */}
                   {(() => {
                     const reason = formData?.reason_by_approver
                     const hasReason = typeof reason === 'string' && reason.trim() !== ''
                     if (!hasReason) return null
 
                     return (
-                      <Box sx={{ pb: 1.5, mb: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                      <Box
+                        sx={{
+                          p: 2,
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider',
+                        }}
+                      >
                         <Typography
                           variant="caption"
                           component="label"
@@ -617,9 +676,9 @@ function ApproverFormDetail() {
                         >
                           Reason by Approver
                         </Typography>
-                        <Typography 
-                          variant="body2" 
-                          sx={{ 
+                        <Typography
+                          variant="body2"
+                          sx={{
                             color: 'text.primary',
                             fontWeight: 500,
                             fontSize: '0.875rem',
@@ -632,25 +691,43 @@ function ApproverFormDetail() {
                       </Box>
                     )
                   })()}
-                </CardContent>
-              </Card>
-            </Box>
+                </Box>
+              </CardContent>
+            </Card>
           </Box>
 
-          {/* Vertical Divider */}
-          <Box
-            sx={{
-              display: { xs: 'none', lg: 'block' },
-              width: '1px',
-              backgroundColor: 'divider',
-              alignSelf: 'stretch',
-            }}
-          />
-
-          {/* Right Side - 75% */}
-          <Box sx={{ width: { xs: '100%', lg: '75%' }, flex: 1 }}>
-            <Card>
+          {/* Main content – matches coordinator card styling */}
+          <Box sx={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {/* Process and risk section */}
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
               <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Process and Risk
+                </Typography>
                 <Box
                   sx={{
                     display: 'grid',
@@ -659,20 +736,245 @@ function ApproverFormDetail() {
                       md: 'repeat(2, 1fr)',
                     },
                     gap: 3,
+                    mt: 2,
+                  }}
+                >
+                  {['control_number', 'account_balance_disclosure', 'sub_process', 'risk_description', 'risk_heat']
+                    .filter((key) => formData.hasOwnProperty(key) && !excludedFields.includes(key))
+                    .map((key) => {
+                      const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                      const value = formData[key]
+                      const isEmpty = value === null || value === undefined || value === ''
+
+                      return (
+                        <Box
+                          key={key}
+                          sx={{
+                            p: 2.5,
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
+                            transition: 'all 0.2s ease-in-out',
+                            '&:hover': {
+                              backgroundColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.05)'
+                                : 'rgba(0, 0, 0, 0.04)',
+                            },
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            component="dt"
+                            sx={{
+                              display: 'block',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              mb: 1.5,
+                              color: 'text.primary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            {label}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            component="dd"
+                            sx={{
+                              color: isEmpty ? 'text.disabled' : 'text.secondary',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
+                            }}
+                          >
+                            {isEmpty ? '-' : String(value)}
+                          </Typography>
+                        </Box>
+                      )
+                    })}
+                </Box>
+              </CardContent>
+            </Card>
+
+            {/* Assertions section */}
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Assertions
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: 'repeat(2, 1fr)',
+                    },
+                    gap: 3,
+                    mt: 2,
+                  }}
+                >
+                  {['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure']
+                    .filter((key) => formData.hasOwnProperty(key) && !excludedFields.includes(key))
+                    .map((key) => {
+                      const label = fieldLabels[key]
+                      const value = formData[key]
+                      const isEmpty = value === null || value === undefined || value === ''
+
+                      return (
+                        <Box
+                          key={key}
+                          sx={{
+                            p: 2.5,
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
+                            transition: 'all 0.2s ease-in-out',
+                            '&:hover': {
+                              backgroundColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.05)'
+                                : 'rgba(0, 0, 0, 0.04)',
+                            },
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            component="dt"
+                            sx={{
+                              display: 'block',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              mb: 1.5,
+                              color: 'text.primary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            {label}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            component="dd"
+                            sx={{
+                              color: isEmpty ? 'text.disabled' : 'text.secondary',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
+                            }}
+                          >
+                            {isEmpty ? '-' : String(value)}
+                          </Typography>
+                        </Box>
+                      )
+                    })}
+                </Box>
+              </CardContent>
+            </Card>
+
+            {/* Control Details section */}
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Control Details
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: 'repeat(2, 1fr)',
+                    },
+                    gap: 3,
+                    mt: 2,
                   }}
                 >
                   {fieldOrder
-                    .filter(key => formData.hasOwnProperty(key) && !excludedFields.includes(key))
+                    .filter(key => {
+                      if (groupedApproverFields.includes(key)) return false
+                      if (
+                        [
+                          'control_number',
+                          'account_balance_disclosure',
+                          'sub_process',
+                          'risk_description',
+                          'risk_heat',
+                          'completeness',
+                          'existence_occurrence',
+                          'valuation_and_allocation',
+                          'rights_and_obligation',
+                          'presentation_and_disclosure',
+                        ].includes(key)
+                      ) {
+                        return false
+                      }
+                      // approval-related fields handled in Approval section
+                      if (['doc_uploaded_by_user', 'remarks_by_user'].includes(key)) {
+                        return false
+                      }
+                      return formData.hasOwnProperty(key) && !excludedFields.includes(key)
+                    })
                     .map((key) => {
                       const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                       const value = formData[key]
                       const isEmpty = value === null || value === undefined || value === ''
                       const isFileField = key === 'doc_uploaded_by_user'
-                      
-                      // Exclude grouped fields from regular display (they'll be shown as a group)
-                      if (groupedApproverFields.includes(key)) {
-                        return null
-                      }
                       
                       // Check if this is an editable field for approver (only when pending)
                       const editableFieldKeys = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
@@ -683,15 +985,24 @@ function ApproverFormDetail() {
                         <Box
                           key={key}
                           sx={{
-                            pb: 3,
-                            borderBottom: '1px solid',
-                            borderColor: 'divider',
+                            p: 2.5,
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
                             gridColumn: isEditable ? {
                               xs: '1',
                               md: '1 / -1'
                             } : undefined,
-                            '&:last-child': {
-                              borderBottom: 'none',
+                            transition: 'all 0.2s ease-in-out',
+                            '&:hover': {
+                              backgroundColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.05)'
+                                : 'rgba(0, 0, 0, 0.04)',
                             },
                           }}
                         >
@@ -704,7 +1015,7 @@ function ApproverFormDetail() {
                                 fontWeight: 700,
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.5px',
-                                mb: 1,
+                                mb: 1.5,
                                 color: 'text.primary',
                                 fontSize: theme.typography.customSizes.small,
                               }}
@@ -824,235 +1135,431 @@ function ApproverFormDetail() {
                         </Box>
                       )
                     })}
-                  
-                  {/* Grouped Approver Fields - Always displayed for approvers */}
-                  <Box
-                    sx={{
-                      gridColumn: { xs: '1', md: '1 / -1' },
-                      pb: 3,
-                      borderTop: '2px solid',
-                      borderBottom: '1px solid',
-                      borderColor: 'divider',
-                      pt: 3,
-                      mt: 2,
-                    }}
-                  >
-                    <Typography
-                      variant="h6"
-                      component="h3"
-                      sx={{
-                        fontWeight: 700,
-                        mb: 3,
-                        color: 'text.primary',
-                        fontSize: '1.125rem',
-                      }}
-                    >
-                      Control Design & Evaluation
-                    </Typography>
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 3,
-                      }}
-                    >
-                      {groupedApproverFields.map((key) => {
-                        const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-                        const value = formData[key]
-                        const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
-                        const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
-                        const isEditable = isPending
-                        
-                        return (
-                          <Box
-                            key={key}
-                            sx={{
-                              pb: 2,
-                              borderBottom: '1px solid',
-                              borderColor: 'divider',
-                              '&:last-child': {
-                                borderBottom: 'none',
-                              },
-                            }}
-                          >
-                            {isEditable ? (
-                              // Editable field for approver
-                              key === 'control_design_conclusion' ? (
-                                // Dropdown for control_design_conclusion
-                                <FormControl fullWidth>
-                                  <InputLabel id={`${key}-label`}>{label}</InputLabel>
-                                  <Select
-                                    labelId={`${key}-label`}
-                                    value={editableFields[key] || ''}
-                                    label={label}
-                                    onChange={(e) => handleFieldChange(key, e.target.value)}
-                                    sx={{
-                                      '& .MuiOutlinedInput-root': {
-                                        backgroundColor: 'transparent',
-                                        '&:hover': {
-                                          backgroundColor: 'transparent',
-                                        },
-                                        '&.Mui-focused': {
-                                          backgroundColor: 'transparent',
-                                        },
-                                      },
-                                    }}
-                                  >
-                                    <MenuItem value="Effective">Effective</MenuItem>
-                                    <MenuItem value="Not Effective">Not Effective</MenuItem>
-                                  </Select>
-                                </FormControl>
-                              ) : (
-                                // TextField for control_design_procs and design_deficiency_desc
-                                <TextField
-                                  label={label}
-                                  variant="outlined"
-                                  value={editableFields[key] || ''}
-                                  onChange={(e) => handleFieldChange(key, e.target.value)}
-                                  fullWidth
-                                  multiline={isTextArea}
-                                  rows={isTextArea ? 4 : 1}
-                                  sx={{
-                                    '& .MuiOutlinedInput-root': {
-                                      backgroundColor: 'transparent',
-                                      '&:hover': {
-                                        backgroundColor: 'transparent',
-                                      },
-                                      '&.Mui-focused': {
-                                        backgroundColor: 'transparent',
-                                      },
-                                    },
-                                  }}
-                                />
-                              )
-                            ) : (
-                              // Read-only display
-                              <>
-                                <Typography
-                                  variant="caption"
-                                  component="dt"
-                                  sx={{
-                                    display: 'block',
-                                    fontWeight: 700,
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.5px',
-                                    mb: 1,
-                                    color: 'text.primary',
-                                    fontSize: theme.typography.customSizes.small,
-                                  }}
-                                >
-                                  {label}
-                                </Typography>
-                                <Typography
-                                  variant="body2"
-                                  component="dd"
-                                  sx={{
-                                    color: isEmpty ? 'text.disabled' : 'text.secondary',
-                                    wordBreak: 'break-word',
-                                    lineHeight: 1.6,
-                                    fontSize: theme.typography.customSizes.medium,
-                                    whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
-                                  }}
-                                >
-                                  {isEmpty ? '-' : String(value)}
-                                </Typography>
-                              </>
-                            )}
-                          </Box>
-                        )
-                      })}
-                    </Box>
-                  </Box>
                 </Box>
               </CardContent>
             </Card>
 
-            {/* Approval Action Card - Only show if pending, hide if approved or rejected */}
-            {isPending && !isApproved && !isRejected && (
-              <Card sx={{ mt: 4 }}>
-                <CardContent sx={{ p: 4 }}>
-                  <Typography
-                    variant="h6"
-                    component="h2"
+            {/* Design and Implementation section */}
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Design and Implementation
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                    mt: 2,
+                  }}
+                >
+                  {groupedApproverFields.map((key) => {
+                    const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                    const value = formData[key]
+                    const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
+                    const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+                    const isEditable = isPending
+                    
+                    return (
+                      <Box
+                        key={key}
+                        sx={{
+                          p: 2.5,
+                          borderRadius: 2,
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.03)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                          border: '1px solid',
+                          borderColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : 'rgba(0, 0, 0, 0.06)',
+                          transition: 'all 0.2s ease-in-out',
+                          '&:hover': {
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.05)'
+                              : 'rgba(0, 0, 0, 0.04)',
+                          },
+                        }}
+                      >
+                        {isEditable ? (
+                          // Editable field for approver
+                          key === 'control_design_conclusion' ? (
+                            // Dropdown for control_design_conclusion
+                            <FormControl fullWidth>
+                              <InputLabel id={`${key}-label`}>{label}</InputLabel>
+                              <Select
+                                labelId={`${key}-label`}
+                                value={editableFields[key] || ''}
+                                label={label}
+                                onChange={(e) => handleFieldChange(key, e.target.value)}
+                                sx={{
+                                  '& .MuiOutlinedInput-root': {
+                                    backgroundColor: 'transparent',
+                                    '&:hover': {
+                                      backgroundColor: 'transparent',
+                                    },
+                                    '&.Mui-focused': {
+                                      backgroundColor: 'transparent',
+                                    },
+                                  },
+                                }}
+                              >
+                                <MenuItem value="Effective">Effective</MenuItem>
+                                <MenuItem value="Not Effective">Not Effective</MenuItem>
+                              </Select>
+                            </FormControl>
+                          ) : (
+                            // TextField for control_design_procs and design_deficiency_desc
+                            <TextField
+                              label={label}
+                              variant="outlined"
+                              value={editableFields[key] || ''}
+                              onChange={(e) => handleFieldChange(key, e.target.value)}
+                              fullWidth
+                              multiline={isTextArea}
+                              rows={isTextArea ? 4 : 1}
+                              sx={{
+                                '& .MuiOutlinedInput-root': {
+                                  backgroundColor: 'transparent',
+                                  '&:hover': {
+                                    backgroundColor: 'transparent',
+                                  },
+                                  '&.Mui-focused': {
+                                    backgroundColor: 'transparent',
+                                  },
+                                },
+                              }}
+                            />
+                          )
+                        ) : (
+                          // Read-only display
+                          <>
+                            <Typography
+                              variant="caption"
+                              component="dt"
+                              sx={{
+                                display: 'block',
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                mb: 1.5,
+                                color: 'text.primary',
+                                fontSize: theme.typography.customSizes.small,
+                              }}
+                            >
+                              {label}
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              component="dd"
+                              sx={{
+                                color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                wordBreak: 'break-word',
+                                lineHeight: 1.6,
+                                fontSize: theme.typography.customSizes.medium,
+                                whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                              }}
+                            >
+                              {isEmpty ? '-' : String(value)}
+                            </Typography>
+                          </>
+                        )}
+                      </Box>
+                    )
+                  })}
+                </Box>
+              </CardContent>
+            </Card>
+
+            {/* Approval section – Doc Uploaded By User & Remarks By User */}
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Approval
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: 'repeat(2, 1fr)',
+                    },
+                    gap: 3,
+                    mt: 2,
+                  }}
+                >
+                  {/* Doc Uploaded By User */}
+                  <Box
                     sx={{
-                      fontWeight: 700,
-                      mb: 3,
-                      color: 'text.primary',
-                      borderBottom: '2px solid',
-                      borderColor: 'divider',
-                      pb: 2
+                      p: 2.5,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.03)'
+                        : 'rgba(0, 0, 0, 0.02)',
+                      border: '1px solid',
+                      borderColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.06)',
+                      transition: 'all 0.2s ease-in-out',
+                      '&:hover': {
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.05)'
+                          : 'rgba(0, 0, 0, 0.04)',
+                      },
                     }}
                   >
-                    Approval Action
-                  </Typography>
-                  
-                  <Box sx={{ mb: 3 }}>
-                    <TextField
-                      label="Reason by Approver"
-                      placeholder="Enter reason for approval or rejection (optional)"
-                      fullWidth
-                      multiline
-                      rows={4}
-                      value={reasonByApprover}
-                      onChange={(e) => setReasonByApprover(e.target.value)}
-                      variant="outlined"
+                    <Typography
+                      variant="caption"
+                      component="dt"
                       sx={{
-                        '& .MuiOutlinedInput-root': {
-                          '&:hover fieldset': {
-                            borderColor: 'primary.main',
-                          },
-                        },
+                        display: 'block',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        mb: 1.5,
+                        color: 'text.primary',
+                        fontSize: theme.typography.customSizes.small,
                       }}
-                    />
+                    >
+                      {fieldLabels.doc_uploaded_by_user}
+                    </Typography>
+                    {formData.doc_uploaded_by_user ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography
+                          variant="body2"
+                          component="dd"
+                          sx={{
+                            color: 'text.secondary',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            fontSize: theme.typography.customSizes.medium,
+                            flex: 1,
+                          }}
+                        >
+                          {getFileName(String(formData.doc_uploaded_by_user))}
+                        </Typography>
+                        <IconButton
+                          onClick={() => handleDownloadFile(formData.doc_uploaded_by_user)}
+                          size="small"
+                          sx={{
+                            color: 'primary.main',
+                            '&:hover': {
+                              backgroundColor: 'action.hover',
+                            },
+                          }}
+                        >
+                          <DownloadIcon />
+                        </IconButton>
+                      </Box>
+                    ) : (
+                      <Typography
+                        variant="body2"
+                        component="dd"
+                        sx={{
+                          color: 'text.disabled',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.6,
+                          fontSize: theme.typography.customSizes.medium,
+                        }}
+                      >
+                        -
+                      </Typography>
+                    )}
                   </Box>
 
-                  <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
-                    <Button
-                      onClick={handleApprove}
-                      disabled={approving}
-                      variant="contained"
+                  {/* Remarks By User */}
+                  <Box
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.03)'
+                        : 'rgba(0, 0, 0, 0.02)',
+                      border: '1px solid',
+                      borderColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.06)',
+                      transition: 'all 0.2s ease-in-out',
+                      '&:hover': {
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.05)'
+                          : 'rgba(0, 0, 0, 0.04)',
+                      },
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="dt"
                       sx={{
-                        minWidth: '120px',
-                        py: 1.5,
-                        fontWeight: 600,
-                        textTransform: 'none',
-                        backgroundColor: '#10b981',
-                        color: '#ffffff',
-                        '&:hover': {
-                          backgroundColor: '#059669',
-                        },
-                        '&:disabled': {
-                          backgroundColor: '#9ca3af',
-                        },
+                        display: 'block',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        mb: 1.5,
+                        color: 'text.primary',
+                        fontSize: theme.typography.customSizes.small,
                       }}
                     >
-                      {approving ? 'Processing...' : '✓ Approve'}
-                    </Button>
-                    <Button
-                      onClick={handleReject}
-                      disabled={approving}
-                      variant="contained"
+                      {fieldLabels.remarks_by_user}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      component="dd"
                       sx={{
-                        minWidth: '120px',
-                        py: 1.5,
-                        fontWeight: 600,
-                        textTransform: 'none',
-                        backgroundColor: '#ef4444',
-                        color: '#ffffff',
-                        '&:hover': {
-                          backgroundColor: '#dc2626',
-                        },
-                        '&:disabled': {
-                          backgroundColor: '#9ca3af',
-                        },
+                        color:
+                          !formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
+                            ? 'text.disabled'
+                            : 'text.secondary',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.6,
+                        fontSize: theme.typography.customSizes.medium,
                       }}
                     >
-                      {approving ? 'Processing...' : '✗ Reject'}
-                    </Button>
+                      {!formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
+                        ? '-'
+                        : String(formData.remarks_by_user)}
+                    </Typography>
                   </Box>
-                </CardContent>
-              </Card>
-            )}
+
+                  {/* Reason by Approver and Actions (shown only when pending) */}
+                  {isPending && !isApproved && !isRejected && (
+                    <>
+                      <Box
+                        sx={{
+                          gridColumn: {
+                            xs: '1',
+                            md: '1 / -1',
+                          },
+                          mt: 1,
+                        }}
+                      >
+                        <TextField
+                          label="Reason by Approver"
+                          placeholder="Enter reason for approval or rejection (optional)"
+                          fullWidth
+                          multiline
+                          rows={4}
+                          value={reasonByApprover}
+                          onChange={(e) => setReasonByApprover(e.target.value)}
+                          variant="outlined"
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              '&:hover fieldset': {
+                                borderColor: 'primary.main',
+                              },
+                            },
+                          }}
+                        />
+                      </Box>
+
+                      <Box
+                        sx={{
+                          gridColumn: {
+                            xs: '1',
+                            md: '1 / -1',
+                          },
+                          display: 'flex',
+                          gap: 2,
+                          justifyContent: 'flex-end',
+                          mt: 1,
+                        }}
+                      >
+                        <Button
+                          onClick={handleApprove}
+                          disabled={approving}
+                          variant="contained"
+                          sx={{
+                            minWidth: '120px',
+                            py: 1.5,
+                            fontWeight: 600,
+                            textTransform: 'none',
+                            backgroundColor: '#10b981',
+                            color: '#ffffff',
+                            '&:hover': {
+                              backgroundColor: '#059669',
+                            },
+                            '&:disabled': {
+                              backgroundColor: '#9ca3af',
+                            },
+                          }}
+                        >
+                          {approving ? 'Processing...' : '✓ Approve'}
+                        </Button>
+                        <Button
+                          onClick={handleReject}
+                          disabled={approving}
+                          variant="contained"
+                          sx={{
+                            minWidth: '120px',
+                            py: 1.5,
+                            fontWeight: 600,
+                            textTransform: 'none',
+                            backgroundColor: '#ef4444',
+                            color: '#ffffff',
+                            '&:hover': {
+                              backgroundColor: '#dc2626',
+                            },
+                            '&:disabled': {
+                              backgroundColor: '#9ca3af',
+                            },
+                          }}
+                        >
+                          {approving ? 'Processing...' : '✗ Reject'}
+                        </Button>
+                      </Box>
+                    </>
+                  )}
+                </Box>
+              </CardContent>
+            </Card>
           </Box>
         </Box>
       </Box>
