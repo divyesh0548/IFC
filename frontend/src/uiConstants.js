@@ -3,6 +3,9 @@
 // Maximum width for main content containers (e.g. dashboards, detail pages)
 export const MAIN_CONTENT_MAX_WIDTH = 1200
 
+// Maximum width for form detail page (wider content area)
+export const FORM_DETAIL_MAX_WIDTH = 2100
+
 // Default min-width for compact dropdown filters (e.g. Status, Year)
 export const FILTER_DROPDOWN_MIN_WIDTH_SM = 180
 

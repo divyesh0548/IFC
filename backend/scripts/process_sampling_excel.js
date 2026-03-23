@@ -1,29 +1,8 @@
-const { Pool } = require('pg');
 const XLSX = require('xlsx');
 const { downloadFileFromS3, uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
 const { getSampleSizeByFrequency } = require('../utils/sample_required');
+const { pool } = require('../utils/db');
 require('dotenv').config();
-
-// Database connection pool
-const dbHost = process.env.DB_HOST || 'localhost';
-const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
-
-const pool = new Pool({
-  user: process.env.DB_USER || 'divyesh',
-  host: dbHost,
-  database: process.env.DB_NAME || 'ifc_dev',
-  password: String(process.env.DB_PASSWORD || '0548'),
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  // Enable SSL for remote connections (AWS RDS requires SSL)
-  ssl: isLocalhost ? false : {
-    rejectUnauthorized: false
-  }
-});
-
-// Set timezone to IST for all connections
-pool.on('connect', async (client) => {
-  await client.query("SET timezone = 'Asia/Kolkata'");
-});
 
 /**
  * Process sampling Excel files from sampling_process_temp table

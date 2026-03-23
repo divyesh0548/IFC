@@ -1,4 +1,3 @@
-const { Pool } = require('pg');
 const XLSX = require('xlsx');
 const fs = require('fs');
 const path = require('path');
@@ -7,27 +6,7 @@ const { normalizeColumnName } = require('../utils/column_mapping');
 const { downloadFileFromS3 } = require('../utils/s3Upload');
 const { logAuditEvent } = require('../utils/auditLog');
 const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/sample_required');
-
-// Database connection pool
-const dbHost = process.env.DB_HOST || 'localhost';
-const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
-
-const pool = new Pool({
-  user: process.env.DB_USER || 'divyesh',
-  host: dbHost,
-  database: process.env.DB_NAME || 'ifc_dev',
-  password: String(process.env.DB_PASSWORD || '0548'),
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  // Enable SSL for remote connections (AWS RDS requires SSL)
-  ssl: isLocalhost ? false : {
-    rejectUnauthorized: false
-  }
-});
-
-// Set timezone to IST for all connections
-pool.on('connect', async (client) => {
-  await client.query("SET timezone = 'Asia/Kolkata'");
-});
+const { pool } = require('../utils/db');
 
 // Keywords to identify header row (case-insensitive)
 const headerKeywords = [
@@ -427,7 +406,8 @@ async function processExcelFiles() {
   try {
     // Get all unprocessed files (processed = 0)
     const getUnprocessedQuery = `
-      SELECT id, file_path, file_name, company_identifier, coordinator_email_id, business_process, financial_year 
+      SELECT id, file_path, file_name, company_identifier, coordinator_email_id, business_process, financial_year,
+             due_date, reminder_frequency
       FROM excel_files 
       WHERE processed = 0 
       ORDER BY id ASC;
@@ -451,6 +431,8 @@ async function processExcelFiles() {
       const coordinatorEmailId = file.coordinator_email_id;
       const businessProcess = file.business_process;
       const financialYear = file.financial_year;
+      const fileDueDate = file.due_date;
+      const fileReminderFrequency = file.reminder_frequency;
 
       console.log(`Processing file: ${fileName} (ID: ${fileId})`);
       if (companyIdentifier) {
@@ -566,7 +548,9 @@ async function processExcelFiles() {
           'control_design_procs', 'control_design_conclusion', 'design_deficiency_desc',
           'sample_size', 'control_type_fo', 'control_type_ma',
           'doc_uploaded_by_user', 'active', 'status', 'reason_by_approver',
-          'company_identifier', 'form_id', 'business_process', 'financial_year', 'sample_required',
+          'company_identifier', 'form_id', 'business_process', 'financial_year',
+          'due_date', 'reminder_frequency',
+          'sample_required',
           'completeness', 'existence_occurrence', 'rights_and_obligation',
           'valuation_and_allocation', 'presentation_and_disclosure'
         ];
@@ -640,6 +624,13 @@ async function processExcelFiles() {
                 }
                 // Fall back to value from excel_files table
                 return financialYear || null;
+              }
+              // Use reminder settings from excel_files table (applies to all rows in the file)
+              if (col === 'due_date') {
+                return fileDueDate || null;
+              }
+              if (col === 'reminder_frequency') {
+                return fileReminderFrequency || null;
               }
               // Calculate sample_required based on control_frequency
               if (col === 'sample_required') {

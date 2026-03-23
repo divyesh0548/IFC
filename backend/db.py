@@ -689,6 +689,24 @@ def alter_control_forms_add_due_date_and_reminder_frequency(cursor):
             """)
             print(f"  ✓ Column '{column_name}' added successfully!")
 
+def alter_control_forms_add_reminder_datetime(cursor):
+    """Adds reminder_datetime (timestamptz) column to control_forms table if it doesn't exist."""
+    print("\n[control_forms - Adding reminder_datetime column]")
+
+    column_name = 'reminder_datetime'
+    column_type = 'TIMESTAMP WITH TIME ZONE'
+
+    if column_exists(cursor, 'control_forms', column_name):
+        print(f"  ⚠️  Column '{column_name}' already exists in 'control_forms' table. Skipping.")
+        return
+
+    print(f"  Adding column '{column_name}' to 'control_forms' table...")
+    cursor.execute(f"""
+        ALTER TABLE public.control_forms
+        ADD COLUMN {column_name} {column_type} NULL;
+    """)
+    print(f"  ✓ Column '{column_name}' added successfully!")
+
 def alter_sampling_process_temp_add_processed(cursor):
     """Adds processed column to sampling_process_temp table if it doesn't exist."""
     print("\n[sampling_process_temp - Adding processed column]")
@@ -810,6 +828,7 @@ def create_all_tables():
         # alter_control_forms_sample_required_to_text(cursor)
         # alter_control_forms_add_new_columns(cursor)
         # alter_control_forms_add_due_date_and_reminder_frequency(cursor)
+        alter_control_forms_add_reminder_datetime(cursor)
         # alter_control_forms_ensure_control_frequency_varchar(cursor)
         # alter_sampling_process_temp_add_processed(cursor)
         

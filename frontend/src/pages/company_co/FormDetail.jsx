@@ -22,7 +22,8 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { toast } from 'react-hot-toast';
+import { toast } from 'react-hot-toast'
+import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 
 function FormDetail() {
   const theme = useTheme()
@@ -864,7 +865,7 @@ function FormDetail() {
     <Box
       sx={{
         width: '100%',
-        maxWidth: '1400px',
+        maxWidth: FORM_DETAIL_MAX_WIDTH,
         mx: 'auto',
         px: { xs: 2, sm: 3, md: 4 },
         py: 3,
@@ -897,29 +898,61 @@ function FormDetail() {
         >
           RACM
         </Typography>
-        {/* Delete Button - Top Right Corner */}
-        <Button
-          onClick={handleDeleteClick}
-          variant="outlined"
-          color="error"
-          startIcon={<DeleteIcon />}
-          sx={{
-            position: 'absolute',
-            right: 0,
-            textTransform: 'none',
-            fontWeight: 600,
-            borderRadius: 2,
-            borderWidth: 1.5,
-            '&:hover': {
-              borderWidth: 1.5,
-              backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(211, 47, 47, 0.1)'
-                : 'rgba(211, 47, 47, 0.05)',
-            },
-          }}
-        >
-          Delete
-        </Button>
+        {/* When in edit mode: Cancel & Save Changes at top-right (replacing Delete position) */}
+        {isEditMode && (
+          <Box
+            sx={{
+              position: 'absolute',
+              right: 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+            }}
+          >
+            <Button
+              onClick={handleCancelEdit}
+              disabled={saving}
+              variant="outlined"
+              sx={{
+                py: 1,
+                fontWeight: 600,
+                textTransform: 'none',
+                fontSize: '0.9375rem',
+                borderRadius: 2,
+                borderWidth: 1.5,
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.23)'
+                  : 'rgba(0, 0, 0, 0.23)',
+                '&:hover': {
+                  borderWidth: 1.5,
+                  borderColor: theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.3)'
+                    : 'rgba(0, 0, 0, 0.3)',
+                  backgroundColor: theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.05)'
+                    : 'rgba(0, 0, 0, 0.04)',
+                },
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveChanges}
+              disabled={saving}
+              variant="contained"
+              color="secondary"
+              sx={{
+                py: 1,
+                fontWeight: 600,
+                textTransform: 'none',
+                fontSize: '0.9375rem',
+                borderRadius: 2,
+              }}
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </Box>
+        )}
       </Box>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {/* Top Sidebar (now full width) */}
@@ -1267,68 +1300,7 @@ function FormDetail() {
                   </Box>
                 </Box>
 
-                {/* Buttons shown when in edit mode */}
-                {isEditMode && (
-                  <Box sx={{ mt: 1, pt: 3, pb: 2, borderTop: '2px solid', borderColor: 'divider', display: 'flex', gap: 2 }}>
-                    <Button
-                      onClick={handleCancelEdit}
-                      disabled={saving}
-                      fullWidth
-                      variant="outlined"
-                      sx={{
-                        py: 1.75,
-                        fontWeight: 600,
-                        textTransform: 'none',
-                        fontSize: '0.9375rem',
-                        borderRadius: 2,
-                        borderWidth: 1.5,
-                        borderColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.23)'
-                          : 'rgba(0, 0, 0, 0.23)',
-                        '&:hover': {
-                          borderWidth: 1.5,
-                          borderColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.3)'
-                            : 'rgba(0, 0, 0, 0.3)',
-                          backgroundColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.05)'
-                            : 'rgba(0, 0, 0, 0.04)',
-                        },
-                        transition: 'all 0.2s ease-in-out',
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleSaveChanges}
-                      disabled={saving}
-                      fullWidth
-                      variant="contained"
-                      color="secondary"
-                      sx={{
-                        py: 1.75,
-                        fontWeight: 600,
-                        textTransform: 'none',
-                        fontSize: '0.9375rem',
-                        borderRadius: 2,
-                        boxShadow: theme.palette.mode === 'dark'
-                          ? '0 4px 12px rgba(3, 105, 161, 0.3)'
-                          : '0 2px 8px rgba(3, 105, 161, 0.2)',
-                        '&:hover': {
-                          boxShadow: theme.palette.mode === 'dark'
-                            ? '0 6px 16px rgba(3, 105, 161, 0.4)'
-                            : '0 4px 12px rgba(3, 105, 161, 0.3)',
-                          transform: 'translateY(-1px)',
-                        },
-                        transition: 'all 0.2s ease-in-out',
-                      }}
-                    >
-                      {saving ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                  </Box>
-                )}
-
-                {/* Bottom action buttons (3 columns, equal width) */}
+                {/* Bottom action buttons (4 in one row: RACM Assignment area has its own button; here: Modify, Upload, Set Active, Delete) */}
                 <Box
                   sx={{
                     mt: 2,
@@ -1336,7 +1308,7 @@ function FormDetail() {
                     borderTop: '2px solid',
                     borderColor: 'divider',
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(4, 1fr)' },
                     gap: 2,
                   }}
                 >
@@ -1474,6 +1446,36 @@ function FormDetail() {
                     }}
                   >
                     {updating ? 'Updating...' : (isActive ? 'Set Inactive' : 'Set Active')}
+                  </Button>
+
+                  {/* Delete - same row as other actions */}
+                  <Button
+                    onClick={handleDeleteClick}
+                    variant="outlined"
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    disabled={isEditMode}
+                    sx={{
+                      width: '100%',
+                      py: 1.5,
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      fontSize: '0.9375rem',
+                      borderRadius: 2,
+                      borderWidth: 1.5,
+                      '&:hover': {
+                        borderWidth: 1.5,
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(211, 47, 47, 0.1)'
+                          : 'rgba(211, 47, 47, 0.05)',
+                      },
+                      ...(isEditMode && {
+                        opacity: 0.5,
+                        cursor: 'not-allowed',
+                      }),
+                    }}
+                  >
+                    Delete
                   </Button>
                 </Box>
               </Box>

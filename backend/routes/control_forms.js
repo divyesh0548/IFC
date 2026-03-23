@@ -1,5 +1,4 @@
 const express = require('express');
-const { Pool } = require('pg');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const jwt = require('jsonwebtoken');
@@ -189,26 +188,7 @@ router.get('/test-route', (req, res) => {
   res.json({ success: true, message: 'Test route is working!', timestamp: new Date().toISOString() });
 });
 
-// Database connection pool
-const dbHost = process.env.DB_HOST || 'localhost';
-const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
-
-const pool = new Pool({
-  user: process.env.DB_USER || 'divyesh',
-  host: dbHost,
-  database: process.env.DB_NAME || 'ifc_dev',
-  password: String(process.env.DB_PASSWORD || '0548'),
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  // Enable SSL for remote connections (AWS RDS requires SSL)
-  ssl: isLocalhost ? false : {
-    rejectUnauthorized: false
-  }
-});
-
-// Set timezone to IST for all connections
-pool.on('connect', async (client) => {
-  await client.query("SET timezone = 'Asia/Kolkata'");
-});
+const { pool } = require('../utils/db');
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, '..', 'uploads', 'excel_files');
@@ -415,6 +395,34 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
     });
   }
 
+  // Optional reminder settings (both-or-none)
+  const dueDate = req.body.due_date ? String(req.body.due_date).trim() : '';
+  const reminderFrequency = req.body.reminder_frequency ? String(req.body.reminder_frequency).trim() : '';
+
+  if ((dueDate && !reminderFrequency) || (!dueDate && reminderFrequency)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide both due_date and reminder_frequency (or keep both empty)'
+    });
+  }
+
+  if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid due_date format. Expected YYYY-MM-DD'
+    });
+  }
+
+  if (reminderFrequency) {
+    const allowed = new Set(['Daily', 'Weekly', 'Monthly']);
+    if (!allowed.has(reminderFrequency)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid reminder_frequency. Allowed values: Daily, Weekly, Monthly'
+      });
+    }
+  }
+
   const client = await pool.connect();
 
   try {
@@ -440,8 +448,11 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
 
     // Save S3 key to excel_files table with processed = 0, company_identifier, coordinator_email_id, business_process, and financial_year
     const insertFileQuery = `
-      INSERT INTO excel_files (file_path, file_name, processed, company_identifier, coordinator_email_id, business_process, financial_year)
-      VALUES ($1, $2, 0, $3, $4, $5, $6)
+      INSERT INTO excel_files (
+        file_path, file_name, processed, company_identifier, coordinator_email_id, business_process, financial_year,
+        due_date, reminder_frequency
+      )
+      VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8)
       RETURNING id;
     `;
 
@@ -452,6 +463,8 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
       userEmail, // coordinator_email_id
       businessProcess, // business_process
       financialYear, // financial_year
+      dueDate || null,
+      reminderFrequency || null,
     ]);
 
     await client.query('COMMIT');

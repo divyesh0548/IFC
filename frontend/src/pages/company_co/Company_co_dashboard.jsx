@@ -10,7 +10,7 @@ import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Tooltip from '@mui/material/Tooltip'
-import { FILTER_DROPDOWN_MIN_WIDTH_SM, FILTER_DROPDOWN_MIN_WIDTH_LG } from '../../uiConstants'
+import { FILTER_DROPDOWN_MIN_WIDTH_LG } from '../../uiConstants'
 
 function Company_Co_dashboard() {
   const theme = useTheme()
@@ -272,7 +272,7 @@ function Company_Co_dashboard() {
               <FormControl
                 variant="outlined"
                 sx={{
-                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_SM,
+                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
                 }}
               >
                 <InputLabel id="financial-year-filter-label">Financial Year</InputLabel>
@@ -296,7 +296,7 @@ function Company_Co_dashboard() {
               <FormControl
                 variant="outlined"
                 sx={{
-                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_SM,
+                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
                 }}
               >
                 <InputLabel id="active-status-filter-label">Status</InputLabel>

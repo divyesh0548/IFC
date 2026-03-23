@@ -13,30 +13,11 @@ const approverRoutes = require('./routes/approver');
 const statsRoutes = require('./routes/stats');
 const { processExcelFiles } = require('./scripts/process_excel_files');
 const { processSamplingExcel } = require('./scripts/process_sampling_excel');
-const { Pool } = require('pg');
+const { runReminderEmails } = require('./scripts/reminder_emails');
+require('./utils/db'); // Load shared pool (timezone set there)
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Database connection pool for stats endpoint
-const dbHost = process.env.DB_HOST || 'localhost';
-const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
-
-const pool = new Pool({
-  user: process.env.DB_USER || 'divyesh',
-  host: dbHost,
-  database: process.env.DB_NAME || 'ifc_dev',
-  password: String(process.env.DB_PASSWORD || '0548'),
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  ssl: isLocalhost ? false : {
-    rejectUnauthorized: false
-  }
-});
-
-// Set timezone to IST for all connections
-pool.on('connect', async (client) => {
-  await client.query("SET timezone = 'Asia/Kolkata'");
-});
 
 // CORS configuration to allow credentials
 app.use((req, res, next) => {
@@ -121,6 +102,16 @@ setInterval(async () => {
 processSamplingExcel().catch(error => {
   console.error('Error processing sampling Excel files on startup:', error);
 });
+
+// Reminder emails for control_forms (runs every 1 minute)
+console.log('Starting reminder emails scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await runReminderEmails();
+  } catch (error) {
+    console.error('Error in reminder emails job:', error);
+  }
+}, 60 * 1000);
 
 // Start server
 app.listen(PORT, () => {

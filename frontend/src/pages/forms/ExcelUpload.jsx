@@ -28,6 +28,14 @@ function ExcelUpload() {
   const [isDragging, setIsDragging] = useState(false)
   const [businessProcess, setBusinessProcess] = useState('')
   const [financialYear, setFinancialYear] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [reminderFrequency, setReminderFrequency] = useState('')
+
+  const getTomorrowDateString = () => {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().split('T')[0]
+  }
 
   const validateAndSetFile = (selectedFile) => {
     if (!selectedFile) {
@@ -209,6 +217,13 @@ function ExcelUpload() {
       return
     }
 
+    const dueDateValue = String(dueDate || '').trim()
+    const reminderFrequencyValue = String(reminderFrequency || '').trim()
+    if ((dueDateValue && !reminderFrequencyValue) || (!dueDateValue && reminderFrequencyValue)) {
+      toast.error('Please fill both Due Date and Reminder Frequency (or keep both empty).')
+      return
+    }
+
     try {
       const { hasColumn, hasAnyValue, nonEmptyValues } = await checkProcessOwnerColumn(file)
 
@@ -239,6 +254,10 @@ function ExcelUpload() {
       formData.append('excelFile', file)
       formData.append('businessProcess', businessProcess)
       formData.append('financialYear', financialYear)
+      if (dueDateValue && reminderFrequencyValue) {
+        formData.append('due_date', dueDateValue)
+        formData.append('reminder_frequency', reminderFrequencyValue)
+      }
 
       const response = await fetch('http://localhost:3000/api/control-forms/bulk-upload', {
         method: 'POST',
@@ -254,6 +273,8 @@ function ExcelUpload() {
         setPreview(null)
         setBusinessProcess('')
         setFinancialYear('')
+        setDueDate('')
+        setReminderFrequency('')
         // Reset file input
         e.target.reset()
       } else {
@@ -433,6 +454,45 @@ function ExcelUpload() {
                   <MenuItem value="2025-26">2025-26</MenuItem>
                 </Select>
               </FormControl>
+
+              {/* Reminder Settings (Optional) */}
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+                  gap: 2,
+                  mb: 3,
+                  alignItems: 'center',
+                }}
+              >
+                <TextField
+                  type="date"
+                  label="Due Date (Optional)"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  fullWidth
+                  size="small"
+                  InputLabelProps={{ shrink: true }}
+                  inputProps={{ min: getTomorrowDateString() }}
+                  disabled={loading}
+                />
+
+                <FormControl fullWidth size="small" disabled={loading}>
+                  <InputLabel id="reminder-frequency-label">Reminder Frequency (Optional)</InputLabel>
+                  <Select
+                    labelId="reminder-frequency-label"
+                    value={reminderFrequency}
+                    label="Reminder Frequency (Optional)"
+                    onChange={(e) => setReminderFrequency(e.target.value)}
+                    variant="filled"
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    <MenuItem value="Daily">Daily</MenuItem>
+                    <MenuItem value="Weekly">Weekly</MenuItem>
+                    <MenuItem value="Monthly">Monthly</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
 
               {/* Instructions */}
               <Box
