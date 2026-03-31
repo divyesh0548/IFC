@@ -310,7 +310,7 @@ function CreateControlForm() {
         alignItems: 'center', 
         justifyContent: 'center', 
         minHeight: 'calc(100vh - 4rem)', 
-        px: 2, 
+        px: 0, 
         py: 4 
       }}
     >

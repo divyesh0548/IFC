@@ -283,6 +283,224 @@ router.get('/verify', async (req, res) => {
   }
 });
 
+function getEmailFromAuthCookies(req) {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return null;
+  }
+  const tokenCandidates = [
+    req.cookies.authToken,
+    req.cookies.approverAuthToken,
+    req.cookies.auditorAuthToken,
+  ].filter(Boolean);
+
+  for (const token of tokenCandidates) {
+    try {
+      const decryptedToken = decryptToken(token);
+      const decoded = jwt.verify(decryptedToken, jwtSecret);
+      if (decoded && decoded.email_id) {
+        return decoded.email_id;
+      }
+    } catch (_) {
+      // try next cookie
+    }
+  }
+  return null;
+}
+
+async function lookupCompanyNameByIdentifier(companyIdentifier) {
+  if (!companyIdentifier) {
+    return null;
+  }
+  const r = await pool.query(
+    'SELECT company_name FROM companies WHERE company_identifier = $1 LIMIT 1',
+    [companyIdentifier],
+  );
+  return r.rows[0]?.company_name ?? null;
+}
+
+function buildProfilePayload(row, companyNameFallback) {
+  const companyName =
+    companyNameFallback !== undefined && companyNameFallback !== null
+      ? companyNameFallback
+      : row.company_name ?? null;
+  return {
+    emp_name: row.emp_name ?? null,
+    email_id: row.email_id ?? null,
+    phone: row.phone ?? row.mobile ?? null,
+    company_name: companyName ?? null,
+    department: row.department ?? null,
+    designation: row.designation ?? null,
+  };
+}
+
+// Current user profile (ifc_users + company name; legacy appover / auditors fallback)
+router.get('/profile', async (req, res) => {
+  try {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error',
+      });
+    }
+
+    const emailId = getEmailFromAuthCookies(req);
+    if (!emailId) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided',
+      });
+    }
+
+    const profileQuery = `
+      SELECT
+        u.emp_name,
+        u.email_id,
+        u.mobile AS phone,
+        u.department,
+        u.designation,
+        u.company_identifier,
+        c.company_name
+      FROM ifc_users u
+      LEFT JOIN companies c ON u.company_identifier = c.company_identifier
+      WHERE u.email_id = $1
+      LIMIT 1
+    `;
+    const result = await pool.query(profileQuery, [emailId]);
+
+    if (result.rows.length > 0) {
+      const row = result.rows[0];
+      return res.status(200).json({
+        success: true,
+        profile: buildProfilePayload(row),
+      });
+    }
+
+    const approverResult = await pool.query(
+      'SELECT * FROM appover WHERE email_id = $1 LIMIT 1',
+      [emailId],
+    );
+    if (approverResult.rows.length > 0) {
+      const row = approverResult.rows[0];
+      const cn = await lookupCompanyNameByIdentifier(row.company_identifier);
+      return res.status(200).json({
+        success: true,
+        profile: buildProfilePayload(row, cn),
+      });
+    }
+
+    const auditorResult = await pool.query(
+      'SELECT * FROM auditors WHERE email_id = $1 LIMIT 1',
+      [emailId],
+    );
+    if (auditorResult.rows.length > 0) {
+      const row = auditorResult.rows[0];
+      const cn = await lookupCompanyNameByIdentifier(row.company_identifier);
+      return res.status(200).json({
+        success: true,
+        profile: buildProfilePayload(row, cn),
+      });
+    }
+
+    return res.status(404).json({
+      success: false,
+      message: 'User not found',
+    });
+  } catch (error) {
+    console.error('Profile fetch error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to load profile',
+    });
+  }
+});
+
+// Update current user profile fields (ifc_users only)
+router.put('/profile', async (req, res) => {
+  try {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error',
+      });
+    }
+
+    const emailId = getEmailFromAuthCookies(req);
+    if (!emailId) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided',
+      });
+    }
+
+    const empNameRaw = req.body?.emp_name;
+    const designationRaw = req.body?.designation;
+    const departmentRaw = req.body?.department;
+    const mobileRaw = req.body?.mobile;
+
+    const emp_name = empNameRaw !== undefined ? String(empNameRaw).trim() : null;
+    const designation = designationRaw !== undefined ? String(designationRaw).trim() : null;
+    const department = departmentRaw !== undefined ? String(departmentRaw).trim() : null;
+    const mobile = mobileRaw !== undefined ? String(mobileRaw).trim() : null;
+
+    if (emp_name !== null && emp_name.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee name is required',
+      });
+    }
+
+    if (mobile !== null && mobile.length > 0 && !/^[0-9]{10}$/.test(mobile)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mobile number must be 10 digits',
+      });
+    }
+
+    const updateQuery = `
+      UPDATE ifc_users
+      SET
+        emp_name = $1,
+        designation = $2,
+        department = $3,
+        mobile = $4
+      WHERE email_id = $5
+      RETURNING emp_name, email_id, mobile AS phone, department, designation, company_identifier
+    `;
+
+    const result = await pool.query(updateQuery, [
+      emp_name,
+      designation && designation.length > 0 ? designation : null,
+      department && department.length > 0 ? department : null,
+      mobile && mobile.length > 0 ? mobile : null,
+      emailId,
+    ]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const row = result.rows[0];
+    const companyName = await lookupCompanyNameByIdentifier(row.company_identifier);
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      profile: buildProfilePayload(row, companyName),
+    });
+  } catch (error) {
+    console.error('Profile update error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update profile',
+    });
+  }
+});
+
 // Unified Logout endpoint
 router.post('/logout', async (req, res) => {
   try {

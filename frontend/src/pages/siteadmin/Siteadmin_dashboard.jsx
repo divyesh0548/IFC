@@ -122,7 +122,7 @@ function Siteadmin_Dashboard() {
             width: '100%', 
             minHeight: '100vh',
             py: 0,
-            paddingRight: 2,
+            px: 0,
             bgcolor: theme => theme.palette.mode === 'dark' 
                 ? 'background.default' 
                 : 'grey.50'

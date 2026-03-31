@@ -14,7 +14,15 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import TextField from '@mui/material/TextField'
 import Autocomplete from '@mui/material/Autocomplete'
+import Checkbox from '@mui/material/Checkbox'
 import { toast } from 'react-hot-toast'
+import {
+  FILTER_DROPDOWN_MIN_WIDTH_LG,
+  PAGE_SUBHEADER_TEXT_SX,
+  TABLE_HEADER_BG,
+  TABLE_ROW_HOVER_BG,
+} from '../../uiConstants'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function RacmAssignment() {
   const theme = useTheme()
@@ -23,16 +31,22 @@ function RacmAssignment() {
   const [forms, setForms] = useState([])
   const [companyUsers, setCompanyUsers] = useState([])
   const [usersLoading, setUsersLoading] = useState(false)
-  const [filterAssignment, setFilterAssignment] = useState('assigned') // 'assigned' or 'unassigned'
+  const [filterAssignment, setFilterAssignment] = useState('all') // 'all' | 'assigned' | 'unassigned'
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
+  const [bulkAssignmentMode, setBulkAssignmentMode] = useState(false)
+  const [bulkAssignmentDialogOpen, setBulkAssignmentDialogOpen] = useState(false)
   const [selectedForm, setSelectedForm] = useState(null)
   const [selectedUser, setSelectedUser] = useState(null)
+  const [bulkSelectedUser, setBulkSelectedUser] = useState(null)
   const [userSearchText, setUserSearchText] = useState('')
+  const [bulkUserSearchText, setBulkUserSearchText] = useState('')
   const [updatingAssignment, setUpdatingAssignment] = useState(false)
+  const [selectedForms, setSelectedForms] = useState(new Set())
+  useSyncGlobalLoading(loading || usersLoading || updatingAssignment)
   const assignableUsers = companyUsers.filter((user) => {
     const coordinatorCompany = (companyIdentifier || '').trim()
     const userCompany = (user.company_identifier || '').trim()
@@ -130,6 +144,18 @@ function RacmAssignment() {
     }
   }, [companyIdentifier, filterAssignment, filterBusinessProcess, filterFinancialYear])
 
+  useEffect(() => {
+    if (!bulkAssignmentMode) {
+      setSelectedForms(new Set())
+    }
+  }, [bulkAssignmentMode])
+
+  useEffect(() => {
+    if (bulkAssignmentMode) {
+      setSelectedForms(new Set())
+    }
+  }, [bulkAssignmentMode, filterAssignment, filterBusinessProcess, filterFinancialYear])
+
   const fetchForms = async () => {
     if (!companyIdentifier) return
     
@@ -163,6 +189,7 @@ function RacmAssignment() {
         })
 
         const assignmentFilteredForms = sortedForms.filter((form) => {
+          if (filterAssignment === 'all') return true
           const hasProcessOwner = Boolean(form.process_owner && form.process_owner.trim() !== '')
           return filterAssignment === 'assigned' ? hasProcessOwner : !hasProcessOwner
         })
@@ -212,7 +239,34 @@ function RacmAssignment() {
     }
   }
 
+  const filterFormControlSx = {
+    minWidth: { xs: '100%', sm: FILTER_DROPDOWN_MIN_WIDTH_LG },
+    '& .MuiOutlinedInput-root': {
+      backgroundColor: 'transparent',
+      '& fieldset': {
+        borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
+      },
+      '&:hover fieldset': {
+        borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+      },
+      '&.Mui-focused fieldset': {
+        borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+      },
+    },
+    '& .MuiInputLabel-root': {
+      color: theme.palette.text.primary,
+    },
+    '& .MuiSelect-root': {
+      color: theme.palette.text.primary,
+    },
+  }
+
   const handleFormClick = async (form) => {
+    if (bulkAssignmentMode) {
+      handleSelectForm(form.form_id)
+      return
+    }
+
     setSelectedForm(form)
     setSelectedUser(null)
     setUserSearchText('')
@@ -229,6 +283,39 @@ function RacmAssignment() {
     setSelectedForm(null)
     setSelectedUser(null)
     setUserSearchText('')
+  }
+
+  const handleBulkAssignmentModeToggle = async () => {
+    if (!bulkAssignmentMode && companyUsers.length === 0) {
+      await fetchCompanyUsers()
+    }
+
+    setBulkAssignmentMode((prev) => !prev)
+    setBulkAssignmentDialogOpen(false)
+    setBulkSelectedUser(null)
+    setBulkUserSearchText('')
+  }
+
+  const handleSelectForm = (formId) => {
+    setSelectedForms((prev) => {
+      const next = new Set(prev)
+      if (next.has(formId)) {
+        next.delete(formId)
+      } else {
+        next.add(formId)
+      }
+      return next
+    })
+  }
+
+  const handleSelectAllForms = () => {
+    const allVisibleSelected = forms.length > 0 && forms.every((form) => selectedForms.has(form.form_id))
+    if (allVisibleSelected) {
+      setSelectedForms(new Set())
+      return
+    }
+
+    setSelectedForms(new Set(forms.map((form) => form.form_id)))
   }
 
   const handleUpdateAssignment = async () => {
@@ -264,8 +351,151 @@ function RacmAssignment() {
     }
   }
 
+  const handleOpenBulkAssignmentDialog = async () => {
+    if (selectedForms.size === 0) {
+      toast.error('Select at least one RACM')
+      return
+    }
+
+    setBulkSelectedUser(null)
+    setBulkUserSearchText('')
+    setBulkAssignmentDialogOpen(true)
+
+    if (companyUsers.length === 0) {
+      await fetchCompanyUsers()
+    }
+  }
+
+  const handleCloseBulkAssignmentDialog = () => {
+    if (updatingAssignment) return
+    setBulkAssignmentDialogOpen(false)
+    setBulkSelectedUser(null)
+    setBulkUserSearchText('')
+  }
+
+  const handleBulkUpdateAssignment = async () => {
+    if (!bulkSelectedUser?.email_id || selectedForms.size === 0) return
+
+    setUpdatingAssignment(true)
+    try {
+      const targetFormIds = Array.from(selectedForms)
+      let successCount = 0
+      let failCount = 0
+
+      for (const formId of targetFormIds) {
+        try {
+          const response = await fetch(`http://localhost:3000/api/control-forms/${formId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              process_owner: bulkSelectedUser.email_id,
+              modifiedFields: ['process_owner'],
+            }),
+          })
+
+          const data = await response.json()
+          if (response.ok && data.success) {
+            successCount += 1
+          } else {
+            failCount += 1
+          }
+        } catch (error) {
+          console.error(`Error updating bulk assignment for form ${formId}:`, error)
+          failCount += 1
+        }
+      }
+
+      handleCloseBulkAssignmentDialog()
+      setBulkAssignmentMode(false)
+
+      if (successCount > 0) {
+        toast.success(`Sucessfully Updated ${successCount} RACM Assignment(s)`)
+      }
+      if (failCount > 0) {
+        toast.error(`Failed to update ${failCount} RACM Assignment(s)`)
+      }
+
+      fetchForms()
+    } catch (error) {
+      console.error('Error updating bulk assignments:', error)
+      toast.error('Failed to update RACM assignments')
+    } finally {
+      setUpdatingAssignment(false)
+    }
+  }
+
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 2, py: 4 }}>
+    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          mb: 2,
+          gap: 1.5,
+        }}
+      >
+        {bulkAssignmentMode && (
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={handleOpenBulkAssignmentDialog}
+            disabled={selectedForms.size === 0 || updatingAssignment}
+            size="small"
+            sx={{
+              minWidth: '160px',
+              textTransform: 'none',
+              fontSize: '0.8rem',
+              py: 0.75,
+            }}
+          >
+            {selectedForms.size > 0 ? `Assign Selected (${selectedForms.size})` : 'Assign Selected'}
+          </Button>
+        )}
+        <Button
+          variant={bulkAssignmentMode ? 'contained' : 'outlined'}
+          color="secondary"
+          onClick={handleBulkAssignmentModeToggle}
+          disabled={updatingAssignment}
+          size="small"
+          sx={{
+            minWidth: '160px',
+            textTransform: 'none',
+            fontSize: '0.8rem',
+            py: 0.75,
+            ...(bulkAssignmentMode
+              ? {}
+              : {
+                  // In dark mode, `color="secondary"` makes the default outlined
+                  // border/text too close to the dark background. Override to match
+                  // other pages' dark-mode outlined button styling.
+                  borderWidth: 2,
+                  borderColor:
+                    theme.palette.mode === 'dark'
+                      ? 'rgba(255, 255, 255, 0.23)'
+                      : '#6b7280',
+                  color: theme.palette.text.primary,
+                  backgroundColor: 'transparent',
+                  '&:hover': {
+                    borderColor:
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.3)'
+                        : '#4b5563',
+                    backgroundColor:
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(107, 114, 128, 0.08)',
+                  },
+                }),
+          }}
+        >
+          {bulkAssignmentMode ? 'Cancel Bulk Assignment' : 'Bulk Assignment'}
+        </Button>
+      </Box>
+
         {/* Forms Section */}
         <Paper 
           elevation={3}
@@ -288,10 +518,18 @@ function RacmAssignment() {
                 component="h2"
                 sx={{ 
                   fontWeight: 700, 
-                  color: theme.palette.secondary.main,
+                  color:
+                    theme.palette.mode === 'dark'
+                      ? theme.palette.text.primary
+                      : theme.palette.secondary.main,
                 }}
               >
-                RACM
+                RACM Assignment
+              </Typography>
+              <Typography
+                sx={PAGE_SUBHEADER_TEXT_SX}
+              >
+                Assign RACM controls to process owners and manage existing RACM assignments.
               </Typography>
             </Box>
             
@@ -307,27 +545,7 @@ function RacmAssignment() {
               {/* Financial Year Filter */}
               <FormControl 
                 variant="outlined" 
-                sx={{ 
-                  minWidth: '80px',
-                  '& .MuiOutlinedInput-root': {
-                    backgroundColor: 'transparent',
-                    '& fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                    },
-                    '&:hover fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                    },
-                  },
-                  '& .MuiInputLabel-root': {
-                    color: theme.palette.text.primary,
-                  },
-                  '& .MuiSelect-root': {
-                    color: theme.palette.text.primary,
-                  },
-                }}
+                sx={filterFormControlSx}
               >
                 <InputLabel id="financial-year-filter-label">Financial Year</InputLabel>
                 <Select
@@ -349,27 +567,7 @@ function RacmAssignment() {
               {/* Business Process Filter */}
               <FormControl 
                 variant="outlined" 
-                sx={{ 
-                  minWidth: '80px',
-                  '& .MuiOutlinedInput-root': {
-                    backgroundColor: 'transparent',
-                    '& fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
-                    },
-                    '&:hover fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
-                    },
-                  },
-                  '& .MuiInputLabel-root': {
-                    color: theme.palette.text.primary,
-                  },
-                  '& .MuiSelect-root': {
-                    color: theme.palette.text.primary,
-                  },
-                }}
+                sx={filterFormControlSx}
               >
                 <InputLabel id="business-process-filter-label">Business Process</InputLabel>
                 <Select
@@ -388,33 +586,21 @@ function RacmAssignment() {
                 </Select>
               </FormControl>
               
-              {/* Assigned/Unassigned Filter Buttons */}
-              <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                onClick={() => setFilterAssignment('assigned')}
-                variant={filterAssignment === 'assigned' ? 'contained' : 'outlined'}
-                color="secondary"
-                sx={{
-                  minWidth: '90px',
-                  textTransform: 'none',
-                  fontSize: '0.8rem',
-                }}
-              >
-                Assigned
-              </Button>
-              <Button
-                onClick={() => setFilterAssignment('unassigned')}
-                variant={filterAssignment === 'unassigned' ? 'contained' : 'outlined'}
-                color="secondary"
-                sx={{
-                  minWidth: '90px',
-                  textTransform: 'none',
-                  fontSize: '0.8rem',
-                }}
-              >
-                Unassigned
-              </Button>
-              </Box>
+              {/* Assignment status: All / Assigned / Unassigned */}
+              <FormControl variant="outlined" sx={filterFormControlSx}>
+                <InputLabel id="assignment-filter-label">Assignment</InputLabel>
+                <Select
+                  labelId="assignment-filter-label"
+                  id="assignment-filter"
+                  value={filterAssignment}
+                  label="Assignment"
+                  onChange={(e) => setFilterAssignment(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  <MenuItem value="assigned">Assigned</MenuItem>
+                  <MenuItem value="unassigned">Unassigned</MenuItem>
+                </Select>
+              </FormControl>
             </Box>
           </Box>
 
@@ -441,12 +627,30 @@ function RacmAssignment() {
                 <Box
                   component="thead"
                   sx={{
-                    backgroundColor: theme.palette.mode === 'dark' 
-                      ? 'rgba(255, 255, 255, 0.05)' 
-                      : '#f9fafb',
+                    backgroundColor: TABLE_HEADER_BG,
                   }}
                 >
                 <Box component="tr">
+                  {bulkAssignmentMode && (
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 2,
+                        py: 1.5,
+                        textAlign: 'center',
+                        width: '60px',
+                        minWidth: '60px',
+                        maxWidth: '60px',
+                      }}
+                    >
+                      <Checkbox
+                        checked={forms.length > 0 && forms.every((form) => selectedForms.has(form.form_id))}
+                        indeterminate={selectedForms.size > 0 && selectedForms.size < forms.length}
+                        onChange={handleSelectAllForms}
+                        size="small"
+                      />
+                    </Box>
+                  )}
                   <Box
                     component="th"
                     sx={{
@@ -538,12 +742,30 @@ function RacmAssignment() {
                           cursor: 'pointer',
                           transition: 'background-color 0.2s',
                           '&:hover': {
-                            backgroundColor: theme.palette.mode === 'dark' 
-                              ? 'rgba(255, 255, 255, 0.05)' 
-                              : '#f9fafb',
+                            backgroundColor: TABLE_ROW_HOVER_BG,
                           },
                         }}
                       >
+                        {bulkAssignmentMode && (
+                          <Box
+                            component="td"
+                            sx={{
+                              px: 2,
+                              py: 2,
+                              textAlign: 'center',
+                              width: '60px',
+                              minWidth: '60px',
+                              maxWidth: '60px',
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Checkbox
+                              checked={selectedForms.has(form.form_id)}
+                              onChange={() => handleSelectForm(form.form_id)}
+                              size="small"
+                            />
+                          </Box>
+                        )}
                         <Box
                           component="td"
                           title={form.standard_control_description || 'N/A'}
@@ -703,6 +925,77 @@ function RacmAssignment() {
                 disabled={updatingAssignment}
               >
                 {updatingAssignment ? 'Updating...' : 'Update Assignment'}
+              </Button>
+            )}
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
+          open={bulkAssignmentDialogOpen}
+          onClose={handleCloseBulkAssignmentDialog}
+          fullWidth
+          maxWidth="md"
+        >
+          <DialogTitle sx={{ fontWeight: 700 }}>
+            Bulk RACM Assignment
+          </DialogTitle>
+          <DialogContent dividers>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Typography variant="body2">
+                <strong>Total selected RACMs:</strong> {selectedForms.size}
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 2 }}>
+                The selected user will overwrite the current Process Owner for all selected RACMs.
+              </Typography>
+
+              <Autocomplete
+                options={assignableUsers}
+                loading={usersLoading}
+                value={bulkSelectedUser}
+                inputValue={bulkUserSearchText}
+                onInputChange={(_, newInputValue) => setBulkUserSearchText(newInputValue)}
+                onChange={(_, newValue) => setBulkSelectedUser(newValue)}
+                getOptionLabel={(option) => option?.emp_name || option?.email_id || ''}
+                isOptionEqualToValue={(option, value) => option.email_id === value.email_id}
+                filterOptions={(options, state) => {
+                  const input = state.inputValue.trim().toLowerCase()
+                  if (!input) return options
+                  return options.filter((user) => (user.emp_name || '').toLowerCase().includes(input))
+                }}
+                renderOption={(props, option) => (
+                  <Box component="li" {...props}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                      <Typography variant="body2">{option.emp_name || '-'}</Typography>
+                      <Typography variant="caption" color="text.secondary">{option.email_id || '-'}</Typography>
+                    </Box>
+                  </Box>
+                )}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Search Username"
+                    placeholder="Type username..."
+                  />
+                )}
+              />
+
+              <Typography variant="caption" color="text.secondary">
+                {bulkSelectedUser?.email_id || ' '}
+              </Typography>
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={handleCloseBulkAssignmentDialog} disabled={updatingAssignment}>
+              Cancel
+            </Button>
+            {bulkSelectedUser?.email_id && (
+              <Button
+                variant="contained"
+                color="secondary"
+                onClick={handleBulkUpdateAssignment}
+                disabled={updatingAssignment}
+              >
+                {updatingAssignment ? 'Updating...' : 'Update Assignments'}
               </Button>
             )}
           </DialogActions>

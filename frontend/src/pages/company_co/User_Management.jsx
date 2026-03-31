@@ -15,10 +15,18 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Alert from '@mui/material/Alert'
 import AddIcon from '@mui/icons-material/Add'
+import DeleteIcon from '@mui/icons-material/Delete'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import Checkbox from '@mui/material/Checkbox'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
+import DialogActions from '@mui/material/DialogActions'
 import { toast } from 'react-hot-toast'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
-function CreateUser() {
+function UserManagement() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -28,6 +36,11 @@ function CreateUser() {
   const [usersLoading, setUsersLoading] = useState(true)
   const [usersError, setUsersError] = useState('')
 
+  const [deleteMode, setDeleteMode] = useState(false)
+  const [selectedUserEmails, setSelectedUserEmails] = useState(new Set())
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deletingUsers, setDeletingUsers] = useState(false)
+
   const [email, setEmail] = useState('')
   const [empCode, setEmpCode] = useState('')
   const [empName, setEmpName] = useState('')
@@ -36,6 +49,10 @@ function CreateUser() {
   const [mobile, setMobile] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useSyncGlobalLoading(usersLoading)
+  useSyncGlobalLoading(loading)
+  useSyncGlobalLoading(deletingUsers)
 
   const validateEmail = (emailValue) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -85,6 +102,56 @@ function CreateUser() {
   useEffect(() => {
     fetchUsers()
   }, [fetchUsers])
+
+  // Reset selection when delete mode is turned off (matches RacmManagementDashboard behavior)
+  useEffect(() => {
+    if (!deleteMode) {
+      setSelectedUserEmails(new Set())
+    }
+  }, [deleteMode])
+
+  const toggleSelectUser = (emailId) => {
+    setSelectedUserEmails((prev) => {
+      const next = new Set(prev)
+      if (next.has(emailId)) next.delete(emailId)
+      else next.add(emailId)
+      return next
+    })
+  }
+
+  const handleDeleteModeToggle = () => {
+    setDeleteMode(true)
+  }
+
+  const handleDeleteClick = () => {
+    if (selectedUserEmails.size === 0) {
+      setDeleteMode(false)
+      return
+    }
+    setDeleteDialogOpen(true)
+  }
+
+  const handleListContainerClick = (e) => {
+    if (!deleteMode) return
+    if (deleteDialogOpen) return
+
+    const target = e?.target
+    if (!target) return
+
+    const isCheckbox =
+      target.type === 'checkbox' ||
+      target.closest?.('input[type="checkbox"]') ||
+      target.closest?.('.MuiCheckbox-root')
+
+    const isDialog = target.closest?.('.MuiDialog-root')
+
+    const clickedButton = target.closest?.('button')
+    const isDeleteButton = Boolean(clickedButton && clickedButton.textContent?.includes('Delete'))
+
+    if (isCheckbox || isDialog || isDeleteButton) return
+
+    setDeleteMode(false)
+  }
 
   useEffect(() => {
     const emailParam = searchParams.get('email')
@@ -170,7 +237,7 @@ function CreateUser() {
           alignItems: 'center',
           justifyContent: 'center',
           minHeight: 'calc(100vh - 4rem)',
-          px: 2,
+          px: 0,
           py: 4,
         }}
       >
@@ -315,8 +382,8 @@ function CreateUser() {
   }
 
   return (
-    <Box sx={{ px: { xs: 1, sm: 2 }, py: 2 }}>
-      <Paper sx={{ p: 3, borderRadius: 2 }}>
+    <Box sx={{ px: 0, py: 2 }}>
+      <Paper sx={{ p: 3, borderRadius: 2 }} onClick={handleListContainerClick}>
         <Box
           sx={{
             display: 'flex',
@@ -330,15 +397,37 @@ function CreateUser() {
           <Typography variant="h5" sx={{ fontWeight: 700 }}>
             User Management
           </Typography>
-          <Button
-            variant="contained"
-            color="secondary"
-            startIcon={<AddIcon />}
-            onClick={() => setShowCreateForm(true)}
-            sx={{ textTransform: 'none', fontWeight: 600 }}
-          >
-            Create User
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={<AddIcon />}
+              onClick={() => setShowCreateForm(true)}
+              sx={{ textTransform: 'none', fontWeight: 600 }}
+            >
+              Create User
+            </Button>
+            <Button
+              variant={deleteMode ? 'contained' : 'outlined'}
+              color="error"
+              startIcon={<DeleteIcon />}
+              onClick={() => {
+                if (deleteMode) {
+                  if (selectedUserEmails.size > 0) {
+                    handleDeleteClick()
+                  }
+                } else {
+                  handleDeleteModeToggle()
+                }
+              }}
+              disabled={usersLoading || users.length === 0 || deletingUsers || (deleteMode && selectedUserEmails.size === 0)}
+              sx={{ textTransform: 'none', fontWeight: 600 }}
+            >
+              {deleteMode
+                ? (selectedUserEmails.size > 0 ? `Delete (${selectedUserEmails.size})` : 'Delete')
+                : 'Delete'}
+            </Button>
+          </Box>
         </Box>
 
         {usersError && (
@@ -347,10 +436,30 @@ function CreateUser() {
           </Alert>
         )}
 
-        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-          <Table size="medium" sx={{ minWidth: 950 }}>
+        <TableContainer
+          component={Paper}
+          elevation={0}
+          sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}
+        >
+          <Table
+            size="medium"
+            sx={{
+              minWidth: 950,
+              borderCollapse: 'collapse',
+              '& .MuiTableCell-root': {
+                borderBottom: `1px solid ${theme.palette.divider}`,
+              },
+            }}
+          >
             <TableHead>
-              <TableRow>
+              <TableRow
+                sx={{
+                  '& .MuiTableCell-root': {
+                    backgroundColor: theme.palette.action.hover,
+                  },
+                }}
+              >
+                {deleteMode ? <TableCell sx={{ py: 2, px: 3, width: 54 }} /> : null}
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Employee Name</TableCell>
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Email ID</TableCell>
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Department</TableCell>
@@ -361,19 +470,29 @@ function CreateUser() {
             <TableBody>
               {usersLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={deleteMode ? 6 : 5} align="center" sx={{ py: 5 }}>
                     <CircularProgress size={26} />
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={deleteMode ? 6 : 5} align="center" sx={{ py: 5 }}>
                     No users found for your company.
                   </TableCell>
                 </TableRow>
               ) : (
                 users.map((user, idx) => (
                   <TableRow key={`${user.email_id}-${idx}`}>
+                    {deleteMode ? (
+                      <TableCell sx={{ py: 1.8, px: 3, width: 54 }}>
+                        <Checkbox
+                          checked={selectedUserEmails.has(user.email_id)}
+                          disabled={user.role !== 'user'}
+                          onChange={() => toggleSelectUser(user.email_id)}
+                          inputProps={{ 'aria-label': `select ${user.email_id}` }}
+                        />
+                      </TableCell>
+                    ) : null}
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>
                       {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (cc)' : ''}` : '-'}
                     </TableCell>
@@ -388,8 +507,150 @@ function CreateUser() {
           </Table>
         </TableContainer>
       </Paper>
+
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => !deletingUsers && setDeleteDialogOpen(false)}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '400px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="delete-dialog-title"
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 600,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          Confirm Delete
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContentText
+            id="delete-dialog-description"
+            sx={{
+              color: theme.palette.text.secondary,
+              fontSize: '0.9375rem',
+              lineHeight: 1.5,
+              m: 0,
+              mb: 2,
+            }}
+          >
+            Deleting selected user(s) will remove them from the company and all assigned RACMs will go inactive. This action cannot be undone.
+          </DialogContentText>
+          {selectedUserEmails.size > 0 ? (
+            <Box sx={{ mt: 2 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: theme.palette.text.primary,
+                  fontWeight: 500,
+                }}
+              >
+                Total number of user(s) selected: <strong>{selectedUserEmails.size}</strong>
+              </Typography>
+            </Box>
+          ) : null}
+        </DialogContent>
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            pt: 2.5,
+            gap: 1.5,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Button
+            onClick={() => setDeleteDialogOpen(false)}
+            variant="outlined"
+            disabled={deletingUsers}
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '100px',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.23)'
+                : 'rgba(0, 0, 0, 0.23)',
+              color: theme.palette.text.primary,
+              '&:hover': {
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.3)'
+                  : 'rgba(0, 0, 0, 0.3)',
+                backgroundColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.05)'
+                  : 'rgba(0, 0, 0, 0.04)',
+              },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            disabled={selectedUserEmails.size === 0 || deletingUsers}
+            autoFocus
+            onClick={async () => {
+              setDeletingUsers(true)
+              try {
+                const emailIds = Array.from(selectedUserEmails)
+                const response = await fetch('http://localhost:3000/api/company-co/delete-users', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  credentials: 'include',
+                  body: JSON.stringify({ email_ids: emailIds }),
+                })
+
+                const data = await response.json()
+                if (response.ok && data.success) {
+                  toast.success(data.message || 'User(s) deleted successfully')
+                  setSelectedUserEmails(new Set())
+                  setDeleteDialogOpen(false)
+                  setDeleteMode(false)
+                  fetchUsers()
+                } else {
+                  toast.error(data.message || 'Failed to delete user(s)')
+                }
+              } catch (error) {
+                console.error('Delete users error:', error)
+                toast.error('Network error while deleting users')
+              } finally {
+                setDeletingUsers(false)
+              }
+            }}
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '100px',
+              fontWeight: 600,
+              backgroundColor: '#ef4444',
+              '&:hover': {
+                backgroundColor: '#dc2626',
+              },
+            }}
+          >
+            {deletingUsers ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }
 
-export default CreateUser
+export default UserManagement 

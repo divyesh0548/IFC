@@ -145,6 +145,75 @@ async function verifyApproverAuth(req, res, next) {
 }
 
 // Protected route: Get approver dashboard data
+router.get('/home-stats', verifyApproverAuth, async (req, res) => {
+  try {
+    const approverEmail = req.user.email_id;
+
+    const [
+      approverResult,
+      companiesResult,
+      usersResult,
+      racmStatsResult,
+    ] = await Promise.all([
+      pool.query(
+        `
+          SELECT NULLIF(TRIM(emp_name), '') AS emp_name
+          FROM ifc_users
+          WHERE email_id = $1
+          LIMIT 1
+        `,
+        [approverEmail]
+      ),
+      pool.query('SELECT COUNT(*)::int AS count FROM companies'),
+      pool.query(
+        `
+          SELECT COUNT(*)::int AS count
+          FROM ifc_users
+          WHERE role NOT IN ('approver', 'siteadmin', 'company_co', 'auditor')
+        `
+      ),
+      pool.query(`
+        SELECT
+          COUNT(*) FILTER (
+            WHERE active IS NOT NULL AND active != '' AND active != '0'
+          )::int AS active_racms,
+          COUNT(*) FILTER (
+            WHERE active IS NOT NULL AND active != '' AND active != '0'
+              AND status = 'Approved'
+          )::int AS approved_racms,
+          COUNT(*) FILTER (
+            WHERE active IS NOT NULL AND active != '' AND active != '0'
+              AND status = 'Rejected'
+          )::int AS rejected_racms,
+          COUNT(*) FILTER (
+            WHERE active IS NOT NULL AND active != '' AND active != '0'
+              AND (status IS NULL OR status = '' OR status = 'sent for approval')
+          )::int AS pending_racms
+        FROM control_forms
+      `),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        approver_name: approverResult.rows[0]?.emp_name || '',
+        total_companies: companiesResult.rows[0]?.count || 0,
+        total_users: usersResult.rows[0]?.count || 0,
+        total_active_racms: racmStatsResult.rows[0]?.active_racms || 0,
+        total_approved_racms: racmStatsResult.rows[0]?.approved_racms || 0,
+        total_rejected_racms: racmStatsResult.rows[0]?.rejected_racms || 0,
+        total_pending_racms: racmStatsResult.rows[0]?.pending_racms || 0,
+      },
+    });
+  } catch (error) {
+    console.error('Approver home stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch approver home stats',
+    });
+  }
+});
+
 router.get('/dashboard', verifyApproverAuth, async (req, res) => {
   try {
     // Get approver info from middleware
@@ -483,4 +552,3 @@ router.get('/control-forms/:form_id', verifyApproverAuth, async (req, res) => {
 });
 
 module.exports = router;
-

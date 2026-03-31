@@ -7,10 +7,16 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import FormControl from '@mui/material/FormControl'
-import { FILTER_DROPDOWN_MIN_WIDTH_SM, FILTER_DROPDOWN_MIN_WIDTH_LG } from '../../uiConstants'
+import {
+  FILTER_BOX_MIN_WIDTH,
+  PAGE_SUBHEADER_TEXT_SX,
+  TABLE_HEADER_BG,
+  TABLE_ROW_HOVER_BG,
+} from '../../uiConstants'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function User_dashboard() {
   const theme = useTheme()
@@ -23,6 +29,7 @@ function User_dashboard() {
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [financialYearOptions, setFinancialYearOptions] = useState([])
+  useSyncGlobalLoading(loading)
 
   // Business process options (matching other pages)
   const businessProcessOptions = [
@@ -165,7 +172,7 @@ function User_dashboard() {
   }
 
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 2, py: 4 }}>
+    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
         {/* Forms Section */}
         <Paper 
           elevation={3}
@@ -185,16 +192,21 @@ function User_dashboard() {
               gap: 2
             }}
           >
-            <Typography 
-              variant="h5" 
-              component="h2"
-              sx={{ 
-                fontWeight: 700, 
-                color: theme.palette.text.primary,
-              }}
-            >
-              My RACM
-            </Typography>
+            <Box>
+              <Typography
+                variant="h5"
+                component="h2"
+                sx={{
+                  fontWeight: 700,
+                  color: theme.palette.text.primary,
+                }}
+              >
+                My RACM
+              </Typography>
+              <Typography variant="body2" sx={PAGE_SUBHEADER_TEXT_SX}>
+                Track your assigned RACMs, filter by status, and open any item to review details.
+              </Typography>
+            </Box>
 
             {/* In-container filters */}
             <Box
@@ -207,7 +219,7 @@ function User_dashboard() {
               }}
             >
               {/* Status Filter */}
-              <Box sx={{ minWidth: { xs: '100%', sm: FILTER_DROPDOWN_MIN_WIDTH_SM } }}>
+              <Box sx={{ minWidth: FILTER_BOX_MIN_WIDTH }}>
                 <FormControl
                   variant="outlined"
                   fullWidth
@@ -230,7 +242,7 @@ function User_dashboard() {
                 </FormControl>
               </Box>
               {/* Business Process Filter */}
-              <Box sx={{ minWidth: { xs: '100%', sm: FILTER_DROPDOWN_MIN_WIDTH_LG } }}>
+              <Box sx={{ minWidth: FILTER_BOX_MIN_WIDTH }}>
                 <FormControl
                   variant="outlined"
                   fullWidth
@@ -255,7 +267,7 @@ function User_dashboard() {
               </Box>
 
               {/* Financial Year Filter */}
-              <Box sx={{ minWidth: { xs: '100%', sm: FILTER_DROPDOWN_MIN_WIDTH_SM } }}>
+              <Box sx={{ minWidth: FILTER_BOX_MIN_WIDTH }}>
                 <FormControl
                   variant="outlined"
                   fullWidth
@@ -314,9 +326,7 @@ function User_dashboard() {
                 <Box
                   component="thead"
                   sx={{
-                    backgroundColor: theme.palette.mode === 'dark' 
-                      ? 'rgba(255, 255, 255, 0.05)' 
-                      : '#f9fafb',
+                    backgroundColor: TABLE_HEADER_BG,
                   }}
                 >
                   <Box component="tr">
@@ -423,9 +433,7 @@ function User_dashboard() {
                           cursor: 'pointer',
                           transition: 'background-color 0.2s',
                           '&:hover': {
-                            backgroundColor: theme.palette.mode === 'dark' 
-                              ? 'rgba(255, 255, 255, 0.05)' 
-                              : '#f9fafb',
+                            backgroundColor: TABLE_ROW_HOVER_BG,
                           },
                         }}
                       >

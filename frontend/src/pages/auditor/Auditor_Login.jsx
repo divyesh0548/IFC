@@ -13,6 +13,7 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import { toast } from 'react-hot-toast'
+import { clearCachedUserProfile } from '../../storageKeys'
 
 function Auditor_Login() {
   const theme = useTheme()
@@ -44,6 +45,7 @@ function Auditor_Login() {
       const data = await response.json()
 
       if (response.ok && data.success) {
+        clearCachedUserProfile()
         // Login successful - token is stored in httpOnly cookie
         console.log('Login successful:', data.user)
         toast.success('Login successful!')

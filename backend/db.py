@@ -352,6 +352,8 @@ def create_excel_files_table(cursor):
         coordinator_email_id character varying(255) NULL,
         business_process character varying(255) NULL,
         financial_year character varying(255) NULL,
+        due_date date NULL,
+        reminder_frequency character varying(255) NULL
     );
     """
     
@@ -403,37 +405,59 @@ def create_ifc_users_table(cursor):
     
     create_table_with_constraint(cursor, 'ifc_users', create_table_query, 'ifc_users_pkey', add_constraint_query)
 
-def create_audit_logs_table(cursor):
-    """Creates the audit_logs table if it doesn't exist."""
-    print("\n[audit_logs]")
-    
+def create_audit_logs_racm_table(cursor):
+    """
+    Creates audit_logs_racm: RACM-related audit rows (includes form_id, ref_data).
+    Plain columns only — no primary key or other table constraints.
+    """
+    print("\n[audit_logs_racm]")
+
     create_table_query = """
-    CREATE TABLE IF NOT EXISTS public.audit_logs (
-        id serial NOT NULL,
+    CREATE TABLE IF NOT EXISTS public.audit_logs_racm (
+        id serial,
         timestamp timestamp without time zone NULL DEFAULT (
             (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
         ),
         action character varying(255) NULL,
         user_email_id character varying(255) NULL,
         form_id character varying(255) NULL,
-        ref_data character varying(255) NULL
+        ref_data text NULL
     );
     """
-    
-    add_constraint_query = """
-    DO $$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint 
-            WHERE conname = 'audit_logs_pkey'
-        ) THEN
-            ALTER TABLE public.audit_logs
-            ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
-        END IF;
-    END $$;
+
+    if table_exists(cursor, 'audit_logs_racm'):
+        print("  ⚠️  Table 'audit_logs_racm' already exists. Skipping creation.")
+    else:
+        print("  Creating table 'audit_logs_racm'...")
+        cursor.execute(create_table_query)
+        print("  ✓ Table 'audit_logs_racm' created successfully!")
+
+
+def create_audit_logs_table(cursor):
     """
-    
-    create_table_with_constraint(cursor, 'audit_logs', create_table_query, 'audit_logs_pkey', add_constraint_query)
+    Creates audit_logs: core session/auth columns plus optional ref_data (text).
+    Plain columns only — no primary key or other table constraints.
+    """
+    print("\n[audit_logs]")
+
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.audit_logs (
+        id serial,
+        timestamp timestamp without time zone NULL DEFAULT (
+            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+        ),
+        action character varying(255) NULL,
+        user_email_id character varying(255) NULL,
+        ref_data text NULL
+    );
+    """
+
+    if table_exists(cursor, 'audit_logs'):
+        print("  ⚠️  Table 'audit_logs' already exists. Skipping creation.")
+    else:
+        print("  Creating table 'audit_logs'...")
+        cursor.execute(create_table_query)
+        print("  ✓ Table 'audit_logs' created successfully!")
 
 def column_exists(cursor, table_name, column_name):
     """
@@ -450,19 +474,77 @@ def column_exists(cursor, table_name, column_name):
     """, (table_name, column_name))
     return cursor.fetchone()[0]
 
-def alter_audit_logs_add_ref_data(cursor):
-    """Adds ref_data column to audit_logs table if it doesn't exist."""
-    print("\n[audit_logs - Adding ref_data column]")
-    
-    if column_exists(cursor, 'audit_logs', 'ref_data'):
-        print("  ⚠️  Column 'ref_data' already exists in 'audit_logs' table. Skipping.")
-    else:
-        print("  Adding column 'ref_data' to 'audit_logs' table...")
+def alter_audit_logs_racm_ensure_ref_data_text(cursor):
+    """Ensure audit_logs_racm.ref_data exists and uses type TEXT."""
+    print("\n[audit_logs_racm - ref_data as TEXT]")
+
+    if not table_exists(cursor, 'audit_logs_racm'):
+        print("  ⚠️  Table 'audit_logs_racm' does not exist. Skipping.")
+        return
+
+    if not column_exists(cursor, 'audit_logs_racm', 'ref_data'):
+        print("  Adding column 'ref_data' (text) to 'audit_logs_racm'...")
         cursor.execute("""
-            ALTER TABLE public.audit_logs
-            ADD COLUMN ref_data character varying(255) NULL;
+            ALTER TABLE public.audit_logs_racm
+            ADD COLUMN ref_data text NULL;
         """)
         print("  ✓ Column 'ref_data' added successfully!")
+        return
+
+    cursor.execute("""
+        SELECT data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'audit_logs_racm'
+          AND column_name = 'ref_data';
+    """)
+    row = cursor.fetchone()
+    if row and row[0] == 'text':
+        print("  ⚠️  Column 'ref_data' is already TEXT. Skipping.")
+        return
+
+    print("  Altering column 'ref_data' to TEXT...")
+    cursor.execute("""
+        ALTER TABLE public.audit_logs_racm
+        ALTER COLUMN ref_data TYPE text USING ref_data::text;
+    """)
+    print("  ✓ Column 'ref_data' is now TEXT.")
+
+def alter_audit_logs_ensure_ref_data_text(cursor):
+    """Ensure audit_logs.ref_data exists and uses type TEXT."""
+    print("\n[audit_logs - ref_data as TEXT]")
+
+    if not table_exists(cursor, 'audit_logs'):
+        print("  ⚠️  Table 'audit_logs' does not exist. Skipping.")
+        return
+
+    if not column_exists(cursor, 'audit_logs', 'ref_data'):
+        print("  Adding column 'ref_data' (text) to 'audit_logs'...")
+        cursor.execute("""
+            ALTER TABLE public.audit_logs
+            ADD COLUMN ref_data text NULL;
+        """)
+        print("  ✓ Column 'ref_data' added successfully!")
+        return
+
+    cursor.execute("""
+        SELECT data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'audit_logs'
+          AND column_name = 'ref_data';
+    """)
+    row = cursor.fetchone()
+    if row and row[0] == 'text':
+        print("  ⚠️  Column 'ref_data' is already TEXT. Skipping.")
+        return
+
+    print("  Altering column 'ref_data' to TEXT...")
+    cursor.execute("""
+        ALTER TABLE public.audit_logs
+        ALTER COLUMN ref_data TYPE text USING ref_data::text;
+    """)
+    print("  ✓ Column 'ref_data' is now TEXT.")
 
 def insert_ifc_user(email_id, password, role, company_identifier=None, temp_login=0):
     """
@@ -690,11 +772,14 @@ def alter_control_forms_add_due_date_and_reminder_frequency(cursor):
             print(f"  ✓ Column '{column_name}' added successfully!")
 
 def alter_control_forms_add_reminder_datetime(cursor):
-    """Adds reminder_datetime (timestamptz) column to control_forms table if it doesn't exist."""
+    """Adds reminder_datetime column to control_forms table if it doesn't exist.
+
+    We store reminder_datetime as a "wall-clock" Asia/Kolkata timestamp (no time zone).
+    """
     print("\n[control_forms - Adding reminder_datetime column]")
 
     column_name = 'reminder_datetime'
-    column_type = 'TIMESTAMP WITH TIME ZONE'
+    column_type = 'timestamp without time zone'
 
     if column_exists(cursor, 'control_forms', column_name):
         print(f"  ⚠️  Column '{column_name}' already exists in 'control_forms' table. Skipping.")
@@ -706,6 +791,67 @@ def alter_control_forms_add_reminder_datetime(cursor):
         ADD COLUMN {column_name} {column_type} NULL;
     """)
     print(f"  ✓ Column '{column_name}' added successfully!")
+
+def alter_control_forms_reminder_datetime_type_to_wall_clock_ist(cursor):
+    """Converts reminder_datetime to `timestamp without time zone` in Asia/Kolkata wall-clock terms.
+
+    This is a one-time migration for installations where reminder_datetime was previously created as `TIMESTAMP WITH TIME ZONE`.
+    """
+    print("\n[control_forms - Converting reminder_datetime to wall-clock IST]")
+
+    if not column_exists(cursor, 'control_forms', 'reminder_datetime'):
+        print("  ⚠️  Column 'reminder_datetime' does not exist. Skipping conversion.")
+        return
+
+    cursor.execute("""
+        SELECT data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'control_forms'
+          AND column_name = 'reminder_datetime';
+    """)
+    row = cursor.fetchone()
+    if not row:
+        print("  ⚠️  Could not read current reminder_datetime type. Skipping conversion.")
+        return
+
+    current_data_type = row[0]
+    if current_data_type == 'timestamp without time zone':
+        print("  ✓ reminder_datetime is already `timestamp without time zone`. No conversion needed.")
+        return
+
+    print(f"  Current type: {current_data_type}. Converting to timestamp without time zone...")
+    cursor.execute("""
+        ALTER TABLE public.control_forms
+        ALTER COLUMN reminder_datetime
+        TYPE timestamp without time zone
+        USING reminder_datetime AT TIME ZONE 'Asia/Kolkata';
+    """)
+    print("  ✓ reminder_datetime type converted successfully.")
+
+def alter_excel_files_add_due_date_and_reminder_frequency(cursor):
+    """Adds due_date (date) and reminder_frequency (varchar) to excel_files if they don't exist."""
+    print("\n[excel_files - Adding due_date and reminder_frequency columns]")
+
+    if not table_exists(cursor, 'excel_files'):
+        print("  ⚠️  Table 'excel_files' does not exist. Skipping.")
+        return
+
+    new_columns = [
+        ('due_date', 'date'),
+        ('reminder_frequency', 'character varying(255)'),
+    ]
+
+    for column_name, column_type in new_columns:
+        if column_exists(cursor, 'excel_files', column_name):
+            print(f"  ⚠️  Column '{column_name}' already exists in 'excel_files' table. Skipping.")
+        else:
+            print(f"  Adding column '{column_name}' to 'excel_files' table...")
+            cursor.execute(f"""
+                ALTER TABLE public.excel_files
+                ADD COLUMN {column_name} {column_type} NULL;
+            """)
+            print(f"  ✓ Column '{column_name}' added successfully!")
 
 def alter_sampling_process_temp_add_processed(cursor):
     """Adds processed column to sampling_process_temp table if it doesn't exist."""
@@ -820,15 +966,19 @@ def create_all_tables():
         # create_control_forms_table(cursor)
         # create_excel_files_table(cursor)
         # create_ifc_users_table(cursor)
-        # create_audit_logs_table(cursor)
+        # create_audit_logs_racm_table(cursor)
+        create_audit_logs_table(cursor)
+        alter_audit_logs_ensure_ref_data_text(cursor)
         # create_sampling_process_temp_table(cursor)
-        create_control_form_history_table(cursor)
-        # alter_audit_logs_add_ref_data(cursor)
+        # create_control_form_history_table(cursor)
+        # alter_audit_logs_racm_ensure_ref_data_text(cursor)
         # alter_control_forms_add_sample_required(cursor)
         # alter_control_forms_sample_required_to_text(cursor)
         # alter_control_forms_add_new_columns(cursor)
         # alter_control_forms_add_due_date_and_reminder_frequency(cursor)
-        alter_control_forms_add_reminder_datetime(cursor)
+        # alter_control_forms_add_reminder_datetime(cursor)
+        # alter_excel_files_add_due_date_and_reminder_frequency(cursor)
+        # alter_control_forms_reminder_datetime_type_to_wall_clock_ist(cursor)
         # alter_control_forms_ensure_control_frequency_varchar(cursor)
         # alter_sampling_process_temp_add_processed(cursor)
         

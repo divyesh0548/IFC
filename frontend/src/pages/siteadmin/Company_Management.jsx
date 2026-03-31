@@ -9,6 +9,7 @@ import Typography from '@mui/material/Typography'
 import Grid from '@mui/material/Grid'
 import CircularProgress from '@mui/material/CircularProgress'
 import Alert from '@mui/material/Alert'
+import { MAIN_CONTENT_MAX_WIDTH } from '../../uiConstants'
 
 function Company_Management() {
   const theme = useTheme()
@@ -66,9 +67,10 @@ function Company_Management() {
         {/* Dashboard Content */}
       <Box
         sx={{
-          maxWidth: '1400px',
+          maxWidth: MAIN_CONTENT_MAX_WIDTH,
           mx: 'auto',
-          px: { xs: 2, sm: 3, md: 4 },
+          width: '100%',
+          px: 0,
           py: { xs: 3, sm: 4, md: 5 },
         }}
       >

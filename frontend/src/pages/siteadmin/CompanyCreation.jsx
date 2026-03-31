@@ -209,7 +209,7 @@ function CompanyCreation() {
   }
 
   return (
-    <Box sx={{ maxWidth: '896px', mx: 'auto', px: 2, py: 4 }}>
+    <Box sx={{ maxWidth: '896px', mx: 'auto', px: 0, py: 4 }}>
         <Card elevation={3}>
           <CardContent sx={{ p: 4 }}>
             <Typography

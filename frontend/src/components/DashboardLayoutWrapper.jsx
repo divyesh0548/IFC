@@ -164,7 +164,7 @@ function DashboardLayoutWrapper({ children, userRole, onLogout }) {
               sx={{
                 color: theme.palette.text.primary,
                 '&:hover': {
-                  backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                  backgroundColor: theme.palette.action.hover,
                 },
               }}
             >

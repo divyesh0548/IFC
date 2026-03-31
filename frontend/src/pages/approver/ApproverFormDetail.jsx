@@ -14,8 +14,8 @@ import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import IconButton from '@mui/material/IconButton';
 import DownloadIcon from '@mui/icons-material/Download';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { toast } from 'react-hot-toast';
+import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants';
 
 function ApproverFormDetail() {
   const theme = useTheme()
@@ -373,43 +373,15 @@ function ApproverFormDetail() {
 
   return (
     <Box
-        sx={{
-          width: '100%',
-          maxWidth: '1500px',
-          mx: 'auto',
-          px: { xs: 2, sm: 3, md: 4 },
-          py: 3,
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
-          <IconButton
-            onClick={() => navigate('/approver/dashboard')}
-            sx={{
-              mr: 2,
-              color: theme.palette.text.primary,
-              '&:hover': {
-                backgroundColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.08)' 
-                  : 'rgba(0, 0, 0, 0.04)',
-              },
-            }}
-            aria-label="back to dashboard"
-          >
-            <ArrowBackIcon />
-          </IconButton>
-          <Typography 
-            variant="h4" 
-            component="h1" 
-            sx={{ 
-              fontWeight: 700, 
-              flex: 1,
-              color: 'text.primary'
-            }}
-          >
-            RACM
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      sx={{
+        width: '100%',
+        maxWidth: FORM_DETAIL_MAX_WIDTH,
+        mx: 'auto',
+        px: 0,
+        py: 0,
+      }}
+    >
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Top summary card (matches coordinator design) */}
           <Box sx={{ width: '100%' }}>
             <Card

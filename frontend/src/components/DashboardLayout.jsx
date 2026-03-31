@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useState } from 'react'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import AppBar from '@mui/material/AppBar'
@@ -13,21 +13,37 @@ import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import Divider from '@mui/material/Divider'
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
 import LogoutIcon from '@mui/icons-material/Logout'
+import AccountCircleIcon from '@mui/icons-material/AccountCircle'
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline'
 import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import { useThemeMode } from '../contexts/ThemeContext'
 import { toast } from 'react-hot-toast'
-import { STORAGE_KEYS } from '../storageKeys'
+import { STORAGE_KEYS, clearCachedUserProfile } from '../storageKeys'
+import { MAIN_CONTENT_MAX_WIDTH } from '../uiConstants'
 
 const getHomePath = (pathname) => {
   if (pathname.startsWith('/company_co')) return '/company_co/home'
   if (pathname.startsWith('/siteadmin')) return '/siteadmin/dashboard'
   if (pathname.startsWith('/user')) return '/user/dashboard'
-  if (pathname.startsWith('/approver')) return '/approver/dashboard'
+  if (pathname.startsWith('/approver')) return '/approver/home'
   if (pathname.startsWith('/auditor')) return '/auditor/dashboard'
   return '/'
+}
+
+const getProfilePath = (pathname) => {
+  if (pathname.startsWith('/company_co')) return '/company_co/profile'
+  if (pathname.startsWith('/siteadmin')) return '/siteadmin/profile'
+  if (pathname.startsWith('/user')) return '/user/profile'
+  if (pathname.startsWith('/approver')) return '/approver/profile'
+  if (pathname.startsWith('/auditor')) return '/auditor/profile'
+  return '/company_co/profile'
 }
 
 function DashboardLayout() {
@@ -35,17 +51,27 @@ function DashboardLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
+  const [accountMenuAnchor, setAccountMenuAnchor] = useState(null)
+  const accountMenuOpen = Boolean(accountMenuAnchor)
+  const profilePath = getProfilePath(location.pathname)
   const { mode, toggleTheme } = useThemeMode()
   const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || '')
   const homePath = getHomePath(location.pathname)
   const isAtHome = location.pathname === homePath
-  const contentPaddingX = { xs: 2, sm: 3, md: 4 }
-  const contentInnerInsetX = { xs: 1, sm: 2, md: 2 }
-  const navbarPaddingX = { xs: 3, sm: 5, md: 6 }
+  const isApproverRoute = location.pathname.startsWith('/approver')
+  const pageBoundaryPaddingX = { xs: 2, sm: 3, md: 4 }
+  const navbarBoundaryPaddingX = { xs: 3, sm: 4, md: 5 }
 
   useEffect(() => {
     setCompanyName(localStorage.getItem(STORAGE_KEYS.companyName) || '')
   }, [location.pathname])
+
+  useEffect(() => {
+    document.body.classList.add('has-dashboard-navbar')
+    return () => {
+      document.body.classList.remove('has-dashboard-navbar')
+    }
+  }, [])
 
   const handleUnifiedLogout = async () => {
     try {
@@ -57,16 +83,21 @@ function DashboardLayout() {
       if (response.ok && data.success) {
         localStorage.removeItem(STORAGE_KEYS.companyName)
         localStorage.removeItem(STORAGE_KEYS.companyIdentifier)
+        localStorage.removeItem(STORAGE_KEYS.approverCompanyNames)
+        localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
+        clearCachedUserProfile()
         toast.success('Logged out successfully')
         navigate('/login')
       } else {
         console.error('Logout failed:', data.message)
         toast.error(data.message || 'Logout failed')
+        clearCachedUserProfile()
         navigate('/login')
       }
     } catch (error) {
       console.error('Logout error:', error)
       toast.error('Error during logout')
+      clearCachedUserProfile()
       navigate('/login')
     }
   }
@@ -76,66 +107,144 @@ function DashboardLayout() {
       <AppBar
         position="fixed"
         sx={{
-          // Restore original custom navbar colors
-          backgroundColor: theme.palette.mode === 'dark' ? '#030303' : '#F1EFEC',
-          color: theme.palette.mode === 'dark' ? '#F1EFEC' : '#030303',
-          boxShadow: (theme) =>
-            theme.palette.mode === 'dark'
-              ? '0 2px 8px rgba(0, 0, 0, 0.3)'
-              : '0 2px 8px rgba(0, 0, 0, 0.1)',
+          backgroundColor: theme.palette.navbar.bg,
+          color: theme.palette.navbar.fg,
+          borderBottom: `1px solid ${theme.palette.navbar.bottomBorder}`,
+          boxShadow: 'none',
         }}
       >
         <Toolbar
           disableGutters
           sx={{
-            px: navbarPaddingX,
+            px: navbarBoundaryPaddingX,
           }}
         >
-          <Typography
-            variant="h6"
-            noWrap
-            component="div"
+          <Box
+            component={RouterLink}
+            to="/"
             sx={{
               flexGrow: 1,
-              fontWeight: 700,
-              color: theme.palette.text.primary,
+              textDecoration: 'none',
+              minWidth: 0,
             }}
           >
-            {companyName ? `IFC - ${companyName}` : 'IFC'}
-          </Typography>
+            {isApproverRoute ? (
+              <Typography
+                noWrap
+                sx={{
+                  fontWeight: 800,
+                  fontSize: '1.2rem',
+                  lineHeight: 1.2,
+                  letterSpacing: '-0.02em',
+                  color: theme.palette.navbar.fg,
+                }}
+              >
+                Internal Financial Controls
+              </Typography>
+            ) : (
+              <>
+                <Typography
+                  noWrap
+                  sx={{
+                    fontWeight: 800,
+                    fontSize: '1.2rem',
+                    lineHeight: 1.2,
+                    letterSpacing: '-0.02em',
+                    color: theme.palette.navbar.fg,
+                  }}
+                >
+                  {companyName || 'Company'}
+                </Typography>
+                <Typography
+                  noWrap
+                  sx={{
+                    fontWeight: 400,
+                    fontSize: '0.95rem',
+                    lineHeight: 1.3,
+                    color:
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(238, 238, 238, 0.78)'
+                        : 'rgba(39, 55, 77, 0.72)',
+                  }}
+                >
+                  Internal Financial Controls
+                </Typography>
+              </>
+            )}
+          </Box>
           <Tooltip title={mode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'} arrow>
             <IconButton
               onClick={toggleTheme}
               sx={{
-                color: theme.palette.text.primary,
+                color: theme.palette.navbar.fg,
                 marginRight: 1,
                 '&:hover': {
-                  backgroundColor:
-                    theme.palette.mode === 'dark'
-                      ? 'rgba(255, 255, 255, 0.08)'
-                      : 'rgba(0, 0, 0, 0.04)',
+                  backgroundColor: theme.palette.action.hover,
                 },
               }}
             >
               {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
             </IconButton>
           </Tooltip>
-          <Tooltip title="Logout" arrow>
+          <Tooltip title="Account" arrow>
             <IconButton
-              onClick={() => setLogoutDialogOpen(true)}
+              id="dashboard-account-menu-button"
+              aria-controls={accountMenuOpen ? 'dashboard-account-menu' : undefined}
+              aria-haspopup="true"
+              aria-expanded={accountMenuOpen ? 'true' : undefined}
+              onClick={(e) => setAccountMenuAnchor(e.currentTarget)}
               sx={{
-                color: theme.palette.text.primary,
+                color: theme.palette.navbar.fg,
                 '&:hover': {
-                  backgroundColor:
-                    theme.palette.mode === 'dark'
-                      ? 'rgba(255, 255, 255, 0.08)'
-                      : 'rgba(0, 0, 0, 0.04)',
+                  backgroundColor: theme.palette.action.hover,
                 },
               }}
             >
-              <LogoutIcon />
+              <AccountCircleIcon />
             </IconButton>
           </Tooltip>
+          <Menu
+            id="dashboard-account-menu"
+            anchorEl={accountMenuAnchor}
+            open={accountMenuOpen}
+            onClose={() => setAccountMenuAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            slotProps={{
+              paper: {
+                elevation: 3,
+                sx: {
+                  mt: 1,
+                  minWidth: 200,
+                  borderRadius: 2,
+                },
+              },
+            }}
+          >
+            <MenuItem
+              onClick={() => {
+                setAccountMenuAnchor(null)
+                navigate(profilePath)
+              }}
+            >
+              <ListItemIcon sx={{ color: 'inherit' }}>
+                <PersonOutlineIcon fontSize="small" />
+              </ListItemIcon>
+              Profile
+            </MenuItem>
+            <Divider />
+            <MenuItem
+              onClick={() => {
+                setAccountMenuAnchor(null)
+                setLogoutDialogOpen(true)
+              }}
+            >
+              <ListItemIcon sx={{ color: 'inherit' }}>
+                <LogoutIcon fontSize="small" />
+              </ListItemIcon>
+              Log out
+            </MenuItem>
+          </Menu>
         </Toolbar>
       </AppBar>
 
@@ -243,9 +352,11 @@ function DashboardLayout() {
         component="main"
         sx={{
           flexGrow: 1,
-          px: contentPaddingX,
+          px: pageBoundaryPaddingX,
           py: 3,
           width: '100%',
+          maxWidth: MAIN_CONTENT_MAX_WIDTH,
+          mx: 'auto',
           // Let the global body background show through
           backgroundColor: 'transparent',
           minHeight: '100vh',
@@ -253,7 +364,7 @@ function DashboardLayout() {
       >
         <Toolbar />
         {!isAtHome && (
-          <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 2, pl: contentInnerInsetX }}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 3 }}>
             <Button
               variant="text"
               startIcon={<HomeRoundedIcon />}

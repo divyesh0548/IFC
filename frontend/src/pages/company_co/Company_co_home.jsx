@@ -68,7 +68,7 @@ function Company_co_home() {
   return (
     <Box
       sx={{
-        px: { xs: 1, sm: 2 },
+        px: 0,
         py: 2,
         minHeight: 'calc(100vh - 64px)',
       }}
@@ -79,12 +79,7 @@ function Company_co_home() {
           p: { xs: 2.5, sm: 3.5 },
           mb: 3,
           borderRadius: 3,
-          // Soft horizontal gradient based purely on theme colors
-          background: `linear-gradient(90deg, ${alpha(
-            theme.palette.background.paper,
-            0.95
-          )} 0%, ${alpha(theme.palette.primary.main, 0.12)} 70%)`,
-          backdropFilter: 'blur(2px)',
+          backgroundColor: theme.palette.background.paper,
         }}
       >
         <Typography

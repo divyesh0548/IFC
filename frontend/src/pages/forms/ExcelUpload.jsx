@@ -44,15 +44,22 @@ function ExcelUpload() {
       return false
     }
 
+    // Enforce .xlsx extension only (frontend limitation only)
+    const fileName = String(selectedFile.name || '').toLowerCase()
+    if (!fileName.endsWith('.xlsx')) {
+      toast.error('Only .xlsx files are allowed. Please upload an .xlsx file.')
+      setFile(null)
+      setPreview(null)
+      return false
+    }
+
     // Validate file type
     const validTypes = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-      'application/vnd.ms-excel', // .xls
-      'text/csv' // .csv
     ]
 
     if (!validTypes.includes(selectedFile.type)) {
-      toast.error('Invalid file type. Please upload an Excel file (.xlsx, .xls) or CSV file.')
+      toast.error('Invalid file type. Please upload an .xlsx file.')
       setFile(null)
       setPreview(null)
       return false
@@ -135,62 +142,39 @@ function ExcelUpload() {
     const worksheet = workbook.Sheets[firstSheetName]
     const nonEmptyValues = []
 
-    // Strategy A: Read as array-of-arrays (header row + data rows)
-    try {
-      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' })
-      const headerRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : []
-
-      if (Array.isArray(headerRow) && headerRow.length > 0) {
-        const processOwnerIndex = headerRow.findIndex(
-          (header) => normalizeHeader(header) === 'process owner'
-        )
-
-        if (processOwnerIndex !== -1) {
-          const dataRows = Array.isArray(rows) && rows.length > 1 ? rows.slice(1) : []
-          dataRows.forEach((row) => {
-            if (!Array.isArray(row)) return
-            const cellValue = row[processOwnerIndex]
-            if (cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '') {
-              nonEmptyValues.push(String(cellValue).trim())
-            }
-          })
-        }
-      }
-    } catch (err) {
-      // Ignore and fall back to object-based parsing
-      console.warn('Process Owner validation (header-based) failed:', err)
-    }
-
-    // Strategy B: Read as array-of-objects (most reliable for `"Process Owner": "abcd12345"` cases)
+    // Header row may not start at first row, so scan at least first 10 rows
     let hasColumn = false
     try {
-      const objectRows = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: '' })
-      if (Array.isArray(objectRows) && objectRows.length > 0) {
-        // Find the actual column key that maps to "process owner"
-        const sampleRow = objectRows[0] || {}
-        const processOwnerKey = Object.keys(sampleRow).find(
-          (key) => normalizeHeader(key) === 'process owner'
-        )
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' })
 
-        if (processOwnerKey) {
+      const headerSearchLimit = Math.min(10, Array.isArray(rows) ? rows.length : 0)
+      let headerRowIndex = -1
+      let processOwnerIndex = -1
+
+      for (let r = 0; r < headerSearchLimit; r++) {
+        const row = Array.isArray(rows?.[r]) ? rows[r] : []
+        const idx = row.findIndex((cell) => normalizeHeader(cell) === 'process owner')
+
+        if (idx !== -1) {
+          headerRowIndex = r
+          processOwnerIndex = idx
           hasColumn = true
-          objectRows.forEach((row) => {
-            if (!row || typeof row !== 'object') return
-            const val = row[processOwnerKey]
-            if (val !== undefined && val !== null && String(val).trim() !== '') {
-              nonEmptyValues.push(String(val).trim())
-            }
-          })
+          break
+        }
+      }
+
+      if (hasColumn && headerRowIndex !== -1 && processOwnerIndex !== -1) {
+        for (let r = headerRowIndex + 1; r < rows.length; r++) {
+          const row = Array.isArray(rows?.[r]) ? rows[r] : []
+          const cellValue = row?.[processOwnerIndex]
+          if (cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '') {
+            nonEmptyValues.push(String(cellValue).trim())
+          }
         }
       }
     } catch (err) {
-      console.warn('Process Owner validation (object-based) failed:', err)
-    }
-
-    // Determine hasColumn: either object-based found it OR header-based found values OR header contains it
-    // If we collected any values, we definitely have the column.
-    if (nonEmptyValues.length > 0) {
-      hasColumn = true
+      // If parsing fails, we fall back to "column not available" behavior.
+      console.warn('Process Owner validation failed:', err)
     }
 
     const uniqueNonEmptyValues = [...new Set(nonEmptyValues)]
@@ -239,7 +223,7 @@ function ExcelUpload() {
 
         if (invalidEmails.length > 0) {
           // Block upload if any invalid email is found.
-          toast.error('Email of Process Owner is not valid. Please correct it before uploading.')
+          toast.error('Please update a valid email_id in process_owner column.')
           return
         }
       }
@@ -296,7 +280,7 @@ function ExcelUpload() {
         alignItems: 'center', 
         justifyContent: 'center', 
         minHeight: 'calc(100vh - 4rem)', 
-        px: 2, 
+        px: 0, 
         py: 4 
       }}
     >
@@ -314,7 +298,7 @@ function ExcelUpload() {
               component="h1"
               sx={{
                 fontWeight: 700,
-                color: theme.palette.secondary.main,
+              color: theme.palette.primary.main,
                 mb: 3,
                 textAlign: 'center',
               }}
@@ -329,7 +313,7 @@ function ExcelUpload() {
                 ref={fileInputRef}
                 id="excelFile"
                 name="excelFile"
-                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={handleFileChange}
                 disabled={loading}
                 style={{ display: 'none' }}
@@ -348,7 +332,7 @@ function ExcelUpload() {
                     p: 4,
                     mb: 3,
                     border: 1,
-                    borderColor: isDragging ? theme.palette.secondary.main : 'divider',
+                    borderColor: isDragging ? theme.palette.primary.main : theme.palette.divider,
                     borderStyle: 'dashed',
                     borderRadius: 1,
                     textAlign: 'center',
@@ -357,14 +341,17 @@ function ExcelUpload() {
                     transition: 'all 0.2s ease',
                     '&:hover': {
                       backgroundColor: loading ? 'background.paper' : 'action.hover',
-                      borderColor: loading ? 'divider' : theme.palette.secondary.main,
+                      borderColor: loading ? theme.palette.divider : theme.palette.primary.main,
+                    },
+                    '& .MuiTypography-root': {
+                      color: theme.palette.text.secondary,
                     },
                   }}
                 >
                   <CloudUploadIcon
                     sx={{
                       fontSize: 48,
-                      color: theme.palette.secondary.main,
+                      color: theme.palette.primary.main,
                       mb: 2,
                     }}
                   />
@@ -379,7 +366,7 @@ function ExcelUpload() {
                     p: 2.5,
                     mb: 3,
                     border: 1,
-                    borderColor: 'divider',
+                    borderColor: theme.palette.divider,
                     borderRadius: 1,
                   }}
                 >
@@ -388,7 +375,7 @@ function ExcelUpload() {
                       <InsertDriveFileIcon
                         sx={{
                           fontSize: 32,
-                          color: theme.palette.secondary.main,
+                          color: theme.palette.primary.main,
                         }}
                       />
                       <Typography variant="body1" fontWeight="medium">
@@ -399,7 +386,11 @@ function ExcelUpload() {
                       onClick={handleRemoveFile}
                       disabled={loading}
                       size="small"
-                      sx={{ ml: 2 }}
+                      sx={{
+                        ml: 2,
+                        color: theme.palette.text.primary,
+                        '&:hover': { backgroundColor: theme.palette.action.hover },
+                      }}
                     >
                       <DeleteIcon />
                     </IconButton>
@@ -413,6 +404,7 @@ function ExcelUpload() {
                 required 
                 sx={{ mb: 3 }}
                 disabled={loading}
+                variant="outlined"
               >
                 <InputLabel id="business-process-label">Business Process</InputLabel>
                 <Select
@@ -421,7 +413,6 @@ function ExcelUpload() {
                   value={businessProcess}
                   label="Business Process"
                   onChange={(e) => setBusinessProcess(e.target.value)}
-                  variant="filled"
                 >
                   <MenuItem value="Purchase to Pay">Purchase to Pay</MenuItem>
                   <MenuItem value="Order to Cash">Order to Cash</MenuItem>
@@ -440,6 +431,7 @@ function ExcelUpload() {
                 required 
                 sx={{ mb: 3 }}
                 disabled={loading}
+                variant="outlined"
               >
                 <InputLabel id="financial-year-label">Financial Year</InputLabel>
                 <Select
@@ -448,7 +440,6 @@ function ExcelUpload() {
                   value={financialYear}
                   label="Financial Year"
                   onChange={(e) => setFinancialYear(e.target.value)}
-                  variant="filled"
                 >
                   <MenuItem value="2024-25">2024-25</MenuItem>
                   <MenuItem value="2025-26">2025-26</MenuItem>
@@ -471,20 +462,19 @@ function ExcelUpload() {
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
                   fullWidth
-                  size="small"
+                  variant="outlined"
                   InputLabelProps={{ shrink: true }}
                   inputProps={{ min: getTomorrowDateString() }}
                   disabled={loading}
                 />
 
-                <FormControl fullWidth size="small" disabled={loading}>
+                <FormControl fullWidth disabled={loading} variant="outlined">
                   <InputLabel id="reminder-frequency-label">Reminder Frequency (Optional)</InputLabel>
                   <Select
                     labelId="reminder-frequency-label"
                     value={reminderFrequency}
                     label="Reminder Frequency (Optional)"
                     onChange={(e) => setReminderFrequency(e.target.value)}
-                    variant="filled"
                   >
                     <MenuItem value="">None</MenuItem>
                     <MenuItem value="Daily">Daily</MenuItem>
@@ -513,9 +503,7 @@ function ExcelUpload() {
                   sx={{
                     fontWeight: 600,
                     mb: 1,
-                    color: theme.palette.mode === 'dark' 
-                      ? theme.palette.secondary.light 
-                      : theme.palette.secondary.dark,
+                    color: theme.palette.text.primary,
                   }}
                 >
                   Excel File Format Instructions:
@@ -612,7 +600,13 @@ function ExcelUpload() {
                   fontWeight: 700,
                   textTransform: 'none',
                   borderWidth: 2,
-                  '&:hover': { borderWidth: 2 },
+                  color: theme.palette.text.primary,
+                  borderColor: theme.palette.divider,
+                  '&:hover': {
+                    borderWidth: 2,
+                    backgroundColor: theme.palette.action.hover,
+                    borderColor: theme.palette.divider,
+                  },
                 }}
               >
                 Create RACM Manually

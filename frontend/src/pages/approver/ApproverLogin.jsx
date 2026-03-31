@@ -12,6 +12,7 @@ import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Alert from '@mui/material/Alert'
 import { toast } from 'react-hot-toast'
+import { STORAGE_KEYS, clearCachedUserProfile } from '../../storageKeys'
 
 function ApproverLogin() {
   const theme = useTheme()
@@ -43,11 +44,14 @@ function ApproverLogin() {
       const data = await response.json()
 
       if (response.ok && data.success) {
+        clearCachedUserProfile()
         // Login successful - token is stored in httpOnly cookie
         console.log('Approver login successful:', data.approver)
+        localStorage.removeItem(STORAGE_KEYS.companyIdentifier)
+        localStorage.removeItem(STORAGE_KEYS.companyName)
         toast.success('Login successful!')
-        // Redirect to dashboard
-        navigate('/approver/dashboard')
+        // Redirect to home
+        navigate('/approver/home')
       } else {
         const errorMessage = data.message || 'Login failed'
         setError(errorMessage)

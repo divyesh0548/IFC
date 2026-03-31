@@ -10,7 +10,8 @@ import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Tooltip from '@mui/material/Tooltip'
-import { FILTER_DROPDOWN_MIN_WIDTH_LG } from '../../uiConstants'
+import { FILTER_DROPDOWN_MIN_WIDTH_LG, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function Company_Co_dashboard() {
   const theme = useTheme()
@@ -21,8 +22,10 @@ function Company_Co_dashboard() {
   const [filterActive, setFilterActive] = useState('all') // 'all', 'active', 'inactive'
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
+  const [filterApprovalStatus, setFilterApprovalStatus] = useState('all') // 'all', 'Approved', 'Rejected', 'Pending'
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
+  useSyncGlobalLoading(loading)
 
   // Business process options (matching ExcelUpload.jsx)
   const businessProcessOptions = [
@@ -64,7 +67,7 @@ function Company_Co_dashboard() {
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterActive, filterBusinessProcess, filterFinancialYear])
+  }, [companyIdentifier, filterActive, filterApprovalStatus, filterBusinessProcess, filterFinancialYear])
 
   useEffect(() => {
     if (companyIdentifier) {
@@ -136,7 +139,11 @@ function Company_Co_dashboard() {
       if (filterFinancialYear !== 'all') {
         url += `&financial_year=${encodeURIComponent(filterFinancialYear)}`
       }
-      
+
+      if (filterApprovalStatus !== 'all' && filterApprovalStatus !== 'Pending') {
+        url += `&status=${encodeURIComponent(filterApprovalStatus.toLowerCase())}`
+      }
+
       const response = await fetch(url, {
         method: 'GET',
         credentials: 'include',
@@ -145,15 +152,25 @@ function Company_Co_dashboard() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        // Sort forms by created_at timestamp (newest first)
-        const sortedForms = [...data.data].sort((a, b) => {
+        let filteredData = data.data
+        if (filterApprovalStatus === 'Pending') {
+          filteredData = data.data.filter((form) => {
+            const status = form.status || ''
+            return (
+              !status ||
+              status === '' ||
+              status.toLowerCase() === 'sent for approval'
+            )
+          })
+        }
+
+        const sortedForms = [...filteredData].sort((a, b) => {
           const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
           const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
-          return dateB - dateA // Descending order (newest first)
+          return dateB - dateA
         })
         setForms(sortedForms)
 
-        // Keep cached financial year options updated with any newly seen values
         const latestYears = extractUniqueFinancialYears(data.data)
         if (latestYears.length > 0) {
           const mergedYears = [...new Set([...(financialYearOptions || []), ...latestYears])]
@@ -177,6 +194,24 @@ function Company_Co_dashboard() {
   const handleFormClick = (formId) => {
     navigate(`/company_co/form/${formId}`)
   }
+
+  const getProcessOwnerDisplay = (form) => {
+    const name = (form?.process_owner_name ?? form?.emp_name ?? '')
+      .toString()
+      .trim()
+    if (name) return name
+    const owner = (form?.process_owner ?? '').toString().trim()
+    if (owner) return owner
+    return 'N/A'
+  }
+
+  const formatApprovalStatus = (status) => {
+    if (!status || status === '' || status === null) return 'Pending'
+    if (String(status).toLowerCase() === 'sent for approval') return 'Pending'
+    const s = String(status)
+    return s.charAt(0).toUpperCase() + s.slice(1)
+  }
+
   const tooltipSx = {
     bgcolor: 'rgba(17, 24, 39, 0.94)',
     color: '#ffffff',
@@ -196,7 +231,7 @@ function Company_Co_dashboard() {
   }
 
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 2, py: 4 }}>
+    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
         {/* Forms Section */}
         <Paper 
           elevation={3}
@@ -228,9 +263,7 @@ function Company_Co_dashboard() {
               </Typography>
               <Typography
                 variant="body2"
-                sx={{
-                  color: theme.palette.text.secondary,
-                }}
+                sx={PAGE_SUBHEADER_TEXT_SX}
               >
                 Analyze and monitor RACM for your company.
               </Typography>
@@ -291,25 +324,47 @@ function Company_Co_dashboard() {
                   ))}
                 </Select>
               </FormControl>
-              
-              {/* Active / Inactive Filter (Status) */}
+
+              {/* Active / Inactive */}
               <FormControl
                 variant="outlined"
                 sx={{
                   minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
                 }}
               >
-                <InputLabel id="active-status-filter-label">Status</InputLabel>
+                <InputLabel id="active-status-filter-label">Activity</InputLabel>
                 <Select
                   labelId="active-status-filter-label"
                   id="active-status-filter"
                   value={filterActive}
-                  label="Status"
+                  label="Activity"
                   onChange={(e) => setFilterActive(e.target.value)}
                 >
                   <MenuItem value="all">All</MenuItem>
                   <MenuItem value="active">Active</MenuItem>
                   <MenuItem value="inactive">Inactive</MenuItem>
+                </Select>
+              </FormControl>
+
+              {/* Approval Status (same behavior as RACM Management) */}
+              <FormControl
+                variant="outlined"
+                sx={{
+                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
+                }}
+              >
+                <InputLabel id="approval-status-filter-label">Approval Status</InputLabel>
+                <Select
+                  labelId="approval-status-filter-label"
+                  id="approval-status-filter"
+                  value={filterApprovalStatus}
+                  label="Approval Status"
+                  onChange={(e) => setFilterApprovalStatus(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  <MenuItem value="Approved">Approved</MenuItem>
+                  <MenuItem value="Rejected">Rejected</MenuItem>
+                  <MenuItem value="Pending">Pending</MenuItem>
                 </Select>
               </FormControl>
             </Box>
@@ -353,24 +408,6 @@ function Company_Co_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '320px',
-                        minWidth: '320px',
-                        maxWidth: '320px',
-                      }}
-                    >
-                      Standard Control Description
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
                         width: '220px',
                         minWidth: '220px',
                         maxWidth: '220px',
@@ -389,12 +426,12 @@ function Company_Co_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '220px',
-                        minWidth: '220px',
-                        maxWidth: '220px',
+                        width: '240px',
+                        minWidth: '200px',
+                        maxWidth: '280px',
                       }}
                     >
-                      Sub Process
+                      Process Owner
                     </Box>
                     <Box
                       component="th"
@@ -443,6 +480,24 @@ function Company_Co_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '130px',
+                        minWidth: '120px',
+                        maxWidth: '140px',
+                      }}
+                    >
+                      Approval Status
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
                         width: '140px',
                         minWidth: '140px',
                         maxWidth: '140px',
@@ -455,6 +510,8 @@ function Company_Co_dashboard() {
                 <Box component="tbody">
                   {forms.map((form) => {
                     const isActive = form.active && form.active !== '' && form.active !== '0'
+                    const approvalLabel = formatApprovalStatus(form.status)
+                    const ownerDisplay = getProcessOwnerDisplay(form)
                     return (
                       <Box
                         component="tr"
@@ -468,27 +525,6 @@ function Company_Co_dashboard() {
                           },
                         }}
                       >
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            width: '320px',
-                            minWidth: '320px',
-                            maxWidth: '320px',
-                            fontSize: '0.875rem',
-                            color: theme.palette.text.primary,
-                          }}
-                        >
-                          <Tooltip title={form.standard_control_description || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
-                            <Box component="span" sx={truncatedTextSx}>
-                              {form.standard_control_description || 'N/A'}
-                            </Box>
-                          </Tooltip>
-                        </Box>
                         <Box
                           component="td"
                           sx={{
@@ -516,16 +552,16 @@ function Company_Co_dashboard() {
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            width: '220px',
-                            minWidth: '220px',
-                            maxWidth: '220px',
+                            width: '240px',
+                            minWidth: '200px',
+                            maxWidth: '280px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                           }}
                         >
-                          <Tooltip title={form.sub_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                          <Tooltip title={ownerDisplay} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
                             <Box component="span" sx={truncatedTextSx}>
-                              {form.sub_process || 'N/A'}
+                              {ownerDisplay}
                             </Box>
                           </Tooltip>
                         </Box>
@@ -573,6 +609,55 @@ function Company_Co_dashboard() {
                             }}
                           >
                             {isActive ? 'Active' : 'Inactive'}
+                          </Box>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
+                            width: '130px',
+                            minWidth: '120px',
+                            maxWidth: '140px',
+                          }}
+                        >
+                          <Box
+                            component="span"
+                            sx={{
+                              px: 1,
+                              py: 0.5,
+                              display: 'inline-flex',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              borderRadius: '9999px',
+                              backgroundColor:
+                                approvalLabel === 'Approved'
+                                  ? theme.palette.mode === 'dark'
+                                    ? 'rgba(16, 185, 129, 0.2)'
+                                    : '#d1fae5'
+                                  : approvalLabel === 'Rejected'
+                                  ? theme.palette.mode === 'dark'
+                                    ? 'rgba(239, 68, 68, 0.2)'
+                                    : '#fee2e2'
+                                  : theme.palette.mode === 'dark'
+                                  ? 'rgba(245, 158, 11, 0.2)'
+                                  : '#fef3c7',
+                              color:
+                                approvalLabel === 'Approved'
+                                  ? theme.palette.mode === 'dark'
+                                    ? '#10b981'
+                                    : '#065f46'
+                                  : approvalLabel === 'Rejected'
+                                  ? theme.palette.mode === 'dark'
+                                    ? '#ef4444'
+                                    : '#991b1b'
+                                  : theme.palette.mode === 'dark'
+                                  ? '#f59e0b'
+                                  : '#92400e',
+                            }}
+                          >
+                            {approvalLabel}
                           </Box>
                         </Box>
                         <Box

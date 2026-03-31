@@ -5,21 +5,14 @@
  * Send conditions:
  * - active = 1, status != 'Approved', current date >= due_date
  * - First time: reminder_datetime is empty → send as soon as current date is ahead of due_date
- * - Next times:
- *   - Daily: send when current datetime is 24 hours ahead of reminder_datetime
- *   - Weekly: send when current datetime is 7 days ahead of reminder_datetime
- *   - Monthly: send when current datetime is 30 days ahead of reminder_datetime
- * After sending, reminder_datetime is set to next run (now + 24h / 7d / 30d).
+ * - Next times: send when current datetime reaches reminder_datetime
+ * reminder_datetime is treated as the "next trigger at" timestamp.
+ * After sending, reminder_datetime is updated to current IST time + interval.
  */
 
 const nodemailer = require('nodemailer');
 const { pool } = require('../utils/db');
 
-/**
- * Basic RFC5322-inspired email validation.
- * Intentionally conservative: ensures there is one "@", non-empty local/domain,
- * domain has at least one dot, and no spaces.
- */
 function isValidEmail(value) {
   const email = String(value || '').trim();
   if (!email) return false;
@@ -59,6 +52,7 @@ async function sendEmail(to, subject, text) {
  * Only three values: Daily (24h), Weekly (7 days), Monthly (30 days).
  * Returns a Date = now + interval so the next run triggers when current datetime is ahead of it.
  */
+// (Kept for reference; next send time is computed in SQL now.)
 function getNextReminderDatetime(reminderFrequency) {
   const now = new Date();
   const str = String(reminderFrequency || '').trim();
@@ -66,28 +60,81 @@ function getNextReminderDatetime(reminderFrequency) {
 
   switch (str) {
     case 'Daily':
-      next.setDate(next.getDate() + 1); // 24 hours ahead
+      next.setDate(next.getDate() + 1);
       return next;
     case 'Weekly':
-      next.setDate(next.getDate() + 7); // 7 days ahead
+      next.setDate(next.getDate() + 7);
       return next;
     case 'Monthly':
-      next.setDate(next.getDate() + 30); // 30 days ahead
+      next.setDate(next.getDate() + 30);
       return next;
     default:
-      // Unknown: treat as Daily (24h)
       next.setDate(next.getDate() + 1);
       return next;
   }
 }
 
+function formatDateInMumbai(dt) {
+  // En-CA gives YYYY-MM-DD and respects the provided IANA timezone.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(dt);
+}
+
 function formatDueDateDisplay(dueDateRaw) {
   if (!dueDateRaw) return 'TBD';
-  const str = String(dueDateRaw).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  const dt = new Date(str);
+
+  // Most drivers return DATE either as 'YYYY-MM-DD' string or a Date object.
+  if (typeof dueDateRaw === 'string') {
+    const str = dueDateRaw.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    const dt = new Date(str);
+    if (Number.isNaN(dt.getTime())) return 'TBD';
+    return formatDateInMumbai(dt);
+  }
+
+  const dt = dueDateRaw instanceof Date ? dueDateRaw : new Date(dueDateRaw);
   if (Number.isNaN(dt.getTime())) return 'TBD';
-  return dt.toISOString().slice(0, 10);
+  return formatDateInMumbai(dt);
+}
+
+/**
+ * Parse a DB timestamp value and interpret it as Asia/Kolkata local time
+ * if the value is timezone-less (common with `timestamp without time zone`).
+ *
+ * @param {Date|string|null|undefined} value
+ * @returns {Date|null}
+ */
+function parseTimestampAsMumbai(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const str = String(value).trim();
+  if (!str) return null;
+
+  // If the string already includes timezone info, let JS parse it normally.
+  // Examples: "...Z", "...+05:30"
+  if (/[zZ]$/.test(str) || /[+-]\d\d:\d\d$/.test(str)) {
+    const d = new Date(str);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  // Handle common formats like "YYYY-MM-DD HH:MM:SS[.ffffff]"
+  // by appending the fixed IST offset.
+  const m = str.match(
+    /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d+)?$/
+  );
+  if (!m) {
+    const d = new Date(str);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const [, datePart, timePart, fractional] = m;
+  const isoLike = `${datePart}T${timePart}${fractional || ''}+05:30`;
+  const d = new Date(isoLike);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -108,20 +155,50 @@ async function fetchFormsDueForReminder(client) {
       AND (status IS NULL OR TRIM(status) = '' OR status != 'Approved')
       AND due_date IS NOT NULL
       AND CURRENT_DATE >= due_date
-      AND (reminder_datetime IS NULL OR CURRENT_TIMESTAMP >= reminder_datetime)
+      AND (
+        reminder_datetime IS NULL
+        OR (
+          -- reminder_datetime stores the next trigger timestamp
+          (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata') >= reminder_datetime::timestamp
+        )
+      )
   `;
   const result = await client.query(query);
   return result.rows;
 }
 
 /**
- * Update reminder_datetime for a form (next run time).
+ * Normalize reminder frequency into a valid SQL interval string.
  */
-async function updateReminderDatetime(client, formId, nextDatetime) {
-  await client.query(
-    `UPDATE control_forms SET reminder_datetime = $1 WHERE form_id = $2`,
-    [nextDatetime, formId]
+function getIntervalLiteral(reminderFrequency) {
+  const str = String(reminderFrequency || '').trim();
+  switch (str) {
+    case 'Weekly':
+      return '7 days';
+    case 'Monthly':
+      return '30 days';
+    case 'Daily':
+    default:
+      return '1 day';
+  }
+}
+
+/**
+ * Update reminder_datetime for a form (next trigger at).
+ */
+async function updateReminderDatetime(client, formId, reminderFrequency) {
+  const intervalLiteral = getIntervalLiteral(reminderFrequency);
+  const result = await client.query(
+    `
+      UPDATE control_forms
+      -- Store next trigger timestamp in IST wall-clock time.
+      SET reminder_datetime = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata') + ($2::interval)
+      WHERE form_id = $1
+      RETURNING reminder_datetime;
+    `,
+    [formId, intervalLiteral]
   );
+  return result.rows?.[0]?.reminder_datetime || null;
 }
 
 /**
@@ -155,18 +232,23 @@ IFC System
 async function runReminderEmails() {
   const client = await pool.connect();
   try {
+    // Enforce IST for this session explicitly (defensive even though pool connect sets it).
+    await client.query(`SET TIME ZONE 'Asia/Kolkata'`);
+
     const forms = await fetchFormsDueForReminder(client);
     if (forms.length === 0) return;
 
     for (const form of forms) {
       const to = (form.process_owner || '').trim();
-      const next = getNextReminderDatetime(form.reminder_frequency);
 
       // Validate email before attempting to send. If invalid/missing, skip send but still update reminder_datetime.
       if (!isValidEmail(to)) {
-        await updateReminderDatetime(client, form.form_id, next);
+        const updatedAt = await updateReminderDatetime(client, form.form_id, form.reminder_frequency);
+        const updatedAtMumbai = updatedAt ? formatDateInMumbai(parseTimestampAsMumbai(updatedAt)) : null;
         console.warn(
-          `[reminder_emails] form_id=${form.form_id} has invalid/empty process_owner "${to}", skipped email, next at ${next.toISOString()}`
+          `[reminder_emails] form_id=${form.form_id} has invalid/empty process_owner "${to}", skipped email, updated reminder_datetime to ${
+            updatedAt ? updatedAtMumbai : 'null'
+          } (UTC=${updatedAt ? new Date(updatedAt).toISOString() : 'null'})`
         );
         continue;
       }
@@ -176,9 +258,12 @@ async function runReminderEmails() {
 
       const sent = await sendEmail(to, subject, text);
       if (sent) {
-        await updateReminderDatetime(client, form.form_id, next);
+        const updatedAt = await updateReminderDatetime(client, form.form_id, form.reminder_frequency);
+        const updatedAtMumbai = updatedAt ? formatDateInMumbai(parseTimestampAsMumbai(updatedAt)) : null;
         console.log(
-          `[reminder_emails] Sent reminder to ${to} for form_id=${form.form_id}, next at ${next.toISOString()}`
+          `[reminder_emails] Sent reminder to ${to} for form_id=${form.form_id}, updated reminder_datetime to ${
+            updatedAt ? updatedAtMumbai : 'null'
+          } (UTC=${updatedAt ? new Date(updatedAt).toISOString() : 'null'})`
         );
       }
     }

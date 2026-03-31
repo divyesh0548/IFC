@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
 
 function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
   const [isAuthenticated, setIsAuthenticated] = useState(null)
@@ -7,6 +8,7 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
   const [loading, setLoading] = useState(true)
   const location = useLocation()
   const hasVerifiedRef = useRef(false)
+  useSyncGlobalLoading(loading)
 
   useEffect(() => {
     // Only verify on initial mount, not on every route change
@@ -71,7 +73,7 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
     const roleDashboards = {
       'user': '/user/dashboard',
       'company_co': '/company_co/home',
-      'approver': '/approver/dashboard',
+      'approver': '/approver/home',
       'siteadmin': '/siteadmin/dashboard',
       'auditor': '/auditor/dashboard'
     }

@@ -68,7 +68,10 @@ const columnPatterns = [
   {
     keywords: ['standard', 'control', 'description'],
     dbColumn: 'standard_control_description',
-    priority: 1
+    priority: 1,
+    // Prevent partial matches like "Control Description" from incorrectly mapping here.
+    // Standard Control Description should map only when all keywords are present.
+    requireAllKeywords: true
   },
   {
     keywords: ['process', 'activity', 'walkthrough', 'details'],
@@ -159,6 +162,9 @@ function normalizeColumnName(excelColumnName) {
     
     // Calculate score: match count / total keywords * priority
     if (matchCount > 0) {
+      if (pattern.requireAllKeywords && matchCount !== pattern.keywords.length) {
+        continue
+      }
       const score = (matchCount / pattern.keywords.length) * pattern.priority;
       if (score > bestScore) {
         bestScore = score;

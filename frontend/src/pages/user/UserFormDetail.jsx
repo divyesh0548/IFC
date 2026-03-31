@@ -10,9 +10,11 @@ import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import AttachFileIcon from '@mui/icons-material/AttachFile'
 import CloseIcon from '@mui/icons-material/Close'
-import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import DownloadIcon from '@mui/icons-material/Download'
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import { toast } from 'react-hot-toast'
+import * as XLSX from 'xlsx'
+import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 
 function UserFormDetail() {
   const theme = useTheme()
@@ -278,6 +280,72 @@ function UserFormDetail() {
 
   const sampleRequiredNotice = '(If not available, upload documents from the preceding or succeeding dates.)'
 
+  const getSampleRequiredRows = (value) => {
+    return String(value || '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  }
+
+  const handleDownloadSampleRequired = () => {
+    const sampleRequiredValue = formData?.sample_required
+    const rows = getSampleRequiredRows(sampleRequiredValue)
+
+    if (rows.length === 0) {
+      toast.error('No sample required data available')
+      return
+    }
+
+    const worksheetRows = [
+      ['Sample Required'],
+      ...rows.map((row) => [row]),
+    ]
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetRows)
+    worksheet['!cols'] = [{ wch: 36 }]
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sample Required')
+
+    const safeFormId = String(form_id || 'racm').replace(/[^\w-]/g, '_')
+    XLSX.writeFile(workbook, `sample_required_${safeFormId}.xlsx`)
+  }
+
+  const renderSampleRequiredDownload = () => {
+    const hasSampleRequired = getSampleRequiredRows(formData?.sample_required).length > 0
+
+    return (
+      <Box>
+        <Button
+          variant="outlined"
+          startIcon={<DownloadRoundedIcon />}
+          onClick={handleDownloadSampleRequired}
+          disabled={!hasSampleRequired}
+          sx={{
+            textTransform: 'none',
+            fontWeight: 600,
+            alignSelf: 'flex-start',
+          }}
+        >
+          {hasSampleRequired ? 'Download Sample Required' : 'No Sample Required File'}
+        </Button>
+        <Typography
+          variant="caption"
+          component="p"
+          sx={{
+            color: 'text.secondary',
+            fontStyle: 'italic',
+            mt: 0.75,
+            fontSize: '0.75rem',
+            opacity: 0.8,
+          }}
+        >
+          {sampleRequiredNotice}
+        </Typography>
+      </Box>
+    )
+  }
+
   // Define field labels mapping for updated RACM schema
   const fieldLabels = {
     control_number: 'Control Number',
@@ -429,43 +497,15 @@ function UserFormDetail() {
 
   return (
     <Box
-        sx={{
-          width: '100%',
-          maxWidth: '1500px',
-          mx: 'auto',
-          px: { xs: 2, sm: 3, md: 4 },
-          py: 3,
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
-          <IconButton
-            onClick={() => navigate('/user/dashboard')}
-            sx={{
-              mr: 2,
-              color: theme.palette.text.primary,
-              '&:hover': {
-                backgroundColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.08)' 
-                  : 'rgba(0, 0, 0, 0.04)',
-              },
-            }}
-            aria-label="back to dashboard"
-          >
-            <ArrowBackIcon />
-          </IconButton>
-          <Typography
-            variant="h4"
-            component="h1"
-            sx={{
-              fontWeight: 700,
-              flex: 1,
-              color: 'text.primary'
-            }}
-          >
-            RACM
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      sx={{
+        width: '100%',
+        maxWidth: FORM_DETAIL_MAX_WIDTH,
+        mx: 'auto',
+        px: 0,
+        py: 0,
+      }}
+    >
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Top summary card (matches coordinator design) */}
           <Box sx={{ width: '100%' }}>
             <Card
@@ -480,6 +520,7 @@ function UserFormDetail() {
                   : 'rgba(0, 0, 0, 0.08)',
                 display: 'flex',
                 flexDirection: 'column',
+                overflow: 'hidden',
               }}
             >
               <CardContent
@@ -498,7 +539,7 @@ function UserFormDetail() {
                     gridTemplateColumns: {
                       xs: '1fr',
                       sm: 'repeat(2, 1fr)',
-                      md: 'repeat(3, 1fr)',
+                      md: 'repeat(4, 1fr)',
                     },
                     gap: 2,
                   }}
@@ -728,70 +769,6 @@ function UserFormDetail() {
                       </Typography>
                     )}
                   </Box>
-
-                  {/* Send for Approval / Resubmit Button */}
-                  {isEditable && (
-                    <Box
-                      sx={{
-                        p: 2,
-                        borderRadius: 2,
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      {(() => {
-                        const hasExistingDocument = formData?.doc_uploaded_by_user && formData.doc_uploaded_by_user !== ''
-                        const hasNewDocument = selectedFile !== null
-                        const hasDocument = hasExistingDocument || hasNewDocument
-
-                        const hasDocumentChange = hasNewDocument
-                        const originalRemarks = (formData?.remarks_by_user || '').trim()
-                        const currentRemarks = (remarksByUser || '').trim()
-                        const hasRemarksChange = originalRemarks !== currentRemarks
-
-                        const hasAnyChange = hasDocumentChange || hasRemarksChange
-                        const isButtonDisabled = saving || !hasDocument || !hasAnyChange
-
-                        return (
-                          <Button
-                            onClick={handleSendForApproval}
-                            disabled={isButtonDisabled}
-                            variant="contained"
-                            color="secondary"
-                            fullWidth
-                            sx={{
-                              py: 1.75,
-                              fontWeight: 600,
-                              textTransform: 'none',
-                              fontSize: '0.9375rem',
-                              borderRadius: 2,
-                              boxShadow: theme.palette.mode === 'dark'
-                                ? '0 4px 12px rgba(3, 105, 161, 0.3)'
-                                : '0 2px 8px rgba(3, 105, 161, 0.2)',
-                              '&:hover': {
-                                boxShadow: theme.palette.mode === 'dark'
-                                  ? '0 6px 16px rgba(3, 105, 161, 0.4)'
-                                  : '0 4px 12px rgba(3, 105, 161, 0.3)',
-                                transform: 'translateY(-1px)',
-                              },
-                              '&:disabled': {
-                                opacity: 0.5,
-                                transform: 'none',
-                              },
-                              transition: 'all 0.2s ease-in-out',
-                            }}
-                          >
-                            {saving
-                              ? (isRejected ? 'Resubmitting...' : 'Sending...')
-                              : (isRejected ? 'Resubmit for Approval' : 'Send for Approval')}
-                          </Button>
-                        )
-                      })()}
-                    </Box>
-                  )}
                 </Box>
               </CardContent>
             </Card>
@@ -1110,31 +1087,20 @@ function UserFormDetail() {
                         >
                           {label}
                         </Typography>
-                        <Typography
-                          variant="body2"
-                          component="dd"
-                          sx={{
-                            color: isEmptyDisplay ? 'text.disabled' : 'text.secondary',
-                            wordBreak: 'break-word',
-                            lineHeight: 1.6,
-                            fontSize: theme.typography.customSizes.medium,
-                          }}
-                        >
-                          {isEmptyDisplay ? '-' : String(displayValue)}
-                        </Typography>
-                        {key === 'sample_required' && (
+                        {key === 'sample_required' ? (
+                          renderSampleRequiredDownload()
+                        ) : (
                           <Typography
-                            variant="caption"
-                            component="p"
+                            variant="body2"
+                            component="dd"
                             sx={{
-                              color: 'text.secondary',
-                              fontStyle: 'italic',
-                              mt: 0.75,
-                              fontSize: '0.75rem',
-                              opacity: 0.8,
+                              color: isEmptyDisplay ? 'text.disabled' : 'text.secondary',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
                             }}
                           >
-                            {sampleRequiredNotice}
+                            {isEmptyDisplay ? '-' : String(displayValue)}
                           </Typography>
                         )}
                       </Box>
@@ -1417,10 +1383,6 @@ function UserFormDetail() {
                       borderColor: theme.palette.mode === 'dark'
                         ? 'rgba(255, 255, 255, 0.08)'
                         : 'rgba(0, 0, 0, 0.06)',
-                      gridColumn: {
-                        xs: '1',
-                        md: '1 / -1',
-                      },
                       transition: 'all 0.2s ease-in-out',
                       '&:hover': {
                         backgroundColor: theme.palette.mode === 'dark'
@@ -1489,12 +1451,75 @@ function UserFormDetail() {
                       </>
                     )}
                   </Box>
+
+                  {/* Send for Approval / Resubmit — visible only when document + changes exist, or while submitting */}
+                  {isEditable &&
+                    (() => {
+                      const hasExistingDocument = formData?.doc_uploaded_by_user && formData.doc_uploaded_by_user !== ''
+                      const hasNewDocument = selectedFile !== null
+                      const hasDocument = hasExistingDocument || hasNewDocument
+
+                      const hasDocumentChange = hasNewDocument
+                      const originalRemarks = (formData?.remarks_by_user || '').trim()
+                      const currentRemarks = (remarksByUser || '').trim()
+                      const hasRemarksChange = originalRemarks !== currentRemarks
+
+                      const hasAnyChange = hasDocumentChange || hasRemarksChange
+                      const showSubmit = saving || (hasDocument && hasAnyChange)
+                      if (!showSubmit) return null
+
+                      return (
+                        <Box
+                          sx={{
+                            gridColumn: { xs: '1', md: '1 / -1' },
+                            display: 'flex',
+                            justifyContent: 'flex-start',
+                          }}
+                        >
+                          <Button
+                            onClick={handleSendForApproval}
+                            disabled={saving}
+                            variant="contained"
+                            color="secondary"
+                            sx={{
+                              py: 1.75,
+                              px: 4,
+                              minWidth: 260,
+                              maxWidth: 400,
+                              width: 'auto',
+                              fontWeight: 600,
+                              textTransform: 'none',
+                              fontSize: '0.9375rem',
+                              borderRadius: 2,
+                              boxShadow: theme.palette.mode === 'dark'
+                                ? '0 4px 12px rgba(3, 105, 161, 0.3)'
+                                : '0 2px 8px rgba(3, 105, 161, 0.2)',
+                              '&:hover': {
+                                boxShadow: theme.palette.mode === 'dark'
+                                  ? '0 6px 16px rgba(3, 105, 161, 0.4)'
+                                  : '0 4px 12px rgba(3, 105, 161, 0.3)',
+                                transform: 'translateY(-1px)',
+                              },
+                              '&:disabled': {
+                                opacity: 0.5,
+                                transform: 'none',
+                              },
+                              transition: 'all 0.2s ease-in-out',
+                            }}
+                          >
+                            {saving
+                              ? (isRejected ? 'Resubmitting...' : 'Sending...')
+                              : (isRejected ? 'Resubmit for Approval' : 'Send for Approval')}
+                          </Button>
+                        </Box>
+                      )
+                    })()}
                 </Box>
               </CardContent>
             </Card>
           </Box>
-        </Box>
       </Box>
+    </Box>
   )
 }
 

@@ -8,7 +8,7 @@ const path = require('path');
 const nodemailer = require('nodemailer');
 const { normalizeColumnName } = require('../utils/column_mapping');
 const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
-const { logAuditEvent } = require('../utils/auditLog');
+const { logAuditEvent, EXCEL_BULK_RACM_UPLOAD_ACTION } = require('../utils/auditLog');
 const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/sample_required');
 
 console.log('✅ control_forms.js module loaded successfully');
@@ -469,6 +469,8 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
 
     await client.query('COMMIT');
 
+    await logAuditEvent(EXCEL_BULK_RACM_UPLOAD_ACTION, userEmail, null, s3Key);
+
     res.status(200).json({
       success: true,
       message: 'File uploaded successfully. It will be processed automatically within 1 minute.',
@@ -752,7 +754,8 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     valuation_and_allocation, presentation_and_disclosure,
     due_date, reminder_frequency,
     doc_uploaded_by_user, active, status, reason_by_approver, remarks_by_user,
-    modifiedFields // Array of modified field names from frontend
+    modifiedFields, // Array of modified field names from frontend
+    modifiedChanges // Array of { column_name, old_value, new_value } from frontend
   } = req.body;
 
   const client = await pool.connect();
@@ -786,9 +789,12 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     // If user is not an approver, remove approver-only fields from the update
     if (!isApprover) {
       // Check if user is trying to update approver-only fields
-      const attemptedApproverFields = approverOnlyFields.filter(field => 
-        req.body[field] !== undefined
-      );
+      const attemptedApproverFields = approverOnlyFields.filter(field => {
+        const v = req.body[field]
+        // Allow empty string / null / undefined to pass (often sent as defaults from UI),
+        // but block meaningful non-empty values.
+        return v !== undefined && v !== null && String(v).trim() !== ''
+      })
       
       if (attemptedApproverFields.length > 0) {
         await client.query('ROLLBACK');
@@ -945,14 +951,27 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       await logAuditEvent('Sent for approval', req.user.email_id, form_id);
     }
 
-    // Log audit event for form modifications (when fields are modified)
-    if (modifiedFields && Array.isArray(modifiedFields) && modifiedFields.length > 0 && req.user && req.user.email_id) {
-      let refData = `updated columns - ${modifiedFields.join(', ')}`;
-      // Truncate if exceeds 255 characters (database limit)
-      if (refData.length > 255) {
-        refData = refData.substring(0, 252) + '...';
+    // Log audit event for RACM modifications (store JSON changes in ref_data as TEXT)
+    if (req.user && req.user.email_id) {
+      const hasChangesArray = Array.isArray(modifiedChanges) && modifiedChanges.length > 0;
+      const hasFieldsArray = Array.isArray(modifiedFields) && modifiedFields.length > 0;
+
+      if (hasChangesArray) {
+        await logAuditEvent('RACM Modification', req.user.email_id, form_id, JSON.stringify(modifiedChanges));
+      } else if (hasFieldsArray) {
+        // Fallback for older clients
+        const refData = JSON.stringify(modifiedFields.map((col) => ({ column_name: col })));
+        await logAuditEvent('RACM Modification', req.user.email_id, form_id, refData);
       }
-      await logAuditEvent('control_form modified', req.user.email_id, form_id, refData);
+    }
+
+    // Log audit when RACM active flag changes (only after successful commit, only on real transition)
+    if (active !== undefined && currentForm && req.user && req.user.email_id) {
+      const newActiveStatus = active === '1' || active === 1 || active === true ? '1' : '0';
+      if (newActiveStatus !== currentActiveStatus) {
+        const action = newActiveStatus === '1' ? 'Set RACM Active' : 'Set RACM Inactive';
+        await logAuditEvent(action, req.user.email_id, form_id);
+      }
     }
 
     // Send email to process_owner if active status changed
@@ -1112,6 +1131,16 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     const result = await client.query(query, queryParams);
     
     await client.query('COMMIT');
+
+    // Log audit event for each RACM transitioned to active='1' in bulk action
+    if (req.user && req.user.email_id && formsToUpdate.rows.length > 0) {
+      for (const form of formsToUpdate.rows) {
+        const wasActive = form.active && form.active !== '' && form.active !== '0';
+        if (!wasActive) {
+          await logAuditEvent('Set RACM Active', req.user.email_id, form.form_id);
+        }
+      }
+    }
     
     // Send emails to process owners
     if (formsToUpdate.rows.length > 0) {
@@ -1437,7 +1466,10 @@ router.post('/replicate', verifyAuth, async (req, res) => {
 
     await client.query('COMMIT');
 
-    await logAuditEvent('RACM replicated', userEmail, `count=${createdFormIds.length}`);
+    // Audit each created RACM individually so every new form_id is traceable.
+    for (const createdFormId of createdFormIds) {
+      await logAuditEvent('RACM created', userEmail, createdFormId);
+    }
 
     res.status(201).json({
       success: true,

@@ -9,7 +9,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  Container,
   Divider,
   IconButton,
   Skeleton,
@@ -20,6 +19,7 @@ import {
 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import RefreshIcon from '@mui/icons-material/Refresh'
+import { MAIN_CONTENT_MAX_WIDTH } from '../../uiConstants'
 
 function CompanyDetail() {
   const theme = useTheme()
@@ -132,7 +132,15 @@ function CompanyDetail() {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-      <Container maxWidth="lg" sx={{ py: { xs: 3, sm: 4 } }}>
+      <Box
+        sx={{
+          width: '100%',
+          maxWidth: MAIN_CONTENT_MAX_WIDTH,
+          mx: 'auto',
+          px: 0,
+          py: { xs: 3, sm: 4 },
+        }}
+      >
         <Stack spacing={2.5}>
           {error && (
             <Alert
@@ -223,7 +231,7 @@ function CompanyDetail() {
 
           </Card>
         </Stack>
-      </Container>
+      </Box>
     </Box>
   )
 }

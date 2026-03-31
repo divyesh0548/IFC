@@ -1,7 +1,9 @@
 import './index.css'
 import Home from './pages/Home'
 import Login from './pages/Login'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
+import { useTheme } from '@mui/material/styles'
+import LinearProgress from '@mui/material/LinearProgress'
 import Company_Management from './pages/siteadmin/Company_Management'
 import CompanyCreation from './pages/siteadmin/CompanyCreation'
 import CompanyDetail from './pages/siteadmin/CompanyDetail'
@@ -13,24 +15,84 @@ import UpdatePassword from './pages/UpdatePassword'
 import RoleBasedProtectedRoute from './components/RoleBasedProtectedRoute'
 import Company_Co_dashboard from './pages/company_co/Company_co_dashboard'
 import RacmAssignment from './pages/company_co/RacmAssignment'
-import CreateUser from './pages/company_co/CreateUser'
+import UserManagement from './pages/company_co/User_Management'
 import ExcelUpload from './pages/forms/ExcelUpload'
 import FormDetail from './pages/company_co/FormDetail'
 import CreateControlForm from './pages/company_co/CreateControlForm'
 import RacmManagementDashboard from './pages/company_co/RacmManagementDashboard'
+import ApproverHome from './pages/approver/ApproverHome'
 import ApproverDashboard from './pages/approver/ApproverDashboard'
 import ApproverFormDetail from './pages/approver/ApproverFormDetail'
 import UserFormDetail from './pages/user/UserFormDetail'
 import DashboardLayout from './components/DashboardLayout'
 import Company_co_home from './pages/company_co/Company_co_home'
-import { Toaster } from 'react-hot-toast';
+import ProfilePage from './pages/ProfilePage'
+import { Toaster } from 'react-hot-toast'
+import { GlobalLoadingProvider, useGlobalLoading } from './contexts/GlobalLoadingContext'
+
+function GlobalLoadingStrip() {
+  const theme = useTheme()
+  const { active } = useGlobalLoading()
+  const location = useLocation()
+  const onDashboardRoute =
+    location.pathname.startsWith('/siteadmin') ||
+    location.pathname.startsWith('/auditor') ||
+    location.pathname.startsWith('/approver') ||
+    location.pathname.startsWith('/user') ||
+    location.pathname.startsWith('/company_co')
+  const hasMountedNavbar =
+    typeof document !== 'undefined' &&
+    document.body.classList.contains('has-dashboard-navbar')
+  if (onDashboardRoute && !hasMountedNavbar) {
+    return null
+  }
+  if (!hasMountedNavbar) {
+    return null
+  }
+  const topOffset = { xs: 56, sm: 64 }
+  if (!active) {
+    return null
+  }
+  return (
+    <LinearProgress
+      color="secondary"
+      sx={
+        theme.palette.mode === 'dark'
+          ? {
+              position: 'fixed',
+              left: 0,
+              right: 0,
+              top: topOffset,
+              height: 3,
+              zIndex: 2000,
+              borderRadius: 0,
+              backgroundColor: 'rgba(255, 255, 255, 0.18)',
+              '& .MuiLinearProgress-bar': {
+                backgroundColor: theme.palette.primary.light,
+              },
+            }
+          : {
+              position: 'fixed',
+              left: 0,
+              right: 0,
+              top: topOffset,
+              height: 3,
+              zIndex: 2000,
+              borderRadius: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.08)',
+            }
+      }
+    />
+  )
+}
 
 function App() {
   return (
-    <>
-    <div className='scrollbar'>
-      <Toaster />
-      <Routes>
+    <GlobalLoadingProvider>
+      <GlobalLoadingStrip />
+      <div className='scrollbar'>
+        <Toaster />
+        <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
 
@@ -54,6 +116,7 @@ function App() {
           }
         >
           <Route path="dashboard" element={<Siteadmin_Dashboard />} />
+          <Route path="profile" element={<ProfilePage />} />
           <Route path="company-management" element={<Company_Management />} />
           <Route path="create-company" element={<CompanyCreation />} />
           <Route path="company/:company_identifier" element={<CompanyDetail />} />
@@ -69,6 +132,7 @@ function App() {
           }
         >
           <Route path="dashboard" element={<Auditor_dashboard />} />
+          <Route path="profile" element={<ProfilePage />} />
         </Route>
 
 {/* Approver Routes */}
@@ -80,8 +144,10 @@ function App() {
             </RoleBasedProtectedRoute>
           }
         >
+          <Route path="home" element={<ApproverHome />} />
           <Route path="dashboard" element={<ApproverDashboard />} />
           <Route path="form/:form_id" element={<ApproverFormDetail />} />
+          <Route path="profile" element={<ProfilePage />} />
         </Route>
 
 {/* User Routes */}
@@ -95,6 +161,7 @@ function App() {
         >
           <Route path="dashboard" element={<User_dashboard />} />
           <Route path="form/:form_id" element={<UserFormDetail />} />
+          <Route path="profile" element={<ProfilePage />} />
         </Route>
 
       {/* Company Coordinator Routes */}
@@ -110,15 +177,16 @@ function App() {
           <Route path="dashboard" element={<Company_Co_dashboard />} />
           <Route path="racm-management" element={<RacmManagementDashboard />} />
           <Route path="racm-assignment" element={<RacmAssignment />} />
-          <Route path="user-management" element={<CreateUser />} />
+          <Route path="user-management" element={<UserManagement />} />
           <Route path="upload-excel" element={<ExcelUpload />} />
           <Route path="create-form" element={<CreateControlForm />} />
           <Route path="form/:form_id" element={<FormDetail />} />
+          <Route path="profile" element={<ProfilePage />} />
         </Route>
         
-      </Routes>
+        </Routes>
       </div>
-    </>
+    </GlobalLoadingProvider>
   )
 }
 

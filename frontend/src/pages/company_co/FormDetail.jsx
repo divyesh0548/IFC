@@ -7,6 +7,7 @@ import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
+import Fab from '@mui/material/Fab';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -18,12 +19,15 @@ import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Autocomplete from '@mui/material/Autocomplete';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import { toast } from 'react-hot-toast'
+import * as XLSX from 'xlsx'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function FormDetail() {
   const theme = useTheme()
@@ -43,6 +47,13 @@ function FormDetail() {
   const [samplingExists, setSamplingExists] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [moreActionsDialogOpen, setMoreActionsDialogOpen] = useState(false)
+  const [replicateDialogOpen, setReplicateDialogOpen] = useState(false)
+  const [replicateTargetFY, setReplicateTargetFY] = useState('')
+  const [replicating, setReplicating] = useState(false)
+  const [replicateSuccessDialogOpen, setReplicateSuccessDialogOpen] = useState(false)
+  const [newReplicatedFormId, setNewReplicatedFormId] = useState('')
+  const [creatingUser, setCreatingUser] = useState(false)
   const [scheduleFields, setScheduleFields] = useState({
     due_date: '',
     reminder_frequency: '',
@@ -57,6 +68,28 @@ function FormDetail() {
   const [userSearchText, setUserSearchText] = useState('')
   const [processOwnerName, setProcessOwnerName] = useState('-')
   const [sampleMissingDialogOpen, setSampleMissingDialogOpen] = useState(false)
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  useSyncGlobalLoading(
+    loading ||
+    updating ||
+    saving ||
+    uploadingSampling ||
+    deleting ||
+    replicating ||
+    creatingUser ||
+    savingSchedule ||
+    usersLoading
+  )
+
+  useEffect(() => {
+    const onScroll = () => {
+      setShowScrollTop(window.scrollY > 300)
+    }
+
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   useEffect(() => {
     fetchFormData()
@@ -90,22 +123,25 @@ function FormDetail() {
   }
 
 
-  const checkUserExists = async (email) => {
-    if (!email || !email.trim()) return false
+  const checkUserRole = async (email) => {
+    if (!email || !email.trim()) return { exists: false, role: null }
 
     try {
-      const response = await fetch(`http://localhost:3000/api/company-co/check-user/${encodeURIComponent(email.trim())}`, {
+      const response = await fetch(`http://localhost:3000/api/company-co/check-user-role/${encodeURIComponent(email.trim())}`, {
         method: 'GET',
         credentials: 'include',
       })
 
       const data = await response.json()
-      return data.success && data.exists
+      if (!response.ok || !data.success) return { exists: false, role: null }
+      return { exists: !!data.exists, role: data.role ?? null }
     } catch (error) {
-      console.error('Error checking user:', error)
-      return false
+      console.error('Error checking user role:', error)
+      return { exists: false, role: null }
     }
   }
+
+  const normalizeRole = (value) => String(value || '').trim().toLowerCase()
 
   const handleToggleActive = async () => {
     if (!formData) return
@@ -140,22 +176,29 @@ function FormDetail() {
         return
       }
 
-      // 2) If process owner is present but reminder settings are missing, show reminder message
-      if (!dueDate || dueDate === '' || !reminderFrequency || reminderFrequency === '') {
-        toast.error('Configure Reminder settings')
-        return
-      }
-
-      // Check if process owner exists
+      // 2/3) Validate process owner existence and role before reminder fields,
+      // matching RACM Management gating precedence for Set Active.
       if (processOwnerEmailValue) {
-        const userExists = await checkUserExists(processOwnerEmailValue)
+        const ownerCheck = await checkUserRole(processOwnerEmailValue)
 
-        if (!userExists) {
-          // Show confirmation dialog
+        // Case 3: email not found -> prompt to create user
+        if (!ownerCheck.exists) {
           setProcessOwnerEmail(processOwnerEmailValue)
           setCreateUserConfirmDialogOpen(true)
           return
         }
+
+        // Case 2: email exists but role is not 'user' -> block activation
+        if (normalizeRole(ownerCheck.role) !== 'user') {
+          toast.error('Process Owner must be a normal user')
+          return
+        }
+      }
+
+      // 4) If process owner is valid but reminder settings are missing, block activation
+      if (!dueDate || dueDate === '' || !reminderFrequency || reminderFrequency === '') {
+        toast.error('Configure Reminder settings')
+        return
       }
     }
 
@@ -201,16 +244,48 @@ function FormDetail() {
     }
   }
 
-  const handleCreateUserConfirm = () => {
-    setCreateUserConfirmDialogOpen(false)
-    navigate(`/company_co/user-management?email=${encodeURIComponent(processOwnerEmail)}`)
+  const handleCreateUserConfirm = async () => {
+    const email = (processOwnerEmail || '').trim()
+    if (!email) {
+      toast.error('Process owner email is missing')
+      return
+    }
+
+    setCreatingUser(true)
+    try {
+      const response = await fetch('http://localhost:3000/api/company-co/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          email_id: email,
+        }),
+      })
+
+      const data = await response.json()
+      if (response.ok && data.success) {
+        toast.success('User created successfully')
+        setCreateUserConfirmDialogOpen(false)
+        setProcessOwnerEmail('')
+        await validateAndToggleActive('1')
+      } else {
+        toast.error(data.message || 'Failed to create user')
+      }
+    } catch (error) {
+      console.error('Error creating user:', error)
+      toast.error('Failed to create user')
+    } finally {
+      setCreatingUser(false)
+    }
   }
 
   const handleCreateUserCancel = () => {
+    if (creatingUser) return
     setCreateUserConfirmDialogOpen(false)
     setProcessOwnerEmail('')
   }
-
 
   const handleModifyClick = () => {
     // Check if status allows editing (must be empty/null or 'Rejected')
@@ -477,13 +552,19 @@ function FormDetail() {
 
     // Track modified fields by comparing original formData with editableFields
     const modifiedFields = []
+    const modifiedChanges = []
     fieldOrder.forEach(key => {
       if (!excludedFields.includes(key) && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)) {
-        const originalValue = formData[key] || ''
-        const newValue = editableFields[key] || ''
+        const originalValue = formData[key] ?? ''
+        const newValue = editableFields[key] ?? ''
         // Compare values (convert to string for comparison)
         if (String(originalValue).trim() !== String(newValue).trim()) {
           modifiedFields.push(key)
+          modifiedChanges.push({
+            column_name: key,
+            old_value: originalValue === '' ? null : originalValue,
+            new_value: newValue === '' ? null : newValue
+          })
         }
       }
     })
@@ -498,7 +579,8 @@ function FormDetail() {
         credentials: 'include',
         body: JSON.stringify({
           ...editableFields,
-          modifiedFields: modifiedFields // Send modified fields list
+          modifiedFields: modifiedFields, // Backward-compatible metadata
+          modifiedChanges: modifiedChanges // [{ column_name, old_value, new_value }, ...]
         }),
       })
 
@@ -715,7 +797,159 @@ function FormDetail() {
     }
   }
 
+  // Given a Financial Year like "2025-26" or "2025-2026" or "2025",
+  // return the next two FYs in "YYYY-YY" format.
+  const parseNextTwoFYs = (fy) => {
+    const input = (fy ?? '').toString().trim()
+    if (!input) return []
+
+    const match = input.match(/(\d{4})/)
+    if (!match) return []
+
+    const startYear = Number(match[1])
+    const options = []
+    for (let offset = 1; offset <= 2; offset += 1) {
+      const nextStart = startYear + offset
+      const endYearShort = String((nextStart + 1) % 100).padStart(2, '0')
+      options.push(`${nextStart}-${endYearShort}`)
+    }
+    return options
+  }
+
+  const handleMoreActionsClick = () => {
+    setMoreActionsDialogOpen(true)
+  }
+
+  const handleMoreActionsClose = () => {
+    setMoreActionsDialogOpen(false)
+  }
+
+  const handleChooseDeleteFromMore = () => {
+    setMoreActionsDialogOpen(false)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleChooseReplicateFromMore = () => {
+    setMoreActionsDialogOpen(false)
+    setReplicateTargetFY('')
+    setReplicateDialogOpen(true)
+  }
+
+  const handleReplicateConfirm = async () => {
+    if (!replicateTargetFY || replicateTargetFY.trim() === '') {
+      toast.error('Please select a Financial Year')
+      return
+    }
+
+    setReplicating(true)
+    try {
+      const response = await fetch('http://localhost:3000/api/control-forms/replicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          form_ids: [form_id],
+          financial_year: replicateTargetFY.trim(),
+        }),
+      })
+
+      const data = await response.json()
+      if (response.ok && data.success) {
+        const replicatedFormId = data?.data?.form_ids?.[0] || ''
+        setReplicateDialogOpen(false)
+        setReplicateTargetFY('')
+        if (replicatedFormId) {
+          setNewReplicatedFormId(replicatedFormId)
+          setReplicateSuccessDialogOpen(true)
+        } else {
+          toast.success('RACM replicated successfully')
+          fetchFormData()
+        }
+      } else {
+        toast.error(data.message || 'Failed to replicate RACM')
+      }
+    } catch (error) {
+      console.error('Error replicating RACM:', error)
+      toast.error('Error replicating RACM')
+    } finally {
+      setReplicating(false)
+    }
+  }
+
+  const handleGoToReplicatedRacm = () => {
+    if (newReplicatedFormId) {
+      navigate(`/company_co/form/${newReplicatedFormId}`)
+    }
+    setReplicateSuccessDialogOpen(false)
+  }
+
   const sampleRequiredNotice = '(If not available, upload documents from the preceding or succeeding dates.)'
+
+  const getSampleRequiredRows = (value) => {
+    return String(value || '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  }
+
+  const handleDownloadSampleRequired = () => {
+    const sampleRequiredValue = formData?.sample_required
+    const rows = getSampleRequiredRows(sampleRequiredValue)
+
+    if (rows.length === 0) {
+      toast.error('No sample required data available')
+      return
+    }
+
+    const worksheetRows = [
+      ['Sample Required'],
+      ...rows.map((row) => [row]),
+    ]
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetRows)
+    worksheet['!cols'] = [{ wch: 36 }]
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sample Required')
+
+    const safeFormId = String(form_id || 'racm').replace(/[^\w-]/g, '_')
+    XLSX.writeFile(workbook, `sample_required_${safeFormId}.xlsx`)
+  }
+
+  const renderSampleRequiredDownload = () => {
+    const hasSampleRequired = getSampleRequiredRows(formData?.sample_required).length > 0
+
+    return (
+      <Box>
+        <Button
+          variant="outlined"
+          startIcon={<DownloadRoundedIcon />}
+          onClick={handleDownloadSampleRequired}
+          disabled={!hasSampleRequired}
+          sx={{
+            textTransform: 'none',
+            fontWeight: 600,
+            alignSelf: 'flex-start',
+          }}
+        >
+          {hasSampleRequired ? 'Download Sample Required' : 'No Sample Required File'}
+        </Button>
+        <Typography
+          variant="caption"
+          component="p"
+          sx={{
+            color: 'text.secondary',
+            fontStyle: 'italic',
+            mt: 0.75,
+            fontSize: '0.75rem',
+            opacity: 0.8,
+          }}
+        >
+          {sampleRequiredNotice}
+        </Typography>
+      </Box>
+    )
+  }
 
   // Define field labels mapping for updated RACM schema
   const fieldLabels = {
@@ -796,7 +1030,8 @@ function FormDetail() {
   const excludedFields = ['id', 'form_id', 'company_identifier', 'created_at', 'active', 'approved_rejected', 'reason_by_approver']
 
   // Fields that only approvers can edit (coordinator cannot edit these)
-  const approverOnlyFields = ['control_design_conclusion', 'design_deficiency_desc']
+  // Must match backend `approverOnlyFields` guard.
+  const approverOnlyFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
   
   // Grouped fields that should be displayed together (only if at least one has a value)
   const groupedApproverFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
@@ -867,43 +1102,15 @@ function FormDetail() {
         width: '100%',
         maxWidth: FORM_DETAIL_MAX_WIDTH,
         mx: 'auto',
-        px: { xs: 2, sm: 3, md: 4 },
-        py: 3,
+        px: 0,
+        py: 0,
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 4, position: 'relative' }}>
-        <IconButton
-          onClick={() => navigate('/company_co/dashboard')}
-          sx={{
-            mr: 2,
-            color: theme.palette.text.primary,
-            '&:hover': {
-              backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(255, 255, 255, 0.08)'
-                : 'rgba(0, 0, 0, 0.04)',
-            },
-          }}
-          aria-label="back to dashboard"
-        >
-          <ArrowBackIcon />
-        </IconButton>
-        <Typography
-          variant="h4"
-          component="h1"
-          sx={{
-            fontWeight: 700,
-            flex: 1,
-            color: 'text.primary'
-          }}
-        >
-          RACM
-        </Typography>
-        {/* When in edit mode: Cancel & Save Changes at top-right (replacing Delete position) */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+        {/* When in edit mode: Cancel & Save Changes at top-right */}
         {isEditMode && (
           <Box
             sx={{
-              position: 'absolute',
-              right: 0,
               display: 'flex',
               alignItems: 'center',
               gap: 1.5,
@@ -1162,14 +1369,17 @@ function FormDetail() {
                   }}
                 >
                   {/* Reminder Settings */}
-                  {!isEditMode && (
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 1.5,
-                      }}
-                    >
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1.5,
+                      ...(isEditMode && {
+                        opacity: 0.6,
+                        pointerEvents: 'none',
+                      }),
+                    }}
+                  >
                       <Typography
                         variant="caption"
                         component="label"
@@ -1203,9 +1413,10 @@ function FormDetail() {
                           size="small"
                           InputLabelProps={{ shrink: true }}
                           inputProps={{ min: getTomorrowDateString() }}
+                          disabled={savingSchedule || isEditMode}
                         />
 
-                        <FormControl fullWidth size="small">
+                        <FormControl fullWidth size="small" disabled={savingSchedule || isEditMode}>
                           <InputLabel id="reminder-frequency-label">Reminder Frequency</InputLabel>
                           <Select
                             labelId="reminder-frequency-label"
@@ -1231,6 +1442,7 @@ function FormDetail() {
                           size="small"
                           inputProps={{ min: 1 }}
                           sx={{ mb: 1.5 }}
+                          disabled={savingSchedule || isEditMode}
                         />
                       )}
 
@@ -1242,7 +1454,7 @@ function FormDetail() {
                       ) && (
                         <Button
                           onClick={handleSaveSchedule}
-                          disabled={savingSchedule}
+                          disabled={savingSchedule || isEditMode}
                           fullWidth
                           variant="outlined"
                           size="small"
@@ -1255,8 +1467,7 @@ function FormDetail() {
                           {savingSchedule ? 'Saving...' : 'Save Reminder Settings'}
                         </Button>
                       )}
-                    </Box>
-                  )}
+                  </Box>
 
                   {/* RACM Assignment */}
                   <Box
@@ -1284,6 +1495,7 @@ function FormDetail() {
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
                       <Button
                         onClick={handleOpenAssignmentDialog}
+                        disabled={isEditMode || updating}
                         fullWidth
                         variant="outlined"
                         size="medium"
@@ -1325,21 +1537,10 @@ function FormDetail() {
                       textTransform: 'none',
                       fontSize: '0.9375rem',
                       borderRadius: 2,
-                      boxShadow: theme.palette.mode === 'dark'
-                        ? '0 4px 12px rgba(3, 105, 161, 0.3)'
-                        : '0 2px 8px rgba(3, 105, 161, 0.2)',
-                      '&:hover': {
-                        boxShadow: theme.palette.mode === 'dark'
-                          ? '0 6px 16px rgba(3, 105, 161, 0.4)'
-                          : '0 4px 12px rgba(3, 105, 161, 0.3)',
-                        transform: 'translateY(-1px)',
-                      },
                       ...(isEditMode && {
                         opacity: 0.5,
                         cursor: 'not-allowed',
-                        transform: 'none',
                       }),
-                      transition: 'all 0.2s ease-in-out',
                     }}
                   >
                     Modify
@@ -1379,7 +1580,6 @@ function FormDetail() {
                           backgroundColor: theme.palette.mode === 'dark'
                             ? 'rgba(255, 255, 255, 0.05)'
                             : 'rgba(0, 0, 0, 0.04)',
-                          transform: 'translateY(-1px)',
                         },
                         '&:disabled': {
                           borderColor: theme.palette.mode === 'dark'
@@ -1392,9 +1592,7 @@ function FormDetail() {
                             ? 'rgba(255, 255, 255, 0.03)'
                             : 'rgba(0, 0, 0, 0.02)',
                           cursor: 'not-allowed',
-                          transform: 'none',
                         },
-                        transition: 'all 0.2s ease-in-out',
                       }}
                     >
                       {uploadingSampling ? 'Uploading...' : ((formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists ? 'Sample Document Uploaded' : 'Upload Sample Document')}
@@ -1415,45 +1613,32 @@ function FormDetail() {
                       borderRadius: 2,
                       ...(isActive ? {
                         backgroundColor: '#10b981',
-                        color: '#ffffff',
-                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
                         '&:hover': {
                           backgroundColor: '#059669',
-                          boxShadow: '0 6px 16px rgba(16, 185, 129, 0.4)',
-                          transform: 'translateY(-1px)',
                         },
                       } : {
                         backgroundColor: '#ef4444',
-                        color: '#ffffff',
-                        boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)',
                         '&:hover': {
                           backgroundColor: '#dc2626',
-                          boxShadow: '0 6px 16px rgba(239, 68, 68, 0.4)',
-                          transform: 'translateY(-1px)',
                         },
                       }),
                       ...(updating && {
                         opacity: 0.6,
                         cursor: 'not-allowed',
-                        transform: 'none',
                       }),
                       ...(isEditMode && {
                         opacity: 0.5,
                         cursor: 'not-allowed',
-                        transform: 'none',
                       }),
-                      transition: 'all 0.2s ease-in-out',
                     }}
                   >
                     {updating ? 'Updating...' : (isActive ? 'Set Inactive' : 'Set Active')}
                   </Button>
 
-                  {/* Delete - same row as other actions */}
+                  {/* More actions */}
                   <Button
-                    onClick={handleDeleteClick}
+                    onClick={handleMoreActionsClick}
                     variant="outlined"
-                    color="error"
-                    startIcon={<DeleteIcon />}
                     disabled={isEditMode}
                     sx={{
                       width: '100%',
@@ -1462,20 +1647,13 @@ function FormDetail() {
                       textTransform: 'none',
                       fontSize: '0.9375rem',
                       borderRadius: 2,
-                      borderWidth: 1.5,
-                      '&:hover': {
-                        borderWidth: 1.5,
-                        backgroundColor: theme.palette.mode === 'dark'
-                          ? 'rgba(211, 47, 47, 0.1)'
-                          : 'rgba(211, 47, 47, 0.05)',
-                      },
                       ...(isEditMode && {
                         opacity: 0.5,
                         cursor: 'not-allowed',
                       }),
                     }}
                   >
-                    Delete
+                    More
                   </Button>
                 </Box>
               </Box>
@@ -1878,41 +2056,30 @@ function FormDetail() {
                         )}
                         {isEditable ? (
                           <Box>
-                            <TextField
-                              label={label}
-                              variant="outlined"
-                              value={editableFields[key] || ''}
-                              onChange={(e) => handleFieldChange(key, e.target.value)}
-                              fullWidth
-                              multiline={isTextArea}
-                              rows={isTextArea ? 4 : 1}
-                              disabled={saving}
-                              sx={{
-                                '& .MuiOutlinedInput-root': {
-                                  backgroundColor: 'transparent',
-                                  '&:hover': {
-                                    backgroundColor: 'transparent',
-                                  },
-                                  '&.Mui-focused': {
-                                    backgroundColor: 'transparent',
-                                  },
-                                },
-                              }}
-                            />
-                            {key === 'sample_required' && (
-                              <Typography
-                                variant="caption"
-                                component="p"
+                            {key === 'sample_required' ? (
+                              renderSampleRequiredDownload()
+                            ) : (
+                              <TextField
+                                label={label}
+                                variant="outlined"
+                                value={editableFields[key] || ''}
+                                onChange={(e) => handleFieldChange(key, e.target.value)}
+                                fullWidth
+                                multiline={isTextArea}
+                                rows={isTextArea ? 4 : 1}
+                                disabled={saving}
                                 sx={{
-                                  color: 'text.secondary',
-                                  fontStyle: 'italic',
-                                  mt: 0.75,
-                                  fontSize: '0.75rem',
-                                  opacity: 0.8,
+                                  '& .MuiOutlinedInput-root': {
+                                    backgroundColor: 'transparent',
+                                    '&:hover': {
+                                      backgroundColor: 'transparent',
+                                    },
+                                    '&.Mui-focused': {
+                                      backgroundColor: 'transparent',
+                                    },
+                                  },
                                 }}
-                              >
-                                {sampleRequiredNotice}
-                              </Typography>
+                              />
                             )}
                           </Box>
                         ) : (
@@ -1945,6 +2112,8 @@ function FormDetail() {
                                     : 'Name: -'}
                                 </Typography>
                               </Box>
+                            ) : key === 'sample_required' ? (
+                              renderSampleRequiredDownload()
                             ) : (
                               <Box>
                                 <Typography
@@ -1959,21 +2128,6 @@ function FormDetail() {
                                 >
                                   {isEmpty ? '-' : String(value)}
                                 </Typography>
-                                {key === 'sample_required' && (
-                                  <Typography
-                                    variant="caption"
-                                    component="p"
-                                    sx={{
-                                      color: 'text.secondary',
-                                      fontStyle: 'italic',
-                                      mt: 0.75,
-                                      fontSize: '0.75rem',
-                                      opacity: 0.8,
-                                    }}
-                                  >
-                                    {sampleRequiredNotice}
-                                  </Typography>
-                                )}
                               </Box>
                             )}
                           </Box>
@@ -2353,6 +2507,7 @@ function FormDetail() {
           <Button
             onClick={handleCreateUserCancel}
             variant="outlined"
+            disabled={creatingUser}
             sx={{
               textTransform: 'none',
               px: 3,
@@ -2379,23 +2534,21 @@ function FormDetail() {
             variant="contained"
             color="secondary"
             autoFocus
+            disabled={creatingUser}
             sx={{
               textTransform: 'none',
               px: 3,
               py: 1,
               minWidth: '100px',
               fontWeight: 600,
-              boxShadow: theme.palette.mode === 'dark'
-                ? '0 4px 12px rgba(3, 105, 161, 0.3)'
-                : '0 4px 12px rgba(3, 105, 161, 0.2)',
               '&:hover': {
-                boxShadow: theme.palette.mode === 'dark'
-                  ? '0 6px 16px rgba(3, 105, 161, 0.4)'
-                  : '0 6px 16px rgba(3, 105, 161, 0.3)',
+                backgroundColor: theme.palette.mode === 'dark'
+                  ? '#0284c7'
+                  : '#0369a1',
               },
             }}
           >
-            Create User
+            {creatingUser ? 'Creating...' : 'Create User + Set RACM Active'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -2607,6 +2760,232 @@ function FormDetail() {
       </Dialog>
 
 
+      {/* More Actions Dialog */}
+      <Dialog
+        open={moreActionsDialogOpen}
+        onClose={handleMoreActionsClose}
+        aria-labelledby="more-actions-dialog-title"
+        aria-describedby="more-actions-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '460px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="more-actions-dialog-title"
+          sx={{ pb: 2, pt: 3, px: 3, fontWeight: 600, fontSize: '1.25rem', color: theme.palette.text.primary }}
+        >
+          More Actions
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 1, pb: 3 }}>
+          <DialogContentText
+            id="more-actions-dialog-description"
+            sx={{ color: theme.palette.text.secondary, fontSize: '0.9375rem', lineHeight: 1.5, m: 0, mb: 2 }}
+          >
+            Choose an action for this RACM.
+          </DialogContentText>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                Delete
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                This RACM will be removed permanently, including all linked documents stored in the database.
+              </Typography>
+            </Box>
+            <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                Replicate
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                A duplicate RACM with the same structure and details will be generated.
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 2.5, gap: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button onClick={handleMoreActionsClose} variant="outlined">
+            Cancel
+          </Button>
+          <Button onClick={handleChooseDeleteFromMore} variant="outlined" color="error">
+            Delete
+          </Button>
+          <Button onClick={handleChooseReplicateFromMore} variant="contained" color="secondary">
+            Replicate
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Replicate Dialog */}
+      <Dialog
+        open={replicateDialogOpen}
+        onClose={() => {
+          if (!replicating) {
+            setReplicateDialogOpen(false)
+            setReplicateTargetFY('')
+          }
+        }}
+        aria-labelledby="replicate-dialog-title"
+        aria-describedby="replicate-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '460px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="replicate-dialog-title"
+          sx={{ pb: 2.5, pt: 3, px: 3, fontWeight: 600, fontSize: '1.25rem', color: theme.palette.text.primary }}
+        >
+          Replicate RACM
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContentText
+            id="replicate-dialog-description"
+            sx={{ color: theme.palette.text.secondary, fontSize: '0.9375rem', lineHeight: 1.5, m: 0, mb: 2 }}
+          >
+            Select the target Financial Year for the replicated RACM.
+          </DialogContentText>
+
+          <FormControl fullWidth variant="outlined" disabled={replicating}>
+            <InputLabel id="replicate-fy-label">Financial Year</InputLabel>
+            <Select
+              labelId="replicate-fy-label"
+              id="replicate-fy"
+              value={replicateTargetFY}
+              label="Financial Year"
+              onChange={(e) => setReplicateTargetFY(e.target.value)}
+            >
+              <MenuItem value="">Select</MenuItem>
+              {parseNextTwoFYs(formData?.financial_year).map((opt) => (
+                <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 2.5, gap: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button
+            onClick={() => {
+              if (!replicating) {
+                setReplicateDialogOpen(false)
+                setReplicateTargetFY('')
+              }
+            }}
+            variant="outlined"
+            disabled={replicating}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleReplicateConfirm} variant="contained" color="secondary" disabled={replicating || !replicateTargetFY}>
+            {replicating ? 'Replicating...' : 'Replicate'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Replicate Success Redirect Dialog */}
+      <Dialog
+        open={replicateSuccessDialogOpen}
+        onClose={() => setReplicateSuccessDialogOpen(false)}
+        aria-labelledby="replicate-success-dialog-title"
+        aria-describedby="replicate-success-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '400px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="replicate-success-dialog-title"
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 600,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          Open the replicated RACM now?
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContentText
+            id="replicate-success-dialog-description"
+            sx={{
+              color: theme.palette.text.secondary,
+              fontSize: '0.9375rem',
+              lineHeight: 1.5,
+              m: 0,
+              mb: 2,
+            }}
+          >
+            Replication finished. You can continue here or jump straight to the new RACM detail view.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            pt: 2.5,
+            gap: 1.5,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Button
+            onClick={() => setReplicateSuccessDialogOpen(false)}
+            variant="outlined"
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '100px',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.23)'
+                : 'rgba(0, 0, 0, 0.23)',
+              color: theme.palette.text.primary,
+              '&:hover': {
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.3)'
+                  : 'rgba(0, 0, 0, 0.3)',
+                backgroundColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.05)'
+                  : 'rgba(0, 0, 0, 0.04)',
+              },
+            }}
+          >
+            No
+          </Button>
+          <Button
+            onClick={handleGoToReplicatedRacm}
+            variant="contained"
+            color="secondary"
+            autoFocus
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '100px',
+              fontWeight: 600,
+            }}
+          >
+            Yes
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Delete Confirmation Dialog */}
       <Dialog
         open={deleteDialogOpen}
@@ -2697,13 +3076,8 @@ function FormDetail() {
               py: 1,
               minWidth: '100px',
               fontWeight: 600,
-              boxShadow: theme.palette.mode === 'dark'
-                ? '0 4px 12px rgba(211, 47, 47, 0.3)'
-                : '0 4px 12px rgba(211, 47, 47, 0.2)',
               '&:hover': {
-                boxShadow: theme.palette.mode === 'dark'
-                  ? '0 6px 16px rgba(211, 47, 47, 0.4)'
-                  : '0 6px 16px rgba(211, 47, 47, 0.3)',
+                backgroundColor: '#c62828',
               },
               '&:disabled': {
                 opacity: 0.6,
@@ -2714,9 +3088,34 @@ function FormDetail() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {showScrollTop && (
+        <Fab
+          aria-label="scroll to top"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          sx={{
+            position: 'fixed',
+            right: { xs: 16, sm: 24 },
+            bottom: { xs: 16, sm: 24 },
+            zIndex: (t) => t.zIndex.modal + 1,
+            backgroundColor: (t) => (t.palette.mode === 'dark' ? '#0b1220' : '#ffffff'),
+            color: (t) => (t.palette.mode === 'dark' ? '#ffffff' : '#111827'),
+            border: (t) =>
+              `1px solid ${t.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.28)' : 'rgba(17, 24, 39, 0.35)'}`,
+            boxShadow: (t) =>
+              t.palette.mode === 'dark'
+                ? '0 8px 24px rgba(0, 0, 0, 0.45)'
+                : '0 8px 24px rgba(0, 0, 0, 0.12)',
+            '&:hover': {
+              backgroundColor: (t) => (t.palette.mode === 'dark' ? '#111827' : '#f9fafb'),
+            },
+          }}
+        >
+          <KeyboardArrowUpIcon />
+        </Fab>
+      )}
     </Box>
   )
 }
 
 export default FormDetail
-
