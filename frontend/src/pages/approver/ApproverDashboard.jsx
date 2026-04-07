@@ -6,9 +6,11 @@ import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import Tooltip from '@mui/material/Tooltip'
 import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
+import Switch from '@mui/material/Switch'
 import {
   FILTER_BOX_MIN_WIDTH,
   PAGE_SUBHEADER_TEXT_SX,
@@ -16,6 +18,7 @@ import {
   TABLE_ROW_HOVER_BG,
 } from '../../uiConstants'
 import { STORAGE_KEYS } from '../../storageKeys'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function ApproverDashboard() {
   const theme = useTheme()
@@ -25,10 +28,12 @@ function ApproverDashboard() {
   const [companyOptions, setCompanyOptions] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
+  useSyncGlobalLoading(loading)
   const [filterStatus, setFilterStatus] = useState('pending') // 'pending', 'all', 'approved', 'rejected'
   const [filterCompany, setFilterCompany] = useState('all')
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all')
   const [filterFinancialYear, setFilterFinancialYear] = useState('all')
+  const [cellWordWrap, setCellWordWrap] = useState(false)
 
   const businessProcessOptions = [
     'Purchase to Pay',
@@ -286,6 +291,64 @@ function ApproverDashboard() {
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
   }
+  const wrappedTextSx = {
+    display: 'block',
+    maxWidth: '100%',
+    whiteSpace: 'normal',
+    wordBreak: 'break-word',
+    overflow: 'visible',
+  }
+  const dataCellTextSx = cellWordWrap ? wrappedTextSx : truncatedTextSx
+
+  const mergeDataTdSx = (base) => ({
+    ...base,
+    ...(cellWordWrap
+      ? {
+          whiteSpace: 'normal',
+          wordBreak: 'break-word',
+          overflow: 'visible',
+          verticalAlign: 'top',
+        }
+      : {
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }),
+  })
+
+  const APPROVER_TABLE_COL_PX = {
+    idx: 72,
+    standardControl: 280,
+    businessProcess: 200,
+    financialYear: 140,
+    company: 220,
+    processOwner: 220,
+    approval: 120,
+    createdAt: 180,
+  }
+  const approverTableColWidthsOrdered = [
+    APPROVER_TABLE_COL_PX.idx,
+    APPROVER_TABLE_COL_PX.standardControl,
+    APPROVER_TABLE_COL_PX.businessProcess,
+    APPROVER_TABLE_COL_PX.financialYear,
+    APPROVER_TABLE_COL_PX.company,
+    APPROVER_TABLE_COL_PX.processOwner,
+    APPROVER_TABLE_COL_PX.approval,
+    APPROVER_TABLE_COL_PX.createdAt,
+  ]
+  const approverTableTotalWidthPx = approverTableColWidthsOrdered.reduce((a, b) => a + b, 0)
+  /** Percentage of table width — keeps columns stable when word wrap toggles while table is width:100%. */
+  const pctColSx = (px) => {
+    const pct = (100 * px) / approverTableTotalWidthPx
+    const s = `${pct}%`
+    return {
+      width: s,
+      minWidth: s,
+      maxWidth: s,
+      boxSizing: 'border-box',
+    }
+  }
+
   const tooltipSx = {
     bgcolor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.800',
     fontSize: '0.75rem',
@@ -319,7 +382,8 @@ function ApproverDashboard() {
         maxWidth: '100%',
         mx: 'auto',
         px: 0,
-        py: 4,
+        pt: 0.5,
+        pb: 4,
       }}
     >
       <Paper
@@ -455,17 +519,61 @@ function ApproverDashboard() {
             <Typography color="text.secondary">No forms found.</Typography>
           </Box>
         ) : (
-          <Box sx={{ overflowX: 'auto' }}>
+          <Box>
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                mb: 1.5,
+                flexWrap: 'wrap',
+                gap: 1,
+              }}
+            >
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={cellWordWrap}
+                    onChange={(e) => setCellWordWrap(e.target.checked)}
+                    size="small"
+                    color="primary"
+                  />
+                }
+                label="Word wrap"
+                sx={{
+                  mr: 0,
+                  userSelect: 'none',
+                  '& .MuiFormControlLabel-label': {
+                    fontSize: '0.875rem',
+                    color: 'text.secondary',
+                  },
+                }}
+              />
+            </Box>
+            <Box
+              sx={{
+                overflowX: 'auto',
+                scrollbarGutter: 'stable',
+              }}
+            >
             <Box
               component="table"
               sx={{
-                minWidth: '100%',
+                tableLayout: 'fixed',
+                width: '100%',
+                minWidth: approverTableTotalWidthPx,
                 borderCollapse: 'collapse',
+                borderSpacing: 0,
                 '& th, & td': {
                   borderBottom: `1px solid ${theme.palette.divider}`,
                 },
               }}
             >
+              <Box component="colgroup">
+                {approverTableColWidthsOrdered.map((w, i) => (
+                  <Box key={i} component="col" sx={pctColSx(w)} />
+                ))}
+              </Box>
               <Box
                 component="thead"
                 sx={{
@@ -484,9 +592,7 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '72px',
-                      minWidth: '72px',
-                      maxWidth: '72px',
+                      ...pctColSx(APPROVER_TABLE_COL_PX.idx),
                     }}
                   >
                     #
@@ -502,9 +608,7 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '280px',
-                      minWidth: '240px',
-                      maxWidth: '320px',
+                      ...pctColSx(APPROVER_TABLE_COL_PX.standardControl),
                     }}
                   >
                     Standard Control Description
@@ -520,9 +624,7 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '200px',
-                      minWidth: '180px',
-                      maxWidth: '220px',
+                      ...pctColSx(APPROVER_TABLE_COL_PX.businessProcess),
                     }}
                   >
                     Business Process
@@ -538,9 +640,7 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '140px',
-                      minWidth: '140px',
-                      maxWidth: '140px',
+                      ...pctColSx(APPROVER_TABLE_COL_PX.financialYear),
                     }}
                   >
                     Financial Year
@@ -556,9 +656,7 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '220px',
-                      minWidth: '200px',
-                      maxWidth: '240px',
+                      ...pctColSx(APPROVER_TABLE_COL_PX.company),
                     }}
                   >
                     Company
@@ -574,9 +672,7 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '220px',
-                      minWidth: '200px',
-                      maxWidth: '240px',
+                      ...pctColSx(APPROVER_TABLE_COL_PX.processOwner),
                     }}
                   >
                     Process Owner
@@ -592,9 +688,7 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '120px',
-                      minWidth: '120px',
-                      maxWidth: '120px',
+                      ...pctColSx(APPROVER_TABLE_COL_PX.approval),
                     }}
                   >
                     Approval Status
@@ -610,9 +704,7 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '180px',
-                      minWidth: '180px',
-                      maxWidth: '180px',
+                      ...pctColSx(APPROVER_TABLE_COL_PX.createdAt),
                     }}
                   >
                     Created At
@@ -641,127 +733,119 @@ function ApproverDashboard() {
                         sx={{
                           px: 2.5,
                           py: 2,
-                          width: '72px',
-                          minWidth: '72px',
-                          maxWidth: '72px',
+                          ...pctColSx(APPROVER_TABLE_COL_PX.idx),
                           fontSize: '0.875rem',
                           color: theme.palette.text.primary,
+                          ...(cellWordWrap ? { verticalAlign: 'top' } : {}),
                         }}
                       >
                         {index + 1}
                       </Box>
                       <Box
                         component="td"
-                        sx={{
+                        sx={mergeDataTdSx({
                           px: 2.5,
                           py: 2,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          width: '280px',
-                          minWidth: '240px',
-                          maxWidth: '320px',
+                          ...pctColSx(APPROVER_TABLE_COL_PX.standardControl),
                           fontSize: '0.875rem',
                           color: theme.palette.text.primary,
-                        }}
+                        })}
                       >
-                        <Tooltip
-                          title={form.standard_control_description || 'N/A'}
-                          arrow
-                          slotProps={{ tooltip: { sx: tooltipSx } }}
-                        >
-                          <Box component="span" sx={truncatedTextSx}>
+                        {cellWordWrap ? (
+                          <Box component="span" sx={dataCellTextSx}>
                             {form.standard_control_description || 'N/A'}
                           </Box>
-                        </Tooltip>
+                        ) : (
+                          <Tooltip
+                            title={form.standard_control_description || 'N/A'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.standard_control_description || 'N/A'}
+                            </Box>
+                          </Tooltip>
+                        )}
                       </Box>
                       <Box
                         component="td"
-                        sx={{
+                        sx={mergeDataTdSx({
                           px: 2.5,
                           py: 2,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          width: '200px',
-                          minWidth: '180px',
-                          maxWidth: '220px',
+                          ...pctColSx(APPROVER_TABLE_COL_PX.businessProcess),
                           fontSize: '0.875rem',
                           color: theme.palette.text.primary,
-                        }}
-                        >
-                        <Box component="span" sx={truncatedTextSx}>
+                        })}
+                      >
+                        <Box component="span" sx={dataCellTextSx}>
                           {form.business_process || 'N/A'}
                         </Box>
                       </Box>
                       <Box
                         component="td"
-                        sx={{
+                        sx={mergeDataTdSx({
                           px: 2.5,
                           py: 2,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          width: '140px',
-                          minWidth: '140px',
-                          maxWidth: '140px',
+                          ...pctColSx(APPROVER_TABLE_COL_PX.financialYear),
                           fontSize: '0.875rem',
                           color: theme.palette.text.primary,
-                        }}
+                        })}
                       >
-                        <Box component="span" sx={truncatedTextSx}>
+                        <Box component="span" sx={dataCellTextSx}>
                           {form.financial_year || 'N/A'}
                         </Box>
                       </Box>
                       <Box
                         component="td"
-                        sx={{
+                        sx={mergeDataTdSx({
                           px: 2.5,
                           py: 2,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          width: '220px',
-                          minWidth: '200px',
-                          maxWidth: '240px',
+                          ...pctColSx(APPROVER_TABLE_COL_PX.company),
                           fontSize: '0.875rem',
                           color: theme.palette.text.primary,
-                        }}
+                        })}
                       >
-                        <Tooltip
-                          title={form.company_name || 'N/A'}
-                          arrow
-                          slotProps={{ tooltip: { sx: tooltipSx } }}
-                        >
-                          <Box component="span" sx={truncatedTextSx}>
+                        {cellWordWrap ? (
+                          <Box component="span" sx={dataCellTextSx}>
                             {form.company_name || 'N/A'}
                           </Box>
-                        </Tooltip>
+                        ) : (
+                          <Tooltip
+                            title={form.company_name || 'N/A'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.company_name || 'N/A'}
+                            </Box>
+                          </Tooltip>
+                        )}
                       </Box>
                       <Box
                         component="td"
-                        sx={{
+                        sx={mergeDataTdSx({
                           px: 2.5,
                           py: 2,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          width: '220px',
-                          minWidth: '200px',
-                          maxWidth: '240px',
+                          ...pctColSx(APPROVER_TABLE_COL_PX.processOwner),
                           fontSize: '0.875rem',
                           color: theme.palette.text.primary,
-                        }}
+                        })}
                       >
-                        <Tooltip
-                          title={form.process_owner_name || form.process_owner || 'N/A'}
-                          arrow
-                          slotProps={{ tooltip: { sx: tooltipSx } }}
-                        >
-                          <Box component="span" sx={truncatedTextSx}>
+                        {cellWordWrap ? (
+                          <Box component="span" sx={dataCellTextSx}>
                             {form.process_owner_name || form.process_owner || 'N/A'}
                           </Box>
-                        </Tooltip>
+                        ) : (
+                          <Tooltip
+                            title={form.process_owner_name || form.process_owner || 'N/A'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.process_owner_name || form.process_owner || 'N/A'}
+                            </Box>
+                          </Tooltip>
+                        )}
                       </Box>
                       <Box
                         component="td"
@@ -769,9 +853,8 @@ function ApproverDashboard() {
                           px: 3,
                           py: 2,
                           whiteSpace: 'nowrap',
-                          width: '120px',
-                          minWidth: '120px',
-                          maxWidth: '120px',
+                          ...pctColSx(APPROVER_TABLE_COL_PX.approval),
+                          ...(cellWordWrap ? { verticalAlign: 'top' } : {}),
                         }}
                       >
                         <Box
@@ -800,20 +883,15 @@ function ApproverDashboard() {
                       </Box>
                       <Box
                         component="td"
-                        sx={{
+                        sx={mergeDataTdSx({
                           px: 3,
                           py: 2,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          width: '180px',
-                          minWidth: '180px',
-                          maxWidth: '180px',
+                          ...pctColSx(APPROVER_TABLE_COL_PX.createdAt),
                           fontSize: '0.875rem',
                           color: theme.palette.text.primary,
-                        }}
+                        })}
                       >
-                        <Box component="span" sx={truncatedTextSx}>
+                        <Box component="span" sx={dataCellTextSx}>
                           {form.created_at
                             ? new Date(form.created_at).toLocaleDateString('en-IN', {
                                 year: 'numeric',
@@ -830,6 +908,7 @@ function ApproverDashboard() {
                 })}
               </Box>
             </Box>
+          </Box>
           </Box>
         )}
       </Paper>

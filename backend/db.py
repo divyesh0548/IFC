@@ -792,6 +792,28 @@ def alter_control_forms_add_reminder_datetime(cursor):
     """)
     print(f"  ✓ Column '{column_name}' added successfully!")
 
+def alter_control_forms_add_approval_status_change_timestamp(cursor):
+    """Adds approval_status_change_timestamp column to control_forms if it doesn't exist.
+
+    Same storage semantics as reminder_datetime: wall-clock timestamp without time zone
+    (Asia/Kolkata when set via app defaults).
+    """
+    print("\n[control_forms - Adding approval_status_change_timestamp column]")
+
+    column_name = 'approval_status_change_timestamp'
+    column_type = 'timestamp without time zone'
+
+    if column_exists(cursor, 'control_forms', column_name):
+        print(f"  ⚠️  Column '{column_name}' already exists in 'control_forms' table. Skipping.")
+        return
+
+    print(f"  Adding column '{column_name}' to 'control_forms' table...")
+    cursor.execute(f"""
+        ALTER TABLE public.control_forms
+        ADD COLUMN {column_name} {column_type} NULL;
+    """)
+    print(f"  ✓ Column '{column_name}' added successfully!")
+
 def alter_control_forms_reminder_datetime_type_to_wall_clock_ist(cursor):
     """Converts reminder_datetime to `timestamp without time zone` in Asia/Kolkata wall-clock terms.
 
@@ -967,8 +989,8 @@ def create_all_tables():
         # create_excel_files_table(cursor)
         # create_ifc_users_table(cursor)
         # create_audit_logs_racm_table(cursor)
-        create_audit_logs_table(cursor)
-        alter_audit_logs_ensure_ref_data_text(cursor)
+        # create_audit_logs_table(cursor)
+        # alter_audit_logs_ensure_ref_data_text(cursor)
         # create_sampling_process_temp_table(cursor)
         # create_control_form_history_table(cursor)
         # alter_audit_logs_racm_ensure_ref_data_text(cursor)
@@ -977,6 +999,7 @@ def create_all_tables():
         # alter_control_forms_add_new_columns(cursor)
         # alter_control_forms_add_due_date_and_reminder_frequency(cursor)
         # alter_control_forms_add_reminder_datetime(cursor)
+        alter_control_forms_add_approval_status_change_timestamp(cursor)
         # alter_excel_files_add_due_date_and_reminder_frequency(cursor)
         # alter_control_forms_reminder_datetime_type_to_wall_clock_ist(cursor)
         # alter_control_forms_ensure_control_frequency_varchar(cursor)

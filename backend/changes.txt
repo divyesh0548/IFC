@@ -88,14 +88,30 @@ Should we send emails to Approver when user sends RACM for approval.
 
 
 
-Add functionality to revert the action by approver. (Only for next 15 days of approval/rejection)
-
-add a button for word wrap in dashboard, for Standard control description.
-
 Implement a way to store user preference, like word wrap.
 
 Provide a way to see audit logs of a specific RACM. like approval dates
 
-Save old and new column values in audit logs.
-
 Add size limit and file type limit in upload. Also corupt file detection.
+
+Display why we need portal, and explain features. Do not display data about IFC.
+
+Add a bulk due date set feature.
+
+There will be a tick mark in some 5 consecutive column starting with completeness, Occurance.
+
+Control number should be unique.
+
+Chnage this column name "Account balance disclosure" --> Area
+
+From risk heat remove others, in dropdown
+
+Control owner/perform will be from company user. Provide dropdown in that. (Remove this in )
+
+Set RACM to Active after assignment.
+
+Provide more filters in Assignemnt, like sub-process.
+
+Ask for header mapping in bulk excel upload.
+
+First sample document will be uploaded, then It will be set active. After these conditions display that RACM on assignment page.  

@@ -6,6 +6,12 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import ButtonBase from '@mui/material/ButtonBase';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogTitle from '@mui/material/DialogTitle';
 import TextField from '@mui/material/TextField';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
@@ -13,9 +19,263 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import CircularProgress from '@mui/material/CircularProgress';
 import DownloadIcon from '@mui/icons-material/Download';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { toast } from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants';
+
+/** True if string is an ISO instant (JSON often adds Z = UTC while DB stored IST wall clock). */
+function isUtcOrOffsetIsoString(str) {
+  const s = str.trim()
+  return /Z$/i.test(s) || /[+-]\d{2}:\d{2}$/.test(s) || /[+-]\d{4}$/.test(s)
+}
+
+/** Audit DB timestamps are Indian time; API may send UTC (…Z). Always show Asia/Kolkata. */
+function formatRacmAuditDateDisplay(value) {
+  if (value == null || value === '') return '—'
+
+  const formatInstantInKolkata = (d) => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(d)
+    const get = (t) => parts.find((p) => p.type === t)?.value ?? ''
+    return `${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')}`
+  }
+
+  if (typeof value === 'string') {
+    const str = value.trim()
+    if (str) {
+      if (isUtcOrOffsetIsoString(str)) {
+        const d = new Date(str)
+        if (!Number.isNaN(d.getTime())) return formatInstantInKolkata(d)
+        return '—'
+      }
+      // Naive timestamp from Postgres (no Z): digits are already IST wall clock
+      const withTime = str.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/)
+      if (withTime) {
+        return `${withTime[3]}/${withTime[2]}/${withTime[1]} ${withTime[4]}:${withTime[5]}`
+      }
+      const dateOnly = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (dateOnly) {
+        return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]} 00:00`
+      }
+    }
+  }
+
+  const d = value instanceof Date ? value : new Date(value)
+  if (!Number.isNaN(d.getTime())) return formatInstantInKolkata(d)
+  return '—'
+}
+
+const RACM_MODIFICATION_ACTION = 'RACM Modification'
+
+function racmModDisplayValue(v) {
+  if (v == null || v === '') return '—'
+  return String(v)
+}
+
+/** ref_data for RACM Modification: JSON array of { column_name, old_value, new_value } */
+function parseRacmModificationRef(refData) {
+  const str = typeof refData === 'string' ? refData : String(refData)
+  const trimmed = str.trim()
+  if (!trimmed.startsWith('[')) {
+    return {
+      preview: str.length > 88 ? `${str.slice(0, 88)}…` : str,
+      entries: null,
+      fallbackText: str,
+    }
+  }
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const c = parsed[0]
+      const name = c.column_name != null ? String(c.column_name) : 'field'
+      const ov = c.old_value != null ? String(c.old_value) : '—'
+      const nv = c.new_value != null ? String(c.new_value) : '—'
+      let preview = `${name}: ${ov} → ${nv}`
+      const extra = parsed.length - 1
+      if (extra > 0) {
+        preview += ` (+${extra} more ${extra === 1 ? 'change' : 'changes'})`
+      }
+      return { preview, entries: parsed, fallbackText: null }
+    }
+    return {
+      preview: trimmed.length > 88 ? `${trimmed.slice(0, 88)}…` : trimmed,
+      entries: null,
+      fallbackText: trimmed,
+    }
+  } catch {
+    return {
+      preview: str.length > 88 ? `${str.slice(0, 88)}…` : str,
+      entries: null,
+      fallbackText: str,
+    }
+  }
+}
+
+/** Hover content: column name, then new (emphasized) / old (muted) — not raw JSON */
+function RacmModificationTooltipContent({ entries, fallbackText }) {
+  if (entries && entries.length > 0) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.75, py: 0.25 }}>
+        {entries.map((c, i) => (
+          <Box
+            key={i}
+            sx={{
+              pb: 1.5,
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              '&:last-of-type': { borderBottom: 'none', pb: 0 },
+            }}
+          >
+            <Typography
+              variant="subtitle2"
+              sx={{ fontWeight: 700, fontSize: '0.8125rem', mb: 0.75, lineHeight: 1.35 }}
+            >
+              {racmModDisplayValue(c.column_name)}
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: 'text.primary',
+                fontWeight: 600,
+                fontSize: '0.8125rem',
+                mb: 0.35,
+                lineHeight: 1.45,
+              }}
+            >
+              New value → {racmModDisplayValue(c.new_value)}
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: 'text.secondary',
+                fontWeight: 400,
+                fontSize: '0.75rem',
+                lineHeight: 1.45,
+              }}
+            >
+              Old value → {racmModDisplayValue(c.old_value)}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+    )
+  }
+  return (
+    <Typography variant="body2" sx={{ fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      {fallbackText || '—'}
+    </Typography>
+  )
+}
+
+function AuditLogReferenceCell({ action, refData }) {
+  const theme = useTheme()
+  if (refData == null || refData === '') {
+    return (
+      <Typography component="span" variant="body2" color="text.secondary" sx={{ fontSize: '0.8125rem' }}>
+        —
+      </Typography>
+    )
+  }
+
+  const raw = String(refData)
+  const isMod = action === RACM_MODIFICATION_ACTION
+
+  const tooltipPaperSx = {
+    maxWidth: { xs: 'min(92vw, 520px)', sm: 520 },
+    maxHeight: 420,
+    overflow: 'auto',
+    bgcolor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.grey[50],
+    color: theme.palette.text.primary,
+    border: 1,
+    borderColor: 'divider',
+    p: 1.5,
+  }
+
+  if (isMod) {
+    const { preview, entries, fallbackText } = parseRacmModificationRef(refData)
+    return (
+      <Tooltip
+        title={<RacmModificationTooltipContent entries={entries} fallbackText={fallbackText} />}
+        placement="left-start"
+        enterDelay={280}
+        leaveDelay={120}
+        slotProps={{ tooltip: { sx: tooltipPaperSx } }}
+      >
+        <Typography
+          component="span"
+          variant="body2"
+          sx={{
+            color: 'text.secondary',
+            fontSize: '0.8125rem',
+            cursor: 'help',
+            display: 'block',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {preview}
+        </Typography>
+      </Tooltip>
+    )
+  }
+
+  if (raw.length <= 88) {
+    return (
+      <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8125rem', wordBreak: 'break-word' }}>
+        {raw}
+      </Typography>
+    )
+  }
+
+  return (
+    <Tooltip
+      title={
+        <Box sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.75rem' }}>{raw}</Box>
+      }
+      placement="left-start"
+      enterDelay={280}
+      leaveDelay={120}
+      slotProps={{ tooltip: { sx: tooltipPaperSx } }}
+    >
+      <Typography
+        component="span"
+        variant="body2"
+        sx={{
+          color: 'text.secondary',
+          fontSize: '0.8125rem',
+          cursor: 'help',
+          display: 'block',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {`${raw.slice(0, 88)}…`}
+      </Typography>
+    </Tooltip>
+  )
+}
 
 function ApproverFormDetail() {
   const theme = useTheme()
@@ -33,6 +293,13 @@ function ApproverFormDetail() {
     control_design_conclusion: '',
     design_deficiency_desc: ''
   })
+  const [changeDecisionOpen, setChangeDecisionOpen] = useState(false)
+  const [changeDecisionReason, setChangeDecisionReason] = useState('')
+  const [changeDecisionSubmitting, setChangeDecisionSubmitting] = useState(false)
+  const [auditLogOpen, setAuditLogOpen] = useState(false)
+  const [auditLogLoading, setAuditLogLoading] = useState(false)
+  const [auditLogError, setAuditLogError] = useState(null)
+  const [auditLogRows, setAuditLogRows] = useState([])
 
   const toastId = useRef(null)
 
@@ -124,6 +391,56 @@ function ApproverFormDetail() {
     }
   }
 
+  const handleChangeApprovalDecision = async (newStatus) => {
+    if (newStatus === 'Rejected') {
+      const trimmed = changeDecisionReason.trim()
+      if (!trimmed) {
+        toast.error('Please enter a reason for rejection')
+        return
+      }
+    }
+
+    setChangeDecisionSubmitting(true)
+    try {
+      const response = await fetch(
+        `http://localhost:3000/api/approver/change-approval-decision/${form_id}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            status: newStatus,
+            reason_by_approver:
+              newStatus === 'Rejected'
+                ? changeDecisionReason.trim()
+                : changeDecisionReason.trim() || '',
+          }),
+        }
+      )
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast.success(
+          newStatus === 'Approved'
+            ? 'RACM approved successfully'
+            : 'RACM rejected successfully'
+        )
+        setChangeDecisionOpen(false)
+        setChangeDecisionReason('')
+        setFormData(data.data)
+        fetchFormData()
+      } else {
+        toast.error(data.message || 'Failed to change approval decision')
+      }
+    } catch (err) {
+      console.error('Change approval decision error:', err)
+      toast.error('Error changing approval decision')
+    } finally {
+      setChangeDecisionSubmitting(false)
+    }
+  }
+
   const handleReject = async () => {
     if (!formData) {
       return
@@ -170,6 +487,30 @@ function ApproverFormDetail() {
       toast.error('Error rejecting form', { id: toastId.current })
     } finally {
       setApproving(false)
+    }
+  }
+
+  const handleOpenAuditLogs = async () => {
+    setAuditLogOpen(true)
+    setAuditLogLoading(true)
+    setAuditLogError(null)
+    setAuditLogRows([])
+    try {
+      const response = await fetch(
+        `http://localhost:3000/api/approver/racm-audit-logs/${encodeURIComponent(form_id)}`,
+        { method: 'GET', credentials: 'include' }
+      )
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        setAuditLogError(data.message || 'Failed to load audit logs')
+        return
+      }
+      setAuditLogRows(Array.isArray(data.data) ? data.data : [])
+    } catch (e) {
+      console.error('Audit logs fetch error:', e)
+      setAuditLogError('Failed to load audit logs')
+    } finally {
+      setAuditLogLoading(false)
     }
   }
 
@@ -256,6 +597,72 @@ function ApproverFormDetail() {
 
   const sampleRequiredNotice = '(If not available, upload documents from the preceding or succeeding dates.)'
 
+  const getSampleRequiredRows = (value) => {
+    return String(value || '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  }
+
+  const handleDownloadSampleRequired = () => {
+    const sampleRequiredValue = formData?.sample_required
+    const rows = getSampleRequiredRows(sampleRequiredValue)
+
+    if (rows.length === 0) {
+      toast.error('No sample required data available')
+      return
+    }
+
+    const worksheetRows = [
+      ['Sample Required'],
+      ...rows.map((row) => [row]),
+    ]
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetRows)
+    worksheet['!cols'] = [{ wch: 36 }]
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sample Required')
+
+    const safeFormId = String(form_id || 'racm').replace(/[^\w-]/g, '_')
+    XLSX.writeFile(workbook, `sample_required_${safeFormId}.xlsx`)
+  }
+
+  const renderSampleRequiredDownload = () => {
+    const hasSampleRequired = getSampleRequiredRows(formData?.sample_required).length > 0
+
+    return (
+      <Box>
+        <Button
+          variant="outlined"
+          startIcon={<DownloadRoundedIcon />}
+          onClick={handleDownloadSampleRequired}
+          disabled={!hasSampleRequired}
+          sx={{
+            textTransform: 'none',
+            fontWeight: 600,
+            alignSelf: 'flex-start',
+          }}
+        >
+          {hasSampleRequired ? 'Download Sample Required' : 'No Sample Required File'}
+        </Button>
+        <Typography
+          variant="caption"
+          component="p"
+          sx={{
+            color: 'text.secondary',
+            fontStyle: 'italic',
+            mt: 0.75,
+            fontSize: '0.75rem',
+            opacity: 0.8,
+          }}
+        >
+          {sampleRequiredNotice}
+        </Typography>
+      </Box>
+    )
+  }
+
   // Define field labels mapping for updated RACM schema
   const fieldLabels = {
     control_number: 'Control Number',
@@ -333,7 +740,17 @@ function ApproverFormDetail() {
   ]
 
   // Fields to exclude from display
-  const excludedFields = ['id', 'form_id', 'company_identifier', 'created_at', 'active', 'approved_rejected', 'reason_by_approver']
+  const excludedFields = [
+    'id',
+    'form_id',
+    'company_identifier',
+    'company_name',
+    'process_owner_name',
+    'created_at',
+    'active',
+    'approved_rejected',
+    'reason_by_approver',
+  ]
   
   // Grouped fields that should be displayed together and are editable by approver
   const groupedApproverFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
@@ -371,6 +788,23 @@ function ApproverFormDetail() {
   const isApproved = formData?.status === 'Approved'
   const isRejected = formData?.status === 'Rejected'
 
+  const APPROVAL_CHANGE_WINDOW_MS = 15 * 24 * 60 * 60 * 1000
+  const showApprovalStatusLockUi = isApproved || isRejected
+  let approvalChangeWithin15Days = false
+  if (showApprovalStatusLockUi && formData?.approval_status_change_timestamp) {
+    const changedAt = new Date(formData.approval_status_change_timestamp)
+    if (!Number.isNaN(changedAt.getTime())) {
+      approvalChangeWithin15Days = Date.now() - changedAt.getTime() <= APPROVAL_CHANGE_WINDOW_MS
+    }
+  }
+
+  const approvalStatusLabelText = (() => {
+    const status = formData?.status || ''
+    if (status === 'sent for approval') return 'Pending'
+    if (!status || status === '') return '-'
+    return status.charAt(0).toUpperCase() + status.slice(1)
+  })()
+
   return (
     <Box
       sx={{
@@ -402,13 +836,64 @@ function ApproverFormDetail() {
               <CardContent
                 sx={{
                   px: 3.5,
-                  pt: 4,
+                  pt: 3,
                   pb: 4,
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 0,
                 }}
               >
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: { xs: 'column', sm: 'row' },
+                    alignItems: { xs: 'stretch', sm: 'center' },
+                    justifyContent: 'space-between',
+                    gap: 1.5,
+                    mb: 2,
+                    pb: 2,
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    size="medium"
+                    startIcon={<HistoryRoundedIcon sx={{ fontSize: '1.2rem !important' }} />}
+                    onClick={handleOpenAuditLogs}
+                    disableElevation
+                    sx={{
+                      alignSelf: { xs: 'flex-start', sm: 'center' },
+                      textTransform: 'none',
+                      fontWeight: 700,
+                      letterSpacing: '0.02em',
+                      borderRadius: 2,
+                      px: 1.5,
+                      py: 0.875,
+                      minHeight: 40,
+                      boxShadow: 'none',
+                      '&:hover': {
+                        boxShadow: 'none',
+                      },
+                    }}
+                  >
+                    Audit logs
+                  </Button>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: 'text.secondary',
+                      fontSize: '0.75rem',
+                      lineHeight: 1.4,
+                      mt : 2,
+                      textAlign: { xs: 'left', sm: 'right' },
+                      alignSelf: { xs: 'flex-start', sm: 'center' },
+                    }}
+                  >
+                    Created at {formatDateTime(formData?.created_at)}
+                  </Typography>
+                </Box>
                 <Box
                   sx={{
                     display: 'grid',
@@ -420,7 +905,7 @@ function ApproverFormDetail() {
                     gap: 2,
                   }}
                 >
-                  {/* Form Status */}
+                  {/* RACM Status (active / inactive) */}
                   <Box
                     sx={{
                       p: 2,
@@ -442,7 +927,7 @@ function ApproverFormDetail() {
                         letterSpacing: '0.5px',
                       }}
                     >
-                      Form Status
+                      RACM Status
                     </Typography>
                     <Typography
                       variant="body2"
@@ -493,7 +978,7 @@ function ApproverFormDetail() {
                     </Typography>
                   </Box>
 
-                  {/* Created At */}
+                  {/* Company */}
                   <Box
                     sx={{
                       p: 2,
@@ -515,18 +1000,18 @@ function ApproverFormDetail() {
                         letterSpacing: '0.5px',
                       }}
                     >
-                      Created At
+                      Company
                     </Typography>
                     <Typography
                       variant="body2"
                       sx={{
                         color: 'text.primary',
                         fontWeight: 500,
-                        fontSize: '0.875rem',
+                        fontSize: '0.9375rem',
                         lineHeight: 1.5,
                       }}
                     >
-                      {formatDateTime(formData?.created_at)}
+                      {(formData?.company_name && String(formData.company_name).trim()) || '-'}
                     </Typography>
                   </Box>
 
@@ -554,31 +1039,128 @@ function ApproverFormDetail() {
                     >
                       Approval Status
                     </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: (() => {
-                          const status = formData?.status || ''
-                          if (status === 'Approved') return '#10b981'
-                          if (status === 'Rejected') return '#ef4444'
-                          return 'text.primary'
-                        })(),
-                        fontWeight: 500,
-                        fontSize: '0.9375rem',
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {(() => {
-                        const status = formData?.status || ''
-                        if (status === 'sent for approval') {
-                          return 'Pending'
-                        }
-                        if (!status || status === '') {
-                          return '-'
-                        }
-                        return status.charAt(0).toUpperCase() + status.slice(1)
-                      })()}
-                    </Typography>
+                    {showApprovalStatusLockUi && approvalChangeWithin15Days ? (
+                      <ButtonBase
+                        focusRipple
+                        onClick={() => {
+                          setChangeDecisionReason('')
+                          setChangeDecisionOpen(true)
+                        }}
+                        sx={{
+                          display: 'block',
+                          width: '100%',
+                          borderRadius: 1.5,
+                          textAlign: 'left',
+                          transition: 'background-color 0.15s ease',
+                          border: '1px solid transparent',
+                          '&:hover': {
+                            backgroundColor: 'action.hover',
+                            borderColor: 'divider',
+                          },
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 1,
+                            minWidth: 0,
+                            py: 0.5,
+                            px: 0.75,
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: (() => {
+                                const status = formData?.status || ''
+                                if (status === 'Approved') return '#10b981'
+                                if (status === 'Rejected') return '#ef4444'
+                                return 'text.primary'
+                              })(),
+                              fontWeight: 500,
+                              fontSize: '0.9375rem',
+                              lineHeight: 1.5,
+                              flex: 1,
+                              minWidth: 0,
+                            }}
+                          >
+                            {approvalStatusLabelText}
+                          </Typography>
+                          <Tooltip
+                            title="Click to change decision within the 15-day window."
+                            placement="top"
+                            arrow
+                          >
+                            <Box
+                              component="span"
+                              role="img"
+                              sx={{
+                                display: 'inline-flex',
+                                color: 'text.secondary',
+                                flexShrink: 0,
+                                pointerEvents: 'none',
+                                '& .MuiSvgIcon-root': { fontSize: 22 },
+                              }}
+                              aria-label="Unlocked: click to change decision"
+                            >
+                              <LockOpenOutlinedIcon />
+                            </Box>
+                          </Tooltip>
+                        </Box>
+                      </ButtonBase>
+                    ) : (
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1,
+                          minWidth: 0,
+                        }}
+                      >
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: (() => {
+                              const status = formData?.status || ''
+                              if (status === 'Approved') return '#10b981'
+                              if (status === 'Rejected') return '#ef4444'
+                              return 'text.primary'
+                            })(),
+                            fontWeight: 500,
+                            fontSize: '0.9375rem',
+                            lineHeight: 1.5,
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                        >
+                          {approvalStatusLabelText}
+                        </Typography>
+                        {showApprovalStatusLockUi && (
+                          <Tooltip
+                            title="Approval status is locked — more than 15 days since the last decision."
+                            placement="top"
+                            arrow
+                          >
+                            <Box
+                              component="span"
+                              role="img"
+                              sx={{
+                                display: 'inline-flex',
+                                color: 'text.secondary',
+                                flexShrink: 0,
+                                '& .MuiSvgIcon-root': { fontSize: 22 },
+                              }}
+                              aria-label="Locked: outside 15-day change window"
+                            >
+                              <LockOutlinedIcon />
+                            </Box>
+                          </Tooltip>
+                        )}
+                      </Box>
+                    )}
                   </Box>
 
                   {/* Process Owner */}
@@ -966,10 +1548,9 @@ function ApproverFormDetail() {
                             borderColor: theme.palette.mode === 'dark'
                               ? 'rgba(255, 255, 255, 0.08)'
                               : 'rgba(0, 0, 0, 0.06)',
-                            gridColumn: isEditable ? {
-                              xs: '1',
-                              md: '1 / -1'
-                            } : undefined,
+                            gridColumn: isEditable
+                              ? { xs: '1', md: '1 / -1' }
+                              : undefined,
                             transition: 'all 0.2s ease-in-out',
                             '&:hover': {
                               backgroundColor: theme.palette.mode === 'dark'
@@ -1073,6 +1654,8 @@ function ApproverFormDetail() {
                                 <DownloadIcon />
                               </IconButton>
                             </Box>
+                          ) : key === 'sample_required' ? (
+                            renderSampleRequiredDownload()
                           ) : (
                             <Box>
                               <Typography
@@ -1087,21 +1670,6 @@ function ApproverFormDetail() {
                               >
                                 {isEmpty ? '-' : String(value)}
                               </Typography>
-                              {key === 'sample_required' && (
-                                <Typography
-                                  variant="caption"
-                                  component="p"
-                                  sx={{
-                                    color: 'text.secondary',
-                                    fontStyle: 'italic',
-                                    mt: 0.75,
-                                    fontSize: '0.75rem',
-                                    opacity: 0.8,
-                                  }}
-                                >
-                                  {sampleRequiredNotice}
-                                </Typography>
-                              )}
                             </Box>
                           )}
                         </Box>
@@ -1534,6 +2102,265 @@ function ApproverFormDetail() {
             </Card>
           </Box>
         </Box>
+
+        <Dialog
+          open={auditLogOpen}
+          onClose={() => setAuditLogOpen(false)}
+          fullWidth
+          maxWidth="lg"
+          aria-labelledby="racm-audit-logs-title"
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              maxHeight: '90vh',
+            },
+          }}
+        >
+          <DialogTitle
+            id="racm-audit-logs-title"
+            sx={{
+              pb: 1,
+              pt: 2.5,
+              px: 3,
+              fontWeight: 600,
+              fontSize: '1.1rem',
+            }}
+          >
+            Audit logs
+          </DialogTitle>
+          <DialogContent sx={{ px: 3, pt: 0, pb: 2, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {auditLogLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress size={32} />
+              </Box>
+            ) : auditLogError ? (
+              <Alert severity="error" sx={{ mb: 1 }}>
+                {auditLogError}
+              </Alert>
+            ) : auditLogRows.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                No audit entries for this RACM.
+              </Typography>
+            ) : (
+              <TableContainer
+                sx={{
+                  maxHeight: 'min(420px, 58vh)',
+                  overflow: 'auto',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                }}
+              >
+                <Table size="small" stickyHeader sx={{ tableLayout: 'fixed', width: '100%' }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600, width: '14%', whiteSpace: 'nowrap' }}>Date & time</TableCell>
+                      <TableCell sx={{ fontWeight: 600, width: '28%' }}>User</TableCell>
+                      <TableCell sx={{ fontWeight: 600, width: '26%' }}>Action</TableCell>
+                      <TableCell sx={{ fontWeight: 600, width: '32%' }}>Reference</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {auditLogRows.map((row) => (
+                      <TableRow key={row.id ?? `${row.timestamp}-${row.action}`}>
+                        <TableCell sx={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                          {formatRacmAuditDateDisplay(row.timestamp)}
+                        </TableCell>
+                        <TableCell sx={{ verticalAlign: 'top', wordBreak: 'break-word' }}>
+                          {row.user_email_id || '—'}
+                        </TableCell>
+                        <TableCell sx={{ verticalAlign: 'top', wordBreak: 'break-word' }}>
+                          {row.action ?? '—'}
+                        </TableCell>
+                        <TableCell sx={{ verticalAlign: 'top', maxWidth: 0 }}>
+                          <AuditLogReferenceCell action={row.action} refData={row.ref_data} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+            {!auditLogLoading && auditLogRows.length > 0 ? (
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                {auditLogRows.length} entr{auditLogRows.length === 1 ? 'y' : 'ies'} — newest at bottom. Scroll the table for long lists.
+              </Typography>
+            ) : null}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setAuditLogOpen(false)} variant="outlined" size="small" sx={{ textTransform: 'none' }}>
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
+          open={changeDecisionOpen}
+          onClose={() => {
+            if (!changeDecisionSubmitting) setChangeDecisionOpen(false)
+          }}
+          fullWidth
+          maxWidth="sm"
+          aria-labelledby="change-approval-decision-title"
+          aria-describedby="change-approval-decision-description"
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              minWidth: { xs: '90%', sm: '460px' },
+              boxShadow:
+                theme.palette.mode === 'dark'
+                  ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+                  : '0 8px 32px rgba(0, 0, 0, 0.12)',
+            },
+          }}
+        >
+          <DialogTitle
+            id="change-approval-decision-title"
+            sx={{
+              pb: 2,
+              pt: 3,
+              px: 3,
+              fontWeight: 600,
+              fontSize: '1.25rem',
+              color: theme.palette.text.primary,
+            }}
+          >
+            Change approval decision
+          </DialogTitle>
+          <DialogContent sx={{ px: 3, pt: 1, pb: 3 }}>
+            <DialogContentText
+              id="change-approval-decision-description"
+              sx={{
+                color: theme.palette.text.secondary,
+                fontSize: '0.9375rem',
+                lineHeight: 1.5,
+                m: 0,
+                mb: 2,
+              }}
+            >
+              User will be notified of this decision.
+            </DialogContentText>
+            <Box
+              sx={{
+                p: 2,
+                mb: 2.5,
+                borderRadius: 1.5,
+                border: '1px solid',
+                borderColor: 'divider',
+                bgcolor:
+                  theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.03)'
+                    : 'rgba(0, 0, 0, 0.02)',
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75, color: 'text.primary' }}>
+                {isApproved ? 'Switch to rejected' : 'Switch to approved'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                {isApproved
+                  ? 'This RACM is currently approved. Rejecting requires a reason for the process owner.'
+                  : 'This RACM is currently rejected. You may approve it; adding a comment for the process owner is optional.'}
+              </Typography>
+            </Box>
+            <TextField
+              label={
+                isApproved
+                  ? 'Reason (required to reject)'
+                  : 'Reason (optional when approving)'
+              }
+              value={changeDecisionReason}
+              onChange={(e) => setChangeDecisionReason(e.target.value)}
+              fullWidth
+              multiline
+              minRows={3}
+              required={isApproved}
+              disabled={changeDecisionSubmitting}
+              variant="outlined"
+              placeholder={
+                isApproved
+                  ? 'Explain why you are rejecting this RACM'
+                  : 'Optional comments for the process owner'
+              }
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 1.5,
+                },
+              }}
+            />
+          </DialogContent>
+          <DialogActions
+            sx={{
+              px: 3,
+              pb: 3,
+              pt: 2.5,
+              gap: 1.5,
+              borderTop: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            <Button
+              onClick={() => setChangeDecisionOpen(false)}
+              disabled={changeDecisionSubmitting}
+              variant="outlined"
+              sx={{
+                textTransform: 'none',
+                px: 3,
+                py: 1,
+                minWidth: '100px',
+                borderColor:
+                  theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.23)'
+                    : 'rgba(0, 0, 0, 0.23)',
+                color: theme.palette.text.primary,
+                '&:hover': {
+                  borderColor:
+                    theme.palette.mode === 'dark'
+                      ? 'rgba(255, 255, 255, 0.3)'
+                      : 'rgba(0, 0, 0, 0.3)',
+                  backgroundColor:
+                    theme.palette.mode === 'dark'
+                      ? 'rgba(255, 255, 255, 0.05)'
+                      : 'rgba(0, 0, 0, 0.04)',
+                },
+              }}
+            >
+              Cancel
+            </Button>
+            {isApproved ? (
+              <Button
+                variant="contained"
+                color="error"
+                disabled={changeDecisionSubmitting}
+                onClick={() => handleChangeApprovalDecision('Rejected')}
+                sx={{
+                  textTransform: 'none',
+                  px: 3,
+                  py: 1,
+                  minWidth: '120px',
+                  fontWeight: 600,
+                }}
+              >
+                {changeDecisionSubmitting ? 'Saving…' : 'Reject RACM'}
+              </Button>
+            ) : (
+              <Button
+                variant="contained"
+                color="secondary"
+                disabled={changeDecisionSubmitting}
+                onClick={() => handleChangeApprovalDecision('Approved')}
+                sx={{
+                  textTransform: 'none',
+                  px: 3,
+                  py: 1,
+                  minWidth: '120px',
+                  fontWeight: 600,
+                }}
+              >
+                {changeDecisionSubmitting ? 'Saving…' : 'Approve RACM'}
+              </Button>
+            )}
+          </DialogActions>
+        </Dialog>
       </Box>
   )
 }

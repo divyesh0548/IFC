@@ -7,11 +7,13 @@ import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
+import Fab from '@mui/material/Fab'
 import IconButton from '@mui/material/IconButton'
 import AttachFileIcon from '@mui/icons-material/AttachFile'
 import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
@@ -27,8 +29,19 @@ function UserFormDetail() {
   const [selectedFile, setSelectedFile] = useState(null)
   const [fileName, setFileName] = useState('')
   const [remarksByUser, setRemarksByUser] = useState('')
+  const [showScrollTop, setShowScrollTop] = useState(false)
 
   // Removed editableFields state - users can only edit remarks_by_user
+
+  useEffect(() => {
+    const onScroll = () => {
+      setShowScrollTop(window.scrollY > 300)
+    }
+
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   useEffect(() => {
     const checkAuthAndFetch = async () => {
@@ -1357,11 +1370,21 @@ function UserFormDetail() {
                           <IconButton
                             component="span"
                             disabled={!isEditable}
-                            color="secondary"
                             sx={{
                               border: '1px solid',
                               borderColor: 'divider',
                               mt: 0.5,
+                              color:
+                                theme.palette.mode === 'dark'
+                                  ? theme.palette.primary.light
+                                  : theme.palette.primary.main,
+                              '&:hover': {
+                                backgroundColor: 'action.hover',
+                              },
+                              '&.Mui-disabled': {
+                                color: 'action.disabled',
+                                borderColor: 'action.disabledBackground',
+                              },
                             }}
                           >
                             <AttachFileIcon />
@@ -1519,6 +1542,31 @@ function UserFormDetail() {
             </Card>
           </Box>
       </Box>
+      {showScrollTop && (
+        <Fab
+          aria-label="scroll to top"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          sx={{
+            position: 'fixed',
+            right: { xs: 16, sm: 24 },
+            bottom: { xs: 16, sm: 24 },
+            zIndex: (t) => t.zIndex.modal + 1,
+            backgroundColor: (t) => (t.palette.mode === 'dark' ? '#0b1220' : '#ffffff'),
+            color: (t) => (t.palette.mode === 'dark' ? '#ffffff' : '#111827'),
+            border: (t) =>
+              `1px solid ${t.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.28)' : 'rgba(17, 24, 39, 0.35)'}`,
+            boxShadow: (t) =>
+              t.palette.mode === 'dark'
+                ? '0 8px 24px rgba(0, 0, 0, 0.45)'
+                : '0 8px 24px rgba(0, 0, 0, 0.12)',
+            '&:hover': {
+              backgroundColor: (t) => (t.palette.mode === 'dark' ? '#111827' : '#f9fafb'),
+            },
+          }}
+        >
+          <KeyboardArrowUpIcon />
+        </Fab>
+      )}
     </Box>
   )
 }

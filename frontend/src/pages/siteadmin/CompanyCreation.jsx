@@ -9,8 +9,20 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Alert from '@mui/material/Alert'
 
+const twoColRowSx = {
+  display: 'flex',
+  flexDirection: { xs: 'column', sm: 'row' },
+  gap: 2.5,
+  width: '100%',
+  '& > *': {
+    flex: { xs: 'none', sm: '1 1 0' },
+    minWidth: 0,
+  },
+}
+
 function CompanyCreation() {
   const theme = useTheme()
+  const isDark = theme.palette.mode === 'dark'
   const navigate = useNavigate()
   const [formData, setFormData] = useState({
     company_name: '',
@@ -209,24 +221,58 @@ function CompanyCreation() {
   }
 
   return (
-    <Box sx={{ maxWidth: '896px', mx: 'auto', px: 0, py: 4 }}>
-        <Card elevation={3}>
-          <CardContent sx={{ p: 4 }}>
-            <Typography
-              variant="h4"
-              component="h1"
-              sx={{
-                fontWeight: 700,
-                mb: 4,
-                textAlign: 'center',
-                color: 'secondary.main',
-              }}
-            >
-              Create Company
-            </Typography>
+    <Box
+      sx={{
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        mx: 0,
+        px: 0,
+        py: { xs: 2, sm: 3 },
+        boxSizing: 'border-box',
+      }}
+    >
+      <Card
+        elevation={isDark ? 2 : 3}
+        sx={{
+          width: '100%',
+          maxWidth: '100%',
+          borderRadius: 2,
+          border: 1,
+          borderColor: 'divider',
+          ...(isDark && {
+            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.35)',
+          }),
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, sm: 3 }, '&:last-child': { pb: { xs: 2, sm: 3 } } }}>
+          <Typography
+            variant="h4"
+            component="h1"
+            sx={{
+              fontWeight: 700,
+              mb: 1,
+              textAlign: 'left',
+              color: 'text.primary',
+              letterSpacing: '-0.02em',
+            }}
+          >
+            Create Company
+          </Typography>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ textAlign: 'left', mb: 3 }}
+          >
+            Add a new company profile. Fields marked with an asterisk are required.
+          </Typography>
 
-            <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {/* Company Name */}
+          <Box
+            component="form"
+            onSubmit={handleSubmit}
+            sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, width: '100%' }}
+          >
+            <Box sx={twoColRowSx}>
               <TextField
                 id="company_name"
                 name="company_name"
@@ -241,8 +287,6 @@ function CompanyCreation() {
                 helperText={errors.company_name}
                 fullWidth
               />
-
-              {/* Registered Email */}
               <TextField
                 id="registered_email"
                 name="registered_email"
@@ -258,8 +302,16 @@ function CompanyCreation() {
                 helperText={errors.registered_email}
                 fullWidth
               />
+            </Box>
 
-              {/* Registered Address */}
+            <Box
+              sx={{
+                width: '100%',
+                pt: 2.5,
+                borderTop: 1,
+                borderColor: 'divider',
+              }}
+            >
               <TextField
                 id="registered_address"
                 name="registered_address"
@@ -270,14 +322,15 @@ function CompanyCreation() {
                 required
                 disabled={loading}
                 multiline
-                rows={3}
+                minRows={3}
                 placeholder="Enter registered address"
                 error={!!errors.registered_address}
                 helperText={errors.registered_address}
                 fullWidth
               />
+            </Box>
 
-              {/* Unique Identification Number */}
+            <Box sx={twoColRowSx}>
               <TextField
                 id="unique_identification_number"
                 name="unique_identification_number"
@@ -293,8 +346,6 @@ function CompanyCreation() {
                 helperText={errors.unique_identification_number}
                 fullWidth
               />
-
-              {/* GST */}
               <TextField
                 id="gst"
                 name="gst"
@@ -307,7 +358,17 @@ function CompanyCreation() {
                 inputProps={{ maxLength: 15, style: { textTransform: 'uppercase' } }}
                 placeholder="Enter GST number (15 characters)"
                 error={!!errors.gst}
-                helperText={errors.gst || (formData.gst && formData.gst.length === 15 && !errors.gst ? 'Valid GST format' : '')}
+                helperText={
+                  errors.gst ||
+                  (formData.gst && formData.gst.length === 15 && !errors.gst
+                    ? 'Valid GST format'
+                    : '')
+                }
+                FormHelperTextProps={
+                  formData.gst && formData.gst.length === 15 && !errors.gst
+                    ? { sx: { color: 'success.main' } }
+                    : undefined
+                }
                 fullWidth
                 sx={{
                   '& input': {
@@ -315,8 +376,9 @@ function CompanyCreation() {
                   },
                 }}
               />
+            </Box>
 
-              {/* PAN (Auto-filled from GST) */}
+            <Box sx={twoColRowSx}>
               <TextField
                 id="pan"
                 name="pan"
@@ -331,10 +393,28 @@ function CompanyCreation() {
                   '& input': {
                     textTransform: 'uppercase',
                   },
+                  '& .MuiInputBase-root.Mui-disabled': {
+                    bgcolor: 'action.hover',
+                  },
                 }}
               />
+              <TextField
+                id="company_coordinator_email"
+                name="company_coordinator_email"
+                label="Company Coordinator Email"
+                type="email"
+                variant="filled"
+                value={formData.company_coordinator_email}
+                onChange={handleChange}
+                disabled={loading}
+                placeholder="Enter company coordinator email (optional)"
+                error={!!errors.company_coordinator_email}
+                helperText={errors.company_coordinator_email}
+                fullWidth
+              />
+            </Box>
 
-              {/* Number of Corporate Offices */}
+            <Box sx={twoColRowSx}>
               <TextField
                 id="number_of_corporate_offices"
                 name="number_of_corporate_offices"
@@ -351,8 +431,6 @@ function CompanyCreation() {
                 helperText={errors.number_of_corporate_offices}
                 fullWidth
               />
-
-              {/* Number of Factory Unit/Warehouse/Other Facilities */}
               <TextField
                 id="number_of_factory_units"
                 name="number_of_factory_units"
@@ -369,69 +447,33 @@ function CompanyCreation() {
                 helperText={errors.number_of_factory_units}
                 fullWidth
               />
-
-              {/* Company Coordinator Email */}
-              <TextField
-                id="company_coordinator_email"
-                name="company_coordinator_email"
-                label="Company Coordinator Email"
-                type="email"
-                variant="filled"
-                value={formData.company_coordinator_email}
-                onChange={handleChange}
-                disabled={loading}
-                placeholder="Enter company coordinator email (optional)"
-                error={!!errors.company_coordinator_email}
-                helperText={errors.company_coordinator_email}
-                fullWidth
-              />
-
-              {/* Error Message */}
-              {error && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {error}
-                </Alert>
-              )}
-
-              {/* Buttons */}
-              <Box sx={{ display: 'flex', gap: 2, pt: 2 }}>
-                <Button
-                  type="button"
-                  onClick={() => navigate('/siteadmin/dashboard')}
-                  disabled={loading}
-                  variant="contained"
-                  sx={{
-                    flex: 1,
-                    py: 1.5,
-                    fontSize: theme.typography.customSizes.medium,
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    backgroundColor: '#d1d5db',
-                    color: '#374151',
-                    '&:hover': {
-                      backgroundColor: '#9ca3af',
-                    },
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={loading}
-                  variant="contained"
-                  color="secondary"
-                  sx={{
-                    flex: 1,
-                    py: 1.5,
-                    fontSize: theme.typography.customSizes.medium,
-                    fontWeight: 600,
-                    textTransform: 'none',
-                  }}
-                >
-                  {loading ? 'Creating...' : 'Create Company'}
-                </Button>
-              </Box>
             </Box>
+
+            {error && (
+              <Alert severity="error" sx={{ mt: 0.5 }}>
+                {error}
+              </Alert>
+            )}
+
+            <Box sx={{ display: 'flex', justifyContent: 'flex-start', pt: 0.5 }}>
+              <Button
+                type="submit"
+                size="medium"
+                disabled={loading}
+                variant="contained"
+                color="primary"
+                sx={{
+                  py: 0.5,
+                  px: 2,
+                  minHeight: 36,
+                  fontSize: theme.typography.customSizes.medium,
+                  fontWeight: 600,
+                }}
+              >
+                {loading ? 'Creating...' : 'Create Company'}
+              </Button>
+            </Box>
+          </Box>
           </CardContent>
         </Card>
       </Box>

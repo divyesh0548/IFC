@@ -59,6 +59,8 @@ function DashboardLayout() {
   const homePath = getHomePath(location.pathname)
   const isAtHome = location.pathname === homePath
   const isApproverRoute = location.pathname.startsWith('/approver')
+  const isSiteadminRoute = location.pathname.startsWith('/siteadmin')
+  const isCreateCompanyPage = location.pathname === '/siteadmin/create-company'
   const pageBoundaryPaddingX = { xs: 2, sm: 3, md: 4 }
   const navbarBoundaryPaddingX = { xs: 3, sm: 4, md: 5 }
 
@@ -153,7 +155,7 @@ function DashboardLayout() {
                     color: theme.palette.navbar.fg,
                   }}
                 >
-                  {companyName || 'Company'}
+                  {isSiteadminRoute ? 'Admin' : (companyName || 'Company')}
                 </Typography>
                 <Typography
                   noWrap
@@ -355,8 +357,8 @@ function DashboardLayout() {
           px: pageBoundaryPaddingX,
           py: 3,
           width: '100%',
-          maxWidth: MAIN_CONTENT_MAX_WIDTH,
-          mx: 'auto',
+          maxWidth: isCreateCompanyPage ? 'none' : MAIN_CONTENT_MAX_WIDTH,
+          mx: isCreateCompanyPage ? 0 : 'auto',
           // Let the global body background show through
           backgroundColor: 'transparent',
           minHeight: '100vh',

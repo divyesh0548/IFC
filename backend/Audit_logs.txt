@@ -7,3 +7,5 @@ RACM Audit Logs:
 RACM created
 RACM Modification
 Set RACM Active/Inactive
+Sent RACM for approval
+RACM Approved/Rejected

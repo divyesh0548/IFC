@@ -36,6 +36,98 @@ async function sendEmail(to, subject, text) {
   }
 }
 
+/** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
+const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
+
+const APPROVAL_DECISION_CHANGE_WINDOW_MS = 15 * 24 * 60 * 60 * 1000;
+
+/**
+ * Notify process owner of RACM Approved/Rejected (same content as initial approve/reject flow).
+ */
+async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status, reason_by_approver, updatedForm) {
+  if (!processOwnerEmail || !String(processOwnerEmail).trim()) {
+    console.warn(`⚠️  No process owner email found for form ${form_id}, email not sent`);
+    return;
+  }
+
+  const ownerTrim = String(processOwnerEmail).trim();
+  const statusText = status === 'Approved' ? 'approved' : 'rejected';
+  const emailSubject = `RACM ${status}`;
+
+  let processOwnerName = 'Process Owner';
+  try {
+    const ownerQuery = `
+      SELECT emp_name
+      FROM ifc_users
+      WHERE LOWER(TRIM(email_id)) = LOWER(TRIM($1))
+      LIMIT 1
+    `;
+    const ownerResult = await pool.query(ownerQuery, [ownerTrim]);
+    const rawName = ownerResult.rows[0]?.emp_name;
+    if (rawName && String(rawName).trim() !== '') {
+      processOwnerName = String(rawName).trim();
+    }
+  } catch (nameError) {
+    console.error('Error fetching process owner name for email notification:', nameError);
+  }
+
+  let companyName = '';
+  try {
+    const companyQuery = `
+      SELECT c.company_name
+      FROM ifc_users u
+      INNER JOIN companies c ON u.company_identifier = c.company_identifier
+      WHERE LOWER(TRIM(u.email_id)) = LOWER(TRIM($1))
+      LIMIT 1
+    `;
+    const companyResult = await pool.query(companyQuery, [ownerTrim]);
+    const rawCompanyName = companyResult.rows[0]?.company_name;
+    if (rawCompanyName && String(rawCompanyName).trim() !== '') {
+      companyName = String(rawCompanyName).trim();
+    }
+  } catch (companyError) {
+    console.error('Error fetching company name for email notification:', companyError);
+  }
+
+  let emailBody = `Dear ${processOwnerName},\n\n`;
+  emailBody += `Your RACM has been ${statusText}.\n\n`;
+
+  if (reason_by_approver) {
+    emailBody += `Reason/Comments from Approver:\n${reason_by_approver}\n\n`;
+  }
+
+  emailBody += `Form Details:\n`;
+  if (updatedForm.business_process) {
+    emailBody += `- BusinessProcess: ${updatedForm.business_process}\n`;
+  }
+  if (updatedForm.sub_process) {
+    emailBody += `- SubProcess: ${updatedForm.sub_process}\n`;
+  }
+  if (updatedForm.standard_control_description) {
+    emailBody += `- Description: ${updatedForm.standard_control_description}\n`;
+  }
+
+  emailBody += `\n`;
+
+  if (status === 'Rejected') {
+    emailBody += `You can review the feedback above, make necessary changes, and resubmit the RACM for approval.\n\n`;
+  }
+
+  emailBody += `Thank you for using the IFC system.\n\n`;
+  emailBody += `Best regards,\n${companyName}`;
+
+  try {
+    const emailSent = await sendEmail(ownerTrim, emailSubject, emailBody);
+    if (emailSent) {
+      console.log(`✓ Email sent successfully to ${ownerTrim} for form ${form_id}`);
+    } else {
+      console.error(`⚠️  Failed to send email to ${ownerTrim} for form ${form_id}`);
+    }
+  } catch (emailError) {
+    console.error(`Error sending email to ${ownerTrim}:`, emailError);
+  }
+}
+
 // Helper function to decrypt JWT token
 function decryptToken(encryptedToken) {
   try {
@@ -319,6 +411,11 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     updateValues.push(design_deficiency_desc !== undefined ? design_deficiency_desc : null);
     paramIndex++;
 
+    // Wall-clock IST timestamp (matches reminder_datetime semantics in control_forms)
+    updateFields.push(
+      `approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')`
+    );
+
     // Add form_id as the last parameter
     updateValues.push(form_id);
 
@@ -345,91 +442,13 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     const updatedForm = result.rows[0];
     const processOwnerEmail = updatedForm.process_owner;
 
-    // Send email to process owner if email exists
-    if (processOwnerEmail) {
-      const statusText = status === 'Approved' ? 'approved' : 'rejected';
-      const emailSubject = `RACM ${status}`;
-
-      // Look up process owner name from ifc_users for a personalized greeting
-      let processOwnerName = 'Process Owner';
-      try {
-        const ownerQuery = `
-          SELECT emp_name 
-          FROM ifc_users 
-          WHERE LOWER(TRIM(email_id)) = LOWER(TRIM($1))
-          LIMIT 1
-        `;
-        const ownerResult = await pool.query(ownerQuery, [processOwnerEmail]);
-        const rawName = ownerResult.rows[0]?.emp_name;
-        if (rawName && String(rawName).trim() !== '') {
-          processOwnerName = String(rawName).trim();
-        }
-      } catch (nameError) {
-        console.error('Error fetching process owner name for email notification:', nameError);
-        // Fallback to generic 'Process Owner' if lookup fails
-      }
-
-      // Look up company name from companies table using process owner's company_identifier
-      let companyName = '';
-      try {
-        const companyQuery = `
-          SELECT c.company_name
-          FROM ifc_users u
-          INNER JOIN companies c ON u.company_identifier = c.company_identifier
-          WHERE LOWER(TRIM(u.email_id)) = LOWER(TRIM($1))
-          LIMIT 1
-        `;
-        const companyResult = await pool.query(companyQuery, [processOwnerEmail]);
-        const rawCompanyName = companyResult.rows[0]?.company_name;
-        if (rawCompanyName && String(rawCompanyName).trim() !== '') {
-          companyName = String(rawCompanyName).trim();
-        }
-      } catch (companyError) {
-        console.error('Error fetching company name for email notification:', companyError);
-        // Fallback to default company name if lookup fails
-      }
-      
-      let emailBody = `Dear ${processOwnerName},\n\n`;
-      emailBody += `Your RACM has been ${statusText}.\n\n`;
-      
-      if (reason_by_approver) {
-        emailBody += `Reason/Comments from Approver:\n${reason_by_approver}\n\n`;
-      }
-      
-      emailBody += `Form Details:\n`;
-      if (updatedForm.business_process) {
-        emailBody += `- BusinessProcess: ${updatedForm.business_process}\n`;
-      }
-      if (updatedForm.sub_process) {
-        emailBody += `- SubProcess: ${updatedForm.sub_process}\n`;
-      }
-      if (updatedForm.standard_control_description) {
-        emailBody += `- Description: ${updatedForm.standard_control_description}\n`;
-      }
-      
-      emailBody += `\n`;
-      
-      if (status === 'Rejected') {
-        emailBody += `You can review the feedback above, make necessary changes, and resubmit the RACM for approval.\n\n`;
-      }
-      
-      emailBody += `Thank you for using the IFC system.\n\n`;
-      emailBody += `Best regards,\n${companyName}`;
-
-      try {
-        const emailSent = await sendEmail(processOwnerEmail, emailSubject, emailBody);
-        if (emailSent) {
-          console.log(`✓ Email sent successfully to ${processOwnerEmail} for form ${form_id}`);
-        } else {
-          console.error(`⚠️  Failed to send email to ${processOwnerEmail} for form ${form_id}`);
-        }
-      } catch (emailError) {
-        console.error(`Error sending email to ${processOwnerEmail}:`, emailError);
-        // Don't fail the request if email fails
-      }
-    } else {
-      console.warn(`⚠️  No process owner email found for form ${form_id}, email not sent`);
-    }
+    await notifyProcessOwnerRacmDecision(
+      processOwnerEmail,
+      form_id,
+      status,
+      reason_by_approver || '',
+      updatedForm
+    );
 
     // Log audit event for form approval/rejection
     const action = status === 'Approved' ? 'RACM Approved' : 'RACM Rejected';
@@ -446,6 +465,120 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
       success: false,
       message: 'Internal server error'
     });
+  }
+});
+
+// Flip Approved ↔ Rejected within 15 days of approval_status_change_timestamp (same email + audit ref_data)
+router.post('/change-approval-decision/:form_id', verifyApproverAuth, async (req, res) => {
+  try {
+    const { form_id } = req.params;
+    const { status, reason_by_approver } = req.body;
+    const approver = req.approver;
+
+    if (!status || !['Approved', 'Rejected'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'status must be either "Approved" or "Rejected"',
+      });
+    }
+
+    const currentResult = await pool.query('SELECT * FROM control_forms WHERE form_id = $1', [form_id]);
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'RACM not found' });
+    }
+
+    const row = currentResult.rows[0];
+    const curStatus = row.status;
+
+    if (curStatus !== 'Approved' && curStatus !== 'Rejected') {
+      return res.status(400).json({
+        success: false,
+        message: 'Decision can only be changed for forms that are already approved or rejected.',
+      });
+    }
+
+    if (curStatus === status) {
+      return res.status(400).json({
+        success: false,
+        message: 'The new status must differ from the current status.',
+      });
+    }
+
+    const tsRaw = row.approval_status_change_timestamp;
+    if (!tsRaw) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot change decision: approval timestamp is missing.',
+      });
+    }
+
+    const changedAt = tsRaw instanceof Date ? tsRaw.getTime() : new Date(tsRaw).getTime();
+    if (Number.isNaN(changedAt)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot change decision: invalid approval timestamp.',
+      });
+    }
+
+    if (Date.now() - changedAt > APPROVAL_DECISION_CHANGE_WINDOW_MS) {
+      return res.status(403).json({
+        success: false,
+        message: 'Decision can only be changed within 15 days of the last approval action.',
+      });
+    }
+
+    if (status === 'Rejected') {
+      const r = reason_by_approver != null ? String(reason_by_approver).trim() : '';
+      if (!r) {
+        return res.status(400).json({
+          success: false,
+          message: 'Reason is required when rejecting.',
+        });
+      }
+    }
+
+    const reasonFinal =
+      status === 'Rejected'
+        ? String(reason_by_approver).trim()
+        : reason_by_approver != null && String(reason_by_approver).trim() !== ''
+          ? String(reason_by_approver).trim()
+          : null;
+
+    const updateResult = await pool.query(
+      `UPDATE control_forms
+       SET status = $1,
+           reason_by_approver = $2,
+           approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
+       WHERE form_id = $3
+       RETURNING *`,
+      [status, reasonFinal, form_id]
+    );
+
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'RACM not found' });
+    }
+
+    const updatedForm = updateResult.rows[0];
+
+    await notifyProcessOwnerRacmDecision(
+      updatedForm.process_owner,
+      form_id,
+      status,
+      reasonFinal || '',
+      updatedForm
+    );
+
+    const action = status === 'Approved' ? 'RACM Approved' : 'RACM Rejected';
+    await logAuditEvent(action, approver.email_id, form_id, DECISION_CHANGE_AUDIT_REF);
+
+    res.status(200).json({
+      success: true,
+      message: `RACM ${status.toLowerCase()} successfully`,
+      data: updatedForm,
+    });
+  } catch (error) {
+    console.error('Change approval decision error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
@@ -522,8 +655,10 @@ router.get('/control-forms/:form_id', verifyApproverAuth, async (req, res) => {
     const query = `
       SELECT
         cf.*,
+        c.company_name,
         NULLIF(TRIM(u.emp_name), '') AS process_owner_name
       FROM control_forms cf
+      LEFT JOIN companies c ON cf.company_identifier = c.company_identifier
       LEFT JOIN ifc_users u
         ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.process_owner))
       WHERE cf.form_id = $1
@@ -547,6 +682,30 @@ router.get('/control-forms/:form_id', verifyApproverAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error'
+    });
+  }
+});
+
+// RACM audit trail for a form (audit_logs_racm)
+router.get('/racm-audit-logs/:form_id', verifyApproverAuth, async (req, res) => {
+  try {
+    const { form_id } = req.params;
+    const query = `
+      SELECT id, timestamp, action, user_email_id, form_id, ref_data
+      FROM audit_logs_racm
+      WHERE form_id = $1
+      ORDER BY timestamp ASC NULLS LAST, id ASC
+    `;
+    const result = await pool.query(query, [form_id]);
+    res.status(200).json({
+      success: true,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Get RACM audit logs error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
     });
   }
 });

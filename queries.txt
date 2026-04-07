@@ -1,6 +1,0 @@
-Coordinator will upload excel file. 
-According to row items control should be created. Each row item will contain an email ID of user. If Coordinator actives it then it will be visible otherwise it will not be visible to users. 
-User will upload a document for that, with remarks.
-Approver can edit colorful column of excel file.
-
-

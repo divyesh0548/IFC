@@ -11,11 +11,13 @@ import ThumbUpAltRoundedIcon from '@mui/icons-material/ThumbUpAltRounded'
 import HighlightOffRoundedIcon from '@mui/icons-material/HighlightOffRounded'
 import PendingActionsRoundedIcon from '@mui/icons-material/PendingActionsRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function ApproverHome() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
+  useSyncGlobalLoading(loading)
   const [stats, setStats] = useState({
     approver_name: '',
     total_companies: 0,

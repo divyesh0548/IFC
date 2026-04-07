@@ -946,9 +946,9 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
 
     await client.query('COMMIT');
 
-    // Log audit event if status is being set to 'sent for approval'
+    // Log audit event when RACM is submitted for approval (e.g. user flow in UserFormDetail)
     if (status === 'sent for approval' && req.user && req.user.email_id) {
-      await logAuditEvent('Sent for approval', req.user.email_id, form_id);
+      await logAuditEvent('Sent RACM for approval', req.user.email_id, form_id, null);
     }
 
     // Log audit event for RACM modifications (store JSON changes in ref_data as TEXT)
