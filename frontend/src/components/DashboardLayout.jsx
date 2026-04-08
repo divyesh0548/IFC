@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useState } from 'react'
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useTheme } from '@mui/material/styles'
+import { alpha, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import AppBar from '@mui/material/AppBar'
 import Toolbar from '@mui/material/Toolbar'
@@ -61,8 +61,9 @@ function DashboardLayout() {
   const isApproverRoute = location.pathname.startsWith('/approver')
   const isSiteadminRoute = location.pathname.startsWith('/siteadmin')
   const isCreateCompanyPage = location.pathname === '/siteadmin/create-company'
-  const pageBoundaryPaddingX = { xs: 2, sm: 3, md: 4 }
-  const navbarBoundaryPaddingX = { xs: 3, sm: 4, md: 5 }
+  const isFullWidthPage =
+    isCreateCompanyPage || location.pathname === '/company_co/upload-excel'
+  const boundaryPaddingX = { xs: 3, sm: 4, md: 5 }
 
   useEffect(() => {
     setCompanyName(localStorage.getItem(STORAGE_KEYS.companyName) || '')
@@ -118,33 +119,29 @@ function DashboardLayout() {
         <Toolbar
           disableGutters
           sx={{
-            px: navbarBoundaryPaddingX,
+            px: 0,
           }}
         >
           <Box
-            component={RouterLink}
-            to="/"
             sx={{
-              flexGrow: 1,
-              textDecoration: 'none',
-              minWidth: 0,
+              width: '100%',
+              maxWidth: isFullWidthPage ? 'none' : MAIN_CONTENT_MAX_WIDTH,
+              mx: isFullWidthPage ? 0 : 'auto',
+              px: boundaryPaddingX,
+              display: 'flex',
+              alignItems: 'center',
             }}
           >
-            {isApproverRoute ? (
-              <Typography
-                noWrap
-                sx={{
-                  fontWeight: 800,
-                  fontSize: '1.2rem',
-                  lineHeight: 1.2,
-                  letterSpacing: '-0.02em',
-                  color: theme.palette.navbar.fg,
-                }}
-              >
-                Internal Financial Controls
-              </Typography>
-            ) : (
-              <>
+            <Box
+              component={RouterLink}
+              to="/"
+              sx={{
+                flexGrow: 1,
+                textDecoration: 'none',
+                minWidth: 0,
+              }}
+            >
+              {isApproverRoute ? (
                 <Typography
                   noWrap
                   sx={{
@@ -155,98 +152,113 @@ function DashboardLayout() {
                     color: theme.palette.navbar.fg,
                   }}
                 >
-                  {isSiteadminRoute ? 'Admin' : (companyName || 'Company')}
-                </Typography>
-                <Typography
-                  noWrap
-                  sx={{
-                    fontWeight: 400,
-                    fontSize: '0.95rem',
-                    lineHeight: 1.3,
-                    color:
-                      theme.palette.mode === 'dark'
-                        ? 'rgba(238, 238, 238, 0.78)'
-                        : 'rgba(39, 55, 77, 0.72)',
-                  }}
-                >
                   Internal Financial Controls
                 </Typography>
-              </>
-            )}
+              ) : (
+                <>
+                  <Typography
+                    noWrap
+                    sx={{
+                      fontWeight: 800,
+                      fontSize: '1.2rem',
+                      lineHeight: 1.2,
+                      letterSpacing: '-0.02em',
+                      color: theme.palette.mode === 'dark' ? theme.palette.navbar.fg : theme.palette.text.primary,
+                    }}
+                  >
+                    {isSiteadminRoute ? 'Admin' : (companyName || 'Company')}
+                  </Typography>
+                  <Typography
+                    noWrap
+                    sx={{
+                      fontWeight: 400,
+                      fontSize: '0.95rem',
+                      lineHeight: 1.3,
+                      color:
+                        theme.palette.mode === 'dark'
+                          ? 'rgba(238, 238, 238, 0.78)'
+                          : alpha(theme.palette.text.primary, 0.78),
+                    }}
+                  >
+                    Internal Financial Controls
+                  </Typography>
+                </>
+              )}
+            </Box>
+            <Tooltip title={mode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'} arrow>
+              <IconButton
+                onClick={toggleTheme}
+                sx={{
+                  color: theme.palette.navbar.fg,
+                  marginRight: 1,
+                  '&:hover': {
+                    backgroundColor: theme.palette.action.hover,
+                  },
+                }}
+              >
+                {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Account" arrow>
+              <IconButton
+                id="dashboard-account-menu-button"
+                aria-controls={accountMenuOpen ? 'dashboard-account-menu' : undefined}
+                aria-haspopup="true"
+                aria-expanded={accountMenuOpen ? 'true' : undefined}
+                onClick={(e) => setAccountMenuAnchor(e.currentTarget)}
+                sx={{
+                  color: theme.palette.navbar.fg,
+                  '&:hover': {
+                    backgroundColor: theme.palette.action.hover,
+                  },
+                }}
+              >
+                <AccountCircleIcon />
+              </IconButton>
+            </Tooltip>
+            <Menu
+              id="dashboard-account-menu"
+              anchorEl={accountMenuAnchor}
+              open={accountMenuOpen}
+              onClose={() => setAccountMenuAnchor(null)}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              slotProps={{
+                paper: {
+                  elevation: 3,
+                  sx: {
+                    mt: 1,
+                    minWidth: 200,
+                    borderRadius: 2,
+                  },
+                },
+              }}
+            >
+              <MenuItem
+                onClick={() => {
+                  setAccountMenuAnchor(null)
+                  navigate(profilePath)
+                }}
+              >
+                <ListItemIcon sx={{ color: 'inherit' }}>
+                  <PersonOutlineIcon fontSize="small" />
+                </ListItemIcon>
+                Profile
+              </MenuItem>
+              <Divider />
+              <MenuItem
+                onClick={() => {
+                  setAccountMenuAnchor(null)
+                  setLogoutDialogOpen(true)
+                }}
+              >
+                <ListItemIcon sx={{ color: 'inherit' }}>
+                  <LogoutIcon fontSize="small" />
+                </ListItemIcon>
+                Log out
+              </MenuItem>
+            </Menu>
           </Box>
-          <Tooltip title={mode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'} arrow>
-            <IconButton
-              onClick={toggleTheme}
-              sx={{
-                color: theme.palette.navbar.fg,
-                marginRight: 1,
-                '&:hover': {
-                  backgroundColor: theme.palette.action.hover,
-                },
-              }}
-            >
-              {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Account" arrow>
-            <IconButton
-              id="dashboard-account-menu-button"
-              aria-controls={accountMenuOpen ? 'dashboard-account-menu' : undefined}
-              aria-haspopup="true"
-              aria-expanded={accountMenuOpen ? 'true' : undefined}
-              onClick={(e) => setAccountMenuAnchor(e.currentTarget)}
-              sx={{
-                color: theme.palette.navbar.fg,
-                '&:hover': {
-                  backgroundColor: theme.palette.action.hover,
-                },
-              }}
-            >
-              <AccountCircleIcon />
-            </IconButton>
-          </Tooltip>
-          <Menu
-            id="dashboard-account-menu"
-            anchorEl={accountMenuAnchor}
-            open={accountMenuOpen}
-            onClose={() => setAccountMenuAnchor(null)}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-            slotProps={{
-              paper: {
-                elevation: 3,
-                sx: {
-                  mt: 1,
-                  minWidth: 200,
-                  borderRadius: 2,
-                },
-              },
-            }}
-          >
-            <MenuItem
-              onClick={() => {
-                setAccountMenuAnchor(null)
-                navigate(profilePath)
-              }}
-            >
-              <ListItemIcon sx={{ color: 'inherit' }}>
-                <PersonOutlineIcon fontSize="small" />
-              </ListItemIcon>
-              Profile
-            </MenuItem>
-            <Divider />
-            <MenuItem
-              onClick={() => {
-                setAccountMenuAnchor(null)
-                setLogoutDialogOpen(true)
-              }}
-            >
-              <ListItemIcon sx={{ color: 'inherit' }}>
-                <LogoutIcon fontSize="small" />
-              </ListItemIcon>
-              Log out
-            </MenuItem>
-          </Menu>
         </Toolbar>
       </AppBar>
 
@@ -354,11 +366,11 @@ function DashboardLayout() {
         component="main"
         sx={{
           flexGrow: 1,
-          px: pageBoundaryPaddingX,
+          px: boundaryPaddingX,
           py: 3,
           width: '100%',
-          maxWidth: isCreateCompanyPage ? 'none' : MAIN_CONTENT_MAX_WIDTH,
-          mx: isCreateCompanyPage ? 0 : 'auto',
+          maxWidth: isFullWidthPage ? 'none' : MAIN_CONTENT_MAX_WIDTH,
+          mx: isFullWidthPage ? 0 : 'auto',
           // Let the global body background show through
           backgroundColor: 'transparent',
           minHeight: '100vh',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useTheme } from '@mui/material/styles'
 import { useNavigate } from 'react-router-dom'
 import Button from '@mui/material/Button'
@@ -12,15 +12,69 @@ import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import IconButton from '@mui/material/IconButton'
 import Checkbox from '@mui/material/Checkbox'
+import Autocomplete from '@mui/material/Autocomplete'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { toast } from 'react-hot-toast'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
+
+const ASSIGNABLE_USER_INITIAL_LIMIT = 5
+const ASSIGNABLE_USER_SEARCH_LIMIT = 50
+
+/** Ensures the current selection is present in options (avoids MUI warnings when the list was refetched). Same user may be both owner and performer — no exclusion. */
+function mergeAssignableUserIntoOptions(options, selectedEmail) {
+  const email = (selectedEmail || '').trim()
+  if (!email) return options
+  const lower = email.toLowerCase()
+  if (options.some((u) => (u.email_id || '').trim().toLowerCase() === lower)) {
+    return options
+  }
+  return [...options, { email_id: email, emp_name: '' }]
+}
 
 function CreateControlForm() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [companyIdentifier, setCompanyIdentifier] = useState('')
+  const [ownerOptions, setOwnerOptions] = useState([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const assignableUserSearchDebounceRef = useRef(null)
+
+  const fetchAssignableUsers = useCallback(
+    async ({ q = '', limit = ASSIGNABLE_USER_INITIAL_LIMIT } = {}) => {
+      if (!companyIdentifier) return
+      setUsersLoading(true)
+      try {
+        const params = new URLSearchParams({
+          role: 'user',
+          limit: String(limit),
+        })
+        const trimmedQ = String(q || '').trim()
+        if (trimmedQ) {
+          params.set('q', trimmedQ)
+        }
+        const response = await fetch(
+          `http://localhost:3000/api/company-co/users?${params.toString()}`,
+          {
+            method: 'GET',
+            credentials: 'include',
+          }
+        )
+        const data = await response.json()
+        if (response.ok && data.success) {
+          setOwnerOptions(Array.isArray(data.users) ? data.users : [])
+        } else {
+          setOwnerOptions([])
+        }
+      } catch (error) {
+        console.error('Error fetching company users:', error)
+        setOwnerOptions([])
+      } finally {
+        setUsersLoading(false)
+      }
+    },
+    [companyIdentifier]
+  )
 
   // Business process options
   const businessProcessOptions = [
@@ -124,6 +178,19 @@ function CreateControlForm() {
     fetchUserInfo()
   }, [])
 
+  useEffect(() => {
+    if (!companyIdentifier) return
+    fetchAssignableUsers({ q: '', limit: ASSIGNABLE_USER_INITIAL_LIMIT })
+  }, [companyIdentifier, fetchAssignableUsers])
+
+  useEffect(() => {
+    return () => {
+      if (assignableUserSearchDebounceRef.current) {
+        clearTimeout(assignableUserSearchDebounceRef.current)
+      }
+    }
+  }, [])
+
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({
@@ -174,14 +241,6 @@ function CreateControlForm() {
     }
   }
 
-  const validateEmail = (email) => {
-    if (!email || email.trim() === '') {
-      return false
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    return emailRegex.test(email.trim())
-  }
-
   const handleSubmit = async (e) => {
     e.preventDefault()
 
@@ -193,14 +252,6 @@ function CreateControlForm() {
     if (!formData.financial_year) {
       toast.error('Please select a financial year')
       return
-    }
-
-    // Validate Control Owner email if provided
-    if (formData.control_owner && formData.control_owner.trim() !== '') {
-      if (!validateEmail(formData.control_owner)) {
-        toast.error('Please enter a valid email address for Control Owner')
-        return
-      }
     }
 
     setLoading(true)
@@ -223,6 +274,8 @@ function CreateControlForm() {
       if (response.ok && data.success) {
         toast.success('RACM created successfully')
         navigate('/company_co/dashboard')
+      } else if (response.status === 409) {
+        toast.error(data.message || 'Duplicate RACM already exists.')
       } else {
         toast.error(data.message || 'Failed to create RACM')
       }
@@ -310,6 +363,89 @@ function CreateControlForm() {
     'control_frequency',
     'sample_size',
   ]
+
+  const renderAssignableUserAutocomplete = (fieldId, labelText) => {
+    const selectedEmail = (formData[fieldId] || '').trim()
+    const optionsForField = mergeAssignableUserIntoOptions(ownerOptions, selectedEmail)
+    const selectedUser = selectedEmail
+      ? optionsForField.find(
+          (u) => (u.email_id || '').trim().toLowerCase() === selectedEmail.toLowerCase()
+        ) ?? { email_id: selectedEmail, emp_name: '' }
+      : null
+
+    return (
+      <Autocomplete
+        key={fieldId}
+        id={fieldId}
+        options={optionsForField}
+        loading={usersLoading}
+        value={selectedUser}
+        onChange={(_, newValue) => {
+          setFormData((prev) => ({
+            ...prev,
+            [fieldId]: newValue?.email_id?.trim() || '',
+          }))
+        }}
+        onInputChange={(_, newInputValue, reason) => {
+          if (reason === 'reset') return
+          if (reason === 'clear') {
+            fetchAssignableUsers({
+              q: '',
+              limit: ASSIGNABLE_USER_INITIAL_LIMIT,
+            })
+            return
+          }
+          if (assignableUserSearchDebounceRef.current) {
+            clearTimeout(assignableUserSearchDebounceRef.current)
+          }
+          assignableUserSearchDebounceRef.current = setTimeout(() => {
+            const q = newInputValue.trim()
+            fetchAssignableUsers({
+              q,
+              limit: q ? ASSIGNABLE_USER_SEARCH_LIMIT : ASSIGNABLE_USER_INITIAL_LIMIT,
+            })
+          }, 300)
+        }}
+        onOpen={() => {
+          if (ownerOptions.length === 0) {
+            fetchAssignableUsers({
+              q: '',
+              limit: ASSIGNABLE_USER_INITIAL_LIMIT,
+            })
+          }
+        }}
+        getOptionLabel={(option) => option?.emp_name?.trim() || option?.email_id || ''}
+        isOptionEqualToValue={(option, value) =>
+          (option?.email_id || '').trim().toLowerCase() ===
+          (value?.email_id || '').trim().toLowerCase()
+        }
+        filterOptions={(options) => options}
+        freeSolo={false}
+        clearOnEscape
+        disableClearable={false}
+        renderOption={(props, option) => (
+          <Box component="li" {...props}>
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="body2">{option.emp_name || '-'}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {option.email_id || '-'}
+              </Typography>
+            </Box>
+          </Box>
+        )}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            label={labelText}
+            placeholder="Search by name or email…"
+            variant="outlined"
+            disabled={loading}
+          />
+        )}
+        disabled={loading}
+      />
+    )
+  }
 
   return (
     <Box 
@@ -623,6 +759,10 @@ function CreateControlForm() {
                     const value = formData[field] || ''
                     const isMultiline = multilineFields.includes(field)
                     const isConfiguredDropdown = Object.prototype.hasOwnProperty.call(dropdownOptions, field)
+
+                    if (field === 'control_performer' || field === 'control_owner') {
+                      return renderAssignableUserAutocomplete(field, label)
+                    }
 
                     if (isConfiguredDropdown) {
                       const options = dropdownOptions[field]

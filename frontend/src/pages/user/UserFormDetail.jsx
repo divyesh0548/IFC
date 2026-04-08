@@ -19,6 +19,7 @@ import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function UserFormDetail() {
   const theme = useTheme()
@@ -32,6 +33,8 @@ function UserFormDetail() {
   const [fileName, setFileName] = useState('')
   const [remarksByUser, setRemarksByUser] = useState('')
   const [showScrollTop, setShowScrollTop] = useState(false)
+
+  useSyncGlobalLoading(loading || saving)
 
   // Removed editableFields state - users can only edit remarks_by_user
 

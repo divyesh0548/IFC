@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { createTheme, ThemeProvider as MUIThemeProvider, darken } from '@mui/material/styles'
+import { createTheme, ThemeProvider as MUIThemeProvider, alpha, darken } from '@mui/material/styles'
+import { BLUE_GRADIENTS, BLUE_THEME_TOKENS } from '../theme'
 
 const ThemeContext = createContext()
 
@@ -11,90 +12,56 @@ export const useThemeMode = () => {
   return context
 }
 
-// Light-mode palette (Color Hunt): https://colorhunt.co/palette/27374d526d829db2bfdde6ed
-const LIGHT_PRIMARY_DARK = '#27374D'
-const LIGHT_PRIMARY_MEDIUM = '#526D82'
-const LIGHT_PRIMARY_SOFT = '#9DB2BF'
-const LIGHT_PRIMARY_LIGHT = '#DDE6ED'
-
-// Dark-mode palette (Color Hunt): https://colorhunt.co/palette/22283131363f76abaeeeeeee
-const DARK_BG_DARKEST = '#222831'
-const DARK_BG_DARK = '#31363F'
-const DARK_ACCENT = '#76ABAE'
-const DARK_TEXT_LIGHT = '#EEEEEE'
-
 // Company coordinator dashboard AppBar (DashboardLayout) – defined once, exposed on theme.palette.navbar
 const NAVBAR_BG_DARK = '#030303'
-const NAVBAR_BG_LIGHT = '#F1EFEC'
+const NAVBAR_BG_LIGHT = BLUE_THEME_TOKENS.light.navbarBg
 
 const getTheme = (mode) => {
   const isDark = mode === 'dark'
+  const paletteSet = isDark ? BLUE_THEME_TOKENS.dark : BLUE_THEME_TOKENS.light
 
   return createTheme({
     palette: {
       mode,
       // Use a lighter divider color in dark mode so row separators/borders remain visible.
-      divider: isDark ? 'rgba(255, 255, 255, 0.14)' : '#e0e0e0',
-      primary: isDark
-        ? {
-            main: DARK_ACCENT,
-            light: '#9ed2d5',
-            dark: '#4f8184',
-            contrastText: DARK_TEXT_LIGHT,
-          }
-        : {
-            main: LIGHT_PRIMARY_DARK,
-            light: LIGHT_PRIMARY_MEDIUM,
-            dark: LIGHT_PRIMARY_DARK,
-            contrastText: '#ffffff',
-          },
-      secondary: isDark
-        ? {
-            main: DARK_BG_DARK,
-            light: '#4a505a',
-            dark: '#1a1f26',
-            contrastText: DARK_TEXT_LIGHT,
-          }
-        : {
-            main: LIGHT_PRIMARY_MEDIUM,
-            light: LIGHT_PRIMARY_SOFT,
-            dark: LIGHT_PRIMARY_DARK,
-            contrastText: '#ffffff',
-          },
-      background: isDark
-        ? {
-            default: DARK_BG_DARKEST,
-            paper: DARK_BG_DARK,
-          }
-        : {
-            default: LIGHT_PRIMARY_LIGHT,
-            paper: '#ffffff',
-          },
-      text: isDark
-        ? {
-            primary: DARK_TEXT_LIGHT,
-            secondary: '#c8d0d6',
-            disabled: '#777b81',
-          }
-        : {
-            primary: LIGHT_PRIMARY_DARK,
-            secondary: LIGHT_PRIMARY_MEDIUM,
-            disabled: '#9ca3af',
-          },
+      divider: paletteSet.divider,
+      primary: {
+        main: paletteSet.primary,
+        light: paletteSet.primarySoft,
+        dark: paletteSet.primaryDeep,
+        contrastText: isDark ? paletteSet.background : '#ffffff',
+      },
+      secondary: {
+        main: paletteSet.surfaceStrong,
+        light: paletteSet.surface,
+        dark: paletteSet.primary,
+        contrastText: paletteSet.text,
+      },
+      background: {
+        default: paletteSet.background,
+        paper: paletteSet.paper,
+      },
+      text: {
+        primary: paletteSet.text,
+        secondary: paletteSet.textMuted,
+        disabled: isDark ? '#7f8fa1' : '#8a97a6',
+      },
       /** Default shell AppBar (e.g. siteadmin wrapper) */
       appBar: {
-        bg: isDark ? DARK_BG_DARK : LIGHT_PRIMARY_MEDIUM,
-        fg: isDark ? DARK_TEXT_LIGHT : LIGHT_PRIMARY_LIGHT,
+        bg: isDark ? paletteSet.appBarBg : paletteSet.appBarBg,
+        fg: isDark ? paletteSet.appBarFg : paletteSet.appBarFg,
       },
       /** Top bar for company_co dashboard layout */
       navbar: {
         bg: isDark ? NAVBAR_BG_DARK : NAVBAR_BG_LIGHT,
         fg: isDark ? NAVBAR_BG_LIGHT : NAVBAR_BG_DARK,
         /** Bottom edge: dark gray in light mode, light gray in dark mode */
-        bottomBorder: isDark
-          ? 'rgba(241, 239, 236, 0.35)'
-          : LIGHT_PRIMARY_MEDIUM,
+        bottomBorder: paletteSet.navbarBorder,
       },
+      gradients: {
+        hero: isDark ? BLUE_GRADIENTS.darkHero : BLUE_GRADIENTS.lightHero,
+      },
+      blueTheme: BLUE_THEME_TOKENS,
     },
     typography: {
       fontFamily: [
@@ -109,7 +76,7 @@ const getTheme = (mode) => {
       ].join(','),
       fontWeightRegular: 500,
       fontWeightMedium: 600,
-      fontWeightBold: 800,
+        fontWeightBold: 800,
       customSizes: {
         bigHeader: '2rem',
         header: '1.5rem',
@@ -119,37 +86,37 @@ const getTheme = (mode) => {
       h1: {
         fontFamily: '"Aldrich", sans-serif',
         fontWeight: 400,
-        color: isDark ? DARK_TEXT_LIGHT : LIGHT_PRIMARY_DARK,
+        color: paletteSet.text,
         fontSize: '2rem',
       },
       h2: {
         fontFamily: '"Aldrich", sans-serif',
         fontWeight: 400,
-        color: isDark ? DARK_TEXT_LIGHT : LIGHT_PRIMARY_DARK,
+        color: paletteSet.text,
         fontSize: '2rem',
       },
       h3: {
         fontFamily: '"Aldrich", sans-serif',
         fontWeight: 400,
-        color: isDark ? DARK_TEXT_LIGHT : LIGHT_PRIMARY_DARK,
+        color: paletteSet.text,
         fontSize: '2rem',
       },
       h4: {
         fontFamily: '"Lexend", sans-serif',
         fontWeight: 600,
-        color: isDark ? DARK_TEXT_LIGHT : LIGHT_PRIMARY_DARK,
+        color: paletteSet.text,
         fontSize: '1.5rem',
       },
       h5: {
         fontFamily: '"Lexend", sans-serif',
         fontWeight: 600,
-        color: isDark ? DARK_TEXT_LIGHT : LIGHT_PRIMARY_DARK,
+        color: paletteSet.text,
         fontSize: '1.5rem',
       },
       h6: {
         fontFamily: '"Lexend", sans-serif',
         fontWeight: 600,
-        color: isDark ? DARK_TEXT_LIGHT : LIGHT_PRIMARY_DARK,
+        color: paletteSet.text,
         fontSize: '1.5rem',
       },
       body1: {
@@ -200,7 +167,7 @@ const getTheme = (mode) => {
             },
           }),
           containedSecondary: ({ theme }) => ({
-            backgroundColor: theme.palette.text.primary,
+            backgroundColor: theme.palette.primary.main,
             color:
               theme.palette.mode === 'dark'
                 ? theme.palette.background.default
@@ -208,12 +175,28 @@ const getTheme = (mode) => {
             '&:hover': {
               backgroundColor:
                 theme.palette.mode === 'dark'
-                  ? theme.palette.grey[300]
-                  : darken(theme.palette.text.primary, 0.15),
+                  ? darken(theme.palette.primary.main, 0.12)
+                  : darken(theme.palette.primary.main, 0.16),
               color:
                 theme.palette.mode === 'dark'
                   ? theme.palette.background.default
                   : theme.palette.common.white,
+            },
+          }),
+          outlinedPrimary: ({ theme }) => ({
+            borderColor: alpha(theme.palette.primary.main, 0.35),
+            color: theme.palette.text.primary,
+            '&:hover': {
+              borderColor: theme.palette.primary.main,
+              backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
+            },
+          }),
+          outlinedSecondary: ({ theme }) => ({
+            borderColor: alpha(theme.palette.text.primary, 0.18),
+            color: theme.palette.text.primary,
+            '&:hover': {
+              borderColor: alpha(theme.palette.text.primary, 0.28),
+              backgroundColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.08 : 0.04),
             },
           }),
         },

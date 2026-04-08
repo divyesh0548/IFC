@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useTheme, alpha } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
@@ -8,6 +8,9 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
+import Tooltip from '@mui/material/Tooltip'
+import Switch from '@mui/material/Switch'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -34,7 +37,10 @@ function RacmAssignment() {
   const [filterAssignment, setFilterAssignment] = useState('all') // 'all' | 'assigned' | 'unassigned'
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
+  const [filterSubProcess, setFilterSubProcess] = useState('all') // 'all' or specific sub_process
   const [financialYearOptions, setFinancialYearOptions] = useState([])
+  const [subProcessOptions, setSubProcessOptions] = useState([])
+  const [cellWordWrap, setCellWordWrap] = useState(false)
   const [loading, setLoading] = useState(true)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
   const [bulkAssignmentMode, setBulkAssignmentMode] = useState(false)
@@ -46,6 +52,7 @@ function RacmAssignment() {
   const [bulkUserSearchText, setBulkUserSearchText] = useState('')
   const [updatingAssignment, setUpdatingAssignment] = useState(false)
   const [selectedForms, setSelectedForms] = useState(new Set())
+  const bulkAssignmentContainerRef = useRef(null)
   useSyncGlobalLoading(loading || usersLoading || updatingAssignment)
   const assignableUsers = companyUsers.filter((user) => {
     const coordinatorCompany = (companyIdentifier || '').trim()
@@ -74,6 +81,14 @@ function RacmAssignment() {
         .map(form => form.financial_year?.toString().trim())
         .filter(year => year && year !== '')
     )]
+  }
+
+  const extractUniqueSubProcesses = (rows) => {
+    return [...new Set(
+      (rows || [])
+        .map((form) => form.sub_process?.toString().trim())
+        .filter((sp) => sp && sp !== '')
+    )].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
   }
 
   useEffect(() => {
@@ -142,7 +157,7 @@ function RacmAssignment() {
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterAssignment, filterBusinessProcess, filterFinancialYear])
+  }, [companyIdentifier, filterAssignment, filterBusinessProcess, filterFinancialYear, filterSubProcess])
 
   useEffect(() => {
     if (!bulkAssignmentMode) {
@@ -154,7 +169,35 @@ function RacmAssignment() {
     if (bulkAssignmentMode) {
       setSelectedForms(new Set())
     }
-  }, [bulkAssignmentMode, filterAssignment, filterBusinessProcess, filterFinancialYear])
+  }, [bulkAssignmentMode, filterAssignment, filterBusinessProcess, filterFinancialYear, filterSubProcess])
+
+  const cancelBulkAssignmentMode = () => {
+    setBulkAssignmentMode(false)
+    setSelectedForms(new Set())
+    setBulkAssignmentDialogOpen(false)
+    setBulkSelectedUser(null)
+    setBulkUserSearchText('')
+  }
+
+  const handleClickOutsideBulkAssignment = (e) => {
+    if (!bulkAssignmentMode) return
+    const el = bulkAssignmentContainerRef.current
+    if (!el) return
+    if (el.contains(e.target)) return
+    cancelBulkAssignmentMode()
+  }
+
+  // Click outside handler (match RacmManagementDashboard behavior)
+  useEffect(() => {
+    if (!bulkAssignmentMode) return
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('click', handleClickOutsideBulkAssignment, true)
+    }, 100)
+    return () => {
+      clearTimeout(timeoutId)
+      document.removeEventListener('click', handleClickOutsideBulkAssignment, true)
+    }
+  }, [bulkAssignmentMode])
 
   const fetchForms = async () => {
     if (!companyIdentifier) return
@@ -169,6 +212,10 @@ function RacmAssignment() {
       
       if (filterFinancialYear !== 'all') {
         url += `&financial_year=${encodeURIComponent(filterFinancialYear)}`
+      }
+
+      if (filterSubProcess !== 'all') {
+        url += `&sub_process=${encodeURIComponent(filterSubProcess)}`
       }
       
       const cacheBustUrl = `${url}&_ts=${Date.now()}`
@@ -222,6 +269,17 @@ function RacmAssignment() {
               localStorage.setItem(getFinancialYearStorageKey(companyIdentifier), JSON.stringify(mergedYears))
             }
           }
+        }
+
+        const latestSubProcesses = extractUniqueSubProcesses(data.data)
+        if (latestSubProcesses.length > 0) {
+          setSubProcessOptions((prev) => {
+            const merged = [...new Set([...(prev || []), ...latestSubProcesses])].sort((a, b) =>
+              a.localeCompare(b, undefined, { sensitivity: 'base' })
+            )
+            if (merged.join('|') === (prev || []).join('|')) return prev
+            return merged
+          })
         }
       } else {
         console.error('Error fetching forms:', data.message)
@@ -306,7 +364,11 @@ function RacmAssignment() {
       await fetchCompanyUsers()
     }
 
-    setBulkAssignmentMode((prev) => !prev)
+    if (bulkAssignmentMode) {
+      cancelBulkAssignmentMode()
+      return
+    }
+    setBulkAssignmentMode(true)
     setBulkAssignmentDialogOpen(false)
     setBulkSelectedUser(null)
     setBulkUserSearchText('')
@@ -502,7 +564,47 @@ function RacmAssignment() {
     borderRadius: toolbarBtnRadius,
     boxShadow: 'none',
   }
-  const secondaryTone = theme.palette.mode === 'dark' ? theme.palette.primary : theme.palette.secondary
+  const tooltipSx = {
+    bgcolor: theme.palette.mode === 'dark' ? 'rgba(17, 24, 39, 0.96)' : 'rgba(17, 24, 39, 0.92)',
+    color: '#ffffff',
+    fontSize: '0.75rem',
+    lineHeight: 1.4,
+    borderRadius: '8px',
+    px: 1.25,
+    py: 0.75,
+    maxWidth: 420,
+    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.25)',
+  }
+  const truncatedTextSx = {
+    display: 'block',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  }
+  const wrappedTextSx = {
+    display: 'block',
+    maxWidth: '100%',
+    whiteSpace: 'normal',
+    wordBreak: 'break-word',
+    overflow: 'visible',
+  }
+  const dataCellTextSx = cellWordWrap ? wrappedTextSx : truncatedTextSx
+  const dataCellSx = (base) => ({
+    ...base,
+    ...(cellWordWrap
+      ? {
+          whiteSpace: 'normal',
+          wordBreak: 'break-word',
+          overflow: 'visible',
+          textOverflow: 'clip',
+          verticalAlign: 'top',
+        }
+      : {
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }),
+  })
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
@@ -530,34 +632,27 @@ function RacmAssignment() {
             {selectedForms.size > 0 ? `Assign Selected (${selectedForms.size})` : 'Assign Selected'}
           </Button>
         )}
-        <Button
-          variant={bulkAssignmentMode ? 'contained' : 'outlined'}
-          color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
-          onClick={handleBulkAssignmentModeToggle}
-          disabled={updatingAssignment}
-          size="small"
-          sx={{
-            ...toolbarBtnBase,
-            ...(bulkAssignmentMode
-              ? { '&:hover': { boxShadow: 'none' } }
-              : {
-                  bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.14 : 0.1),
-                  borderColor: alpha(secondaryTone.main, 0.45),
-                  '&:hover': {
-                    boxShadow: 'none',
-                    bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.22 : 0.16),
-                    borderColor: secondaryTone.main,
-                  },
-                }),
-          }}
-        >
-          {bulkAssignmentMode ? 'Cancel Bulk Assignment' : 'Bulk Assignment'}
-        </Button>
+        {!bulkAssignmentMode && (
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={handleBulkAssignmentModeToggle}
+            disabled={updatingAssignment}
+            size="small"
+            sx={{
+              ...toolbarBtnBase,
+              '&:hover': { boxShadow: 'none' },
+            }}
+          >
+            Bulk Assignment
+          </Button>
+        )}
       </Box>
 
         {/* Forms Section */}
         <Paper 
           elevation={3}
+          ref={bulkAssignmentContainerRef}
           sx={{
             p: 3,
             backgroundColor: theme.palette.background.paper,
@@ -577,10 +672,6 @@ function RacmAssignment() {
                 component="h2"
                 sx={{ 
                   fontWeight: 700, 
-                  color:
-                    theme.palette.mode === 'dark'
-                      ? theme.palette.text.primary
-                      : theme.palette.secondary.main,
                 }}
               >
                 RACM Assignment
@@ -601,6 +692,28 @@ function RacmAssignment() {
               width: { xs: '100%', sm: 'auto' },
               flexWrap: 'wrap'
             }}>
+              {/* Sub Process Filter (unique values from loaded RACMs) */}
+              <FormControl
+                variant="outlined"
+                sx={filterFormControlSx}
+              >
+                <InputLabel id="sub-process-filter-label">Sub Process</InputLabel>
+                <Select
+                  labelId="sub-process-filter-label"
+                  id="sub-process-filter"
+                  value={filterSubProcess}
+                  label="Sub Process"
+                  onChange={(e) => setFilterSubProcess(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  {subProcessOptions.map((option) => (
+                    <MenuItem key={option} value={option}>
+                      {option}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
               {/* Financial Year Filter */}
               <FormControl 
                 variant="outlined" 
@@ -676,11 +789,43 @@ function RacmAssignment() {
               <Typography color="text.secondary">No forms found.</Typography>
             </Box>
           ) : (
+            <Box>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  mb: 1.5,
+                  flexWrap: 'wrap',
+                  gap: 1,
+                }}
+              >
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={cellWordWrap}
+                      onChange={(e) => setCellWordWrap(e.target.checked)}
+                      size="small"
+                      color="primary"
+                    />
+                  }
+                  label="Word wrap"
+                  sx={{
+                    mr: 0,
+                    userSelect: 'none',
+                    '& .MuiFormControlLabel-label': {
+                      fontSize: '0.8125rem',
+                      color: theme.palette.text.secondary,
+                    },
+                  }}
+                />
+              </Box>
             <Box sx={{ overflowX: 'auto' }}>
               <Box
                 component="table"
                 sx={{
-                  minWidth: '100%',
+                  width: '100%',
+                  tableLayout: 'fixed',
                   borderCollapse: 'collapse',
                   '& th, & td': {
                     borderBottom: `1px solid ${theme.palette.divider}`,
@@ -717,6 +862,24 @@ function RacmAssignment() {
                   <Box
                     component="th"
                     sx={{
+                      px: 2,
+                      py: 1.5,
+                      textAlign: 'left',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: theme.palette.text.secondary,
+                      width: '11%',
+                      minWidth: '132px',
+                      maxWidth: '160px',
+                    }}
+                  >
+                    Business Process
+                  </Box>
+                  <Box
+                    component="th"
+                    sx={{
                       px: 3,
                       py: 1.5,
                       textAlign: 'left',
@@ -725,17 +888,33 @@ function RacmAssignment() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '320px',
-                      minWidth: '320px',
-                      maxWidth: '320px',
+                      width: '28%',
+                      minWidth: '280px',
                     }}
                   >
                     Standard Control Description
                   </Box>
+                  <Box
+                    component="th"
+                    sx={{
+                      px: 3,
+                      py: 1.5,
+                      textAlign: 'left',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: theme.palette.text.secondary,
+                      width: '18%',
+                      minWidth: '200px',
+                    }}
+                  >
+                    Sub Process
+                  </Box>
                     <Box
                       component="th"
                       sx={{
-                        px: 3,
+                        px: 2,
                         py: 1.5,
                         textAlign: 'left',
                         fontSize: '0.75rem',
@@ -743,21 +922,9 @@ function RacmAssignment() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                      }}
-                    >
-                      Business Process
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
+                        width: '9%',
+                        minWidth: '96px',
+                        maxWidth: '120px',
                       }}
                     >
                       Financial Year
@@ -765,7 +932,7 @@ function RacmAssignment() {
                     <Box
                       component="th"
                       sx={{
-                        px: 3,
+                        px: 2,
                         py: 1.5,
                         textAlign: 'left',
                         fontSize: '0.75rem',
@@ -773,6 +940,8 @@ function RacmAssignment() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '17%',
+                        minWidth: '180px',
                       }}
                     >
                       Control Owner
@@ -780,7 +949,7 @@ function RacmAssignment() {
                     <Box
                       component="th"
                       sx={{
-                        px: 3,
+                        px: 2,
                         py: 1.5,
                         textAlign: 'left',
                         fontSize: '0.75rem',
@@ -788,6 +957,8 @@ function RacmAssignment() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '17%',
+                        minWidth: '160px',
                       }}
                     >
                       Name of Control Owner
@@ -831,75 +1002,143 @@ function RacmAssignment() {
                         )}
                         <Box
                           component="td"
+                          title={form.business_process || 'N/A'}
+                          sx={dataCellSx({
+                            px: 2,
+                            py: 2,
+                            width: '11%',
+                            minWidth: '132px',
+                            maxWidth: '160px',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          })}
+                        >
+                          <Tooltip
+                            title={form.business_process || 'N/A'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.business_process || 'N/A'}
+                            </Box>
+                          </Tooltip>
+                        </Box>
+                        <Box
+                          component="td"
                           title={form.standard_control_description || 'N/A'}
-                          sx={{
+                          sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            width: '320px',
-                            minWidth: '320px',
-                            maxWidth: '320px',
+                            width: '28%',
+                            minWidth: '280px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          {form.standard_control_description || 'N/A'}
+                          <Tooltip
+                            title={form.standard_control_description || 'N/A'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.standard_control_description || 'N/A'}
+                            </Box>
+                          </Tooltip>
                         </Box>
                         <Box
                           component="td"
-                          sx={{
+                          title={form.sub_process || 'N/A'}
+                          sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            whiteSpace: 'nowrap',
+                            width: '18%',
+                            minWidth: '200px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          {form.business_process || 'N/A'}
+                          <Tooltip
+                            title={form.sub_process || 'N/A'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.sub_process || 'N/A'}
+                            </Box>
+                          </Tooltip>
                         </Box>
                         <Box
                           component="td"
-                          sx={{
-                            px: 3,
+                          sx={dataCellSx({
+                            px: 2,
                             py: 2,
-                            whiteSpace: 'nowrap',
+                            width: '9%',
+                            minWidth: '96px',
+                            maxWidth: '120px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          {form.financial_year || 'N/A'}
+                          <Tooltip
+                            title={form.financial_year || 'N/A'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.financial_year || 'N/A'}
+                            </Box>
+                          </Tooltip>
                         </Box>
                         <Box
                           component="td"
-                          sx={{
-                            px: 3,
+                          title={form.control_owner || 'N/A'}
+                          sx={dataCellSx({
+                            px: 2,
                             py: 2,
-                            whiteSpace: 'nowrap',
+                            width: '17%',
+                            minWidth: '180px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          {form.control_owner || 'N/A'}
+                          <Tooltip
+                            title={form.control_owner || 'N/A'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.control_owner || 'N/A'}
+                            </Box>
+                          </Tooltip>
                         </Box>
                         <Box
                           component="td"
-                          sx={{
-                            px: 3,
+                          title={form.control_owner_name || '-'}
+                          sx={dataCellSx({
+                            px: 2,
                             py: 2,
-                            whiteSpace: 'nowrap',
+                            width: '17%',
+                            minWidth: '160px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          {form.control_owner_name || '-'}
+                          <Tooltip
+                            title={form.control_owner_name || '-'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.control_owner_name || '-'}
+                            </Box>
+                          </Tooltip>
                         </Box>
                       </Box>
                     )
                   })}
                 </Box>
               </Box>
+            </Box>
             </Box>
           )}
         </Paper>
@@ -923,6 +1162,10 @@ function RacmAssignment() {
                 <Box sx={popupRowSx}>
                   <Typography variant="body2" component="span" sx={popupLabelSx}>Business Process:</Typography>
                   <Typography variant="body2" component="span">{popupValue(selectedForm.business_process)}</Typography>
+                </Box>
+                <Box sx={popupRowSx}>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>Sub Process:</Typography>
+                  <Typography variant="body2" component="span">{popupValue(selectedForm.sub_process)}</Typography>
                 </Box>
                 <Box sx={popupRowSx}>
                   <Typography variant="body2" component="span" sx={popupLabelSx}>Financial Year:</Typography>

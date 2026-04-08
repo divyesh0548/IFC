@@ -324,6 +324,8 @@ Sharp and Tannan Associates
 }
 
 // Get users for current company coordinator's company
+// Optional query: role (e.g. user), q (search emp_name / email_id), limit (cap 200).
+// When no optional params are used, behavior matches the original full-company list.
 router.get('/users', verifyCompanyCoordinator, async (req, res) => {
   try {
     const companyIdentifier = req.user.company_identifier;
@@ -335,13 +337,45 @@ router.get('/users', verifyCompanyCoordinator, async (req, res) => {
       });
     }
 
-    const usersQuery = `
+    const roleParam = req.query.role != null ? String(req.query.role).trim() : '';
+    const qRaw = req.query.q != null ? String(req.query.q).trim() : '';
+    const limitRaw = req.query.limit;
+
+    let query = `
       SELECT email_id, role, emp_name, designation, department, mobile
       FROM ifc_users
       WHERE company_identifier = $1
-      ORDER BY created_at DESC
     `;
-    const usersResult = await pool.query(usersQuery, [companyIdentifier]);
+    const params = [companyIdentifier];
+    let paramIndex = 2;
+
+    if (roleParam) {
+      query += ` AND role = $${paramIndex}`;
+      params.push(roleParam);
+      paramIndex++;
+    }
+
+    if (qRaw) {
+      query += ` AND (
+        LOWER(COALESCE(emp_name, '')) LIKE $${paramIndex}
+        OR LOWER(TRIM(email_id)) LIKE $${paramIndex}
+      )`;
+      params.push(`%${qRaw.toLowerCase()}%`);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY created_at DESC`;
+
+    if (limitRaw !== undefined && limitRaw !== '') {
+      const limitNum = parseInt(String(limitRaw), 10);
+      if (!Number.isNaN(limitNum) && limitNum > 0) {
+        const capped = Math.min(limitNum, 200);
+        query += ` LIMIT $${paramIndex}`;
+        params.push(capped);
+      }
+    }
+
+    const usersResult = await pool.query(query, params);
 
     res.status(200).json({
       success: true,

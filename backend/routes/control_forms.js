@@ -493,10 +493,10 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
   }
 });
 
-// Get all RACM forms (with optional company_identifier, control_owner, active, business_process, status, financial_year, and cycle filters)
+// Get all RACM forms (with optional company_identifier, control_owner, active, business_process, status, financial_year, sub_process, and cycle filters)
 router.get('/', verifyAuth, async (req, res) => {
   try {
-    const { company_identifier, control_owner, active, business_process, status, financial_year, cycle } = req.query;
+    const { company_identifier, control_owner, active, business_process, status, financial_year, cycle, sub_process } = req.query;
     
     // Debug logging
     console.log('RACM GET request filters:', {
@@ -505,7 +505,8 @@ router.get('/', verifyAuth, async (req, res) => {
       business_process,
       status,
       financial_year,
-      cycle
+      cycle,
+      sub_process
     });
     
     let query = `
@@ -591,6 +592,13 @@ router.get('/', verifyAuth, async (req, res) => {
       paramIndex++;
     }
 
+    // Filter by sub_process if provided (exact trim match)
+    if (sub_process) {
+      query += ` AND cf.sub_process IS NOT NULL AND TRIM(cf.sub_process) = $${paramIndex}`;
+      queryParams.push(sub_process.trim());
+      paramIndex++;
+    }
+
     // Filter by cycle if provided
     if (cycle) {
       query += ` AND cf.cycle IS NOT NULL AND TRIM(cf.cycle) = $${paramIndex}`;
@@ -612,6 +620,57 @@ router.get('/', verifyAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching RACM records'
+    });
+  }
+});
+
+// Get aggregated RACM stats (without loading full RACM rows)
+router.get('/stats', verifyAuth, async (req, res) => {
+  try {
+    const { company_identifier } = req.query;
+
+    let targetCompanyIdentifier = company_identifier;
+
+    // Company coordinator should only see stats for their own company identifier
+    if (req.user.role === 'company_co') {
+      targetCompanyIdentifier = req.user.company_identifier;
+    }
+
+    let query = `
+      SELECT
+        COUNT(*)::int AS total_racms,
+        COUNT(*) FILTER (
+          WHERE LOWER(TRIM(COALESCE(status, ''))) = 'approved'
+        )::int AS approved_racms,
+        COUNT(*) FILTER (
+          WHERE LOWER(TRIM(COALESCE(status, ''))) = 'rejected'
+        )::int AS rejected_racms
+      FROM control_forms
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (targetCompanyIdentifier) {
+      query += ' AND company_identifier = $1';
+      params.push(String(targetCompanyIdentifier).trim());
+    }
+
+    const result = await pool.query(query, params);
+    const row = result.rows[0] || {};
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalRacms: Number(row.total_racms || 0),
+        approvedRacms: Number(row.approved_racms || 0),
+        rejectedRacms: Number(row.rejected_racms || 0),
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching RACM stats:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching RACM stats',
     });
   }
 });
@@ -1028,7 +1087,12 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       if (hasChangesArray) {
         const nonAssignmentChanges = modifiedChanges.filter((item) => {
           const col = item?.column_name || item?.column || item?.field;
-          return String(col || '').trim() !== 'control_owner';
+          const normalizedCol = String(col || '').trim()
+          return (
+            normalizedCol !== 'control_owner' &&
+            normalizedCol !== 'due_date' &&
+            normalizedCol !== 'reminder_frequency'
+          );
         });
         if (nonAssignmentChanges.length > 0) {
           await logAuditEvent('RACM Modification', req.user.email_id, form_id, JSON.stringify(nonAssignmentChanges));
@@ -1036,7 +1100,14 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       } else if (hasFieldsArray) {
         // Fallback for older clients
         const nonAssignmentFields = modifiedFields.filter(
-          (col) => String(col || '').trim() !== 'control_owner'
+          (col) => {
+            const normalizedCol = String(col || '').trim()
+            return (
+              normalizedCol !== 'control_owner' &&
+              normalizedCol !== 'due_date' &&
+              normalizedCol !== 'reminder_frequency'
+            )
+          }
         );
         if (nonAssignmentFields.length > 0) {
           const refData = JSON.stringify(nonAssignmentFields.map((col) => ({ column_name: col })));
@@ -1442,6 +1513,33 @@ router.post('/', verifyAuth, async (req, res) => {
       }
     }
 
+    // Prevent duplicate RACM creation (company_identifier + business_process + financial_year + control_number)
+    // Note: apply only when all key fields are present.
+    const bpKey = business_process != null ? String(business_process).trim() : ''
+    const fyKey = financial_year != null ? String(financial_year).trim() : ''
+    const cnKey = control_number != null ? String(control_number).trim() : ''
+    if (userCompanyIdentifier && bpKey && fyKey && cnKey) {
+      const dup = await client.query(
+        `
+          SELECT 1
+          FROM control_forms
+          WHERE company_identifier = $1
+            AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
+            AND TRIM(financial_year) = TRIM($3)
+            AND TRIM(control_number) = TRIM($4)
+          LIMIT 1
+        `,
+        [userCompanyIdentifier, bpKey, fyKey, cnKey]
+      )
+      if (dup.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          message: 'Duplicate RACM exists for the same Business Process, Financial Year, and Control Number.',
+        });
+      }
+    }
+
     // Generate unique form_id
     const formId = await generateUniqueFormId(client);
 
@@ -1583,6 +1681,7 @@ router.post('/replicate', verifyAuth, async (req, res) => {
     ]);
 
     const createdFormIds = [];
+    const skippedDuplicates = [];
 
     // Helper: extract first 4-digit year from a FY string like "2025-26"
     const extractStartYear = (fy) => {
@@ -1602,6 +1701,34 @@ router.post('/replicate', verifyAuth, async (req, res) => {
       // Override required fields
       insertObj.form_id = await generateUniqueFormId(client);
       insertObj.financial_year = String(financial_year).trim();
+
+      // Prevent duplicate RACM creation (same company + business_process + financial_year + control_number)
+      try {
+        const companyId = coordinatorCompany || insertObj.company_identifier || null
+        const bpKey = insertObj.business_process != null ? String(insertObj.business_process).trim() : ''
+        const fyKey = insertObj.financial_year != null ? String(insertObj.financial_year).trim() : ''
+        const cnKey = insertObj.control_number != null ? String(insertObj.control_number).trim() : ''
+        if (companyId && bpKey && fyKey && cnKey) {
+          const dup = await client.query(
+            `
+              SELECT 1
+              FROM control_forms
+              WHERE company_identifier = $1
+                AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
+                AND TRIM(financial_year) = TRIM($3)
+                AND TRIM(control_number) = TRIM($4)
+              LIMIT 1
+            `,
+            [companyId, bpKey, fyKey, cnKey]
+          )
+          if (dup.rows.length > 0) {
+            skippedDuplicates.push(row.form_id)
+            continue
+          }
+        }
+      } catch (e) {
+        console.error('[control_forms replicate] duplicate check error:', e)
+      }
 
       // Adjust Sample Required text years based on FY shift, if possible
       try {
@@ -1661,6 +1788,7 @@ router.post('/replicate', verifyAuth, async (req, res) => {
       success: true,
       message: 'RACMs replicated successfully',
       count: createdFormIds.length,
+      skipped_duplicates: skippedDuplicates.length,
       data: { form_ids: createdFormIds },
     });
   } catch (error) {

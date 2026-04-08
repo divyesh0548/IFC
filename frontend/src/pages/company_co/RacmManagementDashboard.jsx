@@ -81,6 +81,7 @@ function RacmManagementDashboard() {
   const [missingUsersCount, setMissingUsersCount] = useState(0)
   const [missingUserEmailsForDialog, setMissingUserEmailsForDialog] = useState([])
   const [missingReminderCount, setMissingReminderCount] = useState(0)
+  const [missingSampleDocCount, setMissingSampleDocCount] = useState(0)
   const [eligibleSetActiveFormIds, setEligibleSetActiveFormIds] = useState([])
   const [isSingleSetActiveSelectionNotice, setIsSingleSetActiveSelectionNotice] = useState(false)
   const [singleSelectionProblemLines, setSingleSelectionProblemLines] = useState([])
@@ -462,6 +463,7 @@ function RacmManagementDashboard() {
     const nonUserRoleForms = []
     const emptyOwnerFormIds = []
     const reminderMissingFormIds = []
+    const sampleDocMissingFormIds = []
 
     for (const form of formsToCheck) {
       const email = normalizeEmail(form.control_owner)
@@ -499,6 +501,15 @@ function RacmManagementDashboard() {
         continue
       }
 
+      const hasSampleDoc =
+        form?.sample_doc !== null &&
+        form?.sample_doc !== undefined &&
+        String(form.sample_doc).trim() !== ''
+      if (!hasSampleDoc) {
+        sampleDocMissingFormIds.push(form.form_id)
+        continue
+      }
+
       validFormIds.push(form.form_id)
     }
 
@@ -511,6 +522,7 @@ function RacmManagementDashboard() {
       nonUserRoleForms,
       emptyOwnerFormIds,
       reminderMissingFormIds,
+      sampleDocMissingFormIds,
     }
   }
 
@@ -526,6 +538,7 @@ function RacmManagementDashboard() {
     nonUserRoleForms = [],
     missingUserEmails = [],
     reminderMissingCount = 0,
+    sampleDocMissingCount = 0,
     eligibleFormIds = [],
     isSingle = false,
     singleProblemLines = [],
@@ -541,6 +554,7 @@ function RacmManagementDashboard() {
     // Keep in sync with selection notice so "Create User" works from any path (confirm vs checkbox / select-all).
     setMissingProcessOwners(uniqueMissingUserEmails)
     setMissingReminderCount(reminderMissingCount)
+    setMissingSampleDocCount(sampleDocMissingCount)
     setEligibleSetActiveFormIds(Array.isArray(eligibleFormIds) ? eligibleFormIds : [])
     setIsSingleSetActiveSelectionNotice(Boolean(isSingle))
     setSingleSelectionProblemLines(Array.isArray(singleProblemLines) ? singleProblemLines : [])
@@ -555,6 +569,7 @@ function RacmManagementDashboard() {
     setMissingUsersCount(0)
     setMissingUserEmailsForDialog([])
     setMissingReminderCount(0)
+    setMissingSampleDocCount(0)
     setEligibleSetActiveFormIds([])
     setIsSingleSetActiveSelectionNotice(false)
     setSingleSelectionProblemLines([])
@@ -605,11 +620,13 @@ function RacmManagementDashboard() {
       nonUserRoleForms,
       emptyOwnerFormIds,
       reminderMissingFormIds,
+      sampleDocMissingFormIds,
     } = classification
 
     const hasAnyIssues =
       (emptyOwnerFormIds?.length || 0) > 0 ||
       (reminderMissingFormIds?.length || 0) > 0 ||
+      (sampleDocMissingFormIds?.length || 0) > 0 ||
       (nonUserRoleForms?.length || 0) > 0 ||
       (missingFormIds?.length || 0) > 0
 
@@ -622,6 +639,7 @@ function RacmManagementDashboard() {
       showSetActiveSelectionInfoDialog({
         emptyOwnerCount: emptyOwnerFormIds?.length || 0,
         reminderMissingCount: reminderMissingFormIds?.length || 0,
+        sampleDocMissingCount: sampleDocMissingFormIds?.length || 0,
         nonUserRoleForms: nonUserRoleForms || [],
         missingUserEmails: missingEmails || [],
         eligibleFormIds: validFormIds || [],
@@ -937,6 +955,7 @@ function RacmManagementDashboard() {
     const reminderFrequency = form?.reminder_frequency
     const hasDueDate = Boolean(dueDate)
     const hasReminderFrequency = reminderFrequency !== null && reminderFrequency !== undefined && String(reminderFrequency).trim() !== ''
+    const hasSampleDoc = form?.sample_doc !== null && form?.sample_doc !== undefined && String(form.sample_doc).trim() !== ''
 
     // For single RACM selection, show ALL applicable problems (in precedence order),
     // but still block selection if any problem exists.
@@ -958,6 +977,9 @@ function RacmManagementDashboard() {
     if (!hasDueDate || !hasReminderFrequency) {
       problemLines.push('Due date / reminder frequency is missing.')
     }
+    if (!hasSampleDoc) {
+      problemLines.push('Sample document is missing.')
+    }
 
     if (problemLines.length > 0) {
       showSetActiveSelectionInfoDialog({
@@ -968,6 +990,7 @@ function RacmManagementDashboard() {
             : [],
         missingUserEmails: email && userRoleCheck && !userRoleCheck.exists ? [email] : [],
         reminderMissingCount: (!hasDueDate || !hasReminderFrequency) ? 1 : 0,
+        sampleDocMissingCount: !hasSampleDoc ? 1 : 0,
         eligibleFormIds: [],
         isSingle: true,
         singleProblemLines: problemLines,
@@ -1034,13 +1057,20 @@ function RacmManagementDashboard() {
 
     setValidatingSetActiveSelection(true)
     try {
-      const { selectedFormIds, nonUserRoleForms, emptyOwnerFormIds, missingEmails, reminderMissingFormIds, validFormIds } = await classifyFormsForSetActive(forms)
+      const { selectedFormIds, nonUserRoleForms, emptyOwnerFormIds, missingEmails, reminderMissingFormIds, sampleDocMissingFormIds, validFormIds } = await classifyFormsForSetActive(forms)
       setSelectedForms(new Set(selectedFormIds))
 
-      if ((emptyOwnerFormIds?.length || 0) > 0 || (nonUserRoleForms?.length || 0) > 0 || (missingEmails?.length || 0) > 0 || (reminderMissingFormIds?.length || 0) > 0) {
+      if (
+        (emptyOwnerFormIds?.length || 0) > 0 ||
+        (nonUserRoleForms?.length || 0) > 0 ||
+        (missingEmails?.length || 0) > 0 ||
+        (reminderMissingFormIds?.length || 0) > 0 ||
+        (sampleDocMissingFormIds?.length || 0) > 0
+      ) {
         showSetActiveSelectionInfoDialog({
           emptyOwnerCount: emptyOwnerFormIds?.length || 0,
           reminderMissingCount: reminderMissingFormIds?.length || 0,
+          sampleDocMissingCount: sampleDocMissingFormIds?.length || 0,
           nonUserRoleForms: nonUserRoleForms || [],
           missingUserEmails: missingEmails || [],
           eligibleFormIds: validFormIds || [],
@@ -1224,8 +1254,6 @@ function RacmManagementDashboard() {
     borderRadius: toolbarBtnRadius,
     boxShadow: 'none',
   }
-  const secondaryTone = theme.palette.mode === 'dark' ? theme.palette.primary : theme.palette.secondary
-
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
       <Box
@@ -1241,18 +1269,12 @@ function RacmManagementDashboard() {
         <Button
           onClick={() => navigate('/company_co/create-form')}
           disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
-          variant="outlined"
-          color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
+          variant="contained"
+          color="secondary"
           size="small"
           sx={{
             ...toolbarBtnBase,
-            bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.14 : 0.1),
-            borderColor: alpha(secondaryTone.main, 0.45),
-            '&:hover': {
-              boxShadow: 'none',
-              bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.22 : 0.16),
-              borderColor: secondaryTone.main,
-            },
+            '&:hover': { boxShadow: 'none' },
             '&:disabled': {
               bgcolor: alpha(theme.palette.action.disabledBackground, 0.5),
             },
@@ -1276,30 +1298,19 @@ function RacmManagementDashboard() {
             loading ||
             forms.length === 0 ||
             allFormsActive ||
+            setDueDateMode ||
             deleteMode ||
             replicateMode ||
             bulkUpdating ||
             (setActiveMode && selectedForms.size === 0)
           }
-          variant={setActiveMode ? 'contained' : 'outlined'}
-          color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
+          variant="contained"
+          color="secondary"
           size="small"
           sx={{
+            display: 'none',
             ...toolbarBtnBase,
-            ...(setActiveMode
-              ? {}
-              : {
-                  bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.14 : 0.1),
-                  borderColor: alpha(secondaryTone.main, 0.45),
-                  '&:hover': {
-                    boxShadow: 'none',
-                    bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.22 : 0.16),
-                    borderColor: secondaryTone.main,
-                  },
-                }),
-            ...(setActiveMode && {
-              '&:hover': { boxShadow: 'none' },
-            }),
+            '&:hover': { boxShadow: 'none' },
           }}
         >
           {setActiveMode
@@ -1327,22 +1338,12 @@ function RacmManagementDashboard() {
             setDueDateSubmitting ||
             (setDueDateMode && selectedForms.size === 0)
           }
-          variant={setDueDateMode ? 'contained' : 'outlined'}
-          color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
+          variant="contained"
+          color="secondary"
           size="small"
           sx={{
             ...toolbarBtnBase,
-            ...(setDueDateMode
-              ? { '&:hover': { boxShadow: 'none' } }
-              : {
-                  bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.14 : 0.1),
-                  borderColor: alpha(secondaryTone.main, 0.45),
-                  '&:hover': {
-                    boxShadow: 'none',
-                    bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.22 : 0.16),
-                    borderColor: secondaryTone.main,
-                  },
-                }),
+            '&:hover': { boxShadow: 'none' },
           }}
         >
           {setDueDateMode
@@ -1365,26 +1366,17 @@ function RacmManagementDashboard() {
             loading ||
             forms.length === 0 ||
             setActiveMode ||
+            setDueDateMode ||
             deleteMode ||
             replicating ||
             (replicateMode && selectedForms.size === 0)
           }
-          variant={replicateMode ? 'contained' : 'outlined'}
-          color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
+          variant="contained"
+          color="secondary"
           size="small"
           sx={{
             ...toolbarBtnBase,
-            ...(replicateMode
-              ? { '&:hover': { boxShadow: 'none' } }
-              : {
-                  bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.14 : 0.1),
-                  borderColor: alpha(secondaryTone.main, 0.45),
-                  '&:hover': {
-                    boxShadow: 'none',
-                    bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.22 : 0.16),
-                    borderColor: secondaryTone.main,
-                  },
-                }),
+            '&:hover': { boxShadow: 'none' },
           }}
         >
           {replicateMode
@@ -1407,6 +1399,7 @@ function RacmManagementDashboard() {
             loading ||
             forms.length === 0 ||
             setActiveMode ||
+            setDueDateMode ||
             replicateMode ||
             deleting ||
             (deleteMode && selectedForms.size === 0)
@@ -1459,10 +1452,6 @@ function RacmManagementDashboard() {
               component="h2"
               sx={{
                 fontWeight: 700,
-                color:
-                  theme.palette.mode === 'dark'
-                    ? theme.palette.text.primary
-                    : theme.palette.secondary.main,
               }}
             >
               RACM Management
@@ -2737,6 +2726,19 @@ function RacmManagementDashboard() {
                     }}
                   >
                     Reminder columns missing (due date / reminder frequency): <strong>{missingReminderCount}</strong>
+                  </Typography>
+                ) : null}
+
+                {missingSampleDocCount > 0 ? (
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: theme.palette.text.primary,
+                      fontWeight: 500,
+                      mb: 1,
+                    }}
+                  >
+                    Sample document missing: <strong>{missingSampleDocCount}</strong>
                   </Typography>
                 ) : null}
 

@@ -21,7 +21,6 @@ const headerKeywords = [
   'nature of control',
   'control performer',
   'control owner',
-  'process owner',
 ];
 
 // Function to normalize text for comparison
@@ -307,75 +306,68 @@ function countEmptyValues(row) {
   return emptyCount;
 }
 
-// Function to check if a duplicate form exists
-// Compares all relevant columns except system/metadata columns
+// Assertion columns stored as booleans in DB.
+// Rule: default false; true only when that specific cell has a real value.
+// Also ignore header-like/placeholder strings that can appear due to row shifts.
+function normalizeExcelTruthyToBoolean(value, columnName) {
+  if (value === null || value === undefined) return false;
+  const raw = String(value).trim();
+  if (raw === '') return false;
+
+  const normalized = raw.toLowerCase().replace(/[&/()-]/g, ' ').replace(/\s+/g, ' ').trim();
+  const placeholders = new Set(['na', 'n a', 'n/a', 'none', '-', '--']);
+  if (placeholders.has(normalized)) return false;
+
+  const headerLikeByColumn = {
+    completeness: new Set(['completeness']),
+    existence_occurrence: new Set(['existence occurrence', 'existence and occurrence', 'existence  occurrence']),
+    rights_and_obligation: new Set(['rights and obligations', 'rights obligations', 'rights and obligation']),
+    valuation_and_allocation: new Set(['valuation and allocation', 'valuation allocation']),
+    presentation_and_disclosure: new Set(['presentation and disclosure', 'presentation disclosure']),
+  };
+
+  const disallowed = headerLikeByColumn[columnName];
+  if (disallowed && disallowed.has(normalized)) return false;
+
+  return true;
+}
+
+// Duplicate prevention for RACM creation:
+// company_identifier + business_process + financial_year + control_number
+// Applies only when all key fields are present.
 async function checkDuplicateForm(client, row, companyIdentifier, businessProcess, financialYear) {
-  // Columns to compare for duplicate detection
-  // Excluding: checks_performed, effective_or_not_effective, remarks, findings
-  // Also excluding: id, form_id, created_at, doc_uploaded_by_user, active, status, 
-  // reason_by_approver, sampling_doc, sample_required (calculated field)
-  const compareColumns = [
-    'standard_control_description', 'sub_process', 'risk_description',
-    'whether_fraud_risks_exist', 'control_objective', 'ipe_reference',
-    'nature_of_control', 'control_owner', 'control_frequency', 'control_number',
-    'area', 'risk_heat', 'process_walkthrough',
-    'control_relies_on_ipe', 'audit_evidence_accuracy', 'key_control',
-    'application_name', 'control_performer', 'control_owner',
-    'control_design_procs', 'control_design_conclusion', 'design_deficiency_desc',
-    'sample_size', 'control_type_fo', 'control_type_ma',
-    'company_identifier', 'business_process', 'financial_year',
-    'completeness', 'existence_occurrence', 'rights_and_obligation',
-    'valuation_and_allocation', 'presentation_and_disclosure'
-  ];
+  try {
+    const bpKey = businessProcess != null ? String(businessProcess).trim() : '';
+    const fyKey = row['financial_year'] !== null && row['financial_year'] !== undefined && row['financial_year'] !== ''
+      ? String(row['financial_year']).trim()
+      : (financialYear != null ? String(financialYear).trim() : '');
+    const cnKey = row['control_number'] !== null && row['control_number'] !== undefined && row['control_number'] !== ''
+      ? String(row['control_number']).trim()
+      : '';
 
-  // Build WHERE clause conditions using IS NOT DISTINCT FROM for proper NULL handling
-  const conditions = [];
-  const params = [];
-  let paramIndex = 1;
-
-  for (const col of compareColumns) {
-    let value;
-    
-    // Handle special columns
-    if (col === 'company_identifier') {
-      value = companyIdentifier;
-    } else if (col === 'business_process') {
-      value = businessProcess;
-    } else if (col === 'financial_year') {
-      // Use value from row if available, otherwise from excel_files table
-      value = row['financial_year'] !== null && row['financial_year'] !== undefined && row['financial_year'] !== ''
-        ? String(row['financial_year']).trim()
-        : financialYear || null;
-    } else {
-      value = row[col] !== null && row[col] !== undefined && row[col] !== ''
-        ? String(row[col]).trim()
-        : null;
+    if (!companyIdentifier || !bpKey || !fyKey || !cnKey) {
+      return false;
     }
 
-    // Use IS NOT DISTINCT FROM for proper NULL comparison
-    // This handles NULL = NULL correctly (returns true)
-    // Treat empty strings and NULL as equivalent for comparison
-    if (value === null || value === '') {
-      // Compare both NULL and empty string cases - treat them as equivalent
-      conditions.push(`(COALESCE(NULLIF(${col}, ''), NULL) IS NOT DISTINCT FROM NULL)`);
-    } else {
-      conditions.push(`(COALESCE(NULLIF(${col}, ''), NULL) IS NOT DISTINCT FROM $${paramIndex})`);
-      params.push(value);
-      paramIndex++;
-    }
+    const result = await client.query(
+      `
+        SELECT 1
+        FROM control_forms
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
+          AND TRIM(financial_year) = TRIM($3)
+          AND TRIM(control_number) = TRIM($4)
+        LIMIT 1;
+      `,
+      [companyIdentifier, bpKey, fyKey, cnKey]
+    );
+
+    return result.rows.length > 0;
+  } catch (error) {
+    console.error('Error checking for duplicate form:', error);
+    // If error occurs, assume not duplicate to allow insertion
+    return false;
   }
-
-  const whereClause = conditions.join(' AND ');
-
-  const checkQuery = `
-    SELECT id, form_id 
-    FROM control_forms 
-    WHERE ${whereClause}
-    LIMIT 1;
-  `;
-
-  const result = await client.query(checkQuery, params);
-  return result.rows.length > 0;
 }
 
 // Function to transform Excel data to database format
@@ -541,7 +533,7 @@ async function processExcelFiles() {
         const columns = [
           'standard_control_description', 'sub_process', 'risk_description',
           'whether_fraud_risks_exist', 'control_objective', 'ipe_reference',
-          'nature_of_control', 'control_owner', 'control_frequency',
+          'nature_of_control', 'control_frequency',
           'control_number', 'area', 'risk_heat',
           'process_walkthrough', 'control_relies_on_ipe', 'audit_evidence_accuracy',
           'key_control', 'application_name', 'control_performer', 'control_owner',
@@ -640,6 +632,17 @@ async function processExcelFiles() {
               if (col === 'sample_size') {
                 return sampleSize !== null ? String(sampleSize) : null;
               }
+
+              // Assertions: store booleans in DB based on presence of any value in Excel cell.
+              if (
+                col === 'completeness' ||
+                col === 'existence_occurrence' ||
+                col === 'rights_and_obligation' ||
+                col === 'valuation_and_allocation' ||
+                col === 'presentation_and_disclosure'
+              ) {
+                return normalizeExcelTruthyToBoolean(row[col], col);
+              }
               return row[col] || null;
             });
             
@@ -678,35 +681,24 @@ async function processExcelFiles() {
           console.log(`\n  Total error rows: ${errorCount} (rows that failed to insert)`);
         }
 
-        // Update excel_files table: set processed = 1
-        const updateFileQuery = `
-          UPDATE excel_files 
-          SET processed = 1
-          WHERE id = $1;
-        `;
-
-        await client.query(updateFileQuery, [fileId]);
-
-        await client.query('COMMIT');
-
-        console.log(`\n✓ Successfully processed ${fileName}: ${insertedCount} records imported.`);
+        // Only mark file as processed when at least one RACM row was inserted successfully.
+        if (insertedCount > 0) {
+          const updateFileQuery = `
+            UPDATE excel_files
+            SET processed = 1
+            WHERE id = $1;
+          `;
+          await client.query(updateFileQuery, [fileId]);
+          await client.query('COMMIT');
+          console.log(`\n✓ Successfully processed ${fileName}: ${insertedCount} records imported.`);
+        } else {
+          // No inserts → do NOT mark processed, so the file can be fixed/retried.
+          await client.query('ROLLBACK');
+          console.error(`✗ No RACM rows inserted for ${fileName}. File not marked as processed.`);
+        }
 
       } catch (error) {
         await client.query('ROLLBACK');
-        
-        // Update excel_files table: set processed = 1 even on error
-        // This prevents the file from being reprocessed indefinitely
-        const updateErrorQuery = `
-          UPDATE excel_files 
-          SET processed = 1
-          WHERE id = $1;
-        `;
-
-        try {
-          await client.query(updateErrorQuery, [fileId]);
-        } catch (updateError) {
-          console.error(`Error updating processed flag: ${updateError.message}`);
-        }
 
         console.error(`✗ Error processing ${fileName}: ${error.message}`);
         console.error('Stack trace:', error.stack);

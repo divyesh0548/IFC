@@ -4,13 +4,20 @@ Company coordinator can create control forms as well as users for company.
 
 Control-forms can be created via excel file (bulk creation based on rows) or manual (form submission). 
 Control-forms are created with businees_prcess, financial_year and cycle. Coordinator will be asked to select values of these three parameters for form creation.
-Program will prevent duplicate form creation based on 'financial_year', 'cycle' and some other columns of control forms.
+
+Program will prevent duplicate form creation based on 'financial_year', 'cycle' and 'control_number'
 
 In control forms control_owner field will have email ID of a user, and based on that, user will be assigned a control form.
+
+User will only be able to see RACM in dashboard, once it is active. And for RACM to set active, these conditions must be met.
+1. Reminder settings are updated
+2. Sample document is uploaded
+3. RACM assignment is done. (user exists in table and role is user)
 
 User have to upload a document for assigned control_form and write remarks for sending it for approval.
 
 There will be a centralized approver for all companies. 
+
 This approver can edit some specific fields before approving the control_form, these fields will not be visible to user initialy. Here they are : 
     'effective_or_not_effective',
     'checks_performed',
@@ -18,6 +25,7 @@ This approver can edit some specific fields before approving the control_form, t
     'remarks'
 
 Once approver approves or reject user will be able to see the fields listed above, not before that.
+
 If Rejected by approver, user will be able to re-upload document and write remarks again. And re-send for approval. 
 
 Company coordinator will have to upload an excel sheet with some data for each control_form. Program will detect header of that excel and ask coordinator to select a primary column. After that script will select some random rows as sample. Each control-form has a column value control-frequency. So based on that number of rows will be decided. Now these rows will be shown to user as an example.

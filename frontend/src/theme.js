@@ -1,36 +1,87 @@
-import { createTheme } from '@mui/material/styles';
+import { alpha, createTheme } from '@mui/material/styles'
 
-// Color Hunt palette: https://colorhunt.co/palette/f1efecd4c9be123458030303
-const LIGHT_BACKGROUND = '#F1EFEC'; // very light background
-const LIGHT_SURFACE = '#D4C9BE';    // card / subtle surface
-const ACCENT_DARK = '#123458';      // primary accent
-const ACCENT_DARKEST = '#030303';   // near-black
+export const BLUE_THEME_TOKENS = {
+  light: {
+    background: '#eef4fb',
+    backgroundAlt: '#e3edf8',
+    paper: '#ffffff',
+    surface: '#d7e6f5',
+    surfaceStrong: '#bfd5eb',
+    primary: '#123458',
+    primarySoft: '#315f8a',
+    primaryDeep: '#0b2239',
+    accent: '#4f86c6',
+    text: '#183b63',
+    textMuted: '#45627f',
+    divider: '#c9d9ea',
+    navbarBg: '#ffffff',
+    navbarFg: '#0b2239',
+    appBarBg: '#bfd5eb',
+    appBarFg: '#0b2239',
+    navbarBorder: '#c9d9ea',
+    heroGradientStart: '#dcecff',
+    heroGradientEnd: '#edf5ff',
+    heroGlow: '#60a5fa',
+    boxTint: '#eaf3fd',
+  },
+  dark: {
+    background: '#0b1420',
+    backgroundAlt: '#0f1c2c',
+    paper: '#132235',
+    surface: '#18304a',
+    surfaceStrong: '#20405f',
+    primary: '#8bb8e8',
+    primarySoft: '#5f93cb',
+    primaryDeep: '#d6e8fb',
+    accent: '#60a5fa',
+    text: '#edf4fb',
+    textMuted: '#b8cbe0',
+    divider: 'rgba(173, 203, 232, 0.18)',
+    navbarBg: '#030303',
+    navbarFg: '#eef4fb',
+    appBarBg: '#18304a',
+    appBarFg: '#edf4fb',
+    navbarBorder: 'rgba(173, 203, 232, 0.22)',
+    heroGradientStart: '#16314d',
+    heroGradientEnd: '#0f1b2d',
+    heroGlow: '#60a5fa',
+    boxTint: '#11253a',
+  },
+}
+
+export const BLUE_GRADIENTS = {
+  lightHero: `linear-gradient(145deg, ${alpha(BLUE_THEME_TOKENS.light.heroGradientStart, 0.9)} 0%, ${alpha(BLUE_THEME_TOKENS.light.paper, 0.98)} 48%, ${alpha(BLUE_THEME_TOKENS.light.heroGradientEnd, 0.9)} 100%)`,
+  darkHero: `linear-gradient(145deg, ${alpha(BLUE_THEME_TOKENS.dark.heroGradientStart, 0.9)} 0%, ${alpha(BLUE_THEME_TOKENS.dark.paper, 0.94)} 52%, ${alpha(BLUE_THEME_TOKENS.dark.heroGradientEnd, 0.96)} 100%)`,
+}
+
+const preview = BLUE_THEME_TOKENS.light
 
 const theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: ACCENT_DARK,
-      light: LIGHT_SURFACE,
-      dark: ACCENT_DARKEST,
-      contrastText: LIGHT_BACKGROUND,
+      main: preview.primary,
+      light: preview.primarySoft,
+      dark: preview.primaryDeep,
+      contrastText: '#ffffff',
     },
     secondary: {
-      main: LIGHT_SURFACE,
-      light: LIGHT_BACKGROUND,
-      dark: ACCENT_DARK,
-      contrastText: ACCENT_DARKEST,
+      main: preview.surfaceStrong,
+      light: preview.surface,
+      dark: preview.primary,
+      contrastText: preview.text,
     },
     background: {
-      default: LIGHT_BACKGROUND,
-      paper: '#ffffff',
+      default: preview.background,
+      paper: preview.paper,
     },
     text: {
-      primary: ACCENT_DARKEST,
-      secondary: ACCENT_DARK,
-      disabled: '#9e9e9e',
+      primary: preview.text,
+      secondary: preview.textMuted,
+      disabled: '#8a97a6',
     },
-    divider: '#e0d7cd',
+    divider: preview.divider,
+    blueTheme: BLUE_THEME_TOKENS,
   },
   typography: {
     fontFamily: [
@@ -124,18 +175,34 @@ const theme = createTheme({
           borderRadius: 8,
         },
         containedPrimary: {
-          backgroundColor: ACCENT_DARK,
-          color: LIGHT_BACKGROUND,
+          backgroundColor: preview.primary,
+          color: '#ffffff',
           '&:hover': {
-            backgroundColor: ACCENT_DARKEST,
+            backgroundColor: preview.primaryDeep,
           },
         },
         containedSecondary: {
-          backgroundColor: ACCENT_DARK,
+          backgroundColor: preview.primary,
           color: '#ffffff',
           '&:hover': {
-            backgroundColor: ACCENT_DARKEST,
+            backgroundColor: preview.primaryDeep,
             color: '#ffffff',
+          },
+        },
+        outlinedPrimary: {
+          borderColor: alpha(preview.primary, 0.35),
+          color: preview.text,
+          '&:hover': {
+            borderColor: preview.primary,
+            backgroundColor: alpha(preview.primary, 0.06),
+          },
+        },
+        outlinedSecondary: {
+          borderColor: alpha(preview.text, 0.18),
+          color: preview.text,
+          '&:hover': {
+            borderColor: alpha(preview.text, 0.28),
+            backgroundColor: alpha(preview.text, 0.04),
           },
         },
       },
@@ -143,20 +210,20 @@ const theme = createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          backgroundColor: LIGHT_BACKGROUND,
-          color: ACCENT_DARKEST,
+          backgroundColor: preview.navbarBg,
+          color: preview.navbarFg,
         },
       },
     },
     MuiPaper: {
       styleOverrides: {
         root: {
-          backgroundColor: '#ffffff',
+          backgroundColor: preview.paper,
         },
       },
     },
   },
-});
+})
 
-export default theme;
+export default theme
 

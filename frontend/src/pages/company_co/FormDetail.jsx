@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Card from '@mui/material/Card';
@@ -31,6 +31,19 @@ import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
+
+const ASSIGNABLE_USER_INITIAL_LIMIT = 5
+const ASSIGNABLE_USER_SEARCH_LIMIT = 50
+
+function mergeAssignableUserIntoOptions(options, selectedEmail) {
+  const email = (selectedEmail || '').trim()
+  if (!email) return options
+  const lower = email.toLowerCase()
+  if (options.some((u) => (u.email_id || '').trim().toLowerCase() === lower)) {
+    return options
+  }
+  return [...options, { email_id: email, emp_name: '' }]
+}
 
 function FormDetail() {
   const theme = useTheme()
@@ -67,10 +80,12 @@ function FormDetail() {
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
   const [companyUsers, setCompanyUsers] = useState([])
   const [usersLoading, setUsersLoading] = useState(false)
+  const [performerUserOptions, setPerformerUserOptions] = useState([])
+  const [performerUsersLoading, setPerformerUsersLoading] = useState(false)
+  const performerSearchDebounceRef = useRef(null)
   const [selectedUser, setSelectedUser] = useState(null)
   const [userSearchText, setUserSearchText] = useState('')
   const [processOwnerName, setProcessOwnerName] = useState('-')
-  const [sampleMissingDialogOpen, setSampleMissingDialogOpen] = useState(false)
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [auditLogLoading, setAuditLogLoading] = useState(false)
@@ -159,12 +174,12 @@ function FormDetail() {
     const isCurrentlyActive = formData.active && formData.active !== '' && formData.active !== '0'
     const newActiveStatus = isCurrentlyActive ? '0' : '1'
 
-    // If setting to active and sample document is missing, show confirmation dialog first
+    // If setting to active and sample document is missing, block activation.
     if (
       newActiveStatus === '1' &&
       (!formData.sample_doc || formData.sample_doc.trim() === '')
     ) {
-      setSampleMissingDialogOpen(true)
+      toast.error('Sample document is missing')
       return
     }
 
@@ -379,14 +394,6 @@ function FormDetail() {
 
   const parseReminderFrequency = (value) => {
     const frequency = String(value || '').trim()
-    const customMatch = frequency.match(/^Every\s+(\d+)\s+Days$/i)
-
-    if (customMatch) {
-      return {
-        reminder_frequency: 'Other',
-        custom_days: customMatch[1]
-      }
-    }
 
     if (['Daily', 'Weekly', 'Monthly'].includes(frequency)) {
       return {
@@ -411,7 +418,6 @@ function FormDetail() {
   const handleSaveSchedule = async () => {
     const dueDateValue = scheduleFields.due_date ? scheduleFields.due_date.trim() : ''
     const frequencySelection = scheduleFields.reminder_frequency
-    const customDays = scheduleFields.custom_days ? scheduleFields.custom_days.trim() : ''
     const tomorrow = getTomorrowDateString()
 
     if (!dueDateValue) {
@@ -429,15 +435,7 @@ function FormDetail() {
       return
     }
 
-    let reminderFrequencyValue = frequencySelection
-    if (frequencySelection === 'Other') {
-      const parsedDays = parseInt(customDays, 10)
-      if (!customDays || Number.isNaN(parsedDays) || parsedDays <= 0) {
-        toast.error('Please enter valid custom reminder days')
-        return
-      }
-      reminderFrequencyValue = `Every ${parsedDays} Days`
-    }
+    const reminderFrequencyValue = frequencySelection
 
     setSavingSchedule(true)
     try {
@@ -495,6 +493,38 @@ function FormDetail() {
     }
   }
 
+  const fetchPerformerAssignableUsers = useCallback(async ({ q = '', limit = ASSIGNABLE_USER_INITIAL_LIMIT } = {}) => {
+    setPerformerUsersLoading(true)
+    try {
+      const params = new URLSearchParams({
+        role: 'user',
+        limit: String(limit),
+      })
+      const trimmedQ = String(q || '').trim()
+      if (trimmedQ) {
+        params.set('q', trimmedQ)
+      }
+      const response = await fetch(
+        `http://localhost:3000/api/company-co/users?${params.toString()}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      )
+      const data = await response.json()
+      if (response.ok && data.success) {
+        setPerformerUserOptions(Array.isArray(data.users) ? data.users : [])
+      } else {
+        setPerformerUserOptions([])
+      }
+    } catch (error) {
+      console.error('Error fetching users for control performer:', error)
+      setPerformerUserOptions([])
+    } finally {
+      setPerformerUsersLoading(false)
+    }
+  }, [])
+
   const assignableUsers = companyUsers.filter((user) => {
     const formCompany = (formData?.company_identifier || '').trim()
     const userCompany = (user.company_identifier || '').trim()
@@ -522,6 +552,18 @@ function FormDetail() {
   const handleUpdateAssignment = async () => {
     if (!form_id || !selectedUser?.email_id) return
 
+    const hasDueDate = Boolean((formData?.due_date || '').toString().trim())
+    const hasReminderFrequency =
+      formData?.reminder_frequency !== null &&
+      formData?.reminder_frequency !== undefined &&
+      String(formData.reminder_frequency).trim() !== ''
+    const hasReminderSettings = hasDueDate && hasReminderFrequency
+    const hasSampleDoc =
+      formData?.sample_doc !== null &&
+      formData?.sample_doc !== undefined &&
+      String(formData.sample_doc).trim() !== ''
+    const canAutoActivate = hasReminderSettings && hasSampleDoc
+
     setUpdating(true)
     try {
       const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
@@ -532,6 +574,7 @@ function FormDetail() {
         credentials: 'include',
         body: JSON.stringify({
           control_owner: selectedUser.email_id,
+          ...(canAutoActivate ? { active: '1' } : {}),
           modifiedFields: ['control_owner'],
         }),
       })
@@ -539,6 +582,12 @@ function FormDetail() {
       const data = await response.json()
       if (response.ok && data.success) {
         toast.success('Sucessfully Updated RACM Assignment')
+        if (!canAutoActivate) {
+          const missing = []
+          if (!hasReminderSettings) missing.push('Reminder settings')
+          if (!hasSampleDoc) missing.push('Sample document')
+          toast.error(`RACM assigned, but could not set Active. Missing: ${missing.join(', ')}`)
+        }
         handleCloseAssignmentDialog()
         fetchFormData()
       } else {
@@ -552,12 +601,28 @@ function FormDetail() {
     }
   }
 
-  // Ensure company users are loaded when we have a process owner (for name lookup)
+  // Ensure company users are loaded for control_owner / control_performer name lookup
   useEffect(() => {
-    if (formData?.control_owner && companyUsers.length === 0) {
+    const needNames =
+      (formData?.control_owner && String(formData.control_owner).trim() !== '') ||
+      (formData?.control_performer && String(formData.control_performer).trim() !== '')
+    if (needNames && companyUsers.length === 0) {
       fetchCompanyUsers()
     }
-  }, [formData?.control_owner]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [formData?.control_owner, formData?.control_performer]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isEditMode) return
+    fetchPerformerAssignableUsers({ q: '', limit: ASSIGNABLE_USER_INITIAL_LIMIT })
+  }, [isEditMode, fetchPerformerAssignableUsers])
+
+  useEffect(() => {
+    return () => {
+      if (performerSearchDebounceRef.current) {
+        clearTimeout(performerSearchDebounceRef.current)
+      }
+    }
+  }, [])
 
   // Derive process owner display name from company users using email_id
   useEffect(() => {
@@ -1305,18 +1370,6 @@ function FormDetail() {
                   >
                     Audit logs
                   </Button>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: 'text.secondary',
-                      fontSize: '0.75rem',
-                      lineHeight: 1.4,
-                      textAlign: { xs: 'left', sm: 'right' },
-                      alignSelf: { xs: 'flex-start', sm: 'center' },
-                    }}
-                  >
-                    Created at {formatDateTime(formData?.created_at)}
-                  </Typography>
                 </Box>
                 {/* Top metrics in equal-width grid */}
                 <Box
@@ -1483,112 +1536,91 @@ function FormDetail() {
                   </Box>
                 </Box>
 
-                {/* Reminder Settings + RACM Assignment (50/50, aligned) */}
+                {/* Reminder + Assignment + Created At + Control Number (25% each on desktop) */}
                 <Box
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
-                    gap: 3,
-                    alignItems: 'flex-start',
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
+                    gap: 2,
+                    alignItems: 'stretch',
                   }}
                 >
                   {/* Reminder Settings */}
                   <Box
                     sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 1.5,
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', md: '1.1fr 1fr auto' },
+                      gap: 1,
+                      alignItems: 'center',
                       ...(isEditMode && {
                         opacity: 0.6,
                         pointerEvents: 'none',
                       }),
                     }}
                   >
-                      <Typography
-                        variant="caption"
-                        component="label"
+                      <TextField
+                        type="date"
+                        label="Due Date"
+                        value={scheduleFields.due_date}
+                        onChange={(e) => handleScheduleFieldChange('due_date', e.target.value)}
+                        fullWidth
+                        size="small"
+                        InputLabelProps={{ shrink: true }}
+                        inputProps={{ min: getTomorrowDateString() }}
+                        disabled={savingSchedule || isEditMode}
                         sx={{
-                          display: 'block',
-                          fontWeight: 600,
-                          mb: 1.5,
-                          color: 'text.secondary',
-                          fontSize: '0.75rem',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
+                          '& .MuiInputBase-root': {
+                            minHeight: 38,
+                          },
+                        }}
+                      />
+
+                      <FormControl
+                        fullWidth
+                        size="small"
+                        disabled={savingSchedule || isEditMode}
+                        sx={{
+                          '& .MuiInputBase-root': {
+                            minHeight: 38,
+                          },
                         }}
                       >
-                        Reminder Settings
-                      </Typography>
-
-                      <Box
-                        sx={{
-                          display: 'grid',
-                          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
-                          gap: 1.5,
-                          alignItems: 'center',
-                        }}
-                      >
-                        <TextField
-                          type="date"
-                          label="Due Date"
-                          value={scheduleFields.due_date}
-                          onChange={(e) => handleScheduleFieldChange('due_date', e.target.value)}
-                          fullWidth
-                          size="small"
-                          InputLabelProps={{ shrink: true }}
-                          inputProps={{ min: getTomorrowDateString() }}
-                          disabled={savingSchedule || isEditMode}
-                        />
-
-                        <FormControl fullWidth size="small" disabled={savingSchedule || isEditMode}>
-                          <InputLabel id="reminder-frequency-label">Reminder Frequency</InputLabel>
-                          <Select
-                            labelId="reminder-frequency-label"
-                            value={scheduleFields.reminder_frequency}
-                            label="Reminder Frequency"
-                            onChange={(e) => handleScheduleFieldChange('reminder_frequency', e.target.value)}
-                          >
-                            <MenuItem value="Daily">Daily</MenuItem>
-                            <MenuItem value="Weekly">Weekly</MenuItem>
-                            <MenuItem value="Monthly">Monthly</MenuItem>
-                            <MenuItem value="Other">Other</MenuItem>
-                          </Select>
-                        </FormControl>
-                      </Box>
-
-                      {scheduleFields.reminder_frequency === 'Other' && (
-                        <TextField
-                          type="number"
-                          label="Custom Days"
-                          value={scheduleFields.custom_days}
-                          onChange={(e) => handleScheduleFieldChange('custom_days', e.target.value)}
-                          fullWidth
-                          size="small"
-                          inputProps={{ min: 1 }}
-                          sx={{ mb: 1.5 }}
-                          disabled={savingSchedule || isEditMode}
-                        />
-                      )}
+                        <InputLabel id="reminder-frequency-label">Reminder Frequency</InputLabel>
+                        <Select
+                          labelId="reminder-frequency-label"
+                          value={scheduleFields.reminder_frequency}
+                          label="Reminder Frequency"
+                          onChange={(e) => handleScheduleFieldChange('reminder_frequency', e.target.value)}
+                        >
+                          <MenuItem value="Daily">Daily</MenuItem>
+                          <MenuItem value="Weekly">Weekly</MenuItem>
+                          <MenuItem value="Monthly">Monthly</MenuItem>
+                        </Select>
+                      </FormControl>
 
                       {(
                         scheduleFields.due_date !== formatDateForInput(formData?.due_date) ||
-                        scheduleFields.reminder_frequency !== parseReminderFrequency(formData.reminder_frequency).reminder_frequency ||
-                        (scheduleFields.reminder_frequency === 'Other' &&
-                          scheduleFields.custom_days !== parseReminderFrequency(formData.reminder_frequency).custom_days)
+                        scheduleFields.reminder_frequency !== parseReminderFrequency(formData.reminder_frequency).reminder_frequency
                       ) && (
                         <Button
                           onClick={handleSaveSchedule}
                           disabled={savingSchedule || isEditMode}
-                          fullWidth
                           variant="outlined"
                           size="small"
                           sx={{
                             textTransform: 'none',
                             fontWeight: 600,
                             borderRadius: 2,
+                            minHeight: 38,
+                            px: 1.5,
+                            whiteSpace: 'nowrap',
                           }}
                         >
-                          {savingSchedule ? 'Saving...' : 'Save Reminder Settings'}
+                          {savingSchedule ? 'Saving...' : 'Save'}
                         </Button>
                       )}
                   </Box>
@@ -1599,40 +1631,150 @@ function FormDetail() {
                       display: 'flex',
                       flexDirection: 'column',
                       gap: 1.5,
+                      height: '100%',
+                    }}
+                  >
+                    <Box
+                      onClick={() => {
+                        if (!isEditMode && !updating) {
+                          handleOpenAssignmentDialog()
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ' ') && !isEditMode && !updating) {
+                          e.preventDefault()
+                          handleOpenAssignmentDialog()
+                        }
+                      }}
+                      sx={{
+                        width: '100%',
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 2,
+                        p: 2,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        justifyContent: 'center',
+                        gap: 1,
+                        cursor: isEditMode || updating ? 'not-allowed' : 'pointer',
+                        opacity: isEditMode || updating ? 0.65 : 1,
+                        transition: 'all 0.2s ease',
+                        minHeight: '100%',
+                        '&:hover': isEditMode || updating ? {} : {
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.03)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                        },
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: 'text.secondary',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                        }}
+                      >
+                        RACM Assignment
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: 'text.primary',
+                          fontWeight: 500,
+                          width: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          lineHeight: 1.6,
+                        }}
+                        title={
+                          (processOwnerName && processOwnerName !== '-')
+                            ? processOwnerName
+                            : ((formData?.control_owner || '').trim() || '-')
+                        }
+                      >
+                        {(processOwnerName && processOwnerName !== '-')
+                          ? processOwnerName
+                          : ((formData?.control_owner || '').trim() || '-')}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {/* Created At */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      gap: 1,
                     }}
                   >
                     <Typography
                       variant="caption"
-                      component="label"
                       sx={{
-                        display: 'block',
-                        fontWeight: 600,
-                        mb: 1.5,
                         color: 'text.secondary',
-                        fontSize: '0.75rem',
+                        fontWeight: 700,
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px',
                       }}
                     >
-                      RACM Assignment
+                      Created At
                     </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <Button
-                        onClick={handleOpenAssignmentDialog}
-                        disabled={isEditMode || updating}
-                        fullWidth
-                        variant="outlined"
-                        size="medium"
-                        sx={{
-                          textTransform: 'none',
-                          fontWeight: 600,
-                          borderRadius: 1,
-                          padding:0.8
-                        }}
-                      >
-                        RACM Assignment
-                      </Button>
-                    </Box>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      {formatDateTime(formData?.created_at)}
+                    </Typography>
+                  </Box>
+
+                  {/* Control Number */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      gap: 1,
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: 'text.secondary',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Control Number
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      {(formData?.control_number || '').toString().trim() || '-'}
+                    </Typography>
                   </Box>
                 </Box>
 
@@ -1828,7 +1970,7 @@ function FormDetail() {
                   mt: 2,
                 }}
               >
-                {['control_number', 'area', 'sub_process', 'risk_description', 'risk_heat'].map((key) => {
+                {['area', 'sub_process', 'risk_description', 'risk_heat'].map((key) => {
                   if (!formData.hasOwnProperty(key) || excludedFields.includes(key)) return null
 
                   const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
@@ -2227,7 +2369,99 @@ function FormDetail() {
                         )}
                         {isEditable ? (
                           <Box>
-                            {key === 'sample_required' ? (
+                            {key === 'control_performer'
+                              ? (() => {
+                                  const selectedEmail = (editableFields.control_performer || '').trim()
+                                  const optionsForField = mergeAssignableUserIntoOptions(
+                                    performerUserOptions,
+                                    selectedEmail
+                                  )
+                                  const selectedUser = selectedEmail
+                                    ? optionsForField.find(
+                                        (u) =>
+                                          (u.email_id || '').trim().toLowerCase() ===
+                                          selectedEmail.toLowerCase()
+                                      ) ?? { email_id: selectedEmail, emp_name: '' }
+                                    : null
+                                  return (
+                                    <Autocomplete
+                                      id="control_performer_edit"
+                                      options={optionsForField}
+                                      loading={performerUsersLoading}
+                                      value={selectedUser}
+                                      onChange={(_, newValue) => {
+                                        handleFieldChange(
+                                          'control_performer',
+                                          newValue?.email_id?.trim() || ''
+                                        )
+                                      }}
+                                      onInputChange={(_, newInputValue, reason) => {
+                                        if (reason === 'reset') return
+                                        if (reason === 'clear') {
+                                          fetchPerformerAssignableUsers({
+                                            q: '',
+                                            limit: ASSIGNABLE_USER_INITIAL_LIMIT,
+                                          })
+                                          return
+                                        }
+                                        if (performerSearchDebounceRef.current) {
+                                          clearTimeout(performerSearchDebounceRef.current)
+                                        }
+                                        performerSearchDebounceRef.current = setTimeout(() => {
+                                          const q = newInputValue.trim()
+                                          fetchPerformerAssignableUsers({
+                                            q,
+                                            limit: q
+                                              ? ASSIGNABLE_USER_SEARCH_LIMIT
+                                              : ASSIGNABLE_USER_INITIAL_LIMIT,
+                                          })
+                                        }, 300)
+                                      }}
+                                      onOpen={() => {
+                                        if (performerUserOptions.length === 0) {
+                                          fetchPerformerAssignableUsers({
+                                            q: '',
+                                            limit: ASSIGNABLE_USER_INITIAL_LIMIT,
+                                          })
+                                        }
+                                      }}
+                                      getOptionLabel={(option) =>
+                                        option?.emp_name?.trim() || option?.email_id || ''
+                                      }
+                                      isOptionEqualToValue={(option, value) =>
+                                        (option?.email_id || '').trim().toLowerCase() ===
+                                        (value?.email_id || '').trim().toLowerCase()
+                                      }
+                                      filterOptions={(options) => options}
+                                      freeSolo={false}
+                                      clearOnEscape
+                                      disableClearable={false}
+                                      renderOption={(props, option) => (
+                                        <Box component="li" {...props}>
+                                          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                                            <Typography variant="body2">
+                                              {option.emp_name || '-'}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                              {option.email_id || '-'}
+                                            </Typography>
+                                          </Box>
+                                        </Box>
+                                      )}
+                                      renderInput={(params) => (
+                                        <TextField
+                                          {...params}
+                                          label={label}
+                                          placeholder="Search by name or email…"
+                                          variant="outlined"
+                                          disabled={saving}
+                                        />
+                                      )}
+                                      disabled={saving}
+                                    />
+                                  )
+                                })()
+                              : key === 'sample_required' ? (
                               renderSampleRequiredDownload()
                             ) : editableDropdownOptions[key] ? (
                               <FormControl fullWidth disabled={saving}>
@@ -2297,6 +2531,39 @@ function FormDetail() {
                                   {processOwnerName && processOwnerName !== '-'
                                     ? `Name: ${processOwnerName}`
                                     : 'Name: -'}
+                                </Typography>
+                              </Box>
+                            ) : key === 'control_performer' ? (
+                              <Box>
+                                <Typography
+                                  variant="body2"
+                                  component="dd"
+                                  sx={{
+                                    color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.6,
+                                    fontSize: theme.typography.customSizes.medium,
+                                  }}
+                                >
+                                  {isEmpty ? '-' : String(value)}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  component="p"
+                                  sx={{
+                                    color: 'text.secondary',
+                                    mt: 0.25,
+                                    fontSize: '0.8rem',
+                                  }}
+                                >
+                                  {(() => {
+                                    const m = companyUsers.find(
+                                      (u) =>
+                                        (u.email_id || '').trim().toLowerCase() ===
+                                        String(value || '').trim().toLowerCase()
+                                    )
+                                    return m?.emp_name ? `Name: ${m.emp_name}` : 'Name: -'
+                                  })()}
                                 </Typography>
                               </Box>
                             ) : key === 'sample_required' ? (
@@ -2849,105 +3116,6 @@ function FormDetail() {
           )}
         </DialogActions>
       </Dialog>
-
-      {/* Sample Missing Confirmation Dialog */}
-      <Dialog
-        open={sampleMissingDialogOpen}
-        onClose={() => setSampleMissingDialogOpen(false)}
-        aria-labelledby="sample-missing-dialog-title"
-        aria-describedby="sample-missing-dialog-description"
-        PaperProps={{
-          sx: {
-            borderRadius: 2,
-            minWidth: { xs: '90%', sm: '400px' },
-            boxShadow: theme.palette.mode === 'dark'
-              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
-              : '0 8px 32px rgba(0, 0, 0, 0.12)',
-          },
-        }}
-      >
-        <DialogTitle
-          id="sample-missing-dialog-title"
-          sx={{
-            pb: 2.5,
-            pt: 3,
-            px: 3,
-            fontWeight: 600,
-            fontSize: '1.25rem',
-            color: theme.palette.text.primary,
-          }}
-        >
-          Sample Document Missing
-        </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
-          <DialogContentText
-            id="sample-missing-dialog-description"
-            sx={{
-              color: theme.palette.text.secondary,
-              fontSize: '0.9375rem',
-              lineHeight: 1.5,
-              m: 0,
-              mb: 2,
-            }}
-          >
-            Sample document is missing for this RACM. Are you sure you want to set this RACM to Active?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions
-          sx={{
-            px: 3,
-            pb: 3,
-            pt: 2.5,
-            gap: 1.5,
-            borderTop: '1px solid',
-            borderColor: 'divider',
-          }}
-        >
-          <Button
-            onClick={() => setSampleMissingDialogOpen(false)}
-            variant="outlined"
-            sx={{
-              textTransform: 'none',
-              px: 3,
-              py: 1,
-              minWidth: '100px',
-              borderColor: theme.palette.mode === 'dark'
-                ? 'rgba(255, 255, 255, 0.23)'
-                : 'rgba(0, 0, 0, 0.23)',
-              color: theme.palette.text.primary,
-              '&:hover': {
-                borderColor: theme.palette.mode === 'dark'
-                  ? 'rgba(255, 255, 255, 0.3)'
-                  : 'rgba(0, 0, 0, 0.3)',
-                backgroundColor: theme.palette.mode === 'dark'
-                  ? 'rgba(255, 255, 255, 0.05)'
-                  : 'rgba(0, 0, 0, 0.04)',
-              },
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={async () => {
-              setSampleMissingDialogOpen(false)
-              await validateAndToggleActive('1')
-            }}
-            variant="contained"
-            color="secondary"
-            autoFocus
-            sx={{
-              textTransform: 'none',
-              px: 3,
-              py: 1,
-              minWidth: '120px',
-              fontWeight: 600,
-            }}
-          >
-            Yes, Set Active
-          </Button>
-        </DialogActions>
-      </Dialog>
-
 
       {/* More Actions Dialog */}
       <Dialog

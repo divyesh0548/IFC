@@ -92,12 +92,10 @@ Implement a way to store user preference, like word wrap.
 
 Control number should be unique.
 
-Control owner/perform will be from company user. Provide dropdown in that. (Remove this in )
-
 Set RACM to Active after assignment.
-
-Provide more filters in Assignemnt, like sub-process.
 
 Ask for header mapping in bulk excel upload.
 
 First sample document will be uploaded, then It will be set active. After these conditions display that RACM on assignment page.  
+
+Prevent duplicate RACM creation with the combination of FY, Business Process and Control Number.

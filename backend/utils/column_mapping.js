@@ -15,7 +15,6 @@ const simpleColumnMapping = {
   'ipe reference': 'ipe_reference',
   'application name': 'application_name',
   'control performer': 'control_performer',
-  'process owner': 'control_owner',
   'control owner': 'control_owner',
 };
 
