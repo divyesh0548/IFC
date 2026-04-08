@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useTheme } from '@mui/material/styles'
+import { useTheme, alpha } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -171,9 +171,11 @@ function RacmAssignment() {
         url += `&financial_year=${encodeURIComponent(filterFinancialYear)}`
       }
       
-      const response = await fetch(url, {
+      const cacheBustUrl = `${url}&_ts=${Date.now()}`
+      const response = await fetch(cacheBustUrl, {
         method: 'GET',
         credentials: 'include',
+        cache: 'no-store',
       })
 
       const data = await response.json()
@@ -188,10 +190,24 @@ function RacmAssignment() {
           return dateB - dateA // Descending order (newest first)
         })
 
-        const assignmentFilteredForms = sortedForms.filter((form) => {
+        const eligibleForms = sortedForms.filter((form) => {
+          const hasDueDate = !!form?.due_date
+          const hasReminderFrequency =
+            form?.reminder_frequency !== null &&
+            form?.reminder_frequency !== undefined &&
+            String(form.reminder_frequency).trim() !== ''
+          const hasSampleDoc =
+            form?.sample_doc !== null &&
+            form?.sample_doc !== undefined &&
+            String(form.sample_doc).trim() !== ''
+
+          return hasDueDate && hasReminderFrequency && hasSampleDoc
+        })
+
+        const assignmentFilteredForms = eligibleForms.filter((form) => {
           if (filterAssignment === 'all') return true
-          const hasProcessOwner = Boolean(form.process_owner && form.process_owner.trim() !== '')
-          return filterAssignment === 'assigned' ? hasProcessOwner : !hasProcessOwner
+          const hasControlOwner = Boolean(form.control_owner && form.control_owner.trim() !== '')
+          return filterAssignment === 'assigned' ? hasControlOwner : !hasControlOwner
         })
 
         setForms(assignmentFilteredForms)
@@ -330,13 +346,25 @@ function RacmAssignment() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          process_owner: selectedUser.email_id,
-          modifiedFields: ['process_owner'],
+          control_owner: selectedUser.email_id,
+          active: '1',
+          modifiedFields: ['control_owner'],
         }),
       })
 
       const data = await response.json()
       if (response.ok && data.success) {
+        setForms((prev) =>
+          prev.map((form) =>
+            form.form_id === selectedForm.form_id
+              ? {
+                  ...form,
+                  control_owner: selectedUser.email_id,
+                  control_owner_name: selectedUser.emp_name || form.control_owner_name || null,
+                }
+              : form
+          )
+        )
         handleCloseAssignmentDialog()
         toast.success('Sucessfully Updated RACM Assignment')
         fetchForms()
@@ -391,8 +419,9 @@ function RacmAssignment() {
             },
             credentials: 'include',
             body: JSON.stringify({
-              process_owner: bulkSelectedUser.email_id,
-              modifiedFields: ['process_owner'],
+              control_owner: bulkSelectedUser.email_id,
+              active: '1',
+              modifiedFields: ['control_owner'],
             }),
           })
 
@@ -418,6 +447,21 @@ function RacmAssignment() {
         toast.error(`Failed to update ${failCount} RACM Assignment(s)`)
       }
 
+      if (successCount > 0) {
+        const selectedIds = new Set(targetFormIds)
+        setForms((prev) =>
+          prev.map((form) =>
+            selectedIds.has(form.form_id)
+              ? {
+                  ...form,
+                  control_owner: bulkSelectedUser.email_id,
+                  control_owner_name: bulkSelectedUser.emp_name || form.control_owner_name || null,
+                }
+              : form
+          )
+        )
+      }
+
       fetchForms()
     } catch (error) {
       console.error('Error updating bulk assignments:', error)
@@ -426,6 +470,39 @@ function RacmAssignment() {
       setUpdatingAssignment(false)
     }
   }
+
+  const popupLabelSx = {
+    minWidth: '300px',
+    maxWidth: '300px',
+    fontWeight: 600,
+    color: theme.palette.text.primary,
+  }
+
+  const popupRowSx = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 1,
+    lineHeight: 1.6,
+  }
+
+  const popupValue = (value) => {
+    if (value === null || value === undefined) return 'None'
+    const stringValue = String(value).trim()
+    return stringValue === '' ? 'None' : stringValue
+  }
+
+  const toolbarBtnRadius = 1
+  const toolbarBtnBase = {
+    textTransform: 'none',
+    fontSize: '0.8125rem',
+    fontWeight: 600,
+    minWidth: '148px',
+    py: 0.7,
+    px: 1.75,
+    borderRadius: toolbarBtnRadius,
+    boxShadow: 'none',
+  }
+  const secondaryTone = theme.palette.mode === 'dark' ? theme.palette.primary : theme.palette.secondary
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
@@ -441,15 +518,13 @@ function RacmAssignment() {
         {bulkAssignmentMode && (
           <Button
             variant="contained"
-            color="secondary"
+            color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
             onClick={handleOpenBulkAssignmentDialog}
             disabled={selectedForms.size === 0 || updatingAssignment}
             size="small"
             sx={{
-              minWidth: '160px',
-              textTransform: 'none',
-              fontSize: '0.8rem',
-              py: 0.75,
+              ...toolbarBtnBase,
+              '&:hover': { boxShadow: 'none' },
             }}
           >
             {selectedForms.size > 0 ? `Assign Selected (${selectedForms.size})` : 'Assign Selected'}
@@ -457,37 +532,21 @@ function RacmAssignment() {
         )}
         <Button
           variant={bulkAssignmentMode ? 'contained' : 'outlined'}
-          color="secondary"
+          color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
           onClick={handleBulkAssignmentModeToggle}
           disabled={updatingAssignment}
           size="small"
           sx={{
-            minWidth: '160px',
-            textTransform: 'none',
-            fontSize: '0.8rem',
-            py: 0.75,
+            ...toolbarBtnBase,
             ...(bulkAssignmentMode
-              ? {}
+              ? { '&:hover': { boxShadow: 'none' } }
               : {
-                  // In dark mode, `color="secondary"` makes the default outlined
-                  // border/text too close to the dark background. Override to match
-                  // other pages' dark-mode outlined button styling.
-                  borderWidth: 2,
-                  borderColor:
-                    theme.palette.mode === 'dark'
-                      ? 'rgba(255, 255, 255, 0.23)'
-                      : '#6b7280',
-                  color: theme.palette.text.primary,
-                  backgroundColor: 'transparent',
+                  bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.14 : 0.1),
+                  borderColor: alpha(secondaryTone.main, 0.45),
                   '&:hover': {
-                    borderColor:
-                      theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.3)'
-                        : '#4b5563',
-                    backgroundColor:
-                      theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(107, 114, 128, 0.08)',
+                    boxShadow: 'none',
+                    bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.22 : 0.16),
+                    borderColor: secondaryTone.main,
                   },
                 }),
           }}
@@ -529,7 +588,7 @@ function RacmAssignment() {
               <Typography
                 sx={PAGE_SUBHEADER_TEXT_SX}
               >
-                Assign RACM controls to process owners and manage existing RACM assignments.
+                Assign RACM to control owners and manage existing RACM assignments.
               </Typography>
             </Box>
             
@@ -585,9 +644,12 @@ function RacmAssignment() {
                   ))}
                 </Select>
               </FormControl>
-              
-              {/* Assignment status: All / Assigned / Unassigned */}
-              <FormControl variant="outlined" sx={filterFormControlSx}>
+
+              {/* Assignment Filter */}
+              <FormControl 
+                variant="outlined" 
+                sx={filterFormControlSx}
+              >
                 <InputLabel id="assignment-filter-label">Assignment</InputLabel>
                 <Select
                   labelId="assignment-filter-label"
@@ -601,6 +663,7 @@ function RacmAssignment() {
                   <MenuItem value="unassigned">Unassigned</MenuItem>
                 </Select>
               </FormControl>
+              
             </Box>
           </Box>
 
@@ -712,7 +775,7 @@ function RacmAssignment() {
                         color: theme.palette.text.secondary,
                       }}
                     >
-                      Process Owner
+                      Control Owner
                     </Box>
                     <Box
                       component="th"
@@ -727,7 +790,7 @@ function RacmAssignment() {
                         color: theme.palette.text.secondary,
                       }}
                     >
-                      Name of Process Owner
+                      Name of Control Owner
                     </Box>
                   </Box>
                 </Box>
@@ -818,7 +881,7 @@ function RacmAssignment() {
                             color: theme.palette.text.primary,
                           }}
                         >
-                          {form.process_owner || 'N/A'}
+                          {form.control_owner || 'N/A'}
                         </Box>
                         <Box
                           component="td"
@@ -830,7 +893,7 @@ function RacmAssignment() {
                             color: theme.palette.text.primary,
                           }}
                         >
-                          {form.process_owner_name || '-'}
+                          {form.control_owner_name || '-'}
                         </Box>
                       </Box>
                     )
@@ -853,28 +916,33 @@ function RacmAssignment() {
           <DialogContent dividers>
             {selectedForm && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                <Typography variant="body2">
-                  <strong>Standard Control Description:</strong> {selectedForm.standard_control_description || 'N/A'}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Business Process:</strong> {selectedForm.business_process || 'N/A'}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Financial Year:</strong> {selectedForm.financial_year || 'N/A'}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Current Process Owner Name:</strong> {selectedForm.process_owner_name || '-'}
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 2 }}>
-                  <strong>Current Process Owner Email:</strong> {selectedForm.process_owner || '-'}
-                </Typography>
+                <Box sx={popupRowSx}>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>Standard Control Description:</Typography>
+                  <Typography variant="body2" component="span">{popupValue(selectedForm.standard_control_description)}</Typography>
+                </Box>
+                <Box sx={popupRowSx}>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>Business Process:</Typography>
+                  <Typography variant="body2" component="span">{popupValue(selectedForm.business_process)}</Typography>
+                </Box>
+                <Box sx={popupRowSx}>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>Financial Year:</Typography>
+                  <Typography variant="body2" component="span">{popupValue(selectedForm.financial_year)}</Typography>
+                </Box>
+                <Box sx={popupRowSx}>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>Current Control Owner Name:</Typography>
+                  <Typography variant="body2" component="span">{popupValue(selectedForm.control_owner_name)}</Typography>
+                </Box>
+                <Box sx={{ ...popupRowSx, mb: 2 }}>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>Current Control Owner Email:</Typography>
+                  <Typography variant="body2" component="span">{popupValue(selectedForm.control_owner)}</Typography>
+                </Box>
 
                 <Autocomplete
                   options={
                     assignableUsers.filter((user) => {
-                      const currentOwner = (selectedForm?.process_owner || '').trim().toLowerCase()
+                      const currentOwner = (selectedForm?.control_owner || '').trim().toLowerCase()
                       const userEmail = (user.email_id || '').trim().toLowerCase()
-                      // Exclude the user who is already assigned as process owner for this RACM
+                      // Exclude the user who is already assigned as control owner for this RACM
                       return currentOwner === '' || userEmail !== currentOwner
                     })
                   }
@@ -941,11 +1009,12 @@ function RacmAssignment() {
           </DialogTitle>
           <DialogContent dividers>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              <Typography variant="body2">
-                <strong>Total selected RACMs:</strong> {selectedForms.size}
-              </Typography>
-              <Typography variant="body2" sx={{ mb: 2 }}>
-                The selected user will overwrite the current Process Owner for all selected RACMs.
+              <Box sx={popupRowSx}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Total selected RACMs:</Typography>
+                <Typography variant="body2" component="span">{popupValue(selectedForms.size)}</Typography>
+              </Box>
+              <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+                The selected user will overwrite the current Control Owner for all selected RACMs.
               </Typography>
 
               <Autocomplete

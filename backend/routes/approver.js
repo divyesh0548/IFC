@@ -440,7 +440,7 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     }
 
     const updatedForm = result.rows[0];
-    const processOwnerEmail = updatedForm.process_owner;
+    const processOwnerEmail = updatedForm.control_owner;
 
     await notifyProcessOwnerRacmDecision(
       processOwnerEmail,
@@ -561,7 +561,7 @@ router.post('/change-approval-decision/:form_id', verifyApproverAuth, async (req
     const updatedForm = updateResult.rows[0];
 
     await notifyProcessOwnerRacmDecision(
-      updatedForm.process_owner,
+      updatedForm.control_owner,
       form_id,
       status,
       reasonFinal || '',
@@ -587,15 +587,15 @@ router.get('/control-forms', verifyApproverAuth, async (req, res) => {
   try {
     const { status, active } = req.query;
     
-    // Join with companies table to get company_name and with ifc_users to get process_owner_name
+    // Join with companies table to get company_name and with ifc_users to get control_owner_name
     let query = `
       SELECT 
         cf.*,
         c.company_name,
-        NULLIF(TRIM(u.emp_name), '') AS process_owner_name
+        NULLIF(TRIM(u.emp_name), '') AS control_owner_name
       FROM control_forms cf
       LEFT JOIN companies c ON cf.company_identifier = c.company_identifier
-      LEFT JOIN ifc_users u ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.process_owner))
+      LEFT JOIN ifc_users u ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
       WHERE 1=1
     `;
     const queryParams = [];
@@ -656,11 +656,11 @@ router.get('/control-forms/:form_id', verifyApproverAuth, async (req, res) => {
       SELECT
         cf.*,
         c.company_name,
-        NULLIF(TRIM(u.emp_name), '') AS process_owner_name
+        NULLIF(TRIM(u.emp_name), '') AS control_owner_name
       FROM control_forms cf
       LEFT JOIN companies c ON cf.company_identifier = c.company_identifier
       LEFT JOIN ifc_users u
-        ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.process_owner))
+        ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
       WHERE cf.form_id = $1
     `;
     const result = await pool.query(query, [form_id]);

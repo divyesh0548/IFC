@@ -266,38 +266,21 @@ def create_companies_table(cursor):
     create_table_with_constraint(cursor, 'companies', create_table_query, 'companies_pkey', add_constraint_query)
 
 def create_control_forms_table(cursor):
-    """Creates the control_forms table if it doesn't exist."""
+    """Creates control_forms table using the current canonical schema."""
     print("\n[control_forms]")
     
     create_table_query = """
     CREATE TABLE IF NOT EXISTS public.control_forms (
         id serial NOT NULL,
-        description_of_control text NULL,
-        process character varying(255) NULL,
+        standard_control_description text NULL,
         sub_process character varying(255) NULL,
         risk_description text NULL,
         whether_fraud_risks_exist character varying(255) NULL,
         control_objective text NULL,
-        control_to_address text NULL,
-        mrc_or_not character varying(255) NULL,
-        source_data_report_logic_report_parameters text NULL,
-        relevant_data_elements_of_ipe text NULL,
-        type_of_control character varying(255) NULL,
+        ipe_reference text NULL,
         nature_of_control character varying(255) NULL,
-        type_of_risk_mitigation_method character varying(255) NULL,
-        process_owner character varying(255) NULL,
-        reviewer_process_supervisor character varying(255) NULL,
+        control_owner character varying(255) NULL,
         control_frequency character varying(255) NULL,
-        due_date date NULL,
-        reminder_frequency integer NULL,
-        basis_of_sampling character varying(255) NULL,
-        docs_to_review_for_dms_audit text NULL,
-        type_of_risk_associated character varying(255) NULL,
-        financial_reporting character varying(255) NULL,
-        checks_performed text NULL,
-        effective_or_not_effective character varying(255) NULL,
-        done character varying(255) NULL,
-        findings text NULL,
         doc_uploaded_by_user character varying(255) NULL,
         active character varying(255) NULL,
         status character varying(255) NULL,
@@ -305,18 +288,37 @@ def create_control_forms_table(cursor):
         created_at timestamp without time zone NULL DEFAULT (
             CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'::text
         ),
-        gap_description_resolution text NULL,
         company_identifier character varying(255) NULL,
         form_id character varying(255) NULL,
         remarks_by_user text NULL,
         business_process character varying(255) NULL,
         financial_year character varying(255) NULL,
+        sample_doc character varying(255) NULL,
         sample_required text NULL,
-        completeness character varying(255) NULL,
-        existence_occurrence character varying(255) NULL,
-        rights_and_obligation character varying(255) NULL,
-        valuation_and_allocation character varying(255) NULL,
-        presentation_and_disclosure character varying(255) NULL
+        completeness boolean NULL,
+        existence_occurrence boolean NULL,
+        rights_and_obligation boolean NULL,
+        valuation_and_allocation boolean NULL,
+        presentation_and_disclosure boolean NULL,
+        control_number character varying(255) NULL,
+        area text NULL,
+        risk_heat character varying(255) NULL,
+        process_walkthrough text NULL,
+        control_relies_on_ipe character varying(255) NULL,
+        audit_evidence_accuracy character varying(255) NULL,
+        key_control character varying(255) NULL,
+        application_name character varying(255) NULL,
+        control_performer text NULL,
+        control_design_procs text NULL,
+        control_design_conclusion character varying(255) NULL,
+        design_deficiency_desc character varying(255) NULL,
+        sample_size character varying(255) NULL,
+        control_type_fo character varying(255) NULL,
+        control_type_ma character varying(255) NULL,
+        due_date date NULL,
+        reminder_frequency character varying(50) NULL,
+        reminder_datetime timestamp without time zone NULL,
+        approval_status_change_timestamp timestamp without time zone NULL
     );
     """
     
@@ -677,179 +679,6 @@ def create_sampling_process_temp_table(cursor):
     
     create_table_with_constraint(cursor, 'sampling_process_temp', create_table_query, 'sampling_process_temp_pkey', add_constraint_query)
 
-def alter_control_forms_add_sample_required(cursor):
-    """Adds sample_required column to control_forms table if it doesn't exist."""
-    print("\n[control_forms - Adding sample_required column]")
-    
-    if column_exists(cursor, 'control_forms', 'sample_required'):
-        print("  ⚠️  Column 'sample_required' already exists in 'control_forms' table. Skipping.")
-    else:
-        print("  Adding column 'sample_required' to 'control_forms' table...")
-        cursor.execute("""
-            ALTER TABLE public.control_forms
-            ADD COLUMN sample_required text NULL;
-        """)
-        print("  ✓ Column 'sample_required' added successfully!")
-
-def alter_control_forms_sample_required_to_text(cursor):
-    """Alters sample_required column from character varying(255) to text if needed."""
-    print("\n[control_forms - Altering sample_required column type]")
-    
-    if not column_exists(cursor, 'control_forms', 'sample_required'):
-        print("  ⚠️  Column 'sample_required' does not exist. Skipping.")
-        return
-    
-    # Check current column type
-    cursor.execute("""
-        SELECT data_type, character_maximum_length
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-        AND table_name = 'control_forms'
-        AND column_name = 'sample_required';
-    """)
-    
-    result = cursor.fetchone()
-    if result:
-        current_type = result[0]
-        max_length = result[1]
-        
-        # If it's character varying with a length limit, alter it to text
-        if current_type == 'character varying' and max_length:
-            print(f"  Current type: {current_type}({max_length}), changing to text...")
-            cursor.execute("""
-                ALTER TABLE public.control_forms
-                ALTER COLUMN sample_required TYPE text;
-            """)
-            print("  ✓ Column 'sample_required' altered to text successfully!")
-        elif current_type == 'text':
-            print("  ✓ Column 'sample_required' is already of type text. No change needed.")
-        else:
-            print(f"  ⚠️  Column 'sample_required' has unexpected type: {current_type}. Skipping.")
-    else:
-        print("  ⚠️  Could not determine column type. Skipping.")
-
-def alter_control_forms_add_new_columns(cursor):
-    """Adds new columns (Completeness, Existence & Occurrence, etc.) to control_forms table if they don't exist."""
-    print("\n[control_forms - Adding new columns]")
-    
-    new_columns = [
-        ('completeness', 'character varying(255)'),
-        ('existence_occurrence', 'character varying(255)'),
-        ('rights_and_obligation', 'character varying(255)'),
-        ('valuation_and_allocation', 'character varying(255)'),
-        ('presentation_and_disclosure', 'character varying(255)')
-    ]
-    
-    for column_name, column_type in new_columns:
-        if column_exists(cursor, 'control_forms', column_name):
-            print(f"  ⚠️  Column '{column_name}' already exists in 'control_forms' table. Skipping.")
-        else:
-            print(f"  Adding column '{column_name}' to 'control_forms' table...")
-            cursor.execute(f"""
-                ALTER TABLE public.control_forms
-                ADD COLUMN {column_name} {column_type} NULL;
-            """)
-            print(f"  ✓ Column '{column_name}' added successfully!")
-
-def alter_control_forms_add_due_date_and_reminder_frequency(cursor):
-    """Adds due_date and reminder_frequency columns to control_forms table if they don't exist."""
-    print("\n[control_forms - Adding due_date and reminder_frequency columns]")
-
-    new_columns = [
-        ('due_date', 'date'),
-        ('reminder_frequency', 'integer')
-    ]
-
-    for column_name, column_type in new_columns:
-        if column_exists(cursor, 'control_forms', column_name):
-            print(f"  ⚠️  Column '{column_name}' already exists in 'control_forms' table. Skipping.")
-        else:
-            print(f"  Adding column '{column_name}' to 'control_forms' table...")
-            cursor.execute(f"""
-                ALTER TABLE public.control_forms
-                ADD COLUMN {column_name} {column_type} NULL;
-            """)
-            print(f"  ✓ Column '{column_name}' added successfully!")
-
-def alter_control_forms_add_reminder_datetime(cursor):
-    """Adds reminder_datetime column to control_forms table if it doesn't exist.
-
-    We store reminder_datetime as a "wall-clock" Asia/Kolkata timestamp (no time zone).
-    """
-    print("\n[control_forms - Adding reminder_datetime column]")
-
-    column_name = 'reminder_datetime'
-    column_type = 'timestamp without time zone'
-
-    if column_exists(cursor, 'control_forms', column_name):
-        print(f"  ⚠️  Column '{column_name}' already exists in 'control_forms' table. Skipping.")
-        return
-
-    print(f"  Adding column '{column_name}' to 'control_forms' table...")
-    cursor.execute(f"""
-        ALTER TABLE public.control_forms
-        ADD COLUMN {column_name} {column_type} NULL;
-    """)
-    print(f"  ✓ Column '{column_name}' added successfully!")
-
-def alter_control_forms_add_approval_status_change_timestamp(cursor):
-    """Adds approval_status_change_timestamp column to control_forms if it doesn't exist.
-
-    Same storage semantics as reminder_datetime: wall-clock timestamp without time zone
-    (Asia/Kolkata when set via app defaults).
-    """
-    print("\n[control_forms - Adding approval_status_change_timestamp column]")
-
-    column_name = 'approval_status_change_timestamp'
-    column_type = 'timestamp without time zone'
-
-    if column_exists(cursor, 'control_forms', column_name):
-        print(f"  ⚠️  Column '{column_name}' already exists in 'control_forms' table. Skipping.")
-        return
-
-    print(f"  Adding column '{column_name}' to 'control_forms' table...")
-    cursor.execute(f"""
-        ALTER TABLE public.control_forms
-        ADD COLUMN {column_name} {column_type} NULL;
-    """)
-    print(f"  ✓ Column '{column_name}' added successfully!")
-
-def alter_control_forms_reminder_datetime_type_to_wall_clock_ist(cursor):
-    """Converts reminder_datetime to `timestamp without time zone` in Asia/Kolkata wall-clock terms.
-
-    This is a one-time migration for installations where reminder_datetime was previously created as `TIMESTAMP WITH TIME ZONE`.
-    """
-    print("\n[control_forms - Converting reminder_datetime to wall-clock IST]")
-
-    if not column_exists(cursor, 'control_forms', 'reminder_datetime'):
-        print("  ⚠️  Column 'reminder_datetime' does not exist. Skipping conversion.")
-        return
-
-    cursor.execute("""
-        SELECT data_type
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'control_forms'
-          AND column_name = 'reminder_datetime';
-    """)
-    row = cursor.fetchone()
-    if not row:
-        print("  ⚠️  Could not read current reminder_datetime type. Skipping conversion.")
-        return
-
-    current_data_type = row[0]
-    if current_data_type == 'timestamp without time zone':
-        print("  ✓ reminder_datetime is already `timestamp without time zone`. No conversion needed.")
-        return
-
-    print(f"  Current type: {current_data_type}. Converting to timestamp without time zone...")
-    cursor.execute("""
-        ALTER TABLE public.control_forms
-        ALTER COLUMN reminder_datetime
-        TYPE timestamp without time zone
-        USING reminder_datetime AT TIME ZONE 'Asia/Kolkata';
-    """)
-    print("  ✓ reminder_datetime type converted successfully.")
 
 def alter_excel_files_add_due_date_and_reminder_frequency(cursor):
     """Adds due_date (date) and reminder_frequency (varchar) to excel_files if they don't exist."""
@@ -888,41 +717,6 @@ def alter_sampling_process_temp_add_processed(cursor):
             ADD COLUMN processed integer NULL DEFAULT 0;
         """)
         print("  ✓ Column 'processed' added successfully!")
-
-def alter_control_forms_ensure_control_frequency_varchar(cursor):
-    """Ensures control_frequency column is VARCHAR(255) type in control_forms table."""
-    print("\n[control_forms - Ensuring control_frequency is VARCHAR]")
-    
-    if not column_exists(cursor, 'control_forms', 'control_frequency'):
-        print("  ⚠️  Column 'control_frequency' does not exist. Skipping.")
-        return
-    
-    # Check current column type
-    cursor.execute("""
-        SELECT data_type, character_maximum_length
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-        AND table_name = 'control_forms'
-        AND column_name = 'control_frequency';
-    """)
-    
-    result = cursor.fetchone()
-    if result:
-        current_type = result[0]
-        max_length = result[1]
-        
-        # If it's not character varying(255), alter it to varchar(255)
-        if current_type != 'character varying' or max_length != 255:
-            print(f"  Current type: {current_type}({max_length}), changing to character varying(255)...")
-            cursor.execute("""
-                ALTER TABLE public.control_forms
-                ALTER COLUMN control_frequency TYPE character varying(255);
-            """)
-            print("  ✓ Column 'control_frequency' altered to character varying(255) successfully!")
-        else:
-            print("  ✓ Column 'control_frequency' is already character varying(255). No change needed.")
-    else:
-        print("  ⚠️  Could not determine column type. Skipping.")
 
 def create_control_form_history_table(cursor):
     """Creates the control_form_history table if it doesn't exist."""
@@ -985,7 +779,7 @@ def create_all_tables():
         print("=" * 70)
     
         # create_companies_table(cursor)
-        # create_control_forms_table(cursor)
+        create_control_forms_table(cursor)
         # create_excel_files_table(cursor)
         # create_ifc_users_table(cursor)
         # create_audit_logs_racm_table(cursor)
@@ -994,15 +788,9 @@ def create_all_tables():
         # create_sampling_process_temp_table(cursor)
         # create_control_form_history_table(cursor)
         # alter_audit_logs_racm_ensure_ref_data_text(cursor)
-        # alter_control_forms_add_sample_required(cursor)
-        # alter_control_forms_sample_required_to_text(cursor)
-        # alter_control_forms_add_new_columns(cursor)
-        # alter_control_forms_add_due_date_and_reminder_frequency(cursor)
-        # alter_control_forms_add_reminder_datetime(cursor)
-        alter_control_forms_add_approval_status_change_timestamp(cursor)
+        
         # alter_excel_files_add_due_date_and_reminder_frequency(cursor)
-        # alter_control_forms_reminder_datetime_type_to_wall_clock_ist(cursor)
-        # alter_control_forms_ensure_control_frequency_varchar(cursor)
+        
         # alter_sampling_process_temp_add_processed(cursor)
         
         print("\n" + "=" * 70)

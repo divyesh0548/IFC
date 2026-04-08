@@ -196,11 +196,11 @@ function Company_Co_dashboard() {
   }
 
   const getProcessOwnerDisplay = (form) => {
-    const name = (form?.process_owner_name ?? form?.emp_name ?? '')
+    const name = (form?.control_owner_name ?? form?.emp_name ?? '')
       .toString()
       .trim()
     if (name) return name
-    const owner = (form?.process_owner ?? '').toString().trim()
+    const owner = (form?.control_owner ?? '').toString().trim()
     if (owner) return owner
     return 'N/A'
   }

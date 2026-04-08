@@ -17,265 +17,19 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
-import Alert from '@mui/material/Alert';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
-import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
-import CircularProgress from '@mui/material/CircularProgress';
 import DownloadIcon from '@mui/icons-material/Download';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants';
-
-/** True if string is an ISO instant (JSON often adds Z = UTC while DB stored IST wall clock). */
-function isUtcOrOffsetIsoString(str) {
-  const s = str.trim()
-  return /Z$/i.test(s) || /[+-]\d{2}:\d{2}$/.test(s) || /[+-]\d{4}$/.test(s)
-}
-
-/** Audit DB timestamps are Indian time; API may send UTC (…Z). Always show Asia/Kolkata. */
-function formatRacmAuditDateDisplay(value) {
-  if (value == null || value === '') return '—'
-
-  const formatInstantInKolkata = (d) => {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(d)
-    const get = (t) => parts.find((p) => p.type === t)?.value ?? ''
-    return `${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')}`
-  }
-
-  if (typeof value === 'string') {
-    const str = value.trim()
-    if (str) {
-      if (isUtcOrOffsetIsoString(str)) {
-        const d = new Date(str)
-        if (!Number.isNaN(d.getTime())) return formatInstantInKolkata(d)
-        return '—'
-      }
-      // Naive timestamp from Postgres (no Z): digits are already IST wall clock
-      const withTime = str.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/)
-      if (withTime) {
-        return `${withTime[3]}/${withTime[2]}/${withTime[1]} ${withTime[4]}:${withTime[5]}`
-      }
-      const dateOnly = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-      if (dateOnly) {
-        return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]} 00:00`
-      }
-    }
-  }
-
-  const d = value instanceof Date ? value : new Date(value)
-  if (!Number.isNaN(d.getTime())) return formatInstantInKolkata(d)
-  return '—'
-}
-
-const RACM_MODIFICATION_ACTION = 'RACM Modification'
-
-function racmModDisplayValue(v) {
-  if (v == null || v === '') return '—'
-  return String(v)
-}
-
-/** ref_data for RACM Modification: JSON array of { column_name, old_value, new_value } */
-function parseRacmModificationRef(refData) {
-  const str = typeof refData === 'string' ? refData : String(refData)
-  const trimmed = str.trim()
-  if (!trimmed.startsWith('[')) {
-    return {
-      preview: str.length > 88 ? `${str.slice(0, 88)}…` : str,
-      entries: null,
-      fallbackText: str,
-    }
-  }
-  try {
-    const parsed = JSON.parse(trimmed)
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      const c = parsed[0]
-      const name = c.column_name != null ? String(c.column_name) : 'field'
-      const ov = c.old_value != null ? String(c.old_value) : '—'
-      const nv = c.new_value != null ? String(c.new_value) : '—'
-      let preview = `${name}: ${ov} → ${nv}`
-      const extra = parsed.length - 1
-      if (extra > 0) {
-        preview += ` (+${extra} more ${extra === 1 ? 'change' : 'changes'})`
-      }
-      return { preview, entries: parsed, fallbackText: null }
-    }
-    return {
-      preview: trimmed.length > 88 ? `${trimmed.slice(0, 88)}…` : trimmed,
-      entries: null,
-      fallbackText: trimmed,
-    }
-  } catch {
-    return {
-      preview: str.length > 88 ? `${str.slice(0, 88)}…` : str,
-      entries: null,
-      fallbackText: str,
-    }
-  }
-}
-
-/** Hover content: column name, then new (emphasized) / old (muted) — not raw JSON */
-function RacmModificationTooltipContent({ entries, fallbackText }) {
-  if (entries && entries.length > 0) {
-    return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.75, py: 0.25 }}>
-        {entries.map((c, i) => (
-          <Box
-            key={i}
-            sx={{
-              pb: 1.5,
-              borderBottom: '1px solid',
-              borderColor: 'divider',
-              '&:last-of-type': { borderBottom: 'none', pb: 0 },
-            }}
-          >
-            <Typography
-              variant="subtitle2"
-              sx={{ fontWeight: 700, fontSize: '0.8125rem', mb: 0.75, lineHeight: 1.35 }}
-            >
-              {racmModDisplayValue(c.column_name)}
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                color: 'text.primary',
-                fontWeight: 600,
-                fontSize: '0.8125rem',
-                mb: 0.35,
-                lineHeight: 1.45,
-              }}
-            >
-              New value → {racmModDisplayValue(c.new_value)}
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                color: 'text.secondary',
-                fontWeight: 400,
-                fontSize: '0.75rem',
-                lineHeight: 1.45,
-              }}
-            >
-              Old value → {racmModDisplayValue(c.old_value)}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
-    )
-  }
-  return (
-    <Typography variant="body2" sx={{ fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-      {fallbackText || '—'}
-    </Typography>
-  )
-}
-
-function AuditLogReferenceCell({ action, refData }) {
-  const theme = useTheme()
-  if (refData == null || refData === '') {
-    return (
-      <Typography component="span" variant="body2" color="text.secondary" sx={{ fontSize: '0.8125rem' }}>
-        —
-      </Typography>
-    )
-  }
-
-  const raw = String(refData)
-  const isMod = action === RACM_MODIFICATION_ACTION
-
-  const tooltipPaperSx = {
-    maxWidth: { xs: 'min(92vw, 520px)', sm: 520 },
-    maxHeight: 420,
-    overflow: 'auto',
-    bgcolor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.grey[50],
-    color: theme.palette.text.primary,
-    border: 1,
-    borderColor: 'divider',
-    p: 1.5,
-  }
-
-  if (isMod) {
-    const { preview, entries, fallbackText } = parseRacmModificationRef(refData)
-    return (
-      <Tooltip
-        title={<RacmModificationTooltipContent entries={entries} fallbackText={fallbackText} />}
-        placement="left-start"
-        enterDelay={280}
-        leaveDelay={120}
-        slotProps={{ tooltip: { sx: tooltipPaperSx } }}
-      >
-        <Typography
-          component="span"
-          variant="body2"
-          sx={{
-            color: 'text.secondary',
-            fontSize: '0.8125rem',
-            cursor: 'help',
-            display: 'block',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {preview}
-        </Typography>
-      </Tooltip>
-    )
-  }
-
-  if (raw.length <= 88) {
-    return (
-      <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8125rem', wordBreak: 'break-word' }}>
-        {raw}
-      </Typography>
-    )
-  }
-
-  return (
-    <Tooltip
-      title={
-        <Box sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.75rem' }}>{raw}</Box>
-      }
-      placement="left-start"
-      enterDelay={280}
-      leaveDelay={120}
-      slotProps={{ tooltip: { sx: tooltipPaperSx } }}
-    >
-      <Typography
-        component="span"
-        variant="body2"
-        sx={{
-          color: 'text.secondary',
-          fontSize: '0.8125rem',
-          cursor: 'help',
-          display: 'block',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {`${raw.slice(0, 88)}…`}
-      </Typography>
-    </Tooltip>
-  )
-}
+import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields';
+import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 
 function ApproverFormDetail() {
   const theme = useTheme()
@@ -665,47 +419,13 @@ function ApproverFormDetail() {
 
   // Define field labels mapping for updated RACM schema
   const fieldLabels = {
-    control_number: 'Control Number',
-    account_balance_disclosure: 'Account Balance / Disclosure',
-    risk_heat: 'Risk Heat',
-    standard_control_description: 'Standard Control Description',
-    sub_process: 'Sub Process',
-    risk_description: 'Risk Description',
-    whether_fraud_risks_exist: 'Whether Fraud Risks Exist',
-    control_objective: 'Control Objective',
-    process_walkthrough: 'Process Activity and Walkthrough Details',
-    control_relies_on_ipe: 'Does the Control Rely on IPE?',
-    audit_evidence_accuracy: 'Audit Evidence of Accuracy and Completeness',
-    ipe_reference: 'IPE Reference',
-    key_control: 'Key Control',
-    application_name: 'Application Name',
-    control_performer: 'Control Performer',
-    control_owner: 'Control Owner',
-    control_design_procs: 'Procedures to Evaluate Design and Implementation',
-    control_type_fo: 'Type of control (Operational/Financial)',
-    control_type_ma: 'Type of control (Manual/ Automated)',
-    nature_of_control: 'Nature of Control',
-    process_owner: 'Process Owner',
-    control_frequency: 'Control Frequency',
-    sample_size: 'Sample Size',
-    sample_required: 'Sample Required',
-    completeness: 'Completeness',
-    existence_occurrence: 'Existence & Occurrence',
-    rights_and_obligation: 'Rights and Obligations',
-    valuation_and_allocation: 'Valuation & Allocation',
-    presentation_and_disclosure: 'Presentation and Disclosure',
+    ...RACM_FIELD_LABELS,
     control_design_conclusion: 'Conclusion on Design of Control (Effective/ Not effective)',
-    design_deficiency_desc: 'Description of Deficiency in Control Design',
-    doc_uploaded_by_user: 'Doc Uploaded by User',
-    remarks_by_user: 'Remarks by User',
-    active: 'Active',
-    approved_rejected: 'Approved/Rejected',
-    reason_by_approver: 'Reason by Approver',
   }
 
   const fieldOrder = [
     'control_number',
-    'account_balance_disclosure',
+    'area',
     'sub_process',
     'risk_description',
     'risk_heat',
@@ -724,7 +444,7 @@ function ApproverFormDetail() {
     'control_type_fo',
     'control_type_ma',
     'nature_of_control',
-    'process_owner',
+    'control_owner',
     'control_frequency',
     'sample_size',
     'sample_required',
@@ -745,7 +465,7 @@ function ApproverFormDetail() {
     'form_id',
     'company_identifier',
     'company_name',
-    'process_owner_name',
+    'control_owner_name',
     'created_at',
     'active',
     'approved_rejected',
@@ -1196,7 +916,7 @@ function ApproverFormDetail() {
                         lineHeight: 1.5,
                       }}
                     >
-                      {formData?.process_owner_name || formData?.process_owner || '-'}
+                      {formData?.control_owner_name || formData?.control_owner || '-'}
                     </Typography>
                   </Box>
 
@@ -1293,7 +1013,7 @@ function ApproverFormDetail() {
                     mt: 2,
                   }}
                 >
-                  {['control_number', 'account_balance_disclosure', 'sub_process', 'risk_description', 'risk_heat']
+                  {['control_number', 'area', 'sub_process', 'risk_description', 'risk_heat']
                     .filter((key) => formData.hasOwnProperty(key) && !excludedFields.includes(key))
                     .map((key) => {
                       const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
@@ -1401,7 +1121,7 @@ function ApproverFormDetail() {
                     .map((key) => {
                       const label = fieldLabels[key]
                       const value = formData[key]
-                      const isEmpty = value === null || value === undefined || value === ''
+                      const isTruthy = value === true || value === 'true' || value === '1' || value === 1
 
                       return (
                         <Box
@@ -1439,18 +1159,43 @@ function ApproverFormDetail() {
                           >
                             {label}
                           </Typography>
-                          <Typography
-                            variant="body2"
+                          <Box
                             component="dd"
                             sx={{
-                              color: isEmpty ? 'text.disabled' : 'text.secondary',
-                              wordBreak: 'break-word',
-                              lineHeight: 1.6,
-                              fontSize: theme.typography.customSizes.medium,
+                              m: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1,
+                              minHeight: 24,
                             }}
                           >
-                            {isEmpty ? '-' : String(value)}
-                          </Typography>
+                            {isTruthy ? (
+                              <>
+                                <CheckCircleIcon sx={{ fontSize: 18, color: '#10b981', flexShrink: 0 }} />
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    color: 'text.secondary',
+                                    lineHeight: 1.6,
+                                    fontSize: theme.typography.customSizes.medium,
+                                  }}
+                                >
+                                  Selected
+                                </Typography>
+                              </>
+                            ) : (
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  color: 'text.disabled',
+                                  lineHeight: 1.6,
+                                  fontSize: theme.typography.customSizes.medium,
+                                }}
+                              >
+                                Not selected
+                              </Typography>
+                            )}
+                          </Box>
                         </Box>
                       )
                     })}
@@ -1499,13 +1244,13 @@ function ApproverFormDetail() {
                     mt: 2,
                   }}
                 >
-                  {fieldOrder
-                    .filter(key => {
+                  {orderControlDetailKeys(
+                    fieldOrder.filter(key => {
                       if (groupedApproverFields.includes(key)) return false
                       if (
                         [
                           'control_number',
-                          'account_balance_disclosure',
+                          'area',
                           'sub_process',
                           'risk_description',
                           'risk_heat',
@@ -1523,7 +1268,9 @@ function ApproverFormDetail() {
                         return false
                       }
                       return formData.hasOwnProperty(key) && !excludedFields.includes(key)
-                    })
+                    }),
+                    fieldOrder
+                  )
                     .map((key) => {
                       const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                       const value = formData[key]
@@ -2103,96 +1850,13 @@ function ApproverFormDetail() {
           </Box>
         </Box>
 
-        <Dialog
+        <RacmAuditLogsDialog
           open={auditLogOpen}
           onClose={() => setAuditLogOpen(false)}
-          fullWidth
-          maxWidth="lg"
-          aria-labelledby="racm-audit-logs-title"
-          PaperProps={{
-            sx: {
-              borderRadius: 2,
-              maxHeight: '90vh',
-            },
-          }}
-        >
-          <DialogTitle
-            id="racm-audit-logs-title"
-            sx={{
-              pb: 1,
-              pt: 2.5,
-              px: 3,
-              fontWeight: 600,
-              fontSize: '1.1rem',
-            }}
-          >
-            Audit logs
-          </DialogTitle>
-          <DialogContent sx={{ px: 3, pt: 0, pb: 2, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {auditLogLoading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                <CircularProgress size={32} />
-              </Box>
-            ) : auditLogError ? (
-              <Alert severity="error" sx={{ mb: 1 }}>
-                {auditLogError}
-              </Alert>
-            ) : auditLogRows.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                No audit entries for this RACM.
-              </Typography>
-            ) : (
-              <TableContainer
-                sx={{
-                  maxHeight: 'min(420px, 58vh)',
-                  overflow: 'auto',
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 1,
-                }}
-              >
-                <Table size="small" stickyHeader sx={{ tableLayout: 'fixed', width: '100%' }}>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ fontWeight: 600, width: '14%', whiteSpace: 'nowrap' }}>Date & time</TableCell>
-                      <TableCell sx={{ fontWeight: 600, width: '28%' }}>User</TableCell>
-                      <TableCell sx={{ fontWeight: 600, width: '26%' }}>Action</TableCell>
-                      <TableCell sx={{ fontWeight: 600, width: '32%' }}>Reference</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {auditLogRows.map((row) => (
-                      <TableRow key={row.id ?? `${row.timestamp}-${row.action}`}>
-                        <TableCell sx={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
-                          {formatRacmAuditDateDisplay(row.timestamp)}
-                        </TableCell>
-                        <TableCell sx={{ verticalAlign: 'top', wordBreak: 'break-word' }}>
-                          {row.user_email_id || '—'}
-                        </TableCell>
-                        <TableCell sx={{ verticalAlign: 'top', wordBreak: 'break-word' }}>
-                          {row.action ?? '—'}
-                        </TableCell>
-                        <TableCell sx={{ verticalAlign: 'top', maxWidth: 0 }}>
-                          <AuditLogReferenceCell action={row.action} refData={row.ref_data} />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
-            {!auditLogLoading && auditLogRows.length > 0 ? (
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                {auditLogRows.length} entr{auditLogRows.length === 1 ? 'y' : 'ies'} — newest at bottom. Scroll the table for long lists.
-              </Typography>
-            ) : null}
-          </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button onClick={() => setAuditLogOpen(false)} variant="outlined" size="small" sx={{ textTransform: 'none' }}>
-              Close
-            </Button>
-          </DialogActions>
-        </Dialog>
+          loading={auditLogLoading}
+          error={auditLogError}
+          rows={auditLogRows}
+        />
 
         <Dialog
           open={changeDecisionOpen}

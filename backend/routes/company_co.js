@@ -506,8 +506,8 @@ router.post('/create-users-bulk', verifyCompanyCoordinator, async (req, res) => 
 
 // Delete users for current coordinator's company.
 // Side effect:
-// - Any RACMs in control_forms assigned to these users (control_forms.process_owner) are made inactive:
-//   process_owner = NULL and active = '0'
+// - Any RACMs in control_forms assigned to these users (control_forms.control_owner) are made inactive:
+//   control_owner = NULL and active = '0'
 // - Then the selected users are removed from ifc_users
 router.post('/delete-users', verifyCompanyCoordinator, async (req, res) => {
   const coordinator = req.user;
@@ -546,10 +546,10 @@ router.post('/delete-users', verifyCompanyCoordinator, async (req, res) => {
 
     const deactivatedRacmsQuery = `
       UPDATE control_forms
-      SET process_owner = NULL,
+      SET control_owner = NULL,
           active = '0'
       WHERE company_identifier = $1
-        AND LOWER(TRIM(process_owner)) = ANY($2::text[])
+        AND LOWER(TRIM(control_owner)) = ANY($2::text[])
     `
 
     const deactivatedRacmsResult = await client.query(deactivatedRacmsQuery, [companyIdentifier, normalizedEmails])
@@ -715,6 +715,52 @@ router.get('/check-user-role/:email', verifyCompanyCoordinator, async (req, res)
       message: 'Error checking user role',
       exists: false,
       role: null,
+    });
+  }
+});
+
+// RACM audit trail (same data as approver); restricted to forms in the coordinator's company
+router.get('/racm-audit-logs/:form_id', verifyCompanyCoordinator, async (req, res) => {
+  try {
+    const { form_id } = req.params;
+    const companyIdentifier = req.user.company_identifier;
+    if (!companyIdentifier) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company not associated with user',
+      });
+    }
+
+    const own = await pool.query(
+      `SELECT 1 FROM control_forms WHERE form_id = $1 AND company_identifier = $2 LIMIT 1`,
+      [form_id, companyIdentifier]
+    );
+    if (own.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT id, timestamp, action, user_email_id, form_id, ref_data
+      FROM audit_logs_racm
+      WHERE form_id = $1
+      ORDER BY timestamp ASC NULLS LAST, id ASC
+    `,
+      [form_id]
+    );
+
+    res.status(200).json({
+      success: true,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Get RACM audit logs (company_co) error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
     });
   }
 });

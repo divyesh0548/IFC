@@ -833,16 +833,16 @@ function ApproverDashboard() {
                       >
                         {cellWordWrap ? (
                           <Box component="span" sx={dataCellTextSx}>
-                            {form.process_owner_name || form.process_owner || 'N/A'}
+                            {form.control_owner_name || form.control_owner || 'N/A'}
                           </Box>
                         ) : (
                           <Tooltip
-                            title={form.process_owner_name || form.process_owner || 'N/A'}
+                            title={form.control_owner_name || form.control_owner || 'N/A'}
                             arrow
                             slotProps={{ tooltip: { sx: tooltipSx } }}
                           >
                             <Box component="span" sx={dataCellTextSx}>
-                              {form.process_owner_name || form.process_owner || 'N/A'}
+                              {form.control_owner_name || form.control_owner || 'N/A'}
                             </Box>
                           </Tooltip>
                         )}

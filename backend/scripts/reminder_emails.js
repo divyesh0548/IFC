@@ -144,7 +144,7 @@ async function fetchFormsDueForReminder(client) {
   const query = `
     SELECT
       form_id,
-      process_owner,
+      control_owner,
       standard_control_description,
       business_process,
       due_date,
@@ -239,14 +239,14 @@ async function runReminderEmails() {
     if (forms.length === 0) return;
 
     for (const form of forms) {
-      const to = (form.process_owner || '').trim();
+      const to = (form.control_owner || '').trim();
 
       // Validate email before attempting to send. If invalid/missing, skip send but still update reminder_datetime.
       if (!isValidEmail(to)) {
         const updatedAt = await updateReminderDatetime(client, form.form_id, form.reminder_frequency);
         const updatedAtMumbai = updatedAt ? formatDateInMumbai(parseTimestampAsMumbai(updatedAt)) : null;
         console.warn(
-          `[reminder_emails] form_id=${form.form_id} has invalid/empty process_owner "${to}", skipped email, updated reminder_datetime to ${
+          `[reminder_emails] form_id=${form.form_id} has invalid/empty control_owner "${to}", skipped email, updated reminder_datetime to ${
             updatedAt ? updatedAtMumbai : 'null'
           } (UTC=${updatedAt ? new Date(updatedAt).toISOString() : 'null'})`
         );

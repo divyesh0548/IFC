@@ -6,7 +6,7 @@ Control-forms can be created via excel file (bulk creation based on rows) or man
 Control-forms are created with businees_prcess, financial_year and cycle. Coordinator will be asked to select values of these three parameters for form creation.
 Program will prevent duplicate form creation based on 'financial_year', 'cycle' and some other columns of control forms.
 
-In control forms process_owner field will have email ID of a user, and based on that, user will be assigned a control form.
+In control forms control_owner field will have email ID of a user, and based on that, user will be assigned a control form.
 
 User have to upload a document for assigned control_form and write remarks for sending it for approval.
 

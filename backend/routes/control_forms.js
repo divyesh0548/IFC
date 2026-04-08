@@ -493,10 +493,10 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
   }
 });
 
-// Get all RACM forms (with optional company_identifier, process_owner, active, business_process, status, financial_year, and cycle filters)
+// Get all RACM forms (with optional company_identifier, control_owner, active, business_process, status, financial_year, and cycle filters)
 router.get('/', verifyAuth, async (req, res) => {
   try {
-    const { company_identifier, process_owner, active, business_process, status, financial_year, cycle } = req.query;
+    const { company_identifier, control_owner, active, business_process, status, financial_year, cycle } = req.query;
     
     // Debug logging
     console.log('RACM GET request filters:', {
@@ -511,10 +511,10 @@ router.get('/', verifyAuth, async (req, res) => {
     let query = `
       SELECT
         cf.*,
-        NULLIF(TRIM(u.emp_name), '') AS process_owner_name
+        NULLIF(TRIM(u.emp_name), '') AS control_owner_name
       FROM control_forms cf
       LEFT JOIN ifc_users u
-        ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.process_owner))
+        ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
       WHERE 1=1
     `;
     const queryParams = [];
@@ -534,10 +534,10 @@ router.get('/', verifyAuth, async (req, res) => {
       paramIndex++;
     }
     
-    // Filter by process_owner if provided
-    if (process_owner) {
-      query += ` AND LOWER(TRIM(cf.process_owner)) = LOWER(TRIM($${paramIndex}))`;
-      queryParams.push(process_owner.trim());
+    // Filter by control_owner if provided
+    if (control_owner) {
+      query += ` AND LOWER(TRIM(cf.control_owner)) = LOWER(TRIM($${paramIndex}))`;
+      queryParams.push(control_owner.trim());
       paramIndex++;
     }
     
@@ -705,10 +705,10 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
     
     const formData = result.rows[0];
     
-    // Authorization check: For users with role 'user', verify they are the process_owner
+    // Authorization check: For users with role 'user', verify they are the control_owner
     // company_co and approver roles can still access (existing behavior)
     if (loggedInUserRole === 'user') {
-      const processOwnerEmail = (formData.process_owner || '').trim().toLowerCase();
+      const processOwnerEmail = (formData.control_owner || '').trim().toLowerCase();
       const userEmail = loggedInUserEmail.trim().toLowerCase();
       
       if (processOwnerEmail !== userEmail) {
@@ -743,8 +743,8 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
   const {
     standard_control_description, sub_process, risk_description,
     whether_fraud_risks_exist, control_objective, ipe_reference,
-    nature_of_control, process_owner, control_frequency,
-    control_number, account_balance_disclosure,
+    nature_of_control, control_frequency,
+    control_number, area,
     risk_heat, process_walkthrough, control_relies_on_ipe,
     audit_evidence_accuracy, key_control, application_name,
     control_performer, control_owner, control_design_procs,
@@ -767,7 +767,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     const getCurrentFormQuery = `
       SELECT 
         active, 
-        process_owner, 
+        control_owner, 
         standard_control_description, 
         business_process,
         status AS current_status,
@@ -779,6 +779,20 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     const currentFormResult = await client.query(getCurrentFormQuery, [form_id]);
     const currentForm = currentFormResult.rows.length > 0 ? currentFormResult.rows[0] : null;
     const currentActiveStatus = currentForm?.active && currentForm.active !== '' && currentForm.active !== '0' ? '1' : '0';
+    const hasChangesArray = Array.isArray(modifiedChanges) && modifiedChanges.length > 0;
+    const hasFieldsArray = Array.isArray(modifiedFields) && modifiedFields.length > 0;
+    const assignmentEmail = control_owner !== undefined && control_owner !== null
+      ? String(control_owner).trim()
+      : '';
+    const assignmentInChangesArray = hasChangesArray && modifiedChanges.some((item) => {
+      const col = item?.column_name || item?.column || item?.field;
+      return String(col || '').trim() === 'control_owner';
+    });
+    const assignmentInFieldsArray = hasFieldsArray && modifiedFields.some(
+      (col) => String(col || '').trim() === 'control_owner'
+    );
+    const isAssignmentUpdate = assignmentInChangesArray || assignmentInFieldsArray || control_owner !== undefined;
+    const isRacmAssignmentOperation = Boolean(isAssignmentUpdate && assignmentEmail);
 
     // Check if user is an approver (only approvers can edit conclusion/procedures/deficiency fields)
     const isApprover = !!req.cookies.approverAuthToken;
@@ -820,18 +834,25 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     const fieldsToUpdate = {
       standard_control_description, sub_process, risk_description,
       whether_fraud_risks_exist, control_objective, ipe_reference,
-      nature_of_control, process_owner, control_frequency,
-      control_number, account_balance_disclosure,
+      nature_of_control, control_frequency,
+      control_number, area,
       risk_heat, process_walkthrough, control_relies_on_ipe,
       audit_evidence_accuracy, key_control, application_name,
-      control_performer, control_owner, control_design_procs,
+      control_performer, control_design_procs,
       control_design_conclusion, design_deficiency_desc,
       sample_size: sampleSizeForUpdate, control_type_fo, control_type_ma,
       completeness, existence_occurrence, rights_and_obligation,
       valuation_and_allocation, presentation_and_disclosure,
       due_date, reminder_frequency,
-      doc_uploaded_by_user, active, status, reason_by_approver, remarks_by_user
+      doc_uploaded_by_user, status, reason_by_approver, remarks_by_user
     };
+
+    if (!isRacmAssignmentOperation && control_owner !== undefined) {
+      fieldsToUpdate.control_owner = control_owner;
+    }
+    if (!(isRacmAssignmentOperation && active !== undefined) && active !== undefined) {
+      fieldsToUpdate.active = active;
+    }
 
     Object.keys(fieldsToUpdate).forEach(field => {
       // Skip approver-only fields if user is not an approver
@@ -898,26 +919,65 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
     }
 
-    if (updateFields.length === 0) {
+    if (updateFields.length === 0 && !isRacmAssignmentOperation && active === undefined) {
       return res.status(400).json({
         success: false,
         message: 'No fields to update'
       });
     }
 
-    // Add form_id as the last parameter
-    updateValues.push(form_id);
-
-    const updateQuery = `
-      UPDATE control_forms
-      SET ${updateFields.join(', ')}
-      WHERE form_id = $${paramIndex}
-      RETURNING *;
-    `;
-
     let result;
     try {
-      result = await client.query(updateQuery, updateValues);
+      if (updateFields.length > 0) {
+        // Add form_id as the last parameter
+        updateValues.push(form_id);
+
+        const updateQuery = `
+          UPDATE control_forms
+          SET ${updateFields.join(', ')}
+          WHERE form_id = $${paramIndex}
+          RETURNING *;
+        `;
+
+        result = await client.query(updateQuery, updateValues);
+      } else {
+        // Ensure result is still available for pure assignment flows.
+        result = await client.query(
+          'SELECT * FROM control_forms WHERE form_id = $1',
+          [form_id]
+        );
+      }
+
+      // RACM Assignment operation must be two separate SQL updates:
+      // 1) assign control_owner, 2) set active.
+      if (isRacmAssignmentOperation) {
+        const assignmentResult = await client.query(
+          `
+            UPDATE control_forms
+            SET control_owner = $1
+            WHERE form_id = $2
+            RETURNING *;
+          `,
+          [assignmentEmail, form_id]
+        );
+        result = assignmentResult;
+
+        if (active !== undefined) {
+          const normalizedActive = active === '1' || active === 1 || active === true ? '1' : '0';
+          if (normalizedActive !== currentActiveStatus) {
+            const activeResult = await client.query(
+              `
+                UPDATE control_forms
+                SET active = $1
+                WHERE form_id = $2
+                RETURNING *;
+              `,
+              [normalizedActive, form_id]
+            );
+            result = activeResult;
+          }
+        }
+      }
     } catch (dbError) {
       await client.query('ROLLBACK');
       console.error('Database error during update:', dbError);
@@ -951,22 +1011,42 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       await logAuditEvent('Sent RACM for approval', req.user.email_id, form_id, null);
     }
 
-    // Log audit event for RACM modifications (store JSON changes in ref_data as TEXT)
+    // Log audit events for RACM assignment/modifications (store payload in ref_data as TEXT)
     if (req.user && req.user.email_id) {
-      const hasChangesArray = Array.isArray(modifiedChanges) && modifiedChanges.length > 0;
-      const hasFieldsArray = Array.isArray(modifiedFields) && modifiedFields.length > 0;
+      // Assignment-specific audit log: action + assigned user email in ref_data.
+      if (isRacmAssignmentOperation) {
+        await logAuditEvent('RACM Assignment', req.user.email_id, form_id, assignmentEmail);
+        if (active !== undefined) {
+          const newActiveStatus = active === '1' || active === 1 || active === true ? '1' : '0';
+          if (newActiveStatus !== currentActiveStatus) {
+            const action = newActiveStatus === '1' ? 'Set RACM Active' : 'Set RACM Inactive';
+            await logAuditEvent(action, req.user.email_id, form_id);
+          }
+        }
+      }
 
       if (hasChangesArray) {
-        await logAuditEvent('RACM Modification', req.user.email_id, form_id, JSON.stringify(modifiedChanges));
+        const nonAssignmentChanges = modifiedChanges.filter((item) => {
+          const col = item?.column_name || item?.column || item?.field;
+          return String(col || '').trim() !== 'control_owner';
+        });
+        if (nonAssignmentChanges.length > 0) {
+          await logAuditEvent('RACM Modification', req.user.email_id, form_id, JSON.stringify(nonAssignmentChanges));
+        }
       } else if (hasFieldsArray) {
         // Fallback for older clients
-        const refData = JSON.stringify(modifiedFields.map((col) => ({ column_name: col })));
-        await logAuditEvent('RACM Modification', req.user.email_id, form_id, refData);
+        const nonAssignmentFields = modifiedFields.filter(
+          (col) => String(col || '').trim() !== 'control_owner'
+        );
+        if (nonAssignmentFields.length > 0) {
+          const refData = JSON.stringify(nonAssignmentFields.map((col) => ({ column_name: col })));
+          await logAuditEvent('RACM Modification', req.user.email_id, form_id, refData);
+        }
       }
     }
 
-    // Log audit when RACM active flag changes (only after successful commit, only on real transition)
-    if (active !== undefined && currentForm && req.user && req.user.email_id) {
+    // Log audit when RACM active flag changes (non-assignment flows only)
+    if (!isRacmAssignmentOperation && active !== undefined && currentForm && req.user && req.user.email_id) {
       const newActiveStatus = active === '1' || active === 1 || active === true ? '1' : '0';
       if (newActiveStatus !== currentActiveStatus) {
         const action = newActiveStatus === '1' ? 'Set RACM Active' : 'Set RACM Inactive';
@@ -974,11 +1054,11 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
     }
 
-    // Send email to process_owner if active status changed
+    // Send email to control_owner if active status changed
     if (active !== undefined && currentForm) {
       const newActiveStatus = active === '1' || active === 1 || active === true ? '1' : '0';
-      if (newActiveStatus !== currentActiveStatus && currentForm.process_owner) {
-        const processOwnerEmail = currentForm.process_owner.trim();
+      if (newActiveStatus !== currentActiveStatus && currentForm.control_owner) {
+        const processOwnerEmail = currentForm.control_owner.trim();
         const formDescription = currentForm.standard_control_description || 'RACM';
         const businessProcess = currentForm.business_process || '';
         const getProcessOwnerNameQuery = 'SELECT emp_name FROM ifc_users WHERE email_id = $1 LIMIT 1';
@@ -1096,7 +1176,7 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     
     // Get forms that will be updated (before updating) to send emails
     // Build SELECT query with same WHERE conditions but correct parameter indices
-    let getFormsQuery = 'SELECT form_id, process_owner, standard_control_description, active FROM control_forms WHERE 1=1';
+    let getFormsQuery = 'SELECT form_id, control_owner, standard_control_description, active FROM control_forms WHERE 1=1';
     const getFormsParams = [];
     let getFormsParamIndex = 1;
     
@@ -1148,8 +1228,8 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
       const uniqueProcessOwners = new Map(); // Use Map to avoid duplicate emails
       
       for (const form of formsToUpdate.rows) {
-        if (form.process_owner && form.process_owner.trim()) {
-          const processOwnerEmail = form.process_owner.trim();
+        if (form.control_owner && form.control_owner.trim()) {
+          const processOwnerEmail = form.control_owner.trim();
           const wasActive = form.active && form.active !== '' && form.active !== '0';
           
           // Only send email if status is actually changing (from inactive to active)
@@ -1223,13 +1303,119 @@ IFC System
   }
 });
 
+// Bulk set due_date and reminder_frequency for specific RACM(s)
+router.post('/bulk-set-due-date', verifyAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const userRole = req.user?.role;
+    if (userRole !== 'company_co') {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const companyIdentifier = req.user?.company_identifier;
+    if (!companyIdentifier) {
+      return res.status(400).json({ success: false, message: 'Company identifier is required' });
+    }
+
+    const formIdsRaw = req.body?.form_ids;
+    const dueDate = req.body?.due_date ? String(req.body.due_date).trim() : '';
+    const reminderFrequency = req.body?.reminder_frequency ? String(req.body.reminder_frequency).trim() : '';
+
+    if (!Array.isArray(formIdsRaw) || formIdsRaw.length === 0) {
+      return res.status(400).json({ success: false, message: 'form_ids is required' });
+    }
+
+    // Require both inputs (same policy used in bulk upload)
+    if (!dueDate || !reminderFrequency) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide both due_date and reminder_frequency',
+      });
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid due_date format. Expected YYYY-MM-DD',
+      });
+    }
+
+    const allowed = new Set(['Daily', 'Weekly', 'Monthly']);
+    if (!allowed.has(reminderFrequency)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid reminder_frequency. Allowed values: Daily, Weekly, Monthly',
+      });
+    }
+
+    const formIds = [...new Set(formIdsRaw.map((v) => String(v).trim()).filter(Boolean))];
+    if (formIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'form_ids is required' });
+    }
+
+    await client.query('BEGIN');
+
+    // Only update RACMs that belong to the coordinator's company.
+    const eligible = await client.query(
+      `SELECT form_id FROM control_forms WHERE company_identifier = $1 AND form_id = ANY($2::text[])`,
+      [companyIdentifier, formIds]
+    );
+    const eligibleFormIds = eligible.rows.map((r) => r.form_id);
+
+    if (eligibleFormIds.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'No matching RACM(s) found' });
+    }
+
+    // Reset reminder_datetime so the reminder scheduler starts from the new due date/frequency.
+    const update = await client.query(
+      `
+      UPDATE control_forms
+      SET due_date = $1,
+          reminder_frequency = $2,
+          reminder_datetime = NULL
+      WHERE company_identifier = $3
+        AND form_id = ANY($4::text[])
+      `,
+      [dueDate, reminderFrequency, companyIdentifier, eligibleFormIds]
+    );
+
+    await client.query('COMMIT');
+
+    // Audit: one row per RACM for traceability.
+    if (req.user?.email_id) {
+      for (const fid of eligibleFormIds) {
+        await logAuditEvent('Set Due Date', req.user.email_id, fid);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Updated due date for ${eligibleFormIds.length} RACM(s)`,
+      updatedCount: eligibleFormIds.length,
+      skippedCount: formIds.length - eligibleFormIds.length,
+    });
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {}
+    console.error('Error bulk setting due date:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error bulk setting due date',
+    });
+  } finally {
+    client.release();
+  }
+});
+
 // Create single RACM
 router.post('/', verifyAuth, async (req, res) => {
   const {
     standard_control_description, sub_process, risk_description,
     whether_fraud_risks_exist, control_objective, ipe_reference,
-    nature_of_control, process_owner, control_frequency,
-    control_number, account_balance_disclosure, risk_heat,
+    nature_of_control, control_frequency,
+    control_number, area, risk_heat,
     process_walkthrough, control_relies_on_ipe, audit_evidence_accuracy,
     key_control, application_name, control_performer, control_owner,
     control_design_procs, control_design_conclusion, design_deficiency_desc,
@@ -1272,8 +1458,8 @@ router.post('/', verifyAuth, async (req, res) => {
       INSERT INTO control_forms (
         standard_control_description, sub_process, risk_description,
         whether_fraud_risks_exist, control_objective, ipe_reference,
-        nature_of_control, process_owner, control_frequency,
-        control_number, account_balance_disclosure, risk_heat,
+        nature_of_control, control_frequency,
+        control_number, area, risk_heat,
         process_walkthrough, control_relies_on_ipe, audit_evidence_accuracy,
         key_control, application_name, control_performer, control_owner,
         control_design_procs, control_design_conclusion, design_deficiency_desc,
@@ -1293,8 +1479,8 @@ router.post('/', verifyAuth, async (req, res) => {
     const result = await client.query(insertQuery, [
       standard_control_description, sub_process, risk_description,
       whether_fraud_risks_exist, control_objective, ipe_reference,
-      nature_of_control, process_owner, control_frequency,
-      control_number || null, account_balance_disclosure || null, risk_heat || null,
+      nature_of_control, control_frequency,
+      control_number || null, area || null, risk_heat || null,
       process_walkthrough || null, control_relies_on_ipe || null, audit_evidence_accuracy || null,
       key_control || null, application_name || null, control_performer || null, control_owner || null,
       control_design_procs || null, controlDesignConclusionValue, designDeficiencyDescValue,
@@ -1380,7 +1566,7 @@ router.post('/replicate', verifyAuth, async (req, res) => {
 
     const excludedColumns = new Set([
       'id',
-      'process_owner',
+      'control_owner',
       'doc_uploaded_by_user',
       'active',
       'status',

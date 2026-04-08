@@ -90,21 +90,7 @@ Should we send emails to Approver when user sends RACM for approval.
 
 Implement a way to store user preference, like word wrap.
 
-Provide a way to see audit logs of a specific RACM. like approval dates
-
-Add size limit and file type limit in upload. Also corupt file detection.
-
-Display why we need portal, and explain features. Do not display data about IFC.
-
-Add a bulk due date set feature.
-
-There will be a tick mark in some 5 consecutive column starting with completeness, Occurance.
-
 Control number should be unique.
-
-Chnage this column name "Account balance disclosure" --> Area
-
-From risk heat remove others, in dropdown
 
 Control owner/perform will be from company user. Provide dropdown in that. (Remove this in )
 

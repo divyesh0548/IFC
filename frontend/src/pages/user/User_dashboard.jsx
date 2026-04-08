@@ -7,6 +7,7 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import {
   FILTER_BOX_MIN_WIDTH,
   PAGE_SUBHEADER_TEXT_SX,
@@ -16,6 +17,7 @@ import {
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
+import Switch from '@mui/material/Switch'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function User_dashboard() {
@@ -29,6 +31,7 @@ function User_dashboard() {
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [financialYearOptions, setFinancialYearOptions] = useState([])
+  const [cellWordWrap, setCellWordWrap] = useState(false)
   useSyncGlobalLoading(loading)
 
   // Business process options (matching other pages)
@@ -86,8 +89,8 @@ function User_dashboard() {
     
     setLoading(true)
     try {
-      // Build URL with process_owner, active, and optional filters
-      let url = `http://localhost:3000/api/control-forms?process_owner=${encodeURIComponent(userEmail)}&active=true`
+      // Build URL with control_owner, active, and optional filters
+      let url = `http://localhost:3000/api/control-forms?control_owner=${encodeURIComponent(userEmail)}&active=true`
       
       // Add status filter parameter to API (API handles all filtering)
       if (filter !== 'all') {
@@ -170,6 +173,37 @@ function User_dashboard() {
     }
     return { bg: '#f3f4f6', color: '#6b7280' }
   }
+
+  const truncatedTextSx = {
+    display: 'inline-block',
+    maxWidth: '100%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  }
+  const wrappedTextSx = {
+    display: 'block',
+    maxWidth: '100%',
+    whiteSpace: 'normal',
+    wordBreak: 'break-word',
+    overflow: 'visible',
+  }
+  const dataCellTextSx = cellWordWrap ? wrappedTextSx : truncatedTextSx
+  const dataCellSx = (base) => ({
+    ...base,
+    ...(cellWordWrap
+      ? {
+          whiteSpace: 'normal',
+          wordBreak: 'break-word',
+          overflow: 'visible',
+          verticalAlign: 'top',
+        }
+      : {
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }),
+  })
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
@@ -312,6 +346,37 @@ function User_dashboard() {
               </Typography>
             </Box>
           ) : (
+            <Box>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  mb: 1.5,
+                  flexWrap: 'wrap',
+                  gap: 1,
+                }}
+              >
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={cellWordWrap}
+                      onChange={(e) => setCellWordWrap(e.target.checked)}
+                      size="small"
+                      color="primary"
+                    />
+                  }
+                  label="Word wrap"
+                  sx={{
+                    mr: 0,
+                    userSelect: 'none',
+                    '& .MuiFormControlLabel-label': {
+                      fontSize: '0.8125rem',
+                      color: theme.palette.text.secondary,
+                    },
+                  }}
+                />
+              </Box>
             <Box sx={{ overflowX: 'auto' }}>
               <Box
                 component="table"
@@ -452,38 +517,42 @@ function User_dashboard() {
                         </Box>
                         <Box
                           component="td"
-                          sx={{
+                          sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            whiteSpace: 'nowrap',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          {form.business_process || 'N/A'}
+                          <Box component="span" sx={dataCellTextSx}>
+                            {form.business_process || 'N/A'}
+                          </Box>
                         </Box>
                         <Box
                           component="td"
-                          sx={{
+                          sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            whiteSpace: 'nowrap',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          {form.sub_process || 'N/A'}
+                          <Box component="span" sx={dataCellTextSx}>
+                            {form.sub_process || 'N/A'}
+                          </Box>
                         </Box>
                         <Box
                           component="td"
-                          sx={{
+                          sx={dataCellSx({
                             px: 3,
                             py: 2,
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          {form.standard_control_description || 'N/A'}
+                          <Box component="span" sx={dataCellTextSx}>
+                            {form.standard_control_description || 'N/A'}
+                          </Box>
                         </Box>
                         <Box
                           component="td"
@@ -505,23 +574,25 @@ function User_dashboard() {
                         </Box>
                         <Box
                           component="td"
-                          sx={{
+                          sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            whiteSpace: 'nowrap',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          {form.created_at
-                            ? new Date(form.created_at).toLocaleDateString()
-                            : 'N/A'}
+                          <Box component="span" sx={dataCellTextSx}>
+                            {form.created_at
+                              ? new Date(form.created_at).toLocaleDateString()
+                              : 'N/A'}
+                          </Box>
                         </Box>
                       </Box>
                     )
                   })}
                 </Box>
               </Box>
+            </Box>
             </Box>
           )}
         </Paper>

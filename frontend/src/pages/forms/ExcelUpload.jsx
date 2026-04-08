@@ -11,7 +11,6 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import IconButton from '@mui/material/IconButton'
-import Divider from '@mui/material/Divider'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -44,12 +43,19 @@ function ExcelUpload() {
       return false
     }
 
+    const clearFilePicker = () => {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+
     // Enforce .xlsx extension only (frontend limitation only)
     const fileName = String(selectedFile.name || '').toLowerCase()
     if (!fileName.endsWith('.xlsx')) {
       toast.error('Only .xlsx files are allowed. Please upload an .xlsx file.')
       setFile(null)
       setPreview(null)
+      clearFilePicker()
       return false
     }
 
@@ -62,14 +68,16 @@ function ExcelUpload() {
       toast.error('Invalid file type. Please upload an .xlsx file.')
       setFile(null)
       setPreview(null)
+      clearFilePicker()
       return false
     }
 
-    // Validate file size (10MB limit)
-    if (selectedFile.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit.')
+    // Validate file size (20MB limit)
+    if (selectedFile.size > 20 * 1024 * 1024) {
+      toast.error('File size exceeds 20MB limit.')
       setFile(null)
       setPreview(null)
+      clearFilePicker()
       return false
     }
 
@@ -223,7 +231,7 @@ function ExcelUpload() {
 
         if (invalidEmails.length > 0) {
           // Block upload if any invalid email is found.
-          toast.error('Please update a valid email_id in process_owner column.')
+          toast.error('Please update a valid email_id in control_owner column.')
           return
         }
       }
@@ -574,42 +582,6 @@ function ExcelUpload() {
                 }}
               >
                 Back to Dashboard
-              </Button>
-
-              {/* Other Actions (separate from upload) */}
-              <Divider sx={{ my: 3 }} />
-              <Typography
-                variant="subtitle2"
-                sx={{
-                  fontWeight: 700,
-                  mb: 1.5,
-                  color: theme.palette.text.secondary,
-                }}
-              >
-                Other actions
-              </Typography>
-              <Button
-                type="button"
-                onClick={() => navigate('/company_co/create-form')}
-                variant="outlined"
-                color="secondary"
-                fullWidth
-                sx={{
-                  py: 1.5,
-                  fontSize: theme.typography.customSizes.medium,
-                  fontWeight: 700,
-                  textTransform: 'none',
-                  borderWidth: 2,
-                  color: theme.palette.text.primary,
-                  borderColor: theme.palette.divider,
-                  '&:hover': {
-                    borderWidth: 2,
-                    backgroundColor: theme.palette.action.hover,
-                    borderColor: theme.palette.divider,
-                  },
-                }}
-              >
-                Create RACM Manually
               </Button>
             </form>
           </Paper>

@@ -13,10 +13,12 @@ import AttachFileIcon from '@mui/icons-material/AttachFile'
 import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
+import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 
 function UserFormDetail() {
   const theme = useTheme()
@@ -361,47 +363,12 @@ function UserFormDetail() {
 
   // Define field labels mapping for updated RACM schema
   const fieldLabels = {
-    control_number: 'Control Number',
-    account_balance_disclosure: 'Account Balance / Disclosure',
-    risk_heat: 'Risk Heat',
-    standard_control_description: 'Standard Control Description',
-    sub_process: 'Sub Process',
-    risk_description: 'Risk Description',
-    whether_fraud_risks_exist: 'Whether Fraud Risks Exist',
-    control_objective: 'Control Objective',
-    process_walkthrough: 'Process Activity and Walkthrough Details',
-    control_relies_on_ipe: 'Does the Control Rely on IPE?',
-    audit_evidence_accuracy: 'Audit Evidence of Accuracy and Completeness',
-    ipe_reference: 'IPE Reference',
-    key_control: 'Key Control',
-    application_name: 'Application Name',
-    control_performer: 'Control Performer',
-    control_owner: 'Control Owner',
-    control_design_procs: 'Procedures to Evaluate Design and Implementation',
-    control_type_fo: 'Type of control (Operational/Financial)',
-    control_type_ma: 'Type of control (Manual/ Automated)',
-    nature_of_control: 'Nature of Control',
-    process_owner: 'Process Owner',
-    control_frequency: 'Control Frequency',
-    sample_size: 'Sample Size',
-    sample_required: 'Sample Required',
-    completeness: 'Completeness',
-    existence_occurrence: 'Existence & Occurrence',
-    rights_and_obligation: 'Rights and Obligations',
-    valuation_and_allocation: 'Valuation & Allocation',
-    presentation_and_disclosure: 'Presentation and Disclosure',
-    control_design_conclusion: 'Conclusion on Design of Control',
-    design_deficiency_desc: 'Description of Deficiency in Control Design',
-    doc_uploaded_by_user: 'Doc Uploaded by User',
-    remarks_by_user: 'Remarks by User',
-    active: 'Active',
-    status: 'Status',
-    reason_by_approver: 'Reason by Approver',
+    ...RACM_FIELD_LABELS,
   }
 
   const fieldOrder = [
     'control_number',
-    'account_balance_disclosure',
+    'area',
     'sub_process',
     'risk_description',
     'risk_heat',
@@ -420,7 +387,7 @@ function UserFormDetail() {
     'control_type_fo',
     'control_type_ma',
     'nature_of_control',
-    'process_owner',
+    'control_owner',
     'control_frequency',
     'sample_size',
     'sample_required',
@@ -830,7 +797,7 @@ function UserFormDetail() {
                     mt: 2,
                   }}
                 >
-                  {['control_number', 'account_balance_disclosure', 'sub_process', 'risk_description', 'risk_heat']
+                  {['control_number', 'area', 'sub_process', 'risk_description', 'risk_heat']
                     .filter((key) => sortedFields.includes(key))
                     .map((key) => {
                       const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
@@ -938,7 +905,7 @@ function UserFormDetail() {
                     .map((key) => {
                       const label = fieldLabels[key]
                       const value = formData[key]
-                      const isEmpty = value === null || value === undefined || value === ''
+                      const isTruthy = value === true || value === 'true' || value === '1' || value === 1
 
                       return (
                         <Box
@@ -976,18 +943,43 @@ function UserFormDetail() {
                           >
                             {label}
                           </Typography>
-                          <Typography
-                            variant="body2"
+                          <Box
                             component="dd"
                             sx={{
-                              color: isEmpty ? 'text.disabled' : 'text.secondary',
-                              wordBreak: 'break-word',
-                              lineHeight: 1.6,
-                              fontSize: theme.typography.customSizes.medium,
+                              m: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1,
+                              minHeight: 24,
                             }}
                           >
-                            {isEmpty ? '-' : String(value)}
-                          </Typography>
+                            {isTruthy ? (
+                              <>
+                                <CheckCircleIcon sx={{ fontSize: 18, color: '#10b981', flexShrink: 0 }} />
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    color: 'text.secondary',
+                                    lineHeight: 1.6,
+                                    fontSize: theme.typography.customSizes.medium,
+                                  }}
+                                >
+                                  Selected
+                                </Typography>
+                              </>
+                            ) : (
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  color: 'text.disabled',
+                                  lineHeight: 1.6,
+                                  fontSize: theme.typography.customSizes.medium,
+                                }}
+                              >
+                                Not selected
+                              </Typography>
+                            )}
+                          </Box>
                         </Box>
                       )
                     })}
@@ -1036,11 +1028,11 @@ function UserFormDetail() {
                     mt: 2,
                   }}
                 >
-                  {sortedFields
-                    .filter((key) =>
+                  {orderControlDetailKeys(
+                    sortedFields.filter((key) =>
                       ![
                         'control_number',
-                        'account_balance_disclosure',
+                        'area',
                         'sub_process',
                         'risk_description',
                         'risk_heat',
@@ -1053,7 +1045,9 @@ function UserFormDetail() {
                         'doc_uploaded_by_user',
                         'remarks_by_user',
                       ].includes(key)
-                    )
+                    ),
+                    fieldOrder
+                  )
                     .map((key) => {
                     const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                     const value = formData[key]

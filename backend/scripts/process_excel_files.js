@@ -317,8 +317,8 @@ async function checkDuplicateForm(client, row, companyIdentifier, businessProces
   const compareColumns = [
     'standard_control_description', 'sub_process', 'risk_description',
     'whether_fraud_risks_exist', 'control_objective', 'ipe_reference',
-    'nature_of_control', 'process_owner', 'control_frequency', 'control_number',
-    'account_balance_disclosure', 'risk_heat', 'process_walkthrough',
+    'nature_of_control', 'control_owner', 'control_frequency', 'control_number',
+    'area', 'risk_heat', 'process_walkthrough',
     'control_relies_on_ipe', 'audit_evidence_accuracy', 'key_control',
     'application_name', 'control_performer', 'control_owner',
     'control_design_procs', 'control_design_conclusion', 'design_deficiency_desc',
@@ -541,8 +541,8 @@ async function processExcelFiles() {
         const columns = [
           'standard_control_description', 'sub_process', 'risk_description',
           'whether_fraud_risks_exist', 'control_objective', 'ipe_reference',
-          'nature_of_control', 'process_owner', 'control_frequency',
-          'control_number', 'account_balance_disclosure', 'risk_heat',
+          'nature_of_control', 'control_owner', 'control_frequency',
+          'control_number', 'area', 'risk_heat',
           'process_walkthrough', 'control_relies_on_ipe', 'audit_evidence_accuracy',
           'key_control', 'application_name', 'control_performer', 'control_owner',
           'control_design_procs', 'control_design_conclusion', 'design_deficiency_desc',

@@ -1,24 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useTheme } from '@mui/material/styles'
+import { useTheme, alpha } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Tooltip from '@mui/material/Tooltip'
 import Checkbox from '@mui/material/Checkbox'
+import Switch from '@mui/material/Switch'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
+import TextField from '@mui/material/TextField'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
+import { PAGE_SUBHEADER_TEXT_SX, TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
 
 /** Display order for Set Active selection notice (single-RACM list); missing-user line last. */
 const SET_ACTIVE_SINGLE_NOTICE_LINE_ORDER = [
@@ -48,6 +51,7 @@ function RacmManagementDashboard() {
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
+  const [cellWordWrap, setCellWordWrap] = useState(false)
   const [bulkUpdating, setBulkUpdating] = useState(false)
   const [missingUsersDialogOpen, setMissingUsersDialogOpen] = useState(false)
   const [missingProcessOwners, setMissingProcessOwners] = useState([])
@@ -61,6 +65,12 @@ function RacmManagementDashboard() {
   const [replicateDialogOpen, setReplicateDialogOpen] = useState(false)
   const [replicateTargetFY, setReplicateTargetFY] = useState('')
   const [replicating, setReplicating] = useState(false)
+  const [setDueDateMode, setSetDueDateMode] = useState(false)
+  const [setDueDateDialogOpen, setSetDueDateDialogOpen] = useState(false)
+  const [setDueDateValue, setSetDueDateValue] = useState('')
+  const [setDueReminderFrequency, setSetDueReminderFrequency] = useState('')
+  const [setDueDateSubmitting, setSetDueDateSubmitting] = useState(false)
+  const [alreadyScheduledCount, setAlreadyScheduledCount] = useState(0)
   const [nonUserRoleDialogOpen, setNonUserRoleDialogOpen] = useState(false)
   const [nonUserRoleCount, setNonUserRoleCount] = useState(0)
   const [nonUserRoleEmails, setNonUserRoleEmails] = useState([])
@@ -274,10 +284,80 @@ function RacmManagementDashboard() {
 
   const handleFormClick = (formId, e) => {
     // Prevent navigation when in delete mode, set active mode, or when clicking checkbox
-    if (deleteMode || setActiveMode || replicateMode || (e && e.target.type === 'checkbox')) {
+    if (deleteMode || setActiveMode || replicateMode || setDueDateMode || (e && e.target.type === 'checkbox')) {
       return
     }
     navigate(`/company_co/form/${formId}`)
+  }
+
+  const handleSetDueDateModeToggle = () => {
+    setSetDueDateMode(true)
+    setSelectedForms(new Set())
+    if (deleteMode) setDeleteMode(false)
+    if (setActiveMode) setSetActiveMode(false)
+    if (replicateMode) {
+      setReplicateMode(false)
+      setReplicateTargetFY('')
+    }
+  }
+
+  const handleSetDueDateCancel = () => {
+    setSetDueDateDialogOpen(false)
+    setSetDueDateSubmitting(false)
+    setSetDueDateValue('')
+    setSetDueReminderFrequency('')
+    setAlreadyScheduledCount(0)
+  }
+
+  const openSetDueDateDialog = () => {
+    const already = (forms || []).filter((f) => {
+      if (!selectedForms.has(f.form_id)) return false
+      const due = f?.due_date
+      const rf = f?.reminder_frequency
+      const hasDue = Boolean(due)
+      const hasRf = rf !== null && rf !== undefined && String(rf).trim() !== ''
+      return hasDue && hasRf
+    }).length
+    setAlreadyScheduledCount(already)
+    setSetDueDateDialogOpen(true)
+  }
+
+  const handleSetDueDateSubmit = async () => {
+    const due = String(setDueDateValue || '').trim()
+    const freq = String(setDueReminderFrequency || '').trim()
+    if (!due || !freq) {
+      toast.error('Please select both Due Date and Reminder Frequency')
+      return
+    }
+
+    setSetDueDateSubmitting(true)
+    try {
+      const response = await fetch('http://localhost:3000/api/control-forms/bulk-set-due-date', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          form_ids: Array.from(selectedForms),
+          due_date: due,
+          reminder_frequency: freq,
+        }),
+      })
+      const data = await response.json()
+      if (response.ok && data.success) {
+        toast.success(data.message || 'Due date updated successfully')
+        handleSetDueDateCancel()
+        setSetDueDateMode(false)
+        setSelectedForms(new Set())
+        fetchForms()
+      } else {
+        toast.error(data.message || 'Failed to set due date')
+      }
+    } catch (e) {
+      console.error('Bulk set due date error:', e)
+      toast.error('Failed to set due date')
+    } finally {
+      setSetDueDateSubmitting(false)
+    }
   }
 
   const handleSetActiveModeToggle = () => {
@@ -288,6 +368,9 @@ function RacmManagementDashboard() {
     if (deleteMode) {
       setDeleteMode(false)
     }
+    if (setDueDateMode) {
+      setSetDueDateMode(false)
+    }
     if (replicateMode) {
       setReplicateMode(false)
       setReplicateTargetFY('')
@@ -297,7 +380,7 @@ function RacmManagementDashboard() {
   // Handle click outside to cancel selection mode
   const handleClickOutside = (e) => {
     // If any dialog is open, do not cancel selection modes
-    if (setActiveConfirmDialogOpen || replicateDialogOpen || deleteConfirmDialogOpen || missingUsersDialogOpen || nonUserRoleDialogOpen) {
+    if (setActiveConfirmDialogOpen || replicateDialogOpen || deleteConfirmDialogOpen || setDueDateDialogOpen || missingUsersDialogOpen || nonUserRoleDialogOpen) {
       return
     }
 
@@ -314,7 +397,7 @@ function RacmManagementDashboard() {
     
     // Allow button clicks to proceed (they handle their own logic)
     const clickedButton = target.closest('button')
-    if (clickedButton && (clickedButton.textContent?.includes('Set Active') || clickedButton.textContent?.includes('Delete') || clickedButton.textContent?.includes('Replicate'))) {
+    if (clickedButton && (clickedButton.textContent?.includes('Set Active') || clickedButton.textContent?.includes('Set Due Date') || clickedButton.textContent?.includes('Delete') || clickedButton.textContent?.includes('Replicate'))) {
       // Let the button's onClick handle it
       return
     }
@@ -324,8 +407,9 @@ function RacmManagementDashboard() {
     }
     
     // Cancel selection mode
-    if (setActiveMode || deleteMode || replicateMode) {
+    if (setActiveMode || setDueDateMode || deleteMode || replicateMode) {
       setSetActiveMode(false)
+      setSetDueDateMode(false)
       setDeleteMode(false)
       setReplicateMode(false)
       setReplicateTargetFY('')
@@ -380,7 +464,7 @@ function RacmManagementDashboard() {
     const reminderMissingFormIds = []
 
     for (const form of formsToCheck) {
-      const email = normalizeEmail(form.process_owner)
+      const email = normalizeEmail(form.control_owner)
 
       if (!email) {
         emptyOwnerFormIds.push(form.form_id)
@@ -547,7 +631,7 @@ function RacmManagementDashboard() {
     }
 
     if (validFormIds.length === 0) {
-      toast.error('No eligible RACMs to set Active (process_owner role must be "user")')
+      toast.error('No eligible RACMs to set Active (control_owner role must be "user")')
       return
     }
 
@@ -715,6 +799,9 @@ function RacmManagementDashboard() {
     if (setActiveMode) {
       setSetActiveMode(false)
     }
+    if (setDueDateMode) {
+      setSetDueDateMode(false)
+    }
     if (replicateMode) {
       setReplicateMode(false)
       setReplicateTargetFY('')
@@ -728,6 +815,7 @@ function RacmManagementDashboard() {
     setReplicateTargetFY('')
     // Exit other modes if active
     if (setActiveMode) setSetActiveMode(false)
+    if (setDueDateMode) setSetDueDateMode(false)
     if (deleteMode) setDeleteMode(false)
   }
 
@@ -844,7 +932,7 @@ function RacmManagementDashboard() {
 
     const form = forms.find((item) => item.form_id === formId)
     if (!form) return
-    const email = normalizeEmail(form.process_owner)
+    const email = normalizeEmail(form.control_owner)
     const dueDate = form?.due_date
     const reminderFrequency = form?.reminder_frequency
     const hasDueDate = Boolean(dueDate)
@@ -1043,10 +1131,34 @@ function RacmManagementDashboard() {
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
   }
+  const wrappedTextSx = {
+    display: 'block',
+    maxWidth: '100%',
+    whiteSpace: 'normal',
+    wordBreak: 'break-word',
+    overflow: 'visible',
+  }
+  const dataCellTextSx = cellWordWrap ? wrappedTextSx : truncatedTextSx
+  const dataCellSx = (base) => ({
+    ...base,
+    ...(cellWordWrap
+      ? {
+          whiteSpace: 'normal',
+          wordBreak: 'break-word',
+          overflow: 'visible',
+          textOverflow: 'clip',
+          verticalAlign: 'top',
+        }
+      : {
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }),
+  })
   const isBlockedForSetActiveSelection = (form) => {
     if (!setActiveMode) return false
 
-    const email = normalizeEmail(form.process_owner)
+    const email = normalizeEmail(form.control_owner)
     if (!email) return true
 
     const dueDate = form?.due_date
@@ -1060,9 +1172,9 @@ function RacmManagementDashboard() {
   }
 
   const emptyProcessOwnerCount = setActiveMode
-    ? forms.filter((form) => !normalizeEmail(form.process_owner)).length
+    ? forms.filter((form) => !normalizeEmail(form.control_owner)).length
     : 0
-  const selectableVisibleForms = (deleteMode || replicateMode)
+  const selectableVisibleForms = (deleteMode || replicateMode || setDueDateMode)
     ? forms
     : forms.filter((form) => !isBlockedForSetActiveSelection(form))
   const allVisibleSelectableSelected = selectableVisibleForms.length > 0 &&
@@ -1076,7 +1188,7 @@ function RacmManagementDashboard() {
 
   // Add click outside handler
   useEffect(() => {
-    if (setActiveMode || deleteMode || replicateMode) {
+    if (setActiveMode || setDueDateMode || deleteMode || replicateMode) {
       // Use setTimeout to avoid immediate cancellation on button click
       const timeoutId = setTimeout(() => {
         document.addEventListener('click', handleClickOutside, true)
@@ -1089,15 +1201,30 @@ function RacmManagementDashboard() {
     }
   }, [
     setActiveMode,
+    setDueDateMode,
     deleteMode,
     replicateMode,
     setActiveConfirmDialogOpen,
     replicateDialogOpen,
     deleteConfirmDialogOpen,
+    setDueDateDialogOpen,
     missingUsersDialogOpen,
     nonUserRoleDialogOpen,
     setActiveSelectionInfoDialogOpen,
   ])
+
+  const toolbarBtnRadius = 1
+  const toolbarBtnBase = {
+    textTransform: 'none',
+    fontSize: '0.8125rem',
+    fontWeight: 600,
+    minWidth: '148px',
+    py: 0.7,
+    px: 1.75,
+    borderRadius: toolbarBtnRadius,
+    boxShadow: 'none',
+  }
+  const secondaryTone = theme.palette.mode === 'dark' ? theme.palette.primary : theme.palette.secondary
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
@@ -1106,117 +1233,207 @@ function RacmManagementDashboard() {
           display: 'flex',
           justifyContent: 'flex-end',
           alignItems: 'center',
+          flexWrap: 'wrap',
           mb: 2,
-          gap: 1.5,
+          gap: 1.25,
         }}
       >
         <Button
-              onClick={(e) => {
-                e.stopPropagation()
-                if (setActiveMode) {
-                  // In mode: if has selections, show confirmation; otherwise do nothing (button disabled)
-                  if (selectedForms.size > 0) {
-                    handleSetActiveClick()
-                  }
-                } else {
-                  // Not in mode: enter mode
-                  handleSetActiveModeToggle()
-                }
-              }}
-              disabled={
-                loading || 
-                forms.length === 0 || 
-                allFormsActive || 
-                deleteMode || 
-                replicateMode ||
-                bulkUpdating ||
-                (setActiveMode && selectedForms.size === 0) // Disable if in mode but no selections
-              }
-              variant={setActiveMode ? 'contained' : 'outlined'}
-              color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
-              size="small"
-              sx={{
-                minWidth: '140px',
-                textTransform: 'none',
-                fontSize: '0.8rem',
-                py: 0.75,
-              }}
-            >
-              {setActiveMode 
-                ? (selectedForms.size > 0 ? `Set Active (${selectedForms.size})` : 'Set Active')
-                : 'Set Active'}
-            </Button>
+          onClick={() => navigate('/company_co/create-form')}
+          disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
+          variant="outlined"
+          color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
+          size="small"
+          sx={{
+            ...toolbarBtnBase,
+            bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.14 : 0.1),
+            borderColor: alpha(secondaryTone.main, 0.45),
+            '&:hover': {
+              boxShadow: 'none',
+              bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.22 : 0.16),
+              borderColor: secondaryTone.main,
+            },
+            '&:disabled': {
+              bgcolor: alpha(theme.palette.action.disabledBackground, 0.5),
+            },
+          }}
+        >
+          Create RACM Manually
+        </Button>
 
-            <Button
-              onClick={(e) => {
-                e.stopPropagation()
-                if (replicateMode) {
-                  if (selectedForms.size > 0) {
-                    openReplicateDialog()
-                  }
-                } else {
-                  handleReplicateModeToggle()
-                }
-              }}
-              disabled={
-                loading ||
-                forms.length === 0 ||
-                setActiveMode ||
-                deleteMode ||
-                replicating ||
-                (replicateMode && selectedForms.size === 0)
+        <Button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (setActiveMode) {
+              if (selectedForms.size > 0) {
+                handleSetActiveClick()
               }
-              variant={replicateMode ? 'contained' : 'outlined'}
-              color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
-              size="small"
-              sx={{
-                minWidth: '140px',
-                textTransform: 'none',
-                fontSize: '0.8rem',
-                py: 0.75,
-              }}
-            >
-              {replicateMode
-                ? (selectedForms.size > 0 ? `Replicate (${selectedForms.size})` : 'Replicate')
-                : 'Replicate'}
-            </Button>
+            } else {
+              handleSetActiveModeToggle()
+            }
+          }}
+          disabled={
+            loading ||
+            forms.length === 0 ||
+            allFormsActive ||
+            deleteMode ||
+            replicateMode ||
+            bulkUpdating ||
+            (setActiveMode && selectedForms.size === 0)
+          }
+          variant={setActiveMode ? 'contained' : 'outlined'}
+          color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
+          size="small"
+          sx={{
+            ...toolbarBtnBase,
+            ...(setActiveMode
+              ? {}
+              : {
+                  bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.14 : 0.1),
+                  borderColor: alpha(secondaryTone.main, 0.45),
+                  '&:hover': {
+                    boxShadow: 'none',
+                    bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.22 : 0.16),
+                    borderColor: secondaryTone.main,
+                  },
+                }),
+            ...(setActiveMode && {
+              '&:hover': { boxShadow: 'none' },
+            }),
+          }}
+        >
+          {setActiveMode
+            ? (selectedForms.size > 0 ? `Set Active (${selectedForms.size})` : 'Set Active')
+            : 'Set Active'}
+        </Button>
 
-            <Button
-              onClick={(e) => {
-                e.stopPropagation()
-                if (deleteMode) {
-                  // In mode: if has selections, show confirmation; otherwise do nothing (button disabled)
-                  if (selectedForms.size > 0) {
-                    handleDeleteClick()
-                  }
-                } else {
-                  // Not in mode: enter mode
-                  handleDeleteModeToggle()
-                }
-              }}
-              disabled={
-                loading || 
-                forms.length === 0 || 
-                setActiveMode || 
-                replicateMode ||
-                deleting ||
-                (deleteMode && selectedForms.size === 0) // Disable if in mode but no selections
+        <Button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (setDueDateMode) {
+              if (selectedForms.size > 0) {
+                openSetDueDateDialog()
               }
-              variant={deleteMode ? 'contained' : 'outlined'}
-              color="error"
-              size="small"
-              sx={{
-                minWidth: '140px',
-                textTransform: 'none',
-                fontSize: '0.8rem',
-                py: 0.75,
-              }}
-            >
-              {deleteMode
-                ? (selectedForms.size > 0 ? `Delete (${selectedForms.size})` : 'Delete')
-                : 'Delete'}
-            </Button>
-          </Box>
+            } else {
+              handleSetDueDateModeToggle()
+            }
+          }}
+          disabled={
+            loading ||
+            forms.length === 0 ||
+            setActiveMode ||
+            deleteMode ||
+            replicateMode ||
+            setDueDateSubmitting ||
+            (setDueDateMode && selectedForms.size === 0)
+          }
+          variant={setDueDateMode ? 'contained' : 'outlined'}
+          color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
+          size="small"
+          sx={{
+            ...toolbarBtnBase,
+            ...(setDueDateMode
+              ? { '&:hover': { boxShadow: 'none' } }
+              : {
+                  bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.14 : 0.1),
+                  borderColor: alpha(secondaryTone.main, 0.45),
+                  '&:hover': {
+                    boxShadow: 'none',
+                    bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.22 : 0.16),
+                    borderColor: secondaryTone.main,
+                  },
+                }),
+          }}
+        >
+          {setDueDateMode
+            ? (selectedForms.size > 0 ? `Set Due Date (${selectedForms.size})` : 'Set Due Date')
+            : 'Set Due Date'}
+        </Button>
+
+        <Button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (replicateMode) {
+              if (selectedForms.size > 0) {
+                openReplicateDialog()
+              }
+            } else {
+              handleReplicateModeToggle()
+            }
+          }}
+          disabled={
+            loading ||
+            forms.length === 0 ||
+            setActiveMode ||
+            deleteMode ||
+            replicating ||
+            (replicateMode && selectedForms.size === 0)
+          }
+          variant={replicateMode ? 'contained' : 'outlined'}
+          color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
+          size="small"
+          sx={{
+            ...toolbarBtnBase,
+            ...(replicateMode
+              ? { '&:hover': { boxShadow: 'none' } }
+              : {
+                  bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.14 : 0.1),
+                  borderColor: alpha(secondaryTone.main, 0.45),
+                  '&:hover': {
+                    boxShadow: 'none',
+                    bgcolor: alpha(secondaryTone.main, theme.palette.mode === 'dark' ? 0.22 : 0.16),
+                    borderColor: secondaryTone.main,
+                  },
+                }),
+          }}
+        >
+          {replicateMode
+            ? (selectedForms.size > 0 ? `Replicate (${selectedForms.size})` : 'Replicate')
+            : 'Replicate'}
+        </Button>
+
+        <Button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (deleteMode) {
+              if (selectedForms.size > 0) {
+                handleDeleteClick()
+              }
+            } else {
+              handleDeleteModeToggle()
+            }
+          }}
+          disabled={
+            loading ||
+            forms.length === 0 ||
+            setActiveMode ||
+            replicateMode ||
+            deleting ||
+            (deleteMode && selectedForms.size === 0)
+          }
+          variant={deleteMode ? 'contained' : 'outlined'}
+          color="error"
+          size="small"
+          sx={{
+            ...toolbarBtnBase,
+            ...(deleteMode
+              ? { '&:hover': { boxShadow: 'none' } }
+              : {
+                  bgcolor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.16 : 0.1),
+                  borderColor: alpha(theme.palette.error.main, 0.45),
+                  '&:hover': {
+                    boxShadow: 'none',
+                    bgcolor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.24 : 0.16),
+                    borderColor: theme.palette.error.main,
+                  },
+                }),
+          }}
+        >
+          {deleteMode
+            ? (selectedForms.size > 0 ? `Delete (${selectedForms.size})` : 'Delete')
+            : 'Delete'}
+        </Button>
+      </Box>
 
       <Paper
         elevation={3}
@@ -1236,19 +1453,24 @@ function RacmManagementDashboard() {
             gap: 2,
           }}
         >
-          <Typography
-            variant="h5"
-            component="h2"
-            sx={{
-              fontWeight: 700,
-              color:
-                theme.palette.mode === 'dark'
-                  ? theme.palette.text.primary
-                  : theme.palette.secondary.main,
-            }}
-          >
-            RACM Management
-          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Typography
+              variant="h5"
+              component="h2"
+              sx={{
+                fontWeight: 700,
+                color:
+                  theme.palette.mode === 'dark'
+                    ? theme.palette.text.primary
+                    : theme.palette.secondary.main,
+              }}
+            >
+              RACM Management
+            </Typography>
+            <Typography sx={PAGE_SUBHEADER_TEXT_SX}>
+              Analyze and monitor RACM for your company.
+            </Typography>
+          </Box>
 
           <Box
             sx={{
@@ -1262,7 +1484,7 @@ function RacmManagementDashboard() {
               {/* Business Process Filter */}
               <FormControl 
                 variant="outlined" 
-                disabled={deleteMode || setActiveMode || replicateMode}
+                disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
                 sx={{ 
                   minWidth: '200px',
                   '& .MuiOutlinedInput-root': {
@@ -1305,7 +1527,7 @@ function RacmManagementDashboard() {
               {/* Financial Year Filter */}
               <FormControl
                 variant="outlined"
-                disabled={deleteMode || setActiveMode || replicateMode}
+                disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
                 sx={{
                   minWidth: '200px',
                   '& .MuiOutlinedInput-root': {
@@ -1348,7 +1570,7 @@ function RacmManagementDashboard() {
               {/* Activity Filter Dropdown */}
               <FormControl
                 variant="outlined"
-                disabled={deleteMode || setActiveMode || replicateMode}
+                disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
                 sx={{
                   minWidth: '200px',
                   '& .MuiOutlinedInput-root': {
@@ -1388,7 +1610,7 @@ function RacmManagementDashboard() {
               {/* Status Filter Dropdown */}
               <FormControl
                 variant="outlined"
-                disabled={deleteMode || setActiveMode || replicateMode}
+                disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
                 sx={{
                   minWidth: '200px',
                   '& .MuiOutlinedInput-root': {
@@ -1425,8 +1647,8 @@ function RacmManagementDashboard() {
                   <MenuItem value="Pending">Pending</MenuItem>
                 </Select>
               </FormControl>
-            </Box>
           </Box>
+        </Box>
 
           {loading ? (
             <Box sx={{ textAlign: 'center', py: 4 }}>
@@ -1437,6 +1659,37 @@ function RacmManagementDashboard() {
               <Typography color="text.secondary">No forms found.</Typography>
             </Box>
           ) : (
+            <Box>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  mb: 1.5,
+                  flexWrap: 'wrap',
+                  gap: 1,
+                }}
+              >
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={cellWordWrap}
+                      onChange={(e) => setCellWordWrap(e.target.checked)}
+                      size="small"
+                      color="primary"
+                    />
+                  }
+                  label="Word wrap"
+                  sx={{
+                    mr: 0,
+                    userSelect: 'none',
+                    '& .MuiFormControlLabel-label': {
+                      fontSize: '0.8125rem',
+                      color: theme.palette.text.secondary,
+                    },
+                  }}
+                />
+              </Box>
             <Box sx={{ overflowX: 'auto' }}>
               <Box
                 component="table"
@@ -1455,7 +1708,7 @@ function RacmManagementDashboard() {
                   }}
                 >
                   <Box component="tr">
-                    {(deleteMode || setActiveMode || replicateMode) && (
+                    {(deleteMode || setActiveMode || setDueDateMode || replicateMode) && (
                       <Box
                         component="th"
                         sx={{
@@ -1609,7 +1862,7 @@ function RacmManagementDashboard() {
                         maxWidth: '140px',
                       }}
                     >
-                      Created At
+                      Due Date
                     </Box>
                   </Box>
                 </Box>
@@ -1627,7 +1880,7 @@ function RacmManagementDashboard() {
                           handleFormClick(form.form_id, e)
                         }}
                         sx={{
-                          cursor: (deleteMode || setActiveMode || replicateMode) ? 'default' : 'pointer',
+                          cursor: (deleteMode || setActiveMode || setDueDateMode || replicateMode) ? 'default' : 'pointer',
                           transition: 'background-color 0.2s',
                           backgroundColor: isSelected 
                             ? (deleteMode 
@@ -1635,7 +1888,7 @@ function RacmManagementDashboard() {
                                 : (theme.palette.mode === 'dark' ? 'rgba(3, 105, 161, 0.2)' : 'rgba(3, 105, 161, 0.1)'))
                             : 'transparent',
                           '&:hover': {
-                            backgroundColor: (deleteMode || setActiveMode || replicateMode)
+                            backgroundColor: (deleteMode || setActiveMode || setDueDateMode || replicateMode)
                               ? (isSelected 
                                   ? (deleteMode 
                                       ? (theme.palette.mode === 'dark' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.15)')
@@ -1645,7 +1898,7 @@ function RacmManagementDashboard() {
                           },
                         }}
                       >
-                        {(deleteMode || setActiveMode || replicateMode) && (
+                        {(deleteMode || setActiveMode || setDueDateMode || replicateMode) && (
                           <Box
                             component="td"
                             sx={{
@@ -1672,65 +1925,56 @@ function RacmManagementDashboard() {
                         )}
                         <Box
                           component="td"
-                          sx={{
+                          sx={dataCellSx({
                             px: 2.5,
                             py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
                             width: '200px',
                             minWidth: '180px',
                             maxWidth: '220px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          <Box component="span" sx={truncatedTextSx}>
+                          <Box component="span" sx={dataCellTextSx}>
                             {form.business_process || 'N/A'}
                           </Box>
                         </Box>
                         <Box
                           component="td"
-                          sx={{
+                          sx={dataCellSx({
                             px: 2.5,
                             py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
                             width: '220px',
                             minWidth: '200px',
                             maxWidth: '260px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
                           <Tooltip title={form.sub_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
-                            <Box component="span" sx={truncatedTextSx}>
+                            <Box component="span" sx={dataCellTextSx}>
                               {form.sub_process || 'N/A'}
                             </Box>
                           </Tooltip>
                         </Box>
                         <Box
                           component="td"
-                          sx={{
+                          sx={dataCellSx({
                             px: 2.5,
                             py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
                             width: '260px',
                             minWidth: '220px',
                             maxWidth: '320px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
                           <Tooltip
                             title={form.standard_control_description || 'N/A'}
                             arrow
                             slotProps={{ tooltip: { sx: tooltipSx } }}
                           >
-                            <Box component="span" sx={truncatedTextSx}>
+                            <Box component="span" sx={dataCellTextSx}>
                               {form.standard_control_description || 'N/A'}
                             </Box>
                           </Tooltip>
@@ -1822,23 +2066,20 @@ function RacmManagementDashboard() {
                         </Box>
                         <Box
                           component="td"
-                          sx={{
+                          sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
                             width: '140px',
                             minWidth: '140px',
                             maxWidth: '140px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
-                          }}
+                          })}
                         >
-                          <Box component="span" sx={truncatedTextSx}>
-                            {form.created_at
-                              ? new Date(form.created_at).toLocaleDateString()
-                              : 'N/A'}
+                          <Box component="span" sx={dataCellTextSx}>
+                            {form.due_date
+                              ? new Date(form.due_date).toLocaleDateString('en-GB')
+                              : '—'}
                           </Box>
                         </Box>
                       </Box>
@@ -1847,10 +2088,112 @@ function RacmManagementDashboard() {
                 </Box>
               </Box>
             </Box>
+            </Box>
           )}
         </Paper>
 
         {/* Set Active Confirmation Dialog */}
+        <Dialog
+          open={setDueDateDialogOpen}
+          onClose={handleSetDueDateCancel}
+          aria-labelledby="set-due-date-dialog-title"
+          aria-describedby="set-due-date-dialog-description"
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              minWidth: { xs: '90%', sm: '440px' },
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+                : '0 8px 32px rgba(0, 0, 0, 0.12)',
+            },
+          }}
+        >
+          <DialogTitle
+            id="set-due-date-dialog-title"
+            sx={{
+              pb: 2.5,
+              pt: 3,
+              px: 3,
+              fontWeight: 600,
+              fontSize: '1.25rem',
+              color: theme.palette.text.primary,
+            }}
+          >
+            Set Due Date
+          </DialogTitle>
+          <DialogContent sx={{ px: 3, pt: 2, pb: 3 }}>
+            <DialogContentText
+              id="set-due-date-dialog-description"
+              sx={{ color: theme.palette.text.secondary, mb: 2 }}
+            >
+              This will replace the Due Date and Reminder Frequency for the selected RACM(s).
+            </DialogContentText>
+
+            <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+              Total selected RACM(s): <strong>{selectedForms.size}</strong>
+              {alreadyScheduledCount > 0 ? (
+                <>
+                  {' '}
+                  — already having due date & reminder frequency: <strong>{alreadyScheduledCount}</strong>
+                </>
+              ) : null}
+            </Typography>
+
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                gap: 2,
+              }}
+            >
+              <FormControl fullWidth>
+                <TextField
+                  label="Due Date"
+                  type="date"
+                  value={setDueDateValue}
+                  onChange={(e) => setSetDueDateValue(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  disabled={setDueDateSubmitting}
+                />
+              </FormControl>
+
+              <FormControl fullWidth>
+                <InputLabel id="set-due-reminder-frequency-label">Reminder Frequency</InputLabel>
+                <Select
+                  labelId="set-due-reminder-frequency-label"
+                  value={setDueReminderFrequency}
+                  label="Reminder Frequency"
+                  onChange={(e) => setSetDueReminderFrequency(e.target.value)}
+                  disabled={setDueDateSubmitting}
+                >
+                  <MenuItem value="Daily">Daily</MenuItem>
+                  <MenuItem value="Weekly">Weekly</MenuItem>
+                  <MenuItem value="Monthly">Monthly</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button
+              onClick={handleSetDueDateCancel}
+              disabled={setDueDateSubmitting}
+              variant="outlined"
+              sx={{ textTransform: 'none', px: 2.5, py: 1, borderRadius: 1 }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSetDueDateSubmit}
+              disabled={setDueDateSubmitting}
+              variant="contained"
+              color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
+              sx={{ textTransform: 'none', px: 3, py: 1, borderRadius: 1, fontWeight: 600 }}
+            >
+              {setDueDateSubmitting ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
         <Dialog
           open={setActiveConfirmDialogOpen}
           onClose={handleSetActiveCancel}

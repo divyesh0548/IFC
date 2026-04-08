@@ -11,8 +11,10 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import IconButton from '@mui/material/IconButton'
+import Checkbox from '@mui/material/Checkbox'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { toast } from 'react-hot-toast'
+import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 
 function CreateControlForm() {
   const theme = useTheme()
@@ -47,7 +49,7 @@ function CreateControlForm() {
     business_process: '',
     financial_year: '',
     control_number: '',
-    account_balance_disclosure: '',
+    area: '',
     risk_heat: '',
     standard_control_description: '',
     sub_process: '',
@@ -66,22 +68,22 @@ function CreateControlForm() {
     control_type_fo: '',
     control_type_ma: '',
     nature_of_control: '',
-    process_owner: '',
     control_frequency: '',
     sample_size: '',
-    completeness: '',
-    existence_occurrence: '',
-    rights_and_obligation: '',
-    valuation_and_allocation: '',
-    presentation_and_disclosure: ''
+    completeness: false,
+    existence_occurrence: false,
+    rights_and_obligation: false,
+    valuation_and_allocation: false,
+    presentation_and_disclosure: false
   })
 
   const dropdownOptions = {
-  risk_heat: ['High', 'Low', 'Medium', 'Other'],
-  control_type_fo: ['Financial', 'Operational', 'Other'],
-  control_type_ma: ['Manual', 'Automated', 'Other'],
+  risk_heat: ['High', 'Low', 'Medium'],
+  control_type_fo: ['Financial', 'Operational'],
+  control_type_ma: ['Manual', 'Automated'],
   nature_of_control: ['Preventive', 'Detective'],
-  key_control: ['Yes', 'No', 'Other'],
+  key_control: ['Yes', 'No'],
+  control_relies_on_ipe: ['Yes', 'No'],
     control_frequency: [
       'Yearly',
       'Quarterly',
@@ -127,6 +129,14 @@ function CreateControlForm() {
     setFormData(prev => ({
       ...prev,
       [name]: value
+    }))
+  }
+
+  const handleAssertionToggle = (field) => (e) => {
+    const checked = !!e.target.checked
+    setFormData((prev) => ({
+      ...prev,
+      [field]: checked,
     }))
   }
 
@@ -185,10 +195,10 @@ function CreateControlForm() {
       return
     }
 
-    // Validate Process Owner email if provided
-    if (formData.process_owner && formData.process_owner.trim() !== '') {
-      if (!validateEmail(formData.process_owner)) {
-        toast.error('Please enter a valid email address for Process Owner')
+    // Validate Control Owner email if provided
+    if (formData.control_owner && formData.control_owner.trim() !== '') {
+      if (!validateEmail(formData.control_owner)) {
+        toast.error('Please enter a valid email address for Control Owner')
         return
       }
     }
@@ -240,7 +250,7 @@ function CreateControlForm() {
   business_process: 'Business Process',
   financial_year: 'Financial Year',
   control_number: 'Control Number',
-  account_balance_disclosure: 'Account Balance / Disclosure',
+  area: 'Area',
   risk_heat: 'Risk Heat',
   standard_control_description: 'Standard Control Description',
   sub_process: 'Sub Process',
@@ -259,7 +269,6 @@ function CreateControlForm() {
   control_type_fo: 'Type of control (Operational/Financial)',
   control_type_ma: 'Type of control (Manual/ Automated)',
   nature_of_control: 'Nature of Control',
-  process_owner: 'Process Owner',
   control_frequency: 'Control Frequency',
   sample_size: 'Sample Size',
   completeness: 'Completeness',
@@ -274,7 +283,7 @@ function CreateControlForm() {
     'business_process',
     'financial_year',
     'control_number',
-    'account_balance_disclosure',
+    'area',
     'sub_process',
     'risk_description',
     'risk_heat',
@@ -283,6 +292,7 @@ function CreateControlForm() {
     'valuation_and_allocation',
     'rights_and_obligation',
     'presentation_and_disclosure',
+    'control_objective',
     'standard_control_description',
     'whether_fraud_risks_exist',
     'process_walkthrough',
@@ -297,7 +307,6 @@ function CreateControlForm() {
     'control_type_fo',
     'control_type_ma',
     'nature_of_control',
-    'process_owner',
     'control_frequency',
     'sample_size',
   ]
@@ -305,16 +314,14 @@ function CreateControlForm() {
   return (
     <Box 
       sx={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        minHeight: 'calc(100vh - 4rem)', 
+        width: '100%',
+        maxWidth: FORM_DETAIL_MAX_WIDTH,
+        mx: 'auto',
         px: 0, 
-        py: 4 
+        py: 0,
       }}
     >
-      <Box sx={{ width: '100%', maxWidth: '1200px' }}>
+      <Box sx={{ width: '100%' }}>
         <Paper 
           elevation={3}
           sx={{
@@ -325,7 +332,7 @@ function CreateControlForm() {
         >
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <IconButton
-              onClick={() => navigate('/company_co/upload-excel')}
+              onClick={() => navigate('/company_co/racm-management')}
               sx={{
                 mr: 2,
                 color: theme.palette.text.primary,
@@ -429,7 +436,7 @@ function CreateControlForm() {
                   gap: 3,
                 }}
               >
-                {['control_number', 'account_balance_disclosure', 'sub_process', 'risk_heat', 'risk_description'].map((field) => {
+                {['control_number', 'area', 'sub_process', 'risk_heat', 'risk_description'].map((field) => {
                   const label = fieldLabels[field]
                   const value = formData[field] || ''
                   const isMultiline = multilineFields.includes(field)
@@ -533,19 +540,31 @@ function CreateControlForm() {
               >
                 {['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure'].map((field) => {
                   const label = fieldLabels[field]
-                  const value = formData[field] || ''
+                  const checked = !!formData[field]
 
                   return (
-                    <TextField
+                    <Box
                       key={field}
-                      name={field}
-                      label={label}
-                      value={value}
-                      onChange={handleChange}
-                      fullWidth
-                      variant="outlined"
-                      disabled={loading}
-                    />
+                      sx={{
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 1.5,
+                        px: 2,
+                        py: 1.5,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 2,
+                      }}
+                    >
+                      <Typography sx={{ fontWeight: 600, color: 'text.primary' }}>{label}</Typography>
+                      <Checkbox
+                        checked={checked}
+                        onChange={handleAssertionToggle(field)}
+                        disabled={loading}
+                        inputProps={{ 'aria-label': label }}
+                      />
+                    </Box>
                   )
                 })}
               </Box>
@@ -587,7 +606,7 @@ function CreateControlForm() {
                     !['business_process',
                       'financial_year',
                       'control_number',
-                      'account_balance_disclosure',
+                      'area',
                       'sub_process',
                       'risk_description',
                       'risk_heat',

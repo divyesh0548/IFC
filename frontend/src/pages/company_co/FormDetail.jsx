@@ -19,15 +19,18 @@ import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Autocomplete from '@mui/material/Autocomplete';
+import Checkbox from '@mui/material/Checkbox';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
+import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
 
 function FormDetail() {
   const theme = useTheme()
@@ -69,6 +72,12 @@ function FormDetail() {
   const [processOwnerName, setProcessOwnerName] = useState('-')
   const [sampleMissingDialogOpen, setSampleMissingDialogOpen] = useState(false)
   const [showScrollTop, setShowScrollTop] = useState(false)
+  const [auditLogOpen, setAuditLogOpen] = useState(false)
+  const [auditLogLoading, setAuditLogLoading] = useState(false)
+  const [auditLogError, setAuditLogError] = useState(null)
+  const [auditLogRows, setAuditLogRows] = useState([])
+  const assertionFields = ['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure']
+
   useSyncGlobalLoading(
     loading ||
     updating ||
@@ -168,7 +177,7 @@ function FormDetail() {
       // Check if required fields are empty
       const dueDate = formData.due_date?.trim()
       const reminderFrequency = formData.reminder_frequency?.trim()
-      const processOwnerEmailValue = formData.process_owner?.trim()
+      const processOwnerEmailValue = formData.control_owner?.trim()
 
       // 1) If process owner is missing, show assignment message regardless of other fields
       if (!processOwnerEmailValue || processOwnerEmailValue === '') {
@@ -301,7 +310,11 @@ function FormDetail() {
     const initialFields = {}
     fieldOrder.forEach(key => {
       if (!excludedFields.includes(key) && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)) {
-        initialFields[key] = formData[key] || ''
+        if (assertionFields.includes(key)) {
+          initialFields[key] = formData[key] === true || formData[key] === 'true' || formData[key] === '1' || formData[key] === 1
+        } else {
+          initialFields[key] = formData[key] ?? ''
+        }
       }
     })
     setEditableFields(initialFields)
@@ -314,7 +327,11 @@ function FormDetail() {
     const initialFields = {}
     fieldOrder.forEach(key => {
       if (!excludedFields.includes(key) && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)) {
-        initialFields[key] = formData[key] || ''
+        if (assertionFields.includes(key)) {
+          initialFields[key] = formData[key] === true || formData[key] === 'true' || formData[key] === '1' || formData[key] === 1
+        } else {
+          initialFields[key] = formData[key] ?? ''
+        }
       }
     })
     setEditableFields(initialFields)
@@ -329,15 +346,35 @@ function FormDetail() {
 
   const formatDateForInput = (dateValue) => {
     if (!dateValue) return ''
+    // Keep plain date strings as-is; convert zoned timestamps to IST calendar date.
+    if (typeof dateValue === 'string') {
+      const trimmed = dateValue.trim()
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+        return trimmed
+      }
+    }
     const date = new Date(dateValue)
     if (Number.isNaN(date.getTime())) return ''
-    return date.toISOString().split('T')[0]
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+    const get = (type) => parts.find((p) => p.type === type)?.value || ''
+    const y = get('year')
+    const mm = get('month')
+    const dd = get('day')
+    return `${y}-${mm}-${dd}`
   }
 
   const getTomorrowDateString = () => {
     const now = new Date()
     const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
-    return tomorrow.toISOString().split('T')[0]
+    const y = tomorrow.getFullYear()
+    const mm = String(tomorrow.getMonth() + 1).padStart(2, '0')
+    const dd = String(tomorrow.getDate()).padStart(2, '0')
+    return `${y}-${mm}-${dd}`
   }
 
   const parseReminderFrequency = (value) => {
@@ -494,8 +531,8 @@ function FormDetail() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          process_owner: selectedUser.email_id,
-          modifiedFields: ['process_owner'],
+          control_owner: selectedUser.email_id,
+          modifiedFields: ['control_owner'],
         }),
       })
 
@@ -517,14 +554,14 @@ function FormDetail() {
 
   // Ensure company users are loaded when we have a process owner (for name lookup)
   useEffect(() => {
-    if (formData?.process_owner && companyUsers.length === 0) {
+    if (formData?.control_owner && companyUsers.length === 0) {
       fetchCompanyUsers()
     }
-  }, [formData?.process_owner]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [formData?.control_owner]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derive process owner display name from company users using email_id
   useEffect(() => {
-    const email = (formData?.process_owner || '').trim().toLowerCase()
+    const email = (formData?.control_owner || '').trim().toLowerCase()
     if (!email) {
       setProcessOwnerName('-')
       return
@@ -537,7 +574,7 @@ function FormDetail() {
     } else {
       setProcessOwnerName('-')
     }
-  }, [formData?.process_owner, companyUsers])
+  }, [formData?.control_owner, companyUsers])
 
   const handleSaveChanges = async () => {
     // Check status again before saving
@@ -553,10 +590,20 @@ function FormDetail() {
     // Track modified fields by comparing original formData with editableFields
     const modifiedFields = []
     const modifiedChanges = []
+    const normalizedEditableFields = { ...editableFields }
     fieldOrder.forEach(key => {
       if (!excludedFields.includes(key) && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)) {
-        const originalValue = formData[key] ?? ''
-        const newValue = editableFields[key] ?? ''
+        const originalValue = assertionFields.includes(key)
+          ? (formData[key] === true || formData[key] === 'true' || formData[key] === '1' || formData[key] === 1)
+          : (formData[key] ?? '')
+        const newValue = assertionFields.includes(key)
+          ? (editableFields[key] === true || editableFields[key] === 'true' || editableFields[key] === '1' || editableFields[key] === 1)
+          : (editableFields[key] ?? '')
+
+        // Ensure payload never sends '' for boolean assertion fields
+        if (assertionFields.includes(key)) {
+          normalizedEditableFields[key] = !!newValue
+        }
         // Compare values (convert to string for comparison)
         if (String(originalValue).trim() !== String(newValue).trim()) {
           modifiedFields.push(key)
@@ -578,7 +625,7 @@ function FormDetail() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          ...editableFields,
+          ...normalizedEditableFields,
           modifiedFields: modifiedFields, // Backward-compatible metadata
           modifiedChanges: modifiedChanges // [{ column_name, old_value, new_value }, ...]
         }),
@@ -614,6 +661,30 @@ function FormDetail() {
       second: '2-digit',
       timeZone: 'Asia/Kolkata'
     })
+  }
+
+  const handleOpenAuditLogs = async () => {
+    setAuditLogOpen(true)
+    setAuditLogLoading(true)
+    setAuditLogError(null)
+    setAuditLogRows([])
+    try {
+      const response = await fetch(
+        `http://localhost:3000/api/company-co/racm-audit-logs/${encodeURIComponent(form_id)}`,
+        { method: 'GET', credentials: 'include' }
+      )
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        setAuditLogError(data.message || 'Failed to load audit logs')
+        return
+      }
+      setAuditLogRows(Array.isArray(data.data) ? data.data : [])
+    } catch (e) {
+      console.error('Audit logs fetch error:', e)
+      setAuditLogError('Failed to load audit logs')
+    } finally {
+      setAuditLogLoading(false)
+    }
   }
 
   const formatStatus = (status) => {
@@ -953,47 +1024,13 @@ function FormDetail() {
 
   // Define field labels mapping for updated RACM schema
   const fieldLabels = {
-    control_number: 'Control Number',
-    account_balance_disclosure: 'Account Balance / Disclosure',
-    risk_heat: 'Risk Heat',
-    standard_control_description: 'Standard Control Description',
-    sub_process: 'Sub Process',
-    risk_description: 'Risk Description',
-    whether_fraud_risks_exist: 'Whether Fraud Risks Exist',
-    control_objective: 'Control Objective',
-    process_walkthrough: 'Process Activity and Walkthrough Details',
-    control_relies_on_ipe: 'Does the Control Rely on IPE?',
-    audit_evidence_accuracy: 'Audit Evidence of Accuracy and Completeness',
-    ipe_reference: 'IPE Reference',
-    key_control: 'Key Control',
-    application_name: 'Application Name',
-    control_performer: 'Control Performer',
-    control_owner: 'Control Owner',
-    control_design_procs: 'Procedures to Evaluate Design and Implementation',
-    control_type_fo: 'Type of control (Operational/Financial)',
-    control_type_ma: 'Type of control (Manual/ Automated)',
-    nature_of_control: 'Nature of Control',
-    process_owner: 'Process Owner',
-    control_frequency: 'Control Frequency',
-    sample_size: 'Sample Size',
-    sample_required: 'Sample Required',
-    completeness: 'Completeness',
-    existence_occurrence: 'Existence & Occurrence',
-    rights_and_obligation: 'Rights and Obligations',
-    valuation_and_allocation: 'Valuation & Allocation',
-    presentation_and_disclosure: 'Presentation and Disclosure',
-    control_design_conclusion: 'Conclusion on Design of Control',
-    design_deficiency_desc: 'Description of Deficiency in Control Design',
-    doc_uploaded_by_user: 'Doc Uploaded by User',
-    active: 'Active',
-    approved_rejected: 'Approved/Rejected',
-    reason_by_approver: 'Reason by Approver',
+    ...RACM_FIELD_LABELS,
   }
 
   // Display order for updated RACM schema
   const fieldOrder = [
     'control_number',
-    'account_balance_disclosure',
+    'area',
     'sub_process',
     'risk_description',
     'risk_heat',
@@ -1007,12 +1044,11 @@ function FormDetail() {
     'key_control',
     'application_name',
     'control_performer',
-    'control_owner',
     'control_design_procs',
     'control_type_fo',
     'control_type_ma',
     'nature_of_control',
-    'process_owner',
+    'control_owner',
     'control_frequency',
     'sample_size',
     'sample_required',
@@ -1025,6 +1061,27 @@ function FormDetail() {
     'design_deficiency_desc',
     'doc_uploaded_by_user'
   ]
+  const editableDropdownOptions = {
+    risk_heat: ['High', 'Low', 'Medium'],
+    control_type_fo: ['Financial', 'Operational'],
+    control_type_ma: ['Manual', 'Automated'],
+    nature_of_control: ['Preventive', 'Detective'],
+    key_control: ['Yes', 'No'],
+    control_relies_on_ipe: ['Yes', 'No'],
+    control_frequency: [
+      'Yearly',
+      'Quarterly',
+      'Half Yearly',
+      'Monthly',
+      'Weekly',
+      'Fortnightly',
+      'As and When Needed',
+      'Recurring and Periodic',
+      'Recurring and Daily',
+      'Daily',
+    ],
+    whether_fraud_risks_exist: ['Yes', 'No', 'Other'],
+  }
 
   // Fields to exclude from display
   const excludedFields = ['id', 'form_id', 'company_identifier', 'created_at', 'active', 'approved_rejected', 'reason_by_approver']
@@ -1095,6 +1152,23 @@ function FormDetail() {
   }
 
   const isActive = formData?.active && formData.active !== '' && formData.active !== '0'
+  const popupLabelSx = {
+    minWidth: '300px',
+    maxWidth: '300px',
+    fontWeight: 600,
+    color: theme.palette.text.primary,
+  }
+  const popupRowSx = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 1,
+    lineHeight: 1.6,
+  }
+  const popupValue = (value) => {
+    if (value === null || value === undefined) return 'None'
+    const stringValue = String(value).trim()
+    return stringValue === '' ? 'None' : stringValue
+  }
 
   return (
     <Box
@@ -1181,7 +1255,7 @@ function FormDetail() {
           >
             <CardContent sx={{ 
               px: 3.5,
-              pt: 4,
+              pt: 3,
               pb: 4,
               display: 'flex', 
               flexDirection: 'column', 
@@ -1194,6 +1268,56 @@ function FormDetail() {
                   gap: 3,
                 }}
               >
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: { xs: 'column', sm: 'row' },
+                    alignItems: { xs: 'stretch', sm: 'center' },
+                    justifyContent: 'space-between',
+                    gap: 1.5,
+                    mb: 0,
+                    pb: 2,
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    size="medium"
+                    startIcon={<HistoryRoundedIcon sx={{ fontSize: '1.2rem !important' }} />}
+                    onClick={handleOpenAuditLogs}
+                    disableElevation
+                    sx={{
+                      alignSelf: { xs: 'flex-start', sm: 'center' },
+                      textTransform: 'none',
+                      fontWeight: 700,
+                      letterSpacing: '0.02em',
+                      borderRadius: 2,
+                      px: 1.5,
+                      py: 0.875,
+                      minHeight: 40,
+                      boxShadow: 'none',
+                      '&:hover': {
+                        boxShadow: 'none',
+                      },
+                    }}
+                  >
+                    Audit logs
+                  </Button>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: 'text.secondary',
+                      fontSize: '0.75rem',
+                      lineHeight: 1.4,
+                      textAlign: { xs: 'left', sm: 'right' },
+                      alignSelf: { xs: 'flex-start', sm: 'center' },
+                    }}
+                  >
+                    Created at {formatDateTime(formData?.created_at)}
+                  </Typography>
+                </Box>
                 {/* Top metrics in equal-width grid */}
                 <Box
                   sx={{
@@ -1704,13 +1828,18 @@ function FormDetail() {
                   mt: 2,
                 }}
               >
-                {['control_number', 'account_balance_disclosure', 'sub_process', 'risk_description', 'risk_heat'].map((key) => {
+                {['control_number', 'area', 'sub_process', 'risk_description', 'risk_heat'].map((key) => {
                   if (!formData.hasOwnProperty(key) || excludedFields.includes(key)) return null
 
                   const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                   const value = formData[key]
                   const isEmpty = value === null || value === undefined || value === ''
-                  const isEditable = isEditMode && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)
+                  const isEditable =
+                    isEditMode &&
+                    key !== 'doc_uploaded_by_user' &&
+                    key !== 'control_owner' &&
+                    key !== 'sample_size' &&
+                    !approverOnlyFields.includes(key)
                   const isTextArea = ['risk_description'].includes(key)
 
                   return (
@@ -1740,45 +1869,61 @@ function FormDetail() {
                         },
                       }}
                     >
-                      {!isEditable && (
-                        <Typography
-                          variant="caption"
-                          component="dt"
-                          sx={{
-                            display: 'block',
-                            fontWeight: 700,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            mb: 1.5,
-                            color: 'text.primary',
-                            fontSize: theme.typography.customSizes.small,
-                          }}
-                        >
-                          {label}
-                        </Typography>
-                      )}
+                      <Typography
+                        variant="caption"
+                        component="dt"
+                        sx={{
+                          display: 'block',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          mb: 1.5,
+                          color: 'text.primary',
+                          fontSize: theme.typography.customSizes.small,
+                        }}
+                      >
+                        {label}
+                      </Typography>
                       {isEditable ? (
-                        <TextField
-                          label={label}
-                          variant="outlined"
-                          value={editableFields[key] || ''}
-                          onChange={(e) => handleFieldChange(key, e.target.value)}
-                          fullWidth
-                          multiline={isTextArea}
-                          rows={isTextArea ? 4 : 1}
-                          disabled={saving}
-                          sx={{
-                            '& .MuiOutlinedInput-root': {
-                              backgroundColor: 'transparent',
-                              '&:hover': {
+                        editableDropdownOptions[key] ? (
+                          <FormControl fullWidth disabled={saving}>
+                            <InputLabel id={`${key}-edit-label`}>{label}</InputLabel>
+                            <Select
+                              labelId={`${key}-edit-label`}
+                              value={editableFields[key] || ''}
+                              label={label}
+                              onChange={(e) => handleFieldChange(key, e.target.value)}
+                            >
+                              {editableDropdownOptions[key].map((option) => (
+                                <MenuItem key={option} value={option}>
+                                  {option}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        ) : (
+                          <TextField
+                            label={label}
+                            variant="outlined"
+                            value={editableFields[key] || ''}
+                            onChange={(e) => handleFieldChange(key, e.target.value)}
+                            fullWidth
+                            multiline={isTextArea}
+                            rows={isTextArea ? 4 : 1}
+                            disabled={saving}
+                            sx={{
+                              '& .MuiOutlinedInput-root': {
                                 backgroundColor: 'transparent',
+                                '&:hover': {
+                                  backgroundColor: 'transparent',
+                                },
+                                '&.Mui-focused': {
+                                  backgroundColor: 'transparent',
+                                },
                               },
-                              '&.Mui-focused': {
-                                backgroundColor: 'transparent',
-                              },
-                            },
-                          }}
-                        />
+                            }}
+                          />
+                        )
                       ) : (
                         <Typography
                           variant="body2"
@@ -1846,7 +1991,8 @@ function FormDetail() {
 
                   const label = fieldLabels[key]
                   const value = formData[key]
-                  const isEmpty = value === null || value === undefined || value === ''
+                  const isTruthy = value === true || value === 'true' || value === '1' || value === 1
+                  const editableChecked = editableFields[key] === true || editableFields[key] === 'true' || editableFields[key] === '1' || editableFields[key] === 1
                   const isEditable = isEditMode && !approverOnlyFields.includes(key)
 
                   return (
@@ -1870,56 +2016,74 @@ function FormDetail() {
                         },
                       }}
                     >
-                      {!isEditable && (
-                        <Typography
-                          variant="caption"
-                          component="dt"
+                      <Typography
+                        variant="caption"
+                        component="dt"
+                        sx={{
+                          display: 'block',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          mb: 1.5,
+                          color: 'text.primary',
+                          fontSize: theme.typography.customSizes.small,
+                        }}
+                      >
+                        {label}
+                      </Typography>
+                      {isEditable ? (
+                        <Box
                           sx={{
-                            display: 'block',
-                            fontWeight: 700,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            mb: 1.5,
-                            color: 'text.primary',
-                            fontSize: theme.typography.customSizes.small,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'flex-start',
                           }}
                         >
-                          {label}
-                        </Typography>
-                      )}
-                      {isEditable ? (
-                        <TextField
-                          label={label}
-                          variant="outlined"
-                          value={editableFields[key] || ''}
-                          onChange={(e) => handleFieldChange(key, e.target.value)}
-                          fullWidth
-                          disabled={saving}
-                          sx={{
-                            '& .MuiOutlinedInput-root': {
-                              backgroundColor: 'transparent',
-                              '&:hover': {
-                                backgroundColor: 'transparent',
-                              },
-                              '&.Mui-focused': {
-                                backgroundColor: 'transparent',
-                              },
-                            },
-                          }}
-                        />
+                          <Checkbox
+                            checked={editableChecked}
+                            onChange={(e) => handleFieldChange(key, !!e.target.checked)}
+                            disabled={saving}
+                            inputProps={{ 'aria-label': label }}
+                          />
+                        </Box>
                       ) : (
-                        <Typography
-                          variant="body2"
+                        <Box
                           component="dd"
                           sx={{
-                            color: isEmpty ? 'text.disabled' : 'text.secondary',
-                            wordBreak: 'break-word',
-                            lineHeight: 1.6,
-                            fontSize: theme.typography.customSizes.medium,
+                            m: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            minHeight: 24,
                           }}
                         >
-                          {isEmpty ? '-' : String(value)}
-                        </Typography>
+                          {isTruthy ? (
+                            <>
+                              <CheckCircleIcon sx={{ fontSize: 18, color: '#10b981', flexShrink: 0 }} />
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  color: 'text.secondary',
+                                  lineHeight: 1.6,
+                                  fontSize: theme.typography.customSizes.medium,
+                                }}
+                              >
+                                Selected
+                              </Typography>
+                            </>
+                          ) : (
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color: 'text.disabled',
+                                lineHeight: 1.6,
+                                fontSize: theme.typography.customSizes.medium,
+                              }}
+                            >
+                              Not selected
+                            </Typography>
+                          )}
+                        </Box>
                       )}
                     </Box>
                   )
@@ -1969,14 +2133,14 @@ function FormDetail() {
                   mt: 2,
                 }}
               >
-                {fieldOrder
-                  .filter((key) => {
+                {orderControlDetailKeys(
+                  fieldOrder.filter((key) => {
                     if (groupedApproverFields.includes(key)) return false
                     // already shown in Process and risk / Assertions
                     if (
                       [
                         'control_number',
-                        'account_balance_disclosure',
+                        'area',
                         'sub_process',
                         'risk_description',
                         'risk_heat',
@@ -1994,12 +2158,19 @@ function FormDetail() {
                       return false
                     }
                     return formData.hasOwnProperty(key) && !excludedFields.includes(key)
-                  })
+                  }),
+                  fieldOrder
+                )
                   .map((key) => {
                     const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                     const value = formData[key]
                     const isEmpty = value === null || value === undefined || value === ''
-                    const isEditable = isEditMode && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)
+                    const isEditable =
+                      isEditMode &&
+                      key !== 'doc_uploaded_by_user' &&
+                      key !== 'control_owner' &&
+                      key !== 'sample_size' &&
+                      !approverOnlyFields.includes(key)
                     const isTextArea = [
                       'standard_control_description',
                       'control_objective',
@@ -2058,6 +2229,22 @@ function FormDetail() {
                           <Box>
                             {key === 'sample_required' ? (
                               renderSampleRequiredDownload()
+                            ) : editableDropdownOptions[key] ? (
+                              <FormControl fullWidth disabled={saving}>
+                                <InputLabel id={`${key}-edit-label`}>{label}</InputLabel>
+                                <Select
+                                  labelId={`${key}-edit-label`}
+                                  value={editableFields[key] || ''}
+                                  label={label}
+                                  onChange={(e) => handleFieldChange(key, e.target.value)}
+                                >
+                                  {editableDropdownOptions[key].map((option) => (
+                                    <MenuItem key={option} value={option}>
+                                      {option}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
                             ) : (
                               <TextField
                                 label={label}
@@ -2084,7 +2271,7 @@ function FormDetail() {
                           </Box>
                         ) : (
                           <Box>
-                            {key === 'process_owner' ? (
+                            {key === 'control_owner' ? (
                               <Box>
                                 <Typography
                                   variant="body2"
@@ -2561,7 +2748,7 @@ function FormDetail() {
         PaperProps={{
           sx: {
             borderRadius: 2,
-            minWidth: { xs: '90%', sm: '460px' },
+            minWidth: { xs: '94%', sm: '620px' },
             boxShadow: theme.palette.mode === 'dark'
               ? '0 8px 32px rgba(0, 0, 0, 0.4)'
               : '0 8px 32px rgba(0, 0, 0, 0.12)',
@@ -2584,24 +2771,26 @@ function FormDetail() {
         <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
           {formData && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              <Typography variant="body2">
-                <strong>Standard Control Description:</strong>{' '}
-                {formData.standard_control_description || 'N/A'}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Business Process:</strong> {formData.business_process || 'N/A'}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Financial Year:</strong> {formData.financial_year || 'N/A'}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Current Process Owner Email:</strong>{' '}
-                {formData.process_owner || '-'}
-              </Typography>
-              <Typography variant="body2" sx={{ mb: 2 }}>
-                <strong>Current Process Owner Name:</strong>{' '}
-                {formData.process_owner_name || '-'}
-              </Typography>
+              <Box sx={popupRowSx}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Standard Control Description:</Typography>
+                <Typography variant="body2" component="span">{popupValue(formData.standard_control_description)}</Typography>
+              </Box>
+              <Box sx={popupRowSx}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Business Process:</Typography>
+                <Typography variant="body2" component="span">{popupValue(formData.business_process)}</Typography>
+              </Box>
+              <Box sx={popupRowSx}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Financial Year:</Typography>
+                <Typography variant="body2" component="span">{popupValue(formData.financial_year)}</Typography>
+              </Box>
+              <Box sx={popupRowSx}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Current Control Owner Email:</Typography>
+                <Typography variant="body2" component="span">{popupValue(formData.control_owner)}</Typography>
+              </Box>
+              <Box sx={{ ...popupRowSx, mb: 2 }}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Current Control Owner Name:</Typography>
+                <Typography variant="body2" component="span">{popupValue(formData.control_owner_name)}</Typography>
+              </Box>
 
               <Autocomplete
                 options={assignableUsers}
@@ -3088,6 +3277,14 @@ function FormDetail() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <RacmAuditLogsDialog
+        open={auditLogOpen}
+        onClose={() => setAuditLogOpen(false)}
+        loading={auditLogLoading}
+        error={auditLogError}
+        rows={auditLogRows}
+      />
 
       {showScrollTop && (
         <Fab

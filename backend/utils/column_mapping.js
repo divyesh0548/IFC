@@ -15,7 +15,7 @@ const simpleColumnMapping = {
   'ipe reference': 'ipe_reference',
   'application name': 'application_name',
   'control performer': 'control_performer',
-  'process owner': 'process_owner',
+  'process owner': 'control_owner',
   'control owner': 'control_owner',
 };
 
@@ -42,7 +42,7 @@ function hasKeywordMatch(normalizedHeader, keyword) {
 const columnPatterns = [
   {
     keywords: ['account', 'balance', 'disclosure'],
-    dbColumn: 'account_balance_disclosure',
+    dbColumn: 'area',
     priority: 1
   },
   {
