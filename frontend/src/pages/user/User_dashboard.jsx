@@ -13,6 +13,7 @@ import {
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
+  getStatusBadgeSolidColors,
 } from '../../uiConstants'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
@@ -161,17 +162,8 @@ function User_dashboard() {
   }
 
   const getStatusColor = (status) => {
-    const formattedStatus = formatStatus(status)
-    if (formattedStatus === 'Pending' || formattedStatus === 'pending') {
-      return { bg: '#fef3c7', color: '#f59e0b' }
-    } else if (formattedStatus === 'Approved') {
-      return { bg: '#d1fae5', color: '#10b981' }
-    } else if (formattedStatus === 'Rejected') {
-      return { bg: '#fee2e2', color: '#ef4444' }
-    } else if (formattedStatus === 'Sent for approval') {
-      return { bg: '#fef3c7', color: '#f59e0b' }
-    }
-    return { bg: '#f3f4f6', color: '#6b7280' }
+    const { backgroundColor, color } = getStatusBadgeSolidColors(status)
+    return { bg: backgroundColor, color }
   }
 
   const truncatedTextSx = {
@@ -566,9 +558,13 @@ function User_dashboard() {
                             label={formatStatus(form.status)}
                             size="small"
                             sx={{
+                              height: 'auto',
+                              py: 0.5,
+                              borderRadius: '9999px',
                               backgroundColor: getStatusColor(form.status).bg,
                               color: getStatusColor(form.status).color,
                               fontWeight: 600,
+                              '& .MuiChip-label': { px: 1 },
                             }}
                           />
                         </Box>

@@ -16,6 +16,8 @@ import {
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
+  STATUS_BADGE_PILL_SX,
+  getApprovalStatusBadgeSolidColors,
 } from '../../uiConstants'
 import { STORAGE_KEYS } from '../../storageKeys'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
@@ -860,22 +862,8 @@ function ApproverDashboard() {
                         <Box
                           component="span"
                           sx={{
-                            px: 1,
-                            py: 0.5,
-                            display: 'inline-flex',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            borderRadius: '9999px',
-                            backgroundColor: status === 'Approved'
-                              ? (theme.palette.mode === 'dark' ? 'rgba(16, 185, 129, 0.2)' : '#d1fae5')
-                              : status === 'Rejected'
-                              ? (theme.palette.mode === 'dark' ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2')
-                              : (theme.palette.mode === 'dark' ? 'rgba(245, 158, 11, 0.2)' : '#fef3c7'),
-                            color: status === 'Approved'
-                              ? (theme.palette.mode === 'dark' ? '#10b981' : '#065f46')
-                              : status === 'Rejected'
-                              ? (theme.palette.mode === 'dark' ? '#ef4444' : '#991b1b')
-                              : (theme.palette.mode === 'dark' ? '#f59e0b' : '#92400e'),
+                            ...STATUS_BADGE_PILL_SX,
+                            ...getApprovalStatusBadgeSolidColors(status),
                           }}
                         >
                           {status}

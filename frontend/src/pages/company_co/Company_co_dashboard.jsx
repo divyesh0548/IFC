@@ -10,7 +10,13 @@ import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Tooltip from '@mui/material/Tooltip'
-import { FILTER_DROPDOWN_MIN_WIDTH_LG, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
+import {
+  FILTER_DROPDOWN_MIN_WIDTH_LG,
+  PAGE_SUBHEADER_TEXT_SX,
+  STATUS_BADGE_PILL_SX,
+  getActivityBadgeSolidColors,
+  getApprovalStatusBadgeSolidColors,
+} from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function Company_Co_dashboard() {
@@ -426,6 +432,24 @@ function Company_Co_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '200px',
+                        minWidth: '160px',
+                        maxWidth: '240px',
+                      }}
+                    >
+                      Sub Process
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
                         width: '240px',
                         minWidth: '200px',
                         maxWidth: '280px',
@@ -498,6 +522,24 @@ function Company_Co_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '120px',
+                        minWidth: '110px',
+                        maxWidth: '130px',
+                      }}
+                    >
+                      Due Date
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
                         width: '140px',
                         minWidth: '140px',
                         maxWidth: '140px',
@@ -543,6 +585,31 @@ function Company_Co_dashboard() {
                           <Box component="span" sx={truncatedTextSx}>
                             {form.business_process || 'N/A'}
                           </Box>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            width: '200px',
+                            minWidth: '160px',
+                            maxWidth: '240px',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          }}
+                        >
+                          <Tooltip
+                            title={(form.sub_process || '').toString().trim() || 'N/A'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={truncatedTextSx}>
+                              {(form.sub_process || '').toString().trim() || 'N/A'}
+                            </Box>
+                          </Tooltip>
                         </Box>
                         <Box
                           component="td"
@@ -598,14 +665,8 @@ function Company_Co_dashboard() {
                           <Box
                             component="span"
                             sx={{
-                              px: 1,
-                              py: 0.5,
-                              display: 'inline-flex',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              borderRadius: '9999px',
-                              backgroundColor: isActive ? '#d1fae5' : '#fee2e2',
-                              color: isActive ? '#065f46' : '#991b1b',
+                              ...STATUS_BADGE_PILL_SX,
+                              ...getActivityBadgeSolidColors(isActive),
                             }}
                           >
                             {isActive ? 'Active' : 'Inactive'}
@@ -625,39 +686,34 @@ function Company_Co_dashboard() {
                           <Box
                             component="span"
                             sx={{
-                              px: 1,
-                              py: 0.5,
-                              display: 'inline-flex',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              borderRadius: '9999px',
-                              backgroundColor:
-                                approvalLabel === 'Approved'
-                                  ? theme.palette.mode === 'dark'
-                                    ? 'rgba(16, 185, 129, 0.2)'
-                                    : '#d1fae5'
-                                  : approvalLabel === 'Rejected'
-                                  ? theme.palette.mode === 'dark'
-                                    ? 'rgba(239, 68, 68, 0.2)'
-                                    : '#fee2e2'
-                                  : theme.palette.mode === 'dark'
-                                  ? 'rgba(245, 158, 11, 0.2)'
-                                  : '#fef3c7',
-                              color:
-                                approvalLabel === 'Approved'
-                                  ? theme.palette.mode === 'dark'
-                                    ? '#10b981'
-                                    : '#065f46'
-                                  : approvalLabel === 'Rejected'
-                                  ? theme.palette.mode === 'dark'
-                                    ? '#ef4444'
-                                    : '#991b1b'
-                                  : theme.palette.mode === 'dark'
-                                  ? '#f59e0b'
-                                  : '#92400e',
+                              ...STATUS_BADGE_PILL_SX,
+                              ...getApprovalStatusBadgeSolidColors(approvalLabel),
                             }}
                           >
                             {approvalLabel}
+                          </Box>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            width: '120px',
+                            minWidth: '110px',
+                            maxWidth: '130px',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          }}
+                        >
+                          <Box component="span" sx={truncatedTextSx}>
+                            {form.due_date
+                              ? /^\d{4}-\d{2}-\d{2}$/.test(String(form.due_date).trim())
+                                ? String(form.due_date).trim()
+                                : new Date(form.due_date).toLocaleDateString()
+                              : 'N/A'}
                           </Box>
                         </Box>
                         <Box

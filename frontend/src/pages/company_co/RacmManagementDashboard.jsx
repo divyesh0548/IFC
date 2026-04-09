@@ -21,7 +21,14 @@ import DialogActions from '@mui/material/DialogActions'
 import TextField from '@mui/material/TextField'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { PAGE_SUBHEADER_TEXT_SX, TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
+import {
+  PAGE_SUBHEADER_TEXT_SX,
+  TABLE_HEADER_BG,
+  TABLE_ROW_HOVER_BG,
+  STATUS_BADGE_PILL_SX,
+  getActivityBadgeSolidColors,
+  getApprovalStatusBadgeSolidColors,
+} from '../../uiConstants'
 
 /** Display order for Set Active selection notice (single-RACM list); missing-user line last. */
 const SET_ACTIVE_SINGLE_NOTICE_LINE_ORDER = [
@@ -2001,18 +2008,8 @@ function RacmManagementDashboard() {
                           <Box
                             component="span"
                             sx={{
-                              px: 1,
-                              py: 0.5,
-                              display: 'inline-flex',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              borderRadius: '9999px',
-                              backgroundColor: isActive
-                                ? (theme.palette.mode === 'dark' ? 'rgba(16, 185, 129, 0.2)' : '#d1fae5')
-                                : (theme.palette.mode === 'dark' ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2'),
-                              color: isActive
-                                ? (theme.palette.mode === 'dark' ? '#10b981' : '#065f46')
-                                : (theme.palette.mode === 'dark' ? '#ef4444' : '#991b1b'),
+                              ...STATUS_BADGE_PILL_SX,
+                              ...getActivityBadgeSolidColors(isActive),
                             }}
                           >
                             {isActive ? 'Active' : 'Inactive'}
@@ -2032,22 +2029,8 @@ function RacmManagementDashboard() {
                           <Box
                             component="span"
                             sx={{
-                              px: 1,
-                              py: 0.5,
-                              display: 'inline-flex',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              borderRadius: '9999px',
-                              backgroundColor: status === 'Approved'
-                                ? (theme.palette.mode === 'dark' ? 'rgba(16, 185, 129, 0.2)' : '#d1fae5')
-                                : status === 'Rejected'
-                                ? (theme.palette.mode === 'dark' ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2')
-                                : (theme.palette.mode === 'dark' ? 'rgba(245, 158, 11, 0.2)' : '#fef3c7'),
-                              color: status === 'Approved'
-                                ? (theme.palette.mode === 'dark' ? '#10b981' : '#065f46')
-                                : status === 'Rejected'
-                                ? (theme.palette.mode === 'dark' ? '#ef4444' : '#991b1b')
-                                : (theme.palette.mode === 'dark' ? '#f59e0b' : '#92400e'),
+                              ...STATUS_BADGE_PILL_SX,
+                              ...getApprovalStatusBadgeSolidColors(status),
                             }}
                           >
                             {status}

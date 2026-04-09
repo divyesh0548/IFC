@@ -27,7 +27,12 @@ import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
-import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants';
+import {
+  FORM_DETAIL_MAX_WIDTH,
+  STATUS_BADGE_DETAIL_SX,
+  getActivityBadgeSolidColors,
+  getStatusBadgeSolidColors,
+} from '../../uiConstants';
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields';
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 
@@ -649,16 +654,15 @@ function ApproverFormDetail() {
                     >
                       RACM Status
                     </Typography>
-                    <Typography
-                      variant="body2"
+                    <Box
+                      component="span"
                       sx={{
-                        color: isActive ? '#10b981' : '#ef4444',
-                        fontWeight: 500,
-                        fontSize: '0.9375rem',
+                        ...STATUS_BADGE_DETAIL_SX,
+                        ...getActivityBadgeSolidColors(isActive),
                       }}
                     >
                       {isActive ? 'Active' : 'Inactive'}
-                    </Typography>
+                    </Box>
                   </Box>
 
                   {/* Business Process */}
@@ -790,24 +794,17 @@ function ApproverFormDetail() {
                             px: 0.75,
                           }}
                         >
-                          <Typography
-                            variant="body2"
+                          <Box
+                            component="span"
                             sx={{
-                              color: (() => {
-                                const status = formData?.status || ''
-                                if (status === 'Approved') return '#10b981'
-                                if (status === 'Rejected') return '#ef4444'
-                                return 'text.primary'
-                              })(),
-                              fontWeight: 500,
-                              fontSize: '0.9375rem',
-                              lineHeight: 1.5,
+                              ...STATUS_BADGE_DETAIL_SX,
+                              ...getStatusBadgeSolidColors(formData?.status),
                               flex: 1,
                               minWidth: 0,
                             }}
                           >
                             {approvalStatusLabelText}
-                          </Typography>
+                          </Box>
                           <Tooltip
                             title="Click to change decision within the 15-day window."
                             placement="top"
@@ -840,24 +837,17 @@ function ApproverFormDetail() {
                           minWidth: 0,
                         }}
                       >
-                        <Typography
-                          variant="body2"
+                        <Box
+                          component="span"
                           sx={{
-                            color: (() => {
-                              const status = formData?.status || ''
-                              if (status === 'Approved') return '#10b981'
-                              if (status === 'Rejected') return '#ef4444'
-                              return 'text.primary'
-                            })(),
-                            fontWeight: 500,
-                            fontSize: '0.9375rem',
-                            lineHeight: 1.5,
+                            ...STATUS_BADGE_DETAIL_SX,
+                            ...getStatusBadgeSolidColors(formData?.status),
                             flex: 1,
                             minWidth: 0,
                           }}
                         >
                           {approvalStatusLabelText}
-                        </Typography>
+                        </Box>
                         {showApprovalStatusLockUi && (
                           <Tooltip
                             title="Approval status is locked — more than 15 days since the last decision."

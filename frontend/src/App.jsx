@@ -53,33 +53,34 @@ function GlobalLoadingStrip() {
   if (!active) {
     return null
   }
+  const baseStripStyles = {
+    position: 'fixed',
+    left: 0,
+    right: 0,
+    top: topOffset,
+    height: 4,
+    zIndex: 2000,
+    borderRadius: 0,
+  }
   return (
     <LinearProgress
       color="secondary"
       sx={
         theme.palette.mode === 'dark'
           ? {
-              position: 'fixed',
-              left: 0,
-              right: 0,
-              top: topOffset,
-              height: 3,
-              zIndex: 2000,
-              borderRadius: 0,
+              ...baseStripStyles,
               backgroundColor: 'rgba(255, 255, 255, 0.18)',
               '& .MuiLinearProgress-bar': {
                 backgroundColor: theme.palette.primary.light,
               },
             }
           : {
-              position: 'fixed',
-              left: 0,
-              right: 0,
-              top: topOffset,
-              height: 3,
-              zIndex: 2000,
-              borderRadius: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.08)',
+              ...baseStripStyles,
+              backgroundColor: theme.palette.divider,
+              boxShadow: `inset 0 -1px 0 ${theme.palette.navbar.bottomBorder}`,
+              '& .MuiLinearProgress-bar': {
+                backgroundColor: theme.palette.primary.main,
+              },
             }
       }
     />

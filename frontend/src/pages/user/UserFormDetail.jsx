@@ -17,7 +17,11 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
-import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
+import {
+  FORM_DETAIL_MAX_WIDTH,
+  STATUS_BADGE_DETAIL_SX,
+  getStatusBadgeSolidColors,
+} from '../../uiConstants'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
@@ -551,21 +555,15 @@ function UserFormDetail() {
                     >
                       Status
                     </Typography>
-                    <Typography
-                      variant="body2"
+                    <Box
+                      component="span"
                       sx={{
-                        color: (() => {
-                          const status = formData?.status || ''
-                          if (status === 'Approved') return '#10b981'
-                          if (status === 'Rejected') return '#ef4444'
-                          return 'text.primary'
-                        })(),
-                        fontWeight: 500,
-                        fontSize: '0.9375rem',
+                        ...STATUS_BADGE_DETAIL_SX,
+                        ...getStatusBadgeSolidColors(formData?.status),
                       }}
                     >
                       {formData?.status && formData.status !== '' ? formData.status : 'Pending'}
-                    </Typography>
+                    </Box>
                   </Box>
 
                   {/* Business Process */}
