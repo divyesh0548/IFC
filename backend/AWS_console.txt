@@ -1,3 +1,0 @@
-Console sign-in URL: https://850502434108.signin.aws.amazon.com/console
-User name : dhanashree_nhit
-Console password: @Sharpandtannan1234
