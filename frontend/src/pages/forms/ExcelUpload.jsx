@@ -11,6 +11,11 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import IconButton from '@mui/material/IconButton'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
+import DialogActions from '@mui/material/DialogActions'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
@@ -20,8 +25,12 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import ChecklistRoundedIcon from '@mui/icons-material/ChecklistRounded'
 import { toast } from 'react-hot-toast'
-import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
+import { parseRacmExcelFromArrayBuffer } from '../../utils/racmExcelParse'
+import { RACM_BULK_IMPORT_SESSION_KEY } from '../../racmFormDetailFields'
+import { useUnsavedChangesWarning } from '../../utils/useUnsavedChangesWarning'
+
+const MAX_BULK_IMPORT_ROWS = 5000
 
 function ExcelUpload() {
   const theme = useTheme()
@@ -35,9 +44,26 @@ function ExcelUpload() {
   const [financialYear, setFinancialYear] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [reminderFrequency, setReminderFrequency] = useState('')
+  const [mappingDialogOpen, setMappingDialogOpen] = useState(false)
+  const [pendingImport, setPendingImport] = useState(null)
   const accentColor = theme.palette.primary.main
   const accentSoft = alpha(accentColor, theme.palette.mode === 'dark' ? 0.18 : 0.12)
   const accentBorder = alpha(accentColor, theme.palette.mode === 'dark' ? 0.22 : 0.14)
+
+  const hasAnyProgress =
+    !!file ||
+    !!preview ||
+    String(businessProcess || '').trim() !== '' ||
+    String(financialYear || '').trim() !== '' ||
+    String(dueDate || '').trim() !== '' ||
+    String(reminderFrequency || '').trim() !== '' ||
+    !!pendingImport
+  const hasReminderValues = String(dueDate || '').trim() !== '' || String(reminderFrequency || '').trim() !== ''
+
+  useUnsavedChangesWarning(
+    hasAnyProgress,
+    'Your progress will be lost on this upload page. Do you want to continue?'
+  )
   const businessProcessOptions = [
     'Purchase to Pay',
     'Order to Cash',
@@ -48,7 +74,14 @@ function ExcelUpload() {
     'Information Technology General Controls',
     'Entity Level Controls',
   ]
-  const financialYearOptions = ['2024-25', '2025-26']
+  // Show 2 FY ranges based on current year (e.g. 2026 -> 2025-26, 2026-27)
+  const currentYear = new Date().getFullYear()
+  const baseFYStart = currentYear - 1
+  const financialYearOptions = Array.from({ length: 2 }, (_, i) => {
+    const startYear = baseFYStart + i
+    const endYearShort = String((startYear + 1) % 100).padStart(2, '0')
+    return `${startYear}-${endYearShort}`
+  })
 
   const getTomorrowDateString = () => {
     const d = new Date()
@@ -146,69 +179,82 @@ function ExcelUpload() {
     }
   }
 
-  const normalizeHeader = (value) => String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
+  const handleResetReminderSettings = () => {
+    setDueDate('')
+    setReminderFrequency('')
+  }
 
-  /**
-   * Check if "Process Owner" column exists and gather its non-empty values.
-   * Returns an object: { hasColumn: boolean, hasAnyValue: boolean, nonEmptyValues: string[] }.
-   */
-  const checkProcessOwnerColumn = async (inputFile) => {
-    if (!inputFile) {
-      return { hasColumn: false, hasAnyValue: false, nonEmptyValues: [] }
+  const clearFormAfterSuccess = (formEvent) => {
+    setFile(null)
+    setPreview(null)
+    setBusinessProcess('')
+    setFinancialYear('')
+    setDueDate('')
+    setReminderFrequency('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (formEvent?.target && typeof formEvent.target.reset === 'function') {
+      formEvent.target.reset()
     }
+  }
 
-    const buffer = await inputFile.arrayBuffer()
-    const workbook = XLSX.read(buffer, { type: 'array' })
-    const firstSheetName = workbook.SheetNames?.[0]
-    if (!firstSheetName) {
-      return { hasColumn: false, hasAnyValue: false, nonEmptyValues: [] }
-    }
+  const runBulkImport = async (ctx, options = {}) => {
+    const { column_mapping: columnMapping, formEvent } = options
+    const {
+      rows,
+      businessProcess: bp,
+      financialYear: fy,
+      dueDateValue,
+      reminderFrequencyValue,
+    } = ctx
 
-    const worksheet = workbook.Sheets[firstSheetName]
-    const nonEmptyValues = []
-
-    // Header row may not start at first row, so scan at least first 10 rows
-    let hasColumn = false
+    setLoading(true)
     try {
-      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' })
-
-      const headerSearchLimit = Math.min(10, Array.isArray(rows) ? rows.length : 0)
-      let headerRowIndex = -1
-      let processOwnerIndex = -1
-
-      for (let r = 0; r < headerSearchLimit; r++) {
-        const row = Array.isArray(rows?.[r]) ? rows[r] : []
-        const idx = row.findIndex((cell) => normalizeHeader(cell) === 'process owner')
-
-        if (idx !== -1) {
-          headerRowIndex = r
-          processOwnerIndex = idx
-          hasColumn = true
-          break
-        }
+      const payload = {
+        businessProcess: bp,
+        financialYear: fy,
+        rows,
+      }
+      if (dueDateValue && reminderFrequencyValue) {
+        payload.due_date = dueDateValue
+        payload.reminder_frequency = reminderFrequencyValue
+      }
+      if (columnMapping && typeof columnMapping === 'object' && Object.keys(columnMapping).length > 0) {
+        payload.column_mapping = columnMapping
       }
 
-      if (hasColumn && headerRowIndex !== -1 && processOwnerIndex !== -1) {
-        for (let r = headerRowIndex + 1; r < rows.length; r++) {
-          const row = Array.isArray(rows?.[r]) ? rows[r] : []
-          const cellValue = row?.[processOwnerIndex]
-          if (cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '') {
-            nonEmptyValues.push(String(cellValue).trim())
-          }
-        }
+      const response = await fetch('http://localhost:3000/api/control-forms/bulk-import-rows', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        const inserted = data.data?.insertedCount ?? 0
+        const skipped = data.data?.skippedCount ?? 0
+        const dups = data.data?.duplicateCount ?? 0
+        const errs = data.data?.errorCount ?? 0
+        const extra =
+          skipped + dups + errs > 0
+            ? ` (${skipped} skipped, ${dups} duplicates, ${errs} errors)`
+            : ''
+        toast.success(
+          typeof data.message === 'string' && data.message.trim() !== ''
+            ? data.message
+            : `Created ${inserted} RACM(s)${extra}.`
+        )
+        clearFormAfterSuccess(formEvent)
+      } else {
+        toast.error(data.message || 'Failed to import RACMs')
       }
     } catch (err) {
-      // If parsing fails, we fall back to "column not available" behavior.
-      console.warn('Process Owner validation failed:', err)
+      console.error('Import error:', err)
+      toast.error('Network error. Please try again.')
+    } finally {
+      setLoading(false)
     }
-
-    const uniqueNonEmptyValues = [...new Set(nonEmptyValues)]
-    const hasAnyValue = uniqueNonEmptyValues.length > 0
-
-    return { hasColumn, hasAnyValue, nonEmptyValues: uniqueNonEmptyValues }
   }
 
   const handleSubmit = async (e) => {
@@ -236,68 +282,75 @@ function ExcelUpload() {
       return
     }
 
+    let rows
     try {
-      const { hasColumn, hasAnyValue, nonEmptyValues } = await checkProcessOwnerColumn(file)
-
-      if (hasColumn && !hasAnyValue) {
-        // Column present but empty -> warn, but continue upload.
-        toast('Process Owner column is empty.', { icon: '⚠️' })
-      }
-
-      if (hasColumn && hasAnyValue) {
-        // Column exists and has at least one value: validate all non-empty entries as emails.
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-        const invalidEmails = nonEmptyValues.filter((val) => !emailRegex.test(val))
-
-        if (invalidEmails.length > 0) {
-          // Block upload if any invalid email is found.
-          toast.error('Please update a valid email_id in control_owner column.')
-          return
-        }
-      }
-    } catch (validationError) {
-      console.warn('Could not validate Process Owner column in uploaded file:', validationError)
+      const buffer = await file.arrayBuffer()
+      rows = parseRacmExcelFromArrayBuffer(buffer)
+    } catch (parseErr) {
+      toast.error(parseErr.message || 'Could not read the Excel file.')
+      return
     }
 
-    setLoading(true)
+    if (rows.length > MAX_BULK_IMPORT_ROWS) {
+      toast.error(`Too many data rows (max ${MAX_BULK_IMPORT_ROWS}). Split the workbook and import in parts.`)
+      return
+    }
 
+    setPendingImport({
+      rows,
+      businessProcess,
+      financialYear,
+      dueDateValue,
+      reminderFrequencyValue,
+      fileName: file.name,
+    })
+    setMappingDialogOpen(true)
+  }
+
+  const handleMappingDialogCancel = () => {
+    setMappingDialogOpen(false)
+    setPendingImport(null)
+  }
+
+  const handleAutomaticColumnMapping = async () => {
+    if (!pendingImport) {
+      handleMappingDialogCancel()
+      return
+    }
+    const ctx = pendingImport
+    setMappingDialogOpen(false)
+    setPendingImport(null)
+    await runBulkImport(ctx, {})
+  }
+
+  const handleCustomColumnMapping = () => {
+    if (!pendingImport) {
+      handleMappingDialogCancel()
+      return
+    }
+    const p = pendingImport
     try {
-      const formData = new FormData()
-      formData.append('excelFile', file)
-      formData.append('businessProcess', businessProcess)
-      formData.append('financialYear', financialYear)
-      if (dueDateValue && reminderFrequencyValue) {
-        formData.append('due_date', dueDateValue)
-        formData.append('reminder_frequency', reminderFrequencyValue)
+      const sessionPayload = {
+        rows: p.rows,
+        businessProcess: p.businessProcess,
+        financialYear: p.financialYear,
+        fileName: p.fileName || '',
       }
-
-      const response = await fetch('http://localhost:3000/api/control-forms/bulk-upload', {
-        method: 'POST',
-        credentials: 'include',
-        body: formData
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        toast.success('File uploaded successfully')
-        setFile(null)
-        setPreview(null)
-        setBusinessProcess('')
-        setFinancialYear('')
-        setDueDate('')
-        setReminderFrequency('')
-        // Reset file input
-        e.target.reset()
-      } else {
-        toast.error(data.message || 'Failed to upload file')
+      if (p.dueDateValue && p.reminderFrequencyValue) {
+        sessionPayload.due_date = p.dueDateValue
+        sessionPayload.reminder_frequency = p.reminderFrequencyValue
       }
+      sessionStorage.setItem(RACM_BULK_IMPORT_SESSION_KEY, JSON.stringify(sessionPayload))
     } catch (err) {
-      console.error('Upload error:', err)
-      toast.error('Network error. Please try again.')
-    } finally {
-      setLoading(false)
+      console.error(err)
+      toast.error(
+        'Could not store the file data for mapping. Try a smaller file, or use automatic mapping.'
+      )
+      return
     }
+    setMappingDialogOpen(false)
+    setPendingImport(null)
+    navigate('/company_co/upload-excel/column-map')
   }
 
   return (
@@ -365,7 +418,7 @@ function ExcelUpload() {
             >
               <AutoAwesomeRoundedIcon sx={{ fontSize: 16, color: accentColor }} />
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: theme.palette.text.secondary }}>
-                Bulk RACM onboarding
+                Bulk RACM Import
               </Typography>
             </Box>
             <Typography
@@ -378,7 +431,7 @@ function ExcelUpload() {
                 maxWidth: 760,
               }}
             >
-              Upload RACMs from Excel through a cleaner bulk import flow.
+              Import RACMs from Excel in bulk with header mapping support.
             </Typography>
             <Typography
               sx={{
@@ -389,7 +442,7 @@ function ExcelUpload() {
                 color: theme.palette.text.secondary,
               }}
             >
-              Add a validated `.xlsx` file, pick the right business process and financial year, and optionally configure due dates and reminders before upload.
+              Add a validated `.xlsx` file, pick business process and financial year, optionally set due date and reminders.
             </Typography>
           </Box>
 
@@ -406,9 +459,8 @@ function ExcelUpload() {
             </Typography>
             {[
               'Use a .xlsx file only, up to 20 MB.',
-              'Business process and financial year are mandatory.',
-              'Process Owner values, if present, must be valid email IDs.',
-              'Due date and reminder frequency must be filled together.',
+              `Bussiness Process in excel will be ignored and will be set to the selected business process.`,
+              'Due date and reminder frequency are optional and can be configured later',
             ].map((item) => (
               <Box key={item} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.1 }}>
                 <Box
@@ -676,14 +728,39 @@ function ExcelUpload() {
                     : alpha('#f8fafc', 0.85),
                 }}
               >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.1, mb: 1.8 }}>
-                  <ChecklistRoundedIcon sx={{ fontSize: 20, color: theme.palette.text.secondary }} />
-                  <Typography sx={{ fontSize: '1rem', fontWeight: 800, color: theme.palette.text.primary }}>
-                    Reminder settings
-                  </Typography>
-                  <Typography sx={{ fontSize: '0.86rem', color: theme.palette.text.secondary }}>
-                    Optional
-                  </Typography>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 1.1,
+                    rowGap: 1,
+                    mb: 1.8,
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.1, flex: 1, minWidth: 0 }}>
+                    <ChecklistRoundedIcon sx={{ fontSize: 20, color: theme.palette.text.secondary }} />
+                    <Typography sx={{ fontSize: '1rem', fontWeight: 800, color: theme.palette.text.primary }}>
+                      Reminder settings
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.86rem', color: theme.palette.text.secondary }}>
+                      Optional
+                    </Typography>
+                  </Box>
+                  <Button
+                    type="button"
+                    variant="outlined"
+                    size="small"
+                    onClick={handleResetReminderSettings}
+                    disabled={loading || !hasReminderValues}
+                    sx={{
+                      textTransform: 'none',
+                      borderRadius: 2,
+                      ml: { xs: 'auto', sm: 0 },
+                    }}
+                  >
+                    Reset
+                  </Button>
                 </Box>
                 <Box
                   sx={{
@@ -721,7 +798,6 @@ function ExcelUpload() {
                       label="Reminder Frequency"
                       onChange={(e) => setReminderFrequency(e.target.value)}
                     >
-                      <MenuItem value="">None</MenuItem>
                       <MenuItem value="Daily">Daily</MenuItem>
                       <MenuItem value="Weekly">Weekly</MenuItem>
                       <MenuItem value="Monthly">Monthly</MenuItem>
@@ -739,7 +815,7 @@ function ExcelUpload() {
               >
                 <Button
                   type="submit"
-                  disabled={loading || !file || !businessProcess || !financialYear}
+                  disabled={loading || mappingDialogOpen || !file || !businessProcess || !financialYear}
                   variant="contained"
                   color="secondary"
                   sx={{
@@ -753,7 +829,7 @@ function ExcelUpload() {
                     alignSelf: 'flex-start',
                   }}
                 >
-                  {loading ? 'Uploading...' : 'Upload Excel File'}
+                  {loading ? 'Importing…' : 'Import RACMs'}
                 </Button>
                 <Button
                   type="button"
@@ -780,6 +856,34 @@ function ExcelUpload() {
             </form>
           </Paper>
       </Box>
+
+      <Dialog
+        open={mappingDialogOpen}
+        onClose={handleMappingDialogCancel}
+        aria-labelledby="racm-mapping-dialog-title"
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle id="racm-mapping-dialog-title">Column mapping</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Do you want to review and map Excel column headers to RACM fields? Use this when your sheet
+            uses names that do not match the template (for example, map &quot;Query Name&quot; to
+            Application Name). If you choose automatic import, the same header matching as before is used.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, flexWrap: 'wrap', gap: 1 }}>
+          <Button onClick={handleMappingDialogCancel} color="inherit">
+            Cancel
+          </Button>
+          <Button onClick={handleAutomaticColumnMapping} variant="outlined" disabled={loading}>
+            Use automatic mapping
+          </Button>
+          <Button onClick={handleCustomColumnMapping} variant="contained" color="secondary" disabled={loading}>
+            Adjust column mapping
+          </Button>
+        </DialogActions>
+      </Dialog>
       </Box>
   )
 }

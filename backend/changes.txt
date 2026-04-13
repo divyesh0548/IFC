@@ -99,3 +99,7 @@ Ask for header mapping in bulk excel upload.
 First sample document will be uploaded, then It will be set active. After these conditions display that RACM on assignment page.  
 
 Prevent duplicate RACM creation with the combination of FY, Business Process and Control Number.
+
+Apply sequence in form fields of create RACM manually page.
+
+Those last three column, which are to be updated by approver, needs to be inserted in bulk excel file upload?

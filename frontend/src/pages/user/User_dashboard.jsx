@@ -149,16 +149,16 @@ function User_dashboard() {
     navigate(`/user/form/${formId}`)
   }
 
+  /** Show DB status as-is with only the first character uppercased. */
   const formatStatus = (status) => {
-    // If status is null, empty, or undefined, return 'Pending'
-    if (!status || status === '' || status === null) {
+    if (status === null || status === undefined) {
       return 'Pending'
     }
-    if (status === 'sent for approval') {
-      return 'pending'
+    const s = String(status).trim()
+    if (s === '') {
+      return 'Pending'
     }
-    // Capitalize first letter, keep rest as is
-    return status.charAt(0).toUpperCase() + status.slice(1)
+    return s.charAt(0).toUpperCase() + s.slice(1)
   }
 
   const getStatusColor = (status) => {

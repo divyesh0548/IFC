@@ -1,15 +1,19 @@
 const express = require('express');
 const multer = require('multer');
-const XLSX = require('xlsx');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const nodemailer = require('nodemailer');
-const { normalizeColumnName } = require('../utils/column_mapping');
 const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
+const { sendEmail } = require('../utils/send_email');
+const { decryptToken } = require('../utils/auth_utility');
 const { logAuditEvent, EXCEL_BULK_RACM_UPLOAD_ACTION } = require('../utils/auditLog');
 const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/sample_required');
+const {
+  DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE,
+  formatBulkImportZeroInsertedMessage,
+  formatBulkImportSuccessMessage,
+} = require('../utils/racm_duplicate_key');
 
 console.log('✅ control_forms.js module loaded successfully');
 
@@ -56,34 +60,6 @@ async function generateUniqueFormId(client) {
   return formId;
 }
 
-// Helper function to send email
-async function sendEmail(to, subject, text) {
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: process.env.SMTP_PORT || 587,
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
-
-  const mailOptions = {
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to: to,
-    subject: subject,
-    text: text
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    return true;
-  } catch (error) {
-    console.error('Error sending email:', error);
-    return false;
-  }
-}
-
 function formatDueDateDisplay(dueDateRaw) {
   if (!dueDateRaw) return 'TBD';
 
@@ -127,7 +103,7 @@ function formatDueDateDisplay(dueDateRaw) {
 }
 
 function buildControlFormStatusEmail(status, businessProcess, processOwnerName, coordinatorName, coordinatorCompanyName, dueDate, formId) {
-  const recipientName = processOwnerName || 'Process Owner';
+  const recipientName = processOwnerName || 'Control Owner';
   const coordinatorDisplayName = coordinatorName || 'Company Coordinator';
   const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
   const formattedDueDate = formatDueDateDisplay(dueDate);
@@ -189,6 +165,13 @@ router.get('/test-route', (req, res) => {
 });
 
 const { pool } = require('../utils/db');
+const {
+  transformExcelData,
+  transformExcelDataWithColumnMapping,
+  insertRacmRowsFromTransformedData,
+} = require('../utils/racm_bulk_import_from_rows');
+
+const MAX_BULK_IMPORT_ROWS = 5000;
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, '..', 'uploads', 'excel_files');
@@ -242,35 +225,6 @@ const uploadUserDoc = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
 
-// Helper function to decrypt JWT token
-function decryptToken(encryptedToken) {
-  try {
-    const algorithm = 'aes-256-gcm';
-    const encryptionKeyHex = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
-    const encryptionKey = Buffer.from(encryptionKeyHex.slice(0, 64), 'hex');
-    
-    const parts = encryptedToken.split(':');
-    if (parts.length !== 3) {
-      throw new Error('Invalid token format');
-    }
-    
-    const iv = Buffer.from(parts[0], 'hex');
-    const authTag = Buffer.from(parts[1], 'hex');
-    const encrypted = parts[2];
-    
-    const decipher = crypto.createDecipheriv(algorithm, encryptionKey, iv);
-    decipher.setAuthTag(authTag);
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    
-    const jwtSecret = process.env.JWT_SECRET;
-    const decoded = jwt.verify(decrypted, jwtSecret);
-    return decoded;
-  } catch (error) {
-    throw new Error('Token decryption failed');
-  }
-}
-
 // Middleware to verify authentication (unified authentication system)
 async function verifyAuth(req, res, next) {
   try {
@@ -285,8 +239,8 @@ async function verifyAuth(req, res, next) {
       });
     }
 
-    // Decrypt and verify the token (decryptToken already verifies JWT)
-    const decoded = decryptToken(token);
+    const jwtSecret = process.env.JWT_SECRET;
+    const decoded = jwt.verify(decryptToken(token), jwtSecret);
     
     // Get user details from database to include role and company_identifier
     const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
@@ -326,46 +280,6 @@ async function verifyAuth(req, res, next) {
       message: 'Token verification failed'
     });
   }
-}
-
-// Function to parse Excel file and convert to JSON
-function parseExcelFile(buffer) {
-  try {
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0]; // Get first sheet
-    const worksheet = workbook.Sheets[sheetName];
-    
-    // Convert to JSON with header row
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
-      defval: null, // Use null for empty cells
-      raw: false // Convert all values to strings
-    });
-    
-    return jsonData;
-  } catch (error) {
-    throw new Error(`Error parsing Excel file: ${error.message}`);
-  }
-}
-
-// Function to transform Excel data to database format
-function transformExcelData(excelRows) {
-  return excelRows.map(row => {
-    const dbRow = {};
-    
-    // Map each Excel column to database column
-    Object.keys(row).forEach(excelColumn => {
-      const dbColumn = normalizeColumnName(excelColumn);
-      if (dbColumn) {
-        // Convert value to string or null
-        const value = row[excelColumn];
-        dbRow[dbColumn] = value !== null && value !== undefined && value !== '' 
-          ? String(value).trim() 
-          : null;
-      }
-    });
-    
-    return dbRow;
-  });
 }
 
 // Bulk upload - Upload file to S3 and record in excel_files table (processed = 0)
@@ -469,7 +383,7 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
 
     await client.query('COMMIT');
 
-    await logAuditEvent(EXCEL_BULK_RACM_UPLOAD_ACTION, userEmail, null, s3Key);
+    await logAuditEvent(EXCEL_BULK_RACM_UPLOAD_ACTION, userEmail, null, null);
 
     res.status(200).json({
       success: true,
@@ -490,6 +404,147 @@ router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, 
     });
   } finally {
     client.release();
+  }
+});
+
+// Client-parsed Excel rows → immediate RACM insert (no S3 / excel_files queue)
+router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
+  try {
+    if (req.user.role !== 'company_co') {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const companyIdentifier = req.user.company_identifier;
+    if (!companyIdentifier || String(companyIdentifier).trim() === '') {
+      return res.status(400).json({ success: false, message: 'Company identifier is required' });
+    }
+
+    const businessProcess = req.body.businessProcess;
+    const financialYear = req.body.financialYear;
+    const rows = req.body.rows;
+
+    if (!businessProcess || String(businessProcess).trim() === '') {
+      return res.status(400).json({ success: false, message: 'Business process is required' });
+    }
+    if (!financialYear || String(financialYear).trim() === '') {
+      return res.status(400).json({ success: false, message: 'Financial year is required' });
+    }
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'No data rows provided' });
+    }
+    if (rows.length > MAX_BULK_IMPORT_ROWS) {
+      return res.status(400).json({
+        success: false,
+        message: `Too many rows (max ${MAX_BULK_IMPORT_ROWS} per request)`,
+      });
+    }
+
+    const dueDate = req.body.due_date ? String(req.body.due_date).trim() : '';
+    const reminderFrequency = req.body.reminder_frequency ? String(req.body.reminder_frequency).trim() : '';
+
+    if ((dueDate && !reminderFrequency) || (!dueDate && reminderFrequency)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide both due_date and reminder_frequency (or keep both empty)',
+      });
+    }
+
+    if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid due_date format. Expected YYYY-MM-DD',
+      });
+    }
+
+    if (reminderFrequency) {
+      const allowed = new Set(['Daily', 'Weekly', 'Monthly']);
+      if (!allowed.has(reminderFrequency)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid reminder_frequency. Allowed values: Daily, Weekly, Monthly',
+        });
+      }
+    }
+
+    const coordinatorEmailId = req.user.email_id;
+    const columnMapping = req.body.column_mapping;
+    const transformedData =
+      columnMapping &&
+      typeof columnMapping === 'object' &&
+      !Array.isArray(columnMapping) &&
+      Object.keys(columnMapping).length > 0
+        ? transformExcelDataWithColumnMapping(rows, columnMapping)
+        : transformExcelData(rows);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const importStats = await insertRacmRowsFromTransformedData(client, {
+        transformedData,
+        companyIdentifier,
+        coordinatorEmailId,
+        businessProcess: String(businessProcess).trim(),
+        financialYear: String(financialYear).trim(),
+        fileDueDate: dueDate || null,
+        fileReminderFrequency: reminderFrequency || null,
+      });
+      const {
+        insertedCount,
+        skippedCount,
+        duplicateCount,
+        errorCount,
+        duplicateControlNumberSamples,
+      } = importStats;
+
+      if (insertedCount === 0) {
+        await client.query('ROLLBACK');
+        await logAuditEvent(EXCEL_BULK_RACM_UPLOAD_ACTION, coordinatorEmailId, null, null);
+        return res.status(400).json({
+          success: false,
+          message: formatBulkImportZeroInsertedMessage(importStats),
+          data: {
+            insertedCount,
+            skippedCount,
+            duplicateCount,
+            errorCount,
+            duplicateControlNumberSamples,
+          },
+        });
+      }
+
+      await client.query('COMMIT');
+
+      await logAuditEvent(EXCEL_BULK_RACM_UPLOAD_ACTION, coordinatorEmailId, null, null);
+
+      return res.status(200).json({
+        success: true,
+        message: formatBulkImportSuccessMessage(insertedCount, {
+          duplicateCount,
+          skippedCount,
+          errorCount,
+        }),
+        data: {
+          insertedCount,
+          skippedCount,
+          duplicateCount,
+          errorCount,
+          duplicateControlNumberSamples,
+        },
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('bulk-import-rows error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error importing RACMs',
+      error: error.message,
+    });
   }
 });
 
@@ -829,6 +884,9 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
         control_owner, 
         standard_control_description, 
         business_process,
+        financial_year,
+        control_number,
+        company_identifier,
         status AS current_status,
         doc_uploaded_by_user AS current_doc_uploaded_by_user,
         reason_by_approver AS current_reason_by_approver
@@ -983,6 +1041,37 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
         success: false,
         message: 'No fields to update'
       });
+    }
+
+    if (control_number !== undefined && currentForm) {
+      const cid = currentForm.company_identifier ? String(currentForm.company_identifier).trim() : '';
+      const nextBp =
+        currentForm.business_process != null ? String(currentForm.business_process).trim() : '';
+      const nextFy =
+        currentForm.financial_year != null ? String(currentForm.financial_year).trim() : '';
+      const nextCn = control_number != null ? String(control_number).trim() : '';
+      if (cid && nextBp && nextFy && nextCn) {
+        const dupUpdate = await client.query(
+          `
+            SELECT 1
+            FROM control_forms
+            WHERE company_identifier = $1
+              AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
+              AND TRIM(financial_year) = TRIM($3)
+              AND TRIM(control_number) = TRIM($4)
+              AND TRIM(form_id) <> TRIM($5)
+            LIMIT 1
+          `,
+          [cid, nextBp, nextFy, nextCn, form_id]
+        );
+        if (dupUpdate.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            success: false,
+            message: DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE,
+          });
+        }
+      }
     }
 
     let result;
@@ -1326,7 +1415,7 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
         const formList = forms.map(f => `  - Form ID: ${f.form_id}\n    Description: ${f.description}`).join('\n');
         const emailSubject = `RACM Status Update - Set to Active`;
         const emailText = `
-Dear Process Owner,
+Dear Control Owner,
 
 This is to inform you that the following RACM(s) have been set to Active:
 
@@ -1489,12 +1578,38 @@ router.post('/', verifyAuth, async (req, res) => {
     control_number, area, risk_heat,
     process_walkthrough, control_relies_on_ipe, audit_evidence_accuracy,
     key_control, application_name, control_performer, control_owner,
-    control_design_procs, control_design_conclusion, design_deficiency_desc,
-    sample_size, control_type_fo, control_type_ma,
+    control_type_fo, control_type_ma,
     company_identifier, business_process, financial_year,
     completeness, existence_occurrence, rights_and_obligation,
     valuation_and_allocation, presentation_and_disclosure
   } = req.body;
+
+  const dueDateRaw = req.body.due_date != null ? String(req.body.due_date).trim() : '';
+  const reminderFrequencyRaw =
+    req.body.reminder_frequency != null ? String(req.body.reminder_frequency).trim() : '';
+  const hasDueDate = !!dueDateRaw;
+  const hasReminderFrequency = !!reminderFrequencyRaw;
+  if (hasDueDate !== hasReminderFrequency) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide both due_date and reminder_frequency, or keep both empty',
+    });
+  }
+  if (hasDueDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDateRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid due_date format. Expected YYYY-MM-DD',
+      });
+    }
+    const allowedReminder = new Set(['Daily', 'Weekly', 'Monthly']);
+    if (!allowedReminder.has(reminderFrequencyRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid reminder_frequency. Allowed values: Daily, Weekly, Monthly',
+      });
+    }
+  }
 
   const client = await pool.connect();
 
@@ -1535,7 +1650,7 @@ router.post('/', verifyAuth, async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(409).json({
           success: false,
-          message: 'Duplicate RACM exists for the same Business Process, Financial Year, and Control Number.',
+          message: DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE,
         });
       }
     }
@@ -1560,19 +1675,15 @@ router.post('/', verifyAuth, async (req, res) => {
         control_number, area, risk_heat,
         process_walkthrough, control_relies_on_ipe, audit_evidence_accuracy,
         key_control, application_name, control_performer, control_owner,
-        control_design_procs, control_design_conclusion, design_deficiency_desc,
         sample_size, control_type_fo, control_type_ma,
         form_id, company_identifier, business_process, financial_year, sample_required,
+        due_date, reminder_frequency,
         completeness, existence_occurrence, rights_and_obligation,
         valuation_and_allocation, presentation_and_disclosure
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
       RETURNING *;
     `;
-
-    // Keep nullable values explicit for new schema columns.
-    const controlDesignConclusionValue = control_design_conclusion !== undefined ? control_design_conclusion : null
-    const designDeficiencyDescValue = design_deficiency_desc !== undefined ? design_deficiency_desc : null
 
     const result = await client.query(insertQuery, [
       standard_control_description, sub_process, risk_description,
@@ -1581,9 +1692,10 @@ router.post('/', verifyAuth, async (req, res) => {
       control_number || null, area || null, risk_heat || null,
       process_walkthrough || null, control_relies_on_ipe || null, audit_evidence_accuracy || null,
       key_control || null, application_name || null, control_performer || null, control_owner || null,
-      control_design_procs || null, controlDesignConclusionValue, designDeficiencyDescValue,
       sampleSize !== null ? String(sampleSize) : null, control_type_fo || null, control_type_ma || null,
       formId, userCompanyIdentifier, business_process, financial_year || null, sampleRequired,
+      hasDueDate ? dueDateRaw : null,
+      hasReminderFrequency ? reminderFrequencyRaw : null,
       completeness || null, existence_occurrence || null, rights_and_obligation || null,
       valuation_and_allocation || null, presentation_and_disclosure || null
     ]);

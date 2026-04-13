@@ -18,11 +18,27 @@ const simpleColumnMapping = {
   'control owner': 'control_owner',
 };
 
-// Columns that should never be imported from Excel into control_forms
+// Columns that should never be imported from Excel into control_forms (cells / header mapping).
 const ignoredControlFormImportColumns = new Set([
   'control_design_procs',
   'control_design_conclusion',
   'design_deficiency_desc',
+  'doc_uploaded_by_user',
+  'active',
+  'status',
+  'reason_by_approver',
+  'created_at',
+  'company_identifier',
+  'form_id',
+  'remarks_by_user',
+  'sample_doc',
+  'sample_required',
+  'sample_size',
+  'due_date',
+  'reminder_frequency',
+  'reminder_datetime',
+  'approval_status_change_timestamp',
+  'financial_year',
 ]);
 
 function isIgnoredControlFormImportColumn(dbColumn) {

@@ -235,7 +235,8 @@ function Company_co_home() {
                 color: theme.palette.text.primary,
                 lineHeight: 1.08,
                 letterSpacing: '-0.03em',
-                maxWidth: 620,
+                maxWidth: '100%',
+                width: '100%',
               }}
             >
               Welcome back, {username}
@@ -243,7 +244,7 @@ function Company_co_home() {
             <Typography
               sx={{
                 mt: 1.4,
-                maxWidth: 640,
+                maxWidth: { xs: '100%', lg: 700 },
                 color: theme.palette.text.secondary,
                 fontSize: { xs: '0.98rem', sm: '1.02rem' },
                 lineHeight: 1.7,

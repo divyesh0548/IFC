@@ -1,40 +1,10 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 const { pool } = require('../utils/db');
 const { logAuditEvent } = require('../utils/auditLog');
+const { sendEmail } = require('../utils/send_email');
+const { verifyApproverAuth } = require('../modules/auth/auth.middleware');
 
 const router = express.Router();
-
-// Helper function to send email
-async function sendEmail(to, subject, text) {
-  // Create transporter (configure with your email service)
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: process.env.SMTP_PORT || 587,
-    secure: false, // true for 465, false for other ports
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
-
-  const mailOptions = {
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to: to,
-    subject: subject,
-    text: text
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    return true;
-  } catch (error) {
-    console.error('Error sending email:', error);
-    return false;
-  }
-}
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -54,7 +24,7 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   const statusText = status === 'Approved' ? 'approved' : 'rejected';
   const emailSubject = `RACM ${status}`;
 
-  let processOwnerName = 'Process Owner';
+  let processOwnerName = 'Control Owner';
   try {
     const ownerQuery = `
       SELECT emp_name
@@ -68,7 +38,7 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
       processOwnerName = String(rawName).trim();
     }
   } catch (nameError) {
-    console.error('Error fetching process owner name for email notification:', nameError);
+    console.error('Error fetching control owner name for email notification:', nameError);
   }
 
   let companyName = '';
@@ -128,114 +98,6 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   }
 }
 
-// Helper function to decrypt JWT token
-function decryptToken(encryptedToken) {
-  try {
-    const algorithm = 'aes-256-gcm';
-    const encryptionKeyHex = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
-    const encryptionKey = Buffer.from(encryptionKeyHex.slice(0, 64), 'hex');
-    
-    // Split the encrypted token
-    const parts = encryptedToken.split(':');
-    if (parts.length !== 3) {
-      throw new Error('Invalid token format');
-    }
-    
-    const iv = Buffer.from(parts[0], 'hex');
-    const authTag = Buffer.from(parts[1], 'hex');
-    const encrypted = parts[2];
-    
-    const decipher = crypto.createDecipheriv(algorithm, encryptionKey, iv);
-    decipher.setAuthTag(authTag);
-    
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    
-    return decrypted;
-  } catch (error) {
-    throw new Error('Token decryption failed');
-  }
-}
-
-// Middleware to verify approver authentication (unified authentication system)
-async function verifyApproverAuth(req, res, next) {
-  try {
-    // Use unified authToken (prioritize it, but fallback to old approverAuthToken for backward compatibility)
-    const token = req.cookies.authToken || req.cookies.approverAuthToken;
-    
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-    }
-
-    // Decrypt the token
-    const decryptedToken = decryptToken(token);
-    
-    // Verify JWT token
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
-      return res.status(500).json({
-        success: false,
-        message: 'Server configuration error'
-      });
-    }
-
-    const decoded = jwt.verify(decryptedToken, jwtSecret);
-    
-    // Get user details from database to verify role
-    const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
-    const userResult = await pool.query(userQuery, [decoded.email_id]);
-    
-    if (userResult.rows.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-    
-    const user = userResult.rows[0];
-    
-    // Verify user is an approver
-    if (user.role !== 'approver') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Approver role required.'
-      });
-    }
-    
-    // Attach approver info to request object (for backward compatibility)
-    req.approver = {
-      id: user.id,
-      email_id: user.email_id
-    };
-    
-    // Also attach as req.user for consistency
-    req.user = {
-      id: user.id,
-      email_id: user.email_id,
-      role: user.role,
-      company_identifier: user.company_identifier
-    };
-    
-    next();
-  } catch (error) {
-    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired token'
-      });
-    }
-    
-    console.error('Approver authentication error:', error);
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication failed'
-    });
-  }
-}
-
 // Protected route: Get approver dashboard data
 router.get('/home-stats', verifyApproverAuth, async (req, res) => {
   try {
@@ -279,7 +141,7 @@ router.get('/home-stats', verifyApproverAuth, async (req, res) => {
           )::int AS rejected_racms,
           COUNT(*) FILTER (
             WHERE active IS NOT NULL AND active != '' AND active != '0'
-              AND (status IS NULL OR status = '' OR status = 'sent for approval')
+              AND status = 'sent for approval'
           )::int AS pending_racms
         FROM control_forms
       `),
@@ -339,10 +201,9 @@ router.get('/dashboard', verifyApproverAuth, async (req, res) => {
 // Protected route: Get pending RACMs for approval
 router.get('/pending-approvals', verifyApproverAuth, async (req, res) => {
   try {
-    // Get RACMs that are pending approval
     const query = `
       SELECT * FROM control_forms 
-      WHERE status IS NULL OR status = '' OR status = 'sent for approval'
+      WHERE status = 'sent for approval'
       ORDER BY created_at DESC
     `;
     

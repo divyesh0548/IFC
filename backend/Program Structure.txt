@@ -1,0 +1,74 @@
+my-express-app/
+│
+├── src/
+│   ├── app.js
+│   ├── server.js
+│   │
+│   ├── config/
+│   │   ├── env.js
+│   │   ├── db.js
+│   │   └── logger.js
+│   │
+│   ├── modules/
+│   │   ├── auth/
+│   │   │   ├── auth.controller.js
+│   │   │   ├── auth.service.js
+│   │   │   ├── auth.repository.js
+│   │   │   ├── auth.routes.js
+│   │   │   ├── auth.validation.js
+│   │   │   └── auth.middleware.js
+│   │   │
+│   │   ├── users/
+│   │   │   ├── user.controller.js
+│   │   │   ├── user.service.js
+│   │   │   ├── user.repository.js
+│   │   │   ├── user.routes.js
+│   │   │   ├── user.validation.js
+│   │   │   └── user.model.js
+│   │   │
+│   │   ├── products/
+│   │   │   ├── product.controller.js
+│   │   │   ├── product.service.js
+│   │   │   ├── product.repository.js
+│   │   │   ├── product.routes.js
+│   │   │   ├── product.validation.js
+│   │   │   └── product.model.js
+│   │   │
+│   │   └── orders/
+│   │       ├── order.controller.js
+│   │       ├── order.service.js
+│   │       ├── order.repository.js
+│   │       ├── order.routes.js
+│   │       ├── order.validation.js
+│   │       └── order.model.js
+│   │
+│   ├── middlewares/
+│   │   ├── auth.middleware.js
+│   │   ├── error.middleware.js
+│   │   ├── validate.middleware.js
+│   │   └── rateLimit.middleware.js
+│   │
+│   ├── utils/
+│   │   ├── apiError.js
+│   │   ├── asyncHandler.js
+│   │   ├── apiResponse.js
+│   │   ├── constants.js
+│   │   └── helpers.js
+│   │
+│   ├── routes/
+│   │   └── index.js
+│   │
+│   └── docs/
+│       └── swagger.js
+│
+├── tests/
+│   ├── auth.test.js
+│   ├── user.test.js
+│   └── setup.js
+│
+├── .env
+├── .env.example
+├── .gitignore
+├── package.json
+├── README.md
+└── nodemon.json

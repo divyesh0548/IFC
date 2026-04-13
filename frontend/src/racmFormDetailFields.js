@@ -1,3 +1,38 @@
+/**
+ * DB columns users may map Excel headers to during bulk import.
+ * Matches manual RACM create: only coordinator-editable content fields.
+ * Excludes server / workflow columns (e.g. doc_uploaded_by_user, active, status,
+ * sample_size, due_date from cells — due_date/reminder come from upload form only).
+ * financial_year is set on the upload step, not from Excel columns.
+ */
+export const RACM_BULK_IMPORT_MAPPABLE_FIELDS = [
+  'control_number',
+  'area',
+  'risk_heat',
+  'standard_control_description',
+  'sub_process',
+  'risk_description',
+  'whether_fraud_risks_exist',
+  'control_objective',
+  'process_walkthrough',
+  'control_relies_on_ipe',
+  'audit_evidence_accuracy',
+  'ipe_reference',
+  'key_control',
+  'application_name',
+  'control_performer',
+  'control_owner',
+  'control_type_fo',
+  'control_type_ma',
+  'nature_of_control',
+  'control_frequency',
+  'completeness',
+  'existence_occurrence',
+  'rights_and_obligation',
+  'valuation_and_allocation',
+  'presentation_and_disclosure',
+]
+
 export const RACM_FIELD_LABELS = {
   control_number: 'Control Number',
   area: 'Area',
@@ -55,6 +90,9 @@ export const CONTROL_DETAIL_SEQUENCE = [
   'control_owner',
   'whether_fraud_risks_exist',
 ]
+
+/** sessionStorage payload for Excel → column map step */
+export const RACM_BULK_IMPORT_SESSION_KEY = 'ifc_racm_bulk_import_v1'
 
 export const orderControlDetailKeys = (keys, fallbackOrder = []) => {
   const preferredIndex = new Map(CONTROL_DETAIL_SEQUENCE.map((key, index) => [key, index]))

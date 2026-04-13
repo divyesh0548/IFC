@@ -10,8 +10,8 @@
  * After sending, reminder_datetime is updated to current IST time + interval.
  */
 
-const nodemailer = require('nodemailer');
 const { pool } = require('../utils/db');
+const { sendEmail } = require('../utils/send_email');
 
 function isValidEmail(value) {
   const email = String(value || '').trim();
@@ -20,31 +20,6 @@ function isValidEmail(value) {
   const re =
     /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   return re.test(email);
-}
-
-async function sendEmail(to, subject, text) {
-  if (!to || !String(to).trim()) return false;
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT, 10) || 587,
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-  try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: to.trim(),
-      subject,
-      text,
-    });
-    return true;
-  } catch (err) {
-    console.error('[reminder_emails] Send error:', err.message);
-    return false;
-  }
 }
 
 /**

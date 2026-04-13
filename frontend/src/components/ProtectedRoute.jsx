@@ -16,14 +16,14 @@ function ProtectedRoute({ children }) {
     const verifyToken = async () => {
       setLoading(true)
       try {
-        const response = await fetch('http://localhost:3000/api/auth/siteadmin/verify', {
+        const response = await fetch('http://localhost:3000/api/auth/verify', {
           method: 'GET',
           credentials: 'include', // Important: sends cookies
         })
 
         const data = await response.json()
 
-        if (response.ok && data.success) {
+        if (response.ok && data.success && data.user?.role === 'siteadmin') {
           setIsAuthenticated(true)
           hasVerifiedRef.current = true
         } else {
@@ -53,7 +53,7 @@ function ProtectedRoute({ children }) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/siteadmin/login" replace />
+    return <Navigate to="/login" replace />
   }
 
   return children

@@ -89,10 +89,10 @@ function CreateControlForm() {
   ]
 
   // Financial year options - dynamically based on current year
-  // Example: if current year is 2026 → [ '2025-26', '2026-27', '2027-28' ]
+  // Example: if current year is 2026 -> [ '2025-26', '2026-27' ]
   const currentYear = new Date().getFullYear()
   const baseFYStart = currentYear - 1
-  const financialYearOptions = Array.from({ length: 3 }, (_, i) => {
+  const financialYearOptions = Array.from({ length: 2 }, (_, i) => {
     const startYear = baseFYStart + i
     const endYearShort = String((startYear + 1) % 100).padStart(2, '0')
     return `${startYear}-${endYearShort}`
@@ -118,12 +118,10 @@ function CreateControlForm() {
     application_name: '',
     control_performer: '',
     control_owner: '',
-    control_design_procs: '',
     control_type_fo: '',
     control_type_ma: '',
     nature_of_control: '',
     control_frequency: '',
-    sample_size: '',
     completeness: false,
     existence_occurrence: false,
     rights_and_obligation: false,
@@ -294,8 +292,7 @@ function CreateControlForm() {
     'control_objective',
     'process_walkthrough',
     'audit_evidence_accuracy',
-    'ipe_reference',
-    'control_design_procs'
+    'ipe_reference'
   ]
 
   // Field labels
@@ -318,12 +315,10 @@ function CreateControlForm() {
   application_name: 'Application Name',
   control_performer: 'Control Performer',
   control_owner: 'Control Owner',
-  control_design_procs: 'Procedures to Evaluate Design and Implementation',
   control_type_fo: 'Type of control (Operational/Financial)',
   control_type_ma: 'Type of control (Manual/ Automated)',
   nature_of_control: 'Nature of Control',
   control_frequency: 'Control Frequency',
-  sample_size: 'Sample Size',
   completeness: 'Completeness',
   existence_occurrence: 'Existence & Occurrence',
   rights_and_obligation: 'Rights and Obligations',
@@ -356,12 +351,10 @@ function CreateControlForm() {
     'application_name',
     'control_performer',
     'control_owner',
-    'control_design_procs',
     'control_type_fo',
     'control_type_ma',
     'nature_of_control',
     'control_frequency',
-    'sample_size',
   ]
 
   const renderAssignableUserAutocomplete = (fieldId, labelText) => {
@@ -487,8 +480,11 @@ function CreateControlForm() {
               component="h1"
               sx={{
                 fontWeight: 700,
-                color: theme.palette.secondary.main,
+                color: 'text.primary',
                 flex: 1,
+                letterSpacing: '-0.02em',
+                position: 'relative',
+                pl: { xs: 0, sm: 1.75 },
               }}
             >
               Create RACM
@@ -751,7 +747,6 @@ function CreateControlForm() {
                       'valuation_and_allocation',
                       'rights_and_obligation',
                       'presentation_and_disclosure',
-                      'sample_size', // Exclude sample_size as it's computed automatically
                     ].includes(field)
                   )
                   .map((field) => {
@@ -830,14 +825,15 @@ function CreateControlForm() {
             </Box>
 
             {/* Submit and Cancel Buttons */}
-            <Box sx={{ display: 'flex', gap: 2, mt: 4 }}>
+            <Box sx={{ display: 'flex', gap: 2, mt: 4, flexWrap: 'wrap' }}>
               <Button
                 type="button"
                 onClick={() => navigate('/company_co/upload-excel')}
                 variant="outlined"
                 sx={{
-                  flex: 1,
                   py: 1.5,
+                  px: 3,
+                  minWidth: 140,
                   fontSize: theme.typography.customSizes.medium,
                   fontWeight: 600,
                   textTransform: 'none',
@@ -863,8 +859,9 @@ function CreateControlForm() {
                 variant="contained"
                 color="secondary"
                 sx={{
-                  flex: 1,
                   py: 1.5,
+                  px: 3,
+                  minWidth: 180,
                   fontSize: theme.typography.customSizes.medium,
                   fontWeight: 600,
                   textTransform: 'none',
@@ -881,4 +878,3 @@ function CreateControlForm() {
 }
 
 export default CreateControlForm
-

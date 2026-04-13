@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useTheme } from '@mui/material/styles'
+import { alpha, useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -23,7 +23,18 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
+import Divider from '@mui/material/Divider'
+import Chip from '@mui/material/Chip'
+import Grid from '@mui/material/Grid'
+import Stack from '@mui/material/Stack'
+import InputAdornment from '@mui/material/InputAdornment'
 import { toast } from 'react-hot-toast'
+import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
+import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded'
+import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
+import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded'
+import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
+import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function UserManagement() {
@@ -232,149 +243,326 @@ function UserManagement() {
     return (
       <Box
         sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
           minHeight: 'calc(100vh - 4rem)',
           px: 0,
-          py: 4,
+          py: { xs: 1, md: 2 },
         }}
       >
-        <Box sx={{ width: '100%', maxWidth: '700px' }}>
+        <Box sx={{ width: '100%', maxWidth: '1120px', mx: 'auto' }}>
           <Paper
-            elevation={2}
             sx={{
-              p: 4,
+              overflow: 'hidden',
+              borderRadius: 4,
+              border: '1px solid',
+              borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.14),
               backgroundColor: theme.palette.background.paper,
-              borderRadius: 2,
+              boxShadow:
+                theme.palette.mode === 'dark'
+                  ? '0 26px 64px rgba(0, 0, 0, 0.34)'
+                  : '0 24px 56px rgba(18, 52, 88, 0.12)',
             }}
           >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-              <Typography
-                variant="h4"
-                component="h1"
+            <Grid container>
+              <Grid
+                item
+                xs={12}
+                md={4.5}
                 sx={{
-                  fontWeight: 700,
-                  color: theme.palette.secondary.main,
+                  p: { xs: 3, sm: 4, md: 4.5 },
+                  color: theme.palette.mode === 'dark' ? theme.palette.primary.contrastText : theme.palette.common.white,
+                  background:
+                    theme.palette.mode === 'dark'
+                      ? `linear-gradient(180deg, ${alpha(theme.palette.primary.main, 0.34)} 0%, ${alpha(theme.palette.primary.dark, 0.24)} 100%)`
+                      : `linear-gradient(180deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
                 }}
               >
-                Create New User
-              </Typography>
-              <Button
-                onClick={() => {
-                  setShowCreateForm(false)
-                  resetForm()
-                  navigate('/company_co/user-management', { replace: true })
-                }}
-                variant="outlined"
-                startIcon={<ArrowBackIcon />}
-                sx={{ textTransform: 'none' }}
-              >
-                Back to List
-              </Button>
-            </Box>
+                <Stack spacing={3.5} sx={{ height: '100%', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Chip
+                      label="Company Coordinator"
+                      size="small"
+                      sx={{
+                        mb: 2,
+                        fontWeight: 700,
+                        color: 'inherit',
+                        borderColor: alpha('#ffffff', 0.38),
+                        backgroundColor: alpha('#ffffff', 0.14),
+                      }}
+                      variant="outlined"
+                    />
+                    <Typography variant="h3" component="h1" sx={{ color: 'inherit', mb: 1.5 }}>
+                      Create a new user profile
+                    </Typography>
+                    <Typography
+                      variant="body1"
+                      sx={{
+                        color: alpha('#ffffff', 0.8),
+                        maxWidth: 360,
+                      }}
+                    >
+                      Add the user’s core identity details now. Email is required, while the remaining fields help make assignments and ownership clearer later.
+                    </Typography>
+                  </Box>
 
-            <form onSubmit={handleSubmit}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mb: 3 }}>
-                <TextField
-                  id="email"
-                  name="email"
-                  label="Email ID"
-                  type="email"
-                  variant="filled"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={loading}
-                  placeholder="user@example.com"
-                  error={!!error}
-                  helperText={error || ''}
-                  fullWidth
-                />
+                  <Stack spacing={1.5}>
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: 3,
+                        border: '1px solid',
+                        borderColor: alpha('#ffffff', 0.16),
+                        backgroundColor: alpha('#ffffff', 0.08),
+                      }}
+                    >
+                      <Typography sx={{ fontWeight: 700, mb: 0.5, color: 'inherit' }}>
+                        Before you submit
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: alpha('#ffffff', 0.76) }}>
+                        Use the employee’s official company email and a 10-digit mobile number if you provide one.
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: 3,
+                        border: '1px solid',
+                        borderColor: alpha('#ffffff', 0.16),
+                        backgroundColor: alpha('#ffffff', 0.08),
+                      }}
+                    >
+                      <Typography sx={{ fontWeight: 700, mb: 0.5, color: 'inherit' }}>
+                        Form coverage
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: alpha('#ffffff', 0.76) }}>
+                        Employee code, name, designation, department, and mobile are optional but recommended for easier tracking across RACMs.
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </Stack>
+              </Grid>
 
-                <TextField
-                  id="emp_code"
-                  name="emp_code"
-                  label="Employee Code"
-                  type="text"
-                  variant="filled"
-                  value={empCode}
-                  onChange={(e) => setEmpCode(e.target.value)}
-                  disabled={loading}
-                  fullWidth
-                />
+              <Grid item xs={12} md={7.5}>
+                <Box sx={{ p: { xs: 3, sm: 4, md: 4.5 } }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: { xs: 'stretch', sm: 'center' },
+                      gap: 2,
+                      flexDirection: { xs: 'column', sm: 'row' },
+                      mb: 3,
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="h4" component="h2" sx={{ mb: 0.75 }}>
+                        User details
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                        Complete the profile below. Required fields are marked automatically.
+                      </Typography>
+                    </Box>
+                    <Button
+                      onClick={() => {
+                        setShowCreateForm(false)
+                        resetForm()
+                        navigate('/company_co/user-management', { replace: true })
+                      }}
+                      variant="outlined"
+                      startIcon={<ArrowBackIcon />}
+                      sx={{ textTransform: 'none', alignSelf: { xs: 'flex-start', sm: 'center' } }}
+                    >
+                      Back to List
+                    </Button>
+                  </Box>
 
-                <TextField
-                  id="emp_name"
-                  name="emp_name"
-                  label="Employee Name"
-                  type="text"
-                  variant="filled"
-                  value={empName}
-                  onChange={(e) => setEmpName(e.target.value)}
-                  disabled={loading}
-                  fullWidth
-                />
+                  <Divider sx={{ mb: 3 }} />
 
-                <TextField
-                  id="designation"
-                  name="designation"
-                  label="Designation"
-                  type="text"
-                  variant="filled"
-                  value={designation}
-                  onChange={(e) => setDesignation(e.target.value)}
-                  disabled={loading}
-                  fullWidth
-                />
+                  <form onSubmit={handleSubmit}>
+                    <Grid container spacing={2.25} sx={{ mb: 3 }}>
+                      <Grid item xs={12}>
+                        <TextField
+                          id="email"
+                          name="email"
+                          label="Email ID"
+                          type="email"
+                          variant="outlined"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          required
+                          disabled={loading}
+                          placeholder="user@example.com"
+                          error={!!error}
+                          helperText={error || 'Use the user’s primary company email address.'}
+                          fullWidth
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <MailOutlineRoundedIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      </Grid>
 
-                <TextField
-                  id="department"
-                  name="department"
-                  label="Department"
-                  type="text"
-                  variant="filled"
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  disabled={loading}
-                  fullWidth
-                />
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          id="emp_code"
+                          name="emp_code"
+                          label="Employee Code"
+                          type="text"
+                          variant="outlined"
+                          value={empCode}
+                          onChange={(e) => setEmpCode(e.target.value)}
+                          disabled={loading}
+                          fullWidth
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <BadgeRoundedIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      </Grid>
 
-                <TextField
-                  id="mobile"
-                  name="mobile"
-                  label="Mobile Number"
-                  type="tel"
-                  variant="filled"
-                  value={mobile}
-                  onChange={(e) => setMobile(e.target.value)}
-                  disabled={loading}
-                  error={!!mobile && !validateMobile(mobile)}
-                  helperText={mobile && !validateMobile(mobile) ? 'Mobile number must be 10 digits' : ''}
-                  fullWidth
-                  inputProps={{
-                    maxLength: 10,
-                  }}
-                />
-              </Box>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          id="emp_name"
+                          name="emp_name"
+                          label="Employee Name"
+                          type="text"
+                          variant="outlined"
+                          value={empName}
+                          onChange={(e) => setEmpName(e.target.value)}
+                          disabled={loading}
+                          fullWidth
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <PersonRoundedIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      </Grid>
 
-              <Button
-                type="submit"
-                disabled={loading}
-                variant="contained"
-                color="secondary"
-                fullWidth
-                sx={{
-                  py: 1.5,
-                  fontSize: theme.typography.customSizes.medium,
-                  fontWeight: 600,
-                  textTransform: 'none',
-                }}
-              >
-                {loading ? 'Creating User...' : 'Create User'}
-              </Button>
-            </form>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          id="designation"
+                          name="designation"
+                          label="Designation"
+                          type="text"
+                          variant="outlined"
+                          value={designation}
+                          onChange={(e) => setDesignation(e.target.value)}
+                          disabled={loading}
+                          fullWidth
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <WorkOutlineRoundedIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      </Grid>
+
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          id="department"
+                          name="department"
+                          label="Department"
+                          type="text"
+                          variant="outlined"
+                          value={department}
+                          onChange={(e) => setDepartment(e.target.value)}
+                          disabled={loading}
+                          fullWidth
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <ApartmentRoundedIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      </Grid>
+
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          id="mobile"
+                          name="mobile"
+                          label="Mobile Number"
+                          type="tel"
+                          variant="outlined"
+                          value={mobile}
+                          onChange={(e) => setMobile(e.target.value)}
+                          disabled={loading}
+                          error={!!mobile && !validateMobile(mobile)}
+                          helperText={mobile && !validateMobile(mobile) ? 'Mobile number must be 10 digits' : 'Optional. Enter digits only.'}
+                          fullWidth
+                          inputProps={{
+                            maxLength: 10,
+                          }}
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <LocalPhoneOutlinedIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      </Grid>
+                    </Grid>
+
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: { xs: 'stretch', sm: 'center' },
+                        gap: 2,
+                        flexDirection: { xs: 'column', sm: 'row' },
+                        pt: 3,
+                        borderTop: '1px solid',
+                        borderColor: 'divider',
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                        The new user will appear in the management table after creation succeeds.
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1.5, width: { xs: '100%', sm: 'auto' } }}>
+                        <Button
+                          type="button"
+                          variant="outlined"
+                          disabled={loading}
+                          onClick={resetForm}
+                          sx={{ textTransform: 'none', minWidth: 120, width: { xs: '50%', sm: 'auto' } }}
+                        >
+                          Clear
+                        </Button>
+                        <Button
+                          type="submit"
+                          disabled={loading}
+                          variant="contained"
+                          color="secondary"
+                          sx={{
+                            py: 1.4,
+                            px: 3,
+                            minWidth: 170,
+                            width: { xs: '50%', sm: 'auto' },
+                            fontSize: theme.typography.customSizes.medium,
+                            fontWeight: 600,
+                            textTransform: 'none',
+                          }}
+                        >
+                          {loading ? 'Creating User...' : 'Create User'}
+                        </Button>
+                      </Box>
+                    </Box>
+                  </form>
+                </Box>
+              </Grid>
+            </Grid>
           </Paper>
         </Box>
       </Box>

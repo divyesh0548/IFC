@@ -14,6 +14,7 @@ const statsRoutes = require('./routes/stats');
 const { processExcelFiles } = require('./scripts/process_excel_files');
 const { processSamplingExcel } = require('./scripts/process_sampling_excel');
 const { runReminderEmails } = require('./scripts/reminder_emails');
+const { runBootstrap } = require('./config/bootstrap');
 require('./utils/db'); // Load shared pool (timezone set there)
 
 const app = express();
@@ -32,8 +33,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middleware
-app.use(express.json());
+// Middleware (large limit for client-parsed Excel row payloads)
+app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
@@ -42,7 +43,7 @@ app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
   console.log(`\n[${timestamp}] ${req.method} ${req.path}`);
   
-  if (req.body && Object.keys(req.body).length > 0) {
+  if (req.body && Object.keys(req.body).length > 0 && !req.path.includes('/bulk-import-rows')) {
     console.log('Body:', JSON.stringify(req.body, null, 2));
   }
   if (Object.keys(req.query).length > 0) {
@@ -113,8 +114,16 @@ setInterval(async () => {
   }
 }, 60 * 1000);
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+// Run bootstrap tasks, then start server
+(async () => {
+  try {
+    await runBootstrap();
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error('Server bootstrap failed. Exiting process.', error);
+    process.exit(1);
+  }
+})();
 

@@ -7,7 +7,7 @@ export function useSiteadminLogout() {
 
   const handleLogout = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/auth/siteadmin/logout', {
+      const response = await fetch('http://localhost:3000/api/auth/logout', {
         method: 'POST',
         credentials: 'include', // Important: sends cookies
       })

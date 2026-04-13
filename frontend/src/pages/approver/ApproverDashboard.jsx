@@ -183,14 +183,31 @@ function ApproverDashboard() {
     }
   }
 
+  /** Display: DB value with first letter capitalized (empty → "—"). */
   const formatStatus = (status) => {
-    if (!status || status === '' || status === null) {
-      return 'Pending'
+    if (status === null || status === undefined) {
+      return '—'
     }
-    if (status === 'sent for approval') {
-      return 'Pending'
+    const s = String(status).trim()
+    if (s === '') {
+      return '—'
     }
-    return status.charAt(0).toUpperCase() + status.slice(1)
+    return s.charAt(0).toUpperCase() + s.slice(1)
+  }
+
+  const matchesApproverStatusFilter = (form, statusFilter) => {
+    if (statusFilter === 'all') return true
+    const raw = (form.status ?? '').toString().trim()
+    if (statusFilter === 'pending') {
+      return raw === 'sent for approval'
+    }
+    if (statusFilter === 'approved') {
+      return raw.toLowerCase() === 'approved'
+    }
+    if (statusFilter === 'rejected') {
+      return raw.toLowerCase() === 'rejected'
+    }
+    return true
   }
 
   const fetchForms = async () => {
@@ -261,7 +278,6 @@ function ApproverDashboard() {
     const normalizedCompany = (form.company_name ?? '').toString().trim()
     const normalizedBusinessProcess = (form.business_process ?? '').toString().trim()
     const normalizedFinancialYear = (form.financial_year ?? '').toString().trim()
-    const normalizedStatus = formatStatus(form.status)
     const isActive = form.active && form.active !== '' && form.active !== '0'
 
     if (filterCompany !== 'all' && normalizedCompany !== filterCompany) {
@@ -276,7 +292,7 @@ function ApproverDashboard() {
       return false
     }
 
-    if (filterStatus !== 'all' && normalizedStatus.toLowerCase() !== filterStatus.toLowerCase()) {
+    if (!matchesApproverStatusFilter(form, filterStatus)) {
       return false
     }
 

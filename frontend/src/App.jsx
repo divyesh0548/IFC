@@ -17,6 +17,7 @@ import Company_Co_dashboard from './pages/company_co/Company_co_dashboard'
 import RacmAssignment from './pages/company_co/RacmAssignment'
 import UserManagement from './pages/company_co/User_Management'
 import ExcelUpload from './pages/forms/ExcelUpload'
+import ExcelColumnMap from './pages/forms/ExcelColumnMap'
 import FormDetail from './pages/company_co/FormDetail'
 import CreateControlForm from './pages/company_co/CreateControlForm'
 import RacmManagementDashboard from './pages/company_co/RacmManagementDashboard'
@@ -180,6 +181,7 @@ function App() {
           <Route path="racm-assignment" element={<RacmAssignment />} />
           <Route path="user-management" element={<UserManagement />} />
           <Route path="upload-excel" element={<ExcelUpload />} />
+          <Route path="upload-excel/column-map" element={<ExcelColumnMap />} />
           <Route path="create-form" element={<CreateControlForm />} />
           <Route path="form/:form_id" element={<FormDetail />} />
           <Route path="profile" element={<ProfilePage />} />

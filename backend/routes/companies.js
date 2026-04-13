@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 const { pool } = require('../utils/db');
+const { sendEmail } = require('../utils/send_email');
 
 const router = express.Router();
 
@@ -19,35 +19,6 @@ function generateCompanyIdentifier(companyName) {
   
   // Combine to make 10 characters total
   return (namePart + randomPart).substring(0, 10);
-}
-
-// Helper function to send email
-async function sendEmail(to, subject, text) {
-  // Create transporter (configure with your email service)
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: process.env.SMTP_PORT || 587,
-    secure: false, // true for 465, false for other ports
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
-
-  const mailOptions = {
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to: to,
-    subject: subject,
-    text: text
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    return true;
-  } catch (error) {
-    console.error('Error sending email:', error);
-    return false;
-  }
 }
 
 // Get all companies API endpoint
