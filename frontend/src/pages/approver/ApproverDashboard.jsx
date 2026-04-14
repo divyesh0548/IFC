@@ -428,10 +428,6 @@ function ApproverDashboard() {
               component="h2"
               sx={{
                 fontWeight: 700,
-                color:
-                  theme.palette.mode === 'dark'
-                    ? theme.palette.text.primary
-                    : theme.palette.secondary.main,
               }}
             >
               {filterStatus === 'pending'

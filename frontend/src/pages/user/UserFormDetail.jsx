@@ -424,14 +424,16 @@ function UserFormDetail() {
   // Check if status should hide conditional fields
   const shouldHideConditionalFields = !formData?.status || formData.status === '' || formData.status === 'sent for approval'
   
-  // Grouped fields that should be displayed together (only if at least one has a value)
+  // Design & Implementation — same three fields as backend DESIGN_IMPLEMENTATION_GROUP_FIELDS (control_forms.js).
+  // API omits all three when every value is empty; if any has a value, API returns all three (show "-" for blanks).
   const groupedApproverFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
-  
-  // Check if at least one grouped field has a value
-  const hasGroupedFieldValue = formData ? groupedApproverFields.some(key => {
-    const value = formData[key]
-    return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
-  }) : false
+
+  const hasGroupedFieldValue = formData
+    ? groupedApproverFields.some((key) => {
+        const value = formData[key]
+        return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
+      })
+    : false
 
   if (loading) {
     return (
@@ -489,7 +491,7 @@ function UserFormDetail() {
       }}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {/* Top summary card (matches coordinator design) */}
+          {/* Top summary card (3-col grid on md+, same box style as approver summary) */}
           <Box sx={{ width: '100%' }}>
             <Card
               sx={{
@@ -509,7 +511,7 @@ function UserFormDetail() {
               <CardContent
                 sx={{
                   px: 3.5,
-                  pt: 4,
+                  pt: 3,
                   pb: 4,
                   display: 'flex',
                   flexDirection: 'column',
@@ -522,7 +524,7 @@ function UserFormDetail() {
                     gridTemplateColumns: {
                       xs: '1fr',
                       sm: 'repeat(2, 1fr)',
-                      md: 'repeat(4, 1fr)',
+                      md: 'repeat(3, 1fr)',
                     },
                     gap: 2,
                   }}
@@ -601,6 +603,43 @@ function UserFormDetail() {
                     </Typography>
                   </Box>
 
+                  {/* Control Number */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Control Number
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {(formData?.control_number || '').toString().trim() || '-'}
+                    </Typography>
+                  </Box>
+
                   {/* Created At */}
                   <Box
                     sx={{
@@ -630,12 +669,79 @@ function UserFormDetail() {
                       sx={{
                         color: 'text.primary',
                         fontWeight: 500,
-                        fontSize: '0.875rem',
+                        fontSize: '0.9375rem',
                         lineHeight: 1.5,
                       }}
                     >
                       {formatDateTime(formData?.created_at)}
                     </Typography>
+                  </Box>
+
+                  {/* Sample Document */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Sample Document
+                    </Typography>
+                    {formData?.sample_doc && String(formData.sample_doc).trim() !== '' ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.primary',
+                            fontWeight: 500,
+                            fontSize: '0.9375rem',
+                            flex: 1,
+                            wordBreak: 'break-word',
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {getFileName(String(formData.sample_doc))}
+                        </Typography>
+                        <IconButton
+                          onClick={() => handleDownloadSampleDocument(formData.sample_doc)}
+                          size="small"
+                          sx={{
+                            color: 'primary.main',
+                            '&:hover': {
+                              backgroundColor: 'action.hover',
+                            },
+                          }}
+                        >
+                          <DownloadIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    ) : (
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: 'text.disabled',
+                          fontWeight: 500,
+                          fontSize: '0.9375rem',
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        No sample uploaded
+                      </Typography>
+                    )}
                   </Box>
 
                   {/* Reason by Approver (when present) */}
@@ -673,7 +779,7 @@ function UserFormDetail() {
                           sx={{
                             color: 'text.primary',
                             fontWeight: 500,
-                            fontSize: '0.875rem',
+                            fontSize: '0.9375rem',
                             lineHeight: 1.6,
                             wordBreak: 'break-word',
                           }}
@@ -683,71 +789,6 @@ function UserFormDetail() {
                       </Box>
                     )
                   })()}
-
-                  {/* Sample Document */}
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      component="label"
-                      sx={{
-                        display: 'block',
-                        fontWeight: 600,
-                        mb: 1,
-                        color: 'text.secondary',
-                        fontSize: '0.75rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                      }}
-                    >
-                      Sample Document
-                    </Typography>
-                    {formData?.sample_doc && String(formData.sample_doc).trim() !== '' ? (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            color: 'text.primary',
-                            fontWeight: 500,
-                            fontSize: '0.875rem',
-                            flex: 1,
-                            wordBreak: 'break-word',
-                          }}
-                        >
-                          {getFileName(String(formData.sample_doc))}
-                        </Typography>
-                        <IconButton
-                          onClick={() => handleDownloadSampleDocument(formData.sample_doc)}
-                          size="small"
-                          sx={{
-                            color: 'primary.main',
-                            '&:hover': {
-                              backgroundColor: 'action.hover',
-                            },
-                          }}
-                        >
-                          <DownloadIcon fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    ) : (
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: 'text.disabled',
-                          fontWeight: 500,
-                          fontSize: '0.875rem',
-                        }}
-                      >
-                        No sample uploaded
-                      </Typography>
-                    )}
-                  </Box>
                 </Box>
               </CardContent>
             </Card>
@@ -796,7 +837,7 @@ function UserFormDetail() {
                     mt: 2,
                   }}
                 >
-                  {['control_number', 'area', 'sub_process', 'risk_description', 'risk_heat']
+                  {['area', 'sub_process', 'risk_description', 'risk_heat']
                     .filter((key) => sortedFields.includes(key))
                     .map((key) => {
                       const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())

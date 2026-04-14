@@ -225,6 +225,32 @@ const uploadUserDoc = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
 
+/** Design & Implementation block (process owner / user UI). Keep in sync with UserFormDetail groupedApproverFields. */
+const DESIGN_IMPLEMENTATION_GROUP_FIELDS = [
+  'control_design_procs',
+  'control_design_conclusion',
+  'design_deficiency_desc',
+];
+
+function designImplementationGroupHasAnyValue(row) {
+  if (!row || typeof row !== 'object') return false;
+  return DESIGN_IMPLEMENTATION_GROUP_FIELDS.some((key) => {
+    const v = row[key];
+    return v !== null && v !== undefined && v !== '' && String(v).trim() !== '';
+  });
+}
+
+/** Shallow copy for JSON: omit all three when every value is empty; otherwise return full row. */
+function shapeControlFormJsonForProcessOwner(row) {
+  const copy = { ...row };
+  if (!designImplementationGroupHasAnyValue(copy)) {
+    DESIGN_IMPLEMENTATION_GROUP_FIELDS.forEach((k) => {
+      delete copy[k];
+    });
+  }
+  return copy;
+}
+
 // Middleware to verify authentication (unified authentication system)
 async function verifyAuth(req, res, next) {
   try {
@@ -833,14 +859,14 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
       }
     }
     
-    // Verify control_design_procs is in the result (for debugging)
-    if (!formData.hasOwnProperty('control_design_procs')) {
-      console.warn(`Warning: control_design_procs column not found in result for form_id: ${form_id}`);
-    }
-    
+    const dataForClient =
+      loggedInUserRole === 'user'
+        ? shapeControlFormJsonForProcessOwner(formData)
+        : formData;
+
     res.status(200).json({
       success: true,
-      data: formData
+      data: dataForClient
     });
   } catch (error) {
     console.error('Error fetching RACM:', error);
@@ -1264,10 +1290,16 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
     }
 
+    const updatedRow = result.rows[0];
+    const dataForClient =
+      req.user.role === 'user'
+        ? shapeControlFormJsonForProcessOwner(updatedRow)
+        : updatedRow;
+
     res.status(200).json({
       success: true,
       message: 'RACM updated successfully',
-      data: result.rows[0]
+      data: dataForClient
     });
 
   } catch (error) {

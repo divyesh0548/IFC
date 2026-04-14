@@ -142,7 +142,11 @@ router.get('/home-stats', verifyApproverAuth, async (req, res) => {
           COUNT(*) FILTER (
             WHERE active IS NOT NULL AND active != '' AND active != '0'
               AND status = 'sent for approval'
-          )::int AS pending_racms
+          )::int AS pending_racms,
+          COUNT(*) FILTER (
+            WHERE active IS NOT NULL AND active != '' AND active != '0'
+              AND status IN ('Approved', 'Rejected', 'sent for approval')
+          )::int AS total_racms
         FROM control_forms
       `),
     ]);
@@ -157,6 +161,7 @@ router.get('/home-stats', verifyApproverAuth, async (req, res) => {
         total_approved_racms: racmStatsResult.rows[0]?.approved_racms || 0,
         total_rejected_racms: racmStatsResult.rows[0]?.rejected_racms || 0,
         total_pending_racms: racmStatsResult.rows[0]?.pending_racms || 0,
+        total_racms: racmStatsResult.rows[0]?.total_racms || 0,
       },
     });
   } catch (error) {
@@ -405,21 +410,54 @@ router.post('/change-approval-decision/:form_id', verifyApproverAuth, async (req
           ? String(reason_by_approver).trim()
           : null;
 
-    const updateResult = await pool.query(
-      `UPDATE control_forms
-       SET status = $1,
-           reason_by_approver = $2,
-           approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
-       WHERE form_id = $3
-       RETURNING *`,
-      [status, reasonFinal, form_id]
-    );
+    const client = await pool.connect();
+    let updatedForm;
+    try {
+      await client.query('BEGIN');
 
-    if (updateResult.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'RACM not found' });
+      // Same archival as control_forms PUT resubmit: when moving off "Rejected", persist user's doc + rejection reason.
+      if (curStatus === 'Rejected' && status === 'Approved') {
+        const prevDoc =
+          row.doc_uploaded_by_user != null ? String(row.doc_uploaded_by_user).trim() : '';
+        const prevReason =
+          row.reason_by_approver != null ? String(row.reason_by_approver).trim() : '';
+        if (prevDoc || prevReason) {
+          await client.query(
+            `INSERT INTO control_form_history (form_id, doc_uploaded_by_user, reason_by_approver)
+             VALUES ($1, $2, $3)`,
+            [form_id, prevDoc || null, prevReason || null]
+          );
+        }
+      }
+
+      const updateResult = await client.query(
+        `UPDATE control_forms
+         SET status = $1,
+             reason_by_approver = $2,
+             approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
+         WHERE form_id = $3
+         RETURNING *`,
+        [status, reasonFinal, form_id]
+      );
+
+      if (updateResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, message: 'RACM not found' });
+      }
+
+      await client.query('COMMIT');
+      updatedForm = updateResult.rows[0];
+    } catch (dbErr) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('Change approval decision rollback error:', rollbackErr);
+      }
+      console.error('Change approval decision DB error:', dbErr);
+      return res.status(500).json({ success: false, message: 'Internal server error' });
+    } finally {
+      client.release();
     }
-
-    const updatedForm = updateResult.rows[0];
 
     await notifyProcessOwnerRacmDecision(
       updatedForm.control_owner,
@@ -543,6 +581,42 @@ router.get('/control-forms/:form_id', verifyApproverAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error'
+    });
+  }
+});
+
+// Rejection / resubmit history rows (control_form_history) for a form
+router.get('/control-form-history/:form_id', verifyApproverAuth, async (req, res) => {
+  try {
+    const { form_id } = req.params;
+
+    const exists = await pool.query('SELECT 1 FROM control_forms WHERE form_id = $1 LIMIT 1', [form_id]);
+    if (exists.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found',
+      });
+    }
+
+    const result = await pool.query(
+      `
+        SELECT id, doc_uploaded_by_user, reason_by_approver
+        FROM control_form_history
+        WHERE form_id = $1
+        ORDER BY id ASC
+      `,
+      [form_id]
+    );
+
+    res.status(200).json({
+      success: true,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Get control_form_history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
     });
   }
 });

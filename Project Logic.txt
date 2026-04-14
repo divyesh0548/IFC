@@ -31,6 +31,10 @@ If Rejected by approver, user will be able to re-upload document and write remar
 Company coordinator will have to upload an excel sheet with some data for each control_form. Program will detect header of that excel and ask coordinator to select a primary column. After that script will select some random rows as sample. Each control-form has a column value control-frequency. So based on that number of rows will be decided. Now these rows will be shown to user as an example.
 
 
+When RACM is approved after rejection then the document uploaded by user and reason give by approver for rejection will be saved in control_form_history table. (Old document which was rejected will be saved in history)
+Rejection history will be populated even if it is a change of decision by approver.
+
+
 
 
 

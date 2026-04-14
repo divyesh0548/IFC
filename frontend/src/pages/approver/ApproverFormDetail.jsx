@@ -12,12 +12,19 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 import TextField from '@mui/material/TextField';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import IconButton from '@mui/material/IconButton';
+import Fab from '@mui/material/Fab';
 import Tooltip from '@mui/material/Tooltip';
 import DownloadIcon from '@mui/icons-material/Download';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
@@ -25,14 +32,11 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import ListAltRoundedIcon from '@mui/icons-material/ListAltRounded';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
-import {
-  FORM_DETAIL_MAX_WIDTH,
-  STATUS_BADGE_DETAIL_SX,
-  getActivityBadgeSolidColors,
-  getStatusBadgeSolidColors,
-} from '../../uiConstants';
+import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants';
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields';
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 
@@ -59,11 +63,54 @@ function ApproverFormDetail() {
   const [auditLogLoading, setAuditLogLoading] = useState(false)
   const [auditLogError, setAuditLogError] = useState(null)
   const [auditLogRows, setAuditLogRows] = useState([])
+  const [rejectionHistoryRows, setRejectionHistoryRows] = useState([])
+  const [rejectionHistoryOpen, setRejectionHistoryOpen] = useState(false)
+  const [showScrollTop, setShowScrollTop] = useState(false)
 
   const toastId = useRef(null)
 
   useEffect(() => {
+    const onScroll = () => {
+      setShowScrollTop(window.scrollY > 300)
+    }
+
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
     fetchFormData()
+  }, [form_id])
+
+  useEffect(() => {
+    let cancelled = false
+    setRejectionHistoryRows([])
+
+    if (!form_id) return undefined
+
+    ;(async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:3000/api/approver/control-form-history/${encodeURIComponent(form_id)}`,
+          { method: 'GET', credentials: 'include' }
+        )
+        const data = await response.json()
+        if (cancelled) return
+        if (response.ok && data.success && Array.isArray(data.data)) {
+          setRejectionHistoryRows(data.data)
+        } else {
+          setRejectionHistoryRows([])
+        }
+      } catch (e) {
+        console.error('Control form history fetch error:', e)
+        if (!cancelled) setRejectionHistoryRows([])
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [form_id])
 
   const fetchFormData = async () => {
@@ -247,6 +294,12 @@ function ApproverFormDetail() {
     } finally {
       setApproving(false)
     }
+  }
+
+  const hasRejectionHistory = rejectionHistoryRows.length > 0
+
+  const handleOpenRejectionHistory = () => {
+    setRejectionHistoryOpen(true)
   }
 
   const handleOpenAuditLogs = async () => {
@@ -444,7 +497,6 @@ function ApproverFormDetail() {
     'key_control',
     'application_name',
     'control_performer',
-    'control_owner',
     'control_design_procs',
     'control_type_fo',
     'control_type_ma',
@@ -530,6 +582,8 @@ function ApproverFormDetail() {
     return status.charAt(0).toUpperCase() + status.slice(1)
   })()
 
+  const approvalStatusValueColor = isApproved ? '#10b981' : isRejected ? '#ef4444' : 'text.primary'
+
   return (
     <Box
       sx={{
@@ -581,30 +635,64 @@ function ApproverFormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    size="medium"
-                    startIcon={<HistoryRoundedIcon sx={{ fontSize: '1.2rem !important' }} />}
-                    onClick={handleOpenAuditLogs}
-                    disableElevation
+                  <Box
                     sx={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      gap: 1.5,
                       alignSelf: { xs: 'flex-start', sm: 'center' },
-                      textTransform: 'none',
-                      fontWeight: 700,
-                      letterSpacing: '0.02em',
-                      borderRadius: 2,
-                      px: 1.5,
-                      py: 0.875,
-                      minHeight: 40,
-                      boxShadow: 'none',
-                      '&:hover': {
-                        boxShadow: 'none',
-                      },
                     }}
                   >
-                    Audit logs
-                  </Button>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      size="medium"
+                      startIcon={<HistoryRoundedIcon sx={{ fontSize: '1.2rem !important' }} />}
+                      onClick={handleOpenAuditLogs}
+                      disableElevation
+                      sx={{
+                        textTransform: 'none',
+                        fontWeight: 700,
+                        letterSpacing: '0.02em',
+                        borderRadius: 2,
+                        px: 1.5,
+                        py: 0.875,
+                        minHeight: 40,
+                        boxShadow: 'none',
+                        '&:hover': {
+                          boxShadow: 'none',
+                        },
+                      }}
+                    >
+                      Audit logs
+                    </Button>
+                    {hasRejectionHistory && (
+                      <Button
+                        variant="contained"
+                        color="secondary"
+                        size="medium"
+                        startIcon={<ListAltRoundedIcon sx={{ fontSize: '1.2rem !important' }} />}
+                        onClick={handleOpenRejectionHistory}
+                        disableElevation
+                        sx={{
+                          textTransform: 'none',
+                          fontWeight: 700,
+                          letterSpacing: '0.02em',
+                          borderRadius: 2,
+                          px: 1.5,
+                          py: 0.875,
+                          minHeight: 40,
+                          boxShadow: 'none',
+                          '&:hover': {
+                            boxShadow: 'none',
+                          },
+                        }}
+                      >
+                        RACM History
+                      </Button>
+                    )}
+                  </Box>
                   <Typography
                     variant="caption"
                     sx={{
@@ -625,7 +713,7 @@ function ApproverFormDetail() {
                     gridTemplateColumns: {
                       xs: '1fr',
                       sm: 'repeat(2, 1fr)',
-                      md: 'repeat(3, 1fr)',
+                      md: 'repeat(4, 1fr)',
                     },
                     gap: 2,
                   }}
@@ -654,15 +742,156 @@ function ApproverFormDetail() {
                     >
                       RACM Status
                     </Typography>
-                    <Box
-                      component="span"
+                    <Typography
+                      variant="body2"
                       sx={{
-                        ...STATUS_BADGE_DETAIL_SX,
-                        ...getActivityBadgeSolidColors(isActive),
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
                       }}
                     >
                       {isActive ? 'Active' : 'Inactive'}
-                    </Box>
+                    </Typography>
+                  </Box>
+
+                  {/* Approval Status */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Approval Status
+                    </Typography>
+                    {showApprovalStatusLockUi && approvalChangeWithin15Days ? (
+                      <ButtonBase
+                        focusRipple
+                        onClick={() => {
+                          setChangeDecisionReason('')
+                          setChangeDecisionOpen(true)
+                        }}
+                        sx={{
+                          display: 'block',
+                          width: '100%',
+                          borderRadius: 1.5,
+                          textAlign: 'left',
+                          transition: 'background-color 0.15s ease',
+                          border: '1px solid transparent',
+                          '&:hover': {
+                            backgroundColor: 'action.hover',
+                            borderColor: 'divider',
+                          },
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 1,
+                            minWidth: 0,
+                            py: 0.5,
+                            px: 0.75,
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: approvalStatusValueColor,
+                              fontWeight: 500,
+                              fontSize: '0.9375rem',
+                              lineHeight: 1.5,
+                              flex: 1,
+                              minWidth: 0,
+                              textAlign: 'left',
+                            }}
+                          >
+                            {approvalStatusLabelText}
+                          </Typography>
+                          <Tooltip
+                            title="Click to change decision within the 15-day window."
+                            placement="top"
+                            arrow
+                          >
+                            <Box
+                              component="span"
+                              role="img"
+                              sx={{
+                                display: 'inline-flex',
+                                color: 'text.secondary',
+                                flexShrink: 0,
+                                pointerEvents: 'none',
+                                '& .MuiSvgIcon-root': { fontSize: 22 },
+                              }}
+                              aria-label="Unlocked: click to change decision"
+                            >
+                              <LockOpenOutlinedIcon />
+                            </Box>
+                          </Tooltip>
+                        </Box>
+                      </ButtonBase>
+                    ) : (
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1,
+                          minWidth: 0,
+                        }}
+                      >
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: approvalStatusValueColor,
+                            fontWeight: 500,
+                            fontSize: '0.9375rem',
+                            lineHeight: 1.5,
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                        >
+                          {approvalStatusLabelText}
+                        </Typography>
+                        {showApprovalStatusLockUi && (
+                          <Tooltip
+                            title="Approval status is locked — more than 15 days since the last decision."
+                            placement="top"
+                            arrow
+                          >
+                            <Box
+                              component="span"
+                              role="img"
+                              sx={{
+                                display: 'inline-flex',
+                                color: 'text.secondary',
+                                flexShrink: 0,
+                                '& .MuiSvgIcon-root': { fontSize: 22 },
+                              }}
+                              aria-label="Locked: outside 15-day change window"
+                            >
+                              <LockOutlinedIcon />
+                            </Box>
+                          </Tooltip>
+                        )}
+                      </Box>
+                    )}
                   </Box>
 
                   {/* Business Process */}
@@ -739,7 +968,7 @@ function ApproverFormDetail() {
                     </Typography>
                   </Box>
 
-                  {/* Approval Status */}
+                  {/* Control Number */}
                   <Box
                     sx={{
                       p: 2,
@@ -761,116 +990,19 @@ function ApproverFormDetail() {
                         letterSpacing: '0.5px',
                       }}
                     >
-                      Approval Status
+                      Control Number
                     </Typography>
-                    {showApprovalStatusLockUi && approvalChangeWithin15Days ? (
-                      <ButtonBase
-                        focusRipple
-                        onClick={() => {
-                          setChangeDecisionReason('')
-                          setChangeDecisionOpen(true)
-                        }}
-                        sx={{
-                          display: 'block',
-                          width: '100%',
-                          borderRadius: 1.5,
-                          textAlign: 'left',
-                          transition: 'background-color 0.15s ease',
-                          border: '1px solid transparent',
-                          '&:hover': {
-                            backgroundColor: 'action.hover',
-                            borderColor: 'divider',
-                          },
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 1,
-                            minWidth: 0,
-                            py: 0.5,
-                            px: 0.75,
-                          }}
-                        >
-                          <Box
-                            component="span"
-                            sx={{
-                              ...STATUS_BADGE_DETAIL_SX,
-                              ...getStatusBadgeSolidColors(formData?.status),
-                              flex: 1,
-                              minWidth: 0,
-                            }}
-                          >
-                            {approvalStatusLabelText}
-                          </Box>
-                          <Tooltip
-                            title="Click to change decision within the 15-day window."
-                            placement="top"
-                            arrow
-                          >
-                            <Box
-                              component="span"
-                              role="img"
-                              sx={{
-                                display: 'inline-flex',
-                                color: 'text.secondary',
-                                flexShrink: 0,
-                                pointerEvents: 'none',
-                                '& .MuiSvgIcon-root': { fontSize: 22 },
-                              }}
-                              aria-label="Unlocked: click to change decision"
-                            >
-                              <LockOpenOutlinedIcon />
-                            </Box>
-                          </Tooltip>
-                        </Box>
-                      </ButtonBase>
-                    ) : (
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 1,
-                          minWidth: 0,
-                        }}
-                      >
-                        <Box
-                          component="span"
-                          sx={{
-                            ...STATUS_BADGE_DETAIL_SX,
-                            ...getStatusBadgeSolidColors(formData?.status),
-                            flex: 1,
-                            minWidth: 0,
-                          }}
-                        >
-                          {approvalStatusLabelText}
-                        </Box>
-                        {showApprovalStatusLockUi && (
-                          <Tooltip
-                            title="Approval status is locked — more than 15 days since the last decision."
-                            placement="top"
-                            arrow
-                          >
-                            <Box
-                              component="span"
-                              role="img"
-                              sx={{
-                                display: 'inline-flex',
-                                color: 'text.secondary',
-                                flexShrink: 0,
-                                '& .MuiSvgIcon-root': { fontSize: 22 },
-                              }}
-                              aria-label="Locked: outside 15-day change window"
-                            >
-                              <LockOutlinedIcon />
-                            </Box>
-                          </Tooltip>
-                        )}
-                      </Box>
-                    )}
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {(formData?.control_number || '').toString().trim() || '-'}
+                    </Typography>
                   </Box>
 
                   {/* Process Owner */}
@@ -1003,7 +1135,7 @@ function ApproverFormDetail() {
                     mt: 2,
                   }}
                 >
-                  {['control_number', 'area', 'sub_process', 'risk_description', 'risk_heat']
+                  {['area', 'sub_process', 'risk_description', 'risk_heat']
                     .filter((key) => formData.hasOwnProperty(key) && !excludedFields.includes(key))
                     .map((key) => {
                       const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
@@ -1849,6 +1981,174 @@ function ApproverFormDetail() {
         />
 
         <Dialog
+          open={rejectionHistoryOpen}
+          onClose={() => setRejectionHistoryOpen(false)}
+          fullWidth
+          maxWidth="md"
+          aria-labelledby="rejection-history-dialog-title"
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              maxHeight: '90vh',
+            },
+          }}
+        >
+          <DialogTitle
+            id="rejection-history-dialog-title"
+            sx={{
+              pb: 1,
+              pt: 2.5,
+              px: 3,
+              fontWeight: 600,
+              fontSize: '1.1rem',
+            }}
+          >
+            Rejection History
+          </DialogTitle>
+          <DialogContent sx={{ px: 3, pt: 0, pb: 2, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <TableContainer
+              sx={{
+                maxHeight: 'min(420px, 58vh)',
+                overflow: 'auto',
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+              }}
+            >
+              <Table size="small" stickyHeader sx={{ tableLayout: 'fixed', width: '100%' }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell
+                      sx={{
+                        fontWeight: 600,
+                        width: '62%',
+                        borderBottom: '1px solid',
+                        borderColor: 'divider',
+                      }}
+                    >
+                      Reason by Approver
+                    </TableCell>
+                    <TableCell
+                      sx={{
+                        fontWeight: 600,
+                        width: '38%',
+                        borderBottom: '1px solid',
+                        borderColor: 'divider',
+                      }}
+                    >
+                      Document by User
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {rejectionHistoryRows.map((row) => {
+                    const docPath = row.doc_uploaded_by_user != null ? String(row.doc_uploaded_by_user).trim() : ''
+                    const reason =
+                      row.reason_by_approver != null && String(row.reason_by_approver).trim() !== ''
+                        ? String(row.reason_by_approver)
+                        : null
+                    const fileName = docPath ? getFileName(docPath) : ''
+                    return (
+                      <TableRow key={row.id} hover>
+                        <TableCell
+                          sx={{
+                            verticalAlign: 'top',
+                            wordBreak: 'break-word',
+                            maxWidth: 0,
+                            borderBottom: '1px solid',
+                            borderColor: 'divider',
+                            fontSize: '0.8125rem',
+                            lineHeight: 1.5,
+                            color: 'text.primary',
+                            py: 1.5,
+                          }}
+                        >
+                          {reason ?? '—'}
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            verticalAlign: 'top',
+                            borderBottom: '1px solid',
+                            borderColor: 'divider',
+                            py: 1.5,
+                          }}
+                        >
+                          {docPath ? (
+                            <Tooltip title={fileName} placement="top" arrow enterDelay={400}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<DownloadIcon fontSize="small" />}
+                                onClick={() => handleDownloadFile(docPath)}
+                                sx={{
+                                  width: 168,
+                                  minWidth: 168,
+                                  maxWidth: 168,
+                                  textTransform: 'none',
+                                  fontWeight: 600,
+                                  justifyContent: 'flex-start',
+                                  px: 1,
+                                  py: 0.5,
+                                  '& .MuiButton-startIcon': {
+                                    mr: 0.75,
+                                    flexShrink: 0,
+                                  },
+                                  '& .MuiButton-label': {
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'flex-start',
+                                    minWidth: 0,
+                                    flex: 1,
+                                    overflow: 'hidden',
+                                  },
+                                }}
+                              >
+                                <Box
+                                  component="span"
+                                  sx={{
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    minWidth: 0,
+                                    flex: 1,
+                                    textAlign: 'left',
+                                    fontSize: '0.8125rem',
+                                  }}
+                                >
+                                  {fileName}
+                                </Box>
+                              </Button>
+                            </Tooltip>
+                          ) : (
+                            <Typography variant="body2" color="text.disabled" sx={{ fontSize: '0.8125rem' }}>
+                              —
+                            </Typography>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+              {rejectionHistoryRows.length} entr{rejectionHistoryRows.length === 1 ? 'y' : 'ies'} — oldest at top. Scroll the
+              table for long lists.
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button
+              onClick={() => setRejectionHistoryOpen(false)}
+              variant="outlined"
+              size="small"
+              sx={{ textTransform: 'none' }}
+            >
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
           open={changeDecisionOpen}
           onClose={() => {
             if (!changeDecisionSubmitting) setChangeDecisionOpen(false)
@@ -2015,6 +2315,32 @@ function ApproverFormDetail() {
             )}
           </DialogActions>
         </Dialog>
+
+        {showScrollTop && (
+          <Fab
+            aria-label="scroll to top"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            sx={{
+              position: 'fixed',
+              right: { xs: 16, sm: 24 },
+              bottom: { xs: 16, sm: 24 },
+              zIndex: (t) => t.zIndex.modal + 1,
+              backgroundColor: (t) => (t.palette.mode === 'dark' ? '#0b1220' : '#ffffff'),
+              color: (t) => (t.palette.mode === 'dark' ? '#ffffff' : '#111827'),
+              border: (t) =>
+                `1px solid ${t.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.28)' : 'rgba(17, 24, 39, 0.35)'}`,
+              boxShadow: (t) =>
+                t.palette.mode === 'dark'
+                  ? '0 8px 24px rgba(0, 0, 0, 0.45)'
+                  : '0 8px 24px rgba(0, 0, 0, 0.12)',
+              '&:hover': {
+                backgroundColor: (t) => (t.palette.mode === 'dark' ? '#111827' : '#f9fafb'),
+              },
+            }}
+          >
+            <KeyboardArrowUpIcon />
+          </Fab>
+        )}
       </Box>
   )
 }

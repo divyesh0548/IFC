@@ -11,6 +11,9 @@ import ThumbUpAltRoundedIcon from '@mui/icons-material/ThumbUpAltRounded'
 import HighlightOffRoundedIcon from '@mui/icons-material/HighlightOffRounded'
 import PendingActionsRoundedIcon from '@mui/icons-material/PendingActionsRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
+import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
+import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
+import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function ApproverHome() {
@@ -26,6 +29,7 @@ function ApproverHome() {
     total_approved_racms: 0,
     total_rejected_racms: 0,
     total_pending_racms: 0,
+    total_racms: 0,
   })
 
   useEffect(() => {
@@ -52,36 +56,41 @@ function ApproverHome() {
   }, [])
 
   const displayName = stats.approver_name?.trim() || 'Approver'
-  const statCards = [
+  const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
+
+  const topStatCards = [
     {
-      title: 'Total Company',
+      title: 'Companies',
       value: stats.total_companies,
-      icon: <DomainRoundedIcon sx={{ fontSize: 34 }} />,
+      icon: <DomainRoundedIcon sx={{ fontSize: 22 }} />,
+      accent: theme.palette.primary.main,
     },
     {
-      title: 'Total Users',
+      title: 'Users',
       value: stats.total_users,
-      icon: <GroupRoundedIcon sx={{ fontSize: 34 }} />,
+      icon: <GroupRoundedIcon sx={{ fontSize: 22 }} />,
+      accent: blueTokens.accent || theme.palette.info.main,
+    },
+  ]
+
+  const workTiles = [
+    {
+      eyebrow: 'Primary',
+      title: 'Approval Dashboard',
+      description: 'Open the full approval queue to filter RACMs, inspect details, and submit decisions.',
+      icon: <DashboardRoundedIcon sx={{ fontSize: 38 }} />,
+      action: 'Open dashboard',
+      path: '/approver/dashboard',
+      accent: theme.palette.primary.main,
     },
     {
-      title: 'Total RACMs Active',
-      value: stats.total_active_racms,
-      icon: <FactCheckRoundedIcon sx={{ fontSize: 34 }} />,
-    },
-    {
-      title: 'Approved',
-      value: stats.total_approved_racms,
-      icon: <ThumbUpAltRoundedIcon sx={{ fontSize: 34 }} />,
-    },
-    {
-      title: 'Rejected',
-      value: stats.total_rejected_racms,
-      icon: <HighlightOffRoundedIcon sx={{ fontSize: 34 }} />,
-    },
-    {
-      title: 'Pending',
-      value: stats.total_pending_racms,
-      icon: <PendingActionsRoundedIcon sx={{ fontSize: 34 }} />,
+      eyebrow: 'Priority',
+      title: 'Pending Review Focus',
+      description: 'Start with the unresolved queue and move quickly through pending approvals across companies.',
+      icon: <TaskAltRoundedIcon sx={{ fontSize: 38 }} />,
+      action: 'Review pending',
+      path: '/approver/dashboard',
+      accent: theme.palette.warning.main,
     },
   ]
 
@@ -91,168 +100,417 @@ function ApproverHome() {
         px: 0,
         py: 2,
         minHeight: 'calc(100vh - 64px)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 3,
       }}
     >
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 2.5, sm: 3.5 },
-          mb: 3,
-          borderRadius: 3,
-          backgroundColor: theme.palette.background.paper,
-        }}
-      >
-        <Typography
-          sx={{
-            fontSize: { xs: '1.8rem', sm: '2.2rem' },
-            fontWeight: 800,
-            color: theme.palette.text.primary,
-            lineHeight: 1.2,
-          }}
-        >
-          Welcome, {displayName}
-        </Typography>
-        <Typography
-          sx={{
-            mt: 1,
-            color: theme.palette.text.secondary,
-            fontSize: '1rem',
-          }}
-        >
-          Review IFC activity across companies and move to the approver dashboard when needed.
-        </Typography>
-      </Paper>
-
       <Box
         sx={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-          gap: 2.5,
-          mb: 3,
-          [theme.breakpoints.down('lg')]: {
-            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          },
-          [theme.breakpoints.down('sm')]: {
-            gridTemplateColumns: '1fr',
-          },
-        }}
-      >
-        {statCards.map((card) => (
-          <Paper
-            key={card.title}
-            elevation={0}
-            sx={{
-              p: 3,
-              borderRadius: 3,
-              backgroundColor: alpha(theme.palette.background.paper, 0.92),
-            }}
-          >
-            <Box
-              sx={{
-                width: 58,
-                height: 58,
-                borderRadius: '14px',
-                display: 'grid',
-                placeItems: 'center',
-                color:
-                  theme.palette.mode === 'dark'
-                    ? theme.palette.primary.light
-                    : theme.palette.secondary.main,
-                backgroundColor:
-                  theme.palette.mode === 'dark'
-                    ? alpha(theme.palette.primary.light, 0.2)
-                    : alpha(theme.palette.secondary.main, 0.12),
-                mb: 2,
-              }}
-            >
-              {card.icon}
-            </Box>
-            <Typography
-              sx={{
-                color: theme.palette.text.secondary,
-                fontSize: '0.95rem',
-                mb: 0.75,
-              }}
-            >
-              {card.title}
-            </Typography>
-            <Typography
-              sx={{
-                fontWeight: 800,
-                color: theme.palette.text.primary,
-                fontSize: '2rem',
-                lineHeight: 1,
-              }}
-            >
-              {loading ? '--' : card.value}
-            </Typography>
-          </Paper>
-        ))}
-      </Box>
-
-      <Paper
-        onClick={() => navigate('/approver/dashboard')}
-        elevation={0}
-        sx={{
-          p: 3,
-          width: '100%',
-          minHeight: 150,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          gap: 2,
-          borderRadius: 3,
-          cursor: 'pointer',
-          transition: 'transform 200ms ease-out, background-color 200ms ease-out',
-          backgroundColor: alpha(theme.palette.background.paper, 0.9),
-          '&:hover': {
-            backgroundColor: alpha(theme.palette.background.paper, 1),
-            transform: 'translateY(-3px)',
-          },
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: 4,
+          border: '1px solid',
+          borderColor:
+            theme.palette.mode === 'dark'
+              ? alpha(theme.palette.common.white, 0.08)
+              : alpha(theme.palette.primary.main, 0.12),
+          background: theme.palette.gradients?.hero || `linear-gradient(135deg, ${alpha(theme.palette.primary.light, 0.22)} 0%, ${alpha(theme.palette.background.paper, 0.96)} 100%)`,
+          boxShadow:
+            theme.palette.mode === 'dark'
+              ? '0 20px 48px rgba(0, 0, 0, 0.32)'
+              : '0 20px 48px rgba(15, 23, 42, 0.08)',
         }}
       >
         <Box
           sx={{
-            width: 62,
-            height: 62,
-            borderRadius: '14px',
+            position: 'absolute',
+            top: -70,
+            right: -30,
+            width: 220,
+            height: 220,
+            borderRadius: '50%',
+            background: `radial-gradient(circle, ${alpha(blueTokens.heroGlow || theme.palette.primary.main, 0.22)} 0%, transparent 72%)`,
+          }}
+        />
+        <Box
+          sx={{
+            position: 'absolute',
+            bottom: -90,
+            left: -40,
+            width: 240,
+            height: 240,
+            borderRadius: '50%',
+            background: `radial-gradient(circle, ${alpha(blueTokens.accent || theme.palette.secondary.main, 0.16)} 0%, transparent 70%)`,
+          }}
+        />
+
+        <Box
+          sx={{
+            position: 'relative',
+            p: { xs: 2.5, sm: 3.5, md: 4 },
             display: 'grid',
-            placeItems: 'center',
-            color:
-              theme.palette.mode === 'dark'
-                ? theme.palette.primary.light
-                : theme.palette.secondary.main,
-            backgroundColor:
-              theme.palette.mode === 'dark'
-                ? alpha(theme.palette.primary.light, 0.2)
-                : alpha(theme.palette.secondary.main, 0.12),
-            flexShrink: 0,
+            gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.45fr) minmax(280px, 0.95fr)' },
+            gap: 3,
+            alignItems: 'stretch',
           }}
         >
-          <DashboardRoundedIcon sx={{ fontSize: 38 }} />
-        </Box>
-        <Box>
-          <Typography
+          <Box sx={{ minWidth: 0 }}>
+            <Box
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 1,
+                px: 1.4,
+                py: 0.7,
+                borderRadius: 999,
+                mb: 2,
+                backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.12 : 0.72),
+                border: `1px solid ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.16)}`,
+              }}
+            >
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  backgroundColor: theme.palette.success.main,
+                  boxShadow: `0 0 0 4px ${alpha(theme.palette.success.main, 0.16)}`,
+                }}
+              />
+              <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: theme.palette.text.secondary }}>
+                Approver workspace
+              </Typography>
+            </Box>
+
+            <Typography
+              sx={{
+                fontSize: { xs: '1.85rem', sm: '2.35rem', md: '2.7rem' },
+                fontWeight: 900,
+                color: theme.palette.text.primary,
+                lineHeight: 1.08,
+                letterSpacing: '-0.03em',
+                maxWidth: '100%',
+              }}
+            >
+              Welcome back, {displayName}
+            </Typography>
+
+            <Typography
+              sx={{
+                mt: 1.4,
+                maxWidth: { xs: '100%', lg: 720 },
+                color: theme.palette.text.secondary,
+                fontSize: { xs: '0.98rem', sm: '1.03rem' },
+                lineHeight: 1.7,
+              }}
+            >
+              Review approval activity across companies, keep pending RACMs moving, and use the dashboard as the operational hub for decisions.
+            </Typography>
+
+            <Box
+              sx={{
+                mt: 2.5,
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                gap: 1.5,
+                maxWidth: 520,
+              }}
+            >
+              {topStatCards.map((card) => (
+                <Paper
+                  key={card.title}
+                  elevation={0}
+                  sx={{
+                    p: 1.35,
+                    borderRadius: 2,
+                    border: `1px dashed ${alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.28 : 0.2)}`,
+                    backgroundColor: 'transparent',
+                    boxShadow: 'none',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                    <Box
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0,
+                        color: card.accent,
+                        border: `1px solid ${alpha(card.accent, 0.45)}`,
+                        backgroundColor: alpha(card.accent, theme.palette.mode === 'dark' ? 0.12 : 0.08),
+                      }}
+                    >
+                      {card.icon}
+                    </Box>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography
+                        sx={{
+                          fontSize: '0.68rem',
+                          fontWeight: 800,
+                          letterSpacing: '0.12em',
+                          textTransform: 'uppercase',
+                          color: theme.palette.text.secondary,
+                          mb: 0.25,
+                        }}
+                      >
+                        {card.title}
+                      </Typography>
+                      <Typography
+                        sx={{
+                          fontSize: '1.35rem',
+                          fontWeight: 800,
+                          color: theme.palette.text.primary,
+                          fontVariantNumeric: 'tabular-nums',
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {loading ? '—' : card.value}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Paper>
+              ))}
+            </Box>
+          </Box>
+
+          <Paper
+            elevation={0}
             sx={{
-              fontWeight: 700,
-              color: theme.palette.text.primary,
-              fontSize: '1.2rem',
-              textAlign: 'left',
+              p: 2.4,
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor:
+                theme.palette.mode === 'dark'
+                  ? alpha(theme.palette.common.white, 0.08)
+                  : alpha(theme.palette.divider, 1),
+              backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.5 : 0.82),
+              backdropFilter: 'blur(8px)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-start',
+              gap: 1.15,
+              minHeight: 'auto',
             }}
           >
-            Approver Dashboard
-          </Typography>
-          <Typography
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb: 0 }}>
+              <Box
+                sx={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 2.5,
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: theme.palette.primary.contrastText,
+                  background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                }}
+              >
+                <InsightsRoundedIcon sx={{ fontSize: 22 }} />
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: '0.84rem', fontWeight: 700, color: theme.palette.text.secondary }}>
+                  Snapshot
+                </Typography>
+                <Typography sx={{ fontSize: '1.05rem', fontWeight: 800, color: theme.palette.text.primary }}>
+                  Approval Overview
+                </Typography>
+              </Box>
+            </Box>
+
+            <Box sx={{ display: 'grid', gap: 0.85 }}>
+              {[
+                { label: 'Total RACMs', value: stats.total_racms, color: theme.palette.primary.main },
+                { label: 'Pending RACMs', value: stats.total_pending_racms, color: theme.palette.warning.main },
+                { label: 'Approved RACMs', value: stats.total_approved_racms, color: theme.palette.success.main },
+                { label: 'Rejected RACMs', value: stats.total_rejected_racms, color: theme.palette.error.main },
+              ].map((item) => (
+                <Box
+                  key={item.label}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 2,
+                    py: 0.85,
+                    borderBottom: `1px solid ${alpha(theme.palette.divider, 0.75)}`,
+                    '&:last-of-type': {
+                      borderBottom: 'none',
+                      pb: 0,
+                    },
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0 }}>
+                    <Box
+                      sx={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        backgroundColor: item.color,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: theme.palette.text.secondary }}>
+                      {item.label}
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: theme.palette.text.primary }}>
+                    {loading ? '--' : item.value}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </Paper>
+        </Box>
+      </Box>
+
+      <Box
+        sx={{
+          width: '100%',
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', lg: '1.2fr 0.8fr' },
+          gap: 2.5,
+        }}
+      >
+        {workTiles.map((tile) => (
+          <Paper
+            key={tile.title}
+            onClick={() => navigate(tile.path)}
+            elevation={0}
             sx={{
-              mt: 0.75,
-              color: theme.palette.text.secondary,
-              fontSize: '0.95rem',
+              p: 0,
+              width: '100%',
+              minHeight: 176,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              justifyContent: 'flex-start',
+              borderRadius: 3,
+              cursor: 'pointer',
+              overflow: 'hidden',
+              transition: 'box-shadow 220ms ease-out, border-color 220ms ease-out, background-color 220ms ease-out, transform 220ms ease-out',
+              backgroundColor: alpha(theme.palette.background.paper, 0.92),
+              border: `1px solid ${
+                theme.palette.mode === 'dark'
+                  ? alpha(tile.accent, 0.12)
+                  : alpha(theme.palette.divider, 0.9)
+              }`,
+              boxShadow:
+                theme.palette.mode === 'dark'
+                  ? '0 10px 24px rgba(0, 0, 0, 0.18)'
+                  : '0 10px 24px rgba(15, 23, 42, 0.05)',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                borderColor: alpha(tile.accent, 0.5),
+                boxShadow:
+                  theme.palette.mode === 'dark'
+                    ? `0 18px 36px rgba(0, 0, 0, 0.24), inset 0 0 0 1px ${alpha(tile.accent, 0.18)}`
+                    : `0 18px 36px rgba(15, 23, 42, 0.08), inset 0 0 0 1px ${alpha(tile.accent, 0.12)}`,
+                backgroundColor:
+                  theme.palette.mode === 'dark'
+                    ? alpha(theme.palette.background.paper, 0.98)
+                    : alpha(theme.palette.background.paper, 1),
+              },
             }}
           >
-            Open the RACM approval dashboard to filter, review, and process submissions.
-          </Typography>
-        </Box>
-      </Paper>
+            <Box
+              sx={{
+                width: '100%',
+                p: 2.75,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2.2,
+                minHeight: 176,
+                background: `linear-gradient(180deg, ${alpha(tile.accent, theme.palette.mode === 'dark' ? 0.18 : 0.08)} 0%, transparent 100%)`,
+              }}
+            >
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  gap: 1.5,
+                  width: '100%',
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: '16px',
+                    display: 'grid',
+                    placeItems: 'center',
+                    color:
+                      theme.palette.mode === 'dark'
+                        ? alpha(theme.palette.common.white, 0.92)
+                        : alpha(tile.accent, 0.92),
+                    backgroundColor: alpha(tile.accent, theme.palette.mode === 'dark' ? 0.18 : 0.12),
+                    border: `1px solid ${alpha(tile.accent, theme.palette.mode === 'dark' ? 0.18 : 0.16)}`,
+                    flexShrink: 0,
+                  }}
+                >
+                  {tile.icon}
+                </Box>
+                <Box
+                  sx={{
+                    px: 1.1,
+                    py: 0.65,
+                    borderRadius: 999,
+                    backgroundColor: alpha(tile.accent, theme.palette.mode === 'dark' ? 0.14 : 0.1),
+                    color:
+                      theme.palette.mode === 'dark'
+                        ? alpha(theme.palette.common.white, 0.86)
+                        : tile.accent,
+                  }}
+                >
+                  <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    {tile.eyebrow}
+                  </Typography>
+                </Box>
+              </Box>
+
+              <Box sx={{ display: 'grid', gap: 0.9 }}>
+                <Typography
+                  sx={{
+                    fontWeight: 800,
+                    color: theme.palette.text.primary,
+                    fontSize: '1.08rem',
+                    lineHeight: 1.3,
+                  }}
+                >
+                  {tile.title}
+                </Typography>
+                <Typography
+                  sx={{
+                    textAlign: 'left',
+                    color: alpha(theme.palette.text.secondary, 0.92),
+                    fontSize: '0.92rem',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {tile.description}
+                </Typography>
+              </Box>
+
+              <Box
+                sx={{
+                  mt: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.8,
+                  color: tile.accent,
+                }}
+              >
+                <Typography sx={{ fontSize: '0.88rem', fontWeight: 800 }}>
+                  {tile.action}
+                </Typography>
+                <ArrowOutwardRoundedIcon sx={{ fontSize: 18 }} />
+              </Box>
+            </Box>
+          </Paper>
+        ))}
+      </Box>
     </Box>
   )
 }
