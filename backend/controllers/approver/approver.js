@@ -1,10 +1,6 @@
-const express = require('express');
-const { pool } = require('../utils/db');
-const { logAuditEvent } = require('../utils/auditLog');
-const { sendEmail } = require('../utils/send_email');
-const { verifyApproverAuth } = require('../modules/auth/auth.middleware');
-
-const router = express.Router();
+const { pool } = require('../../utils/db');
+const { logAuditEvent } = require('../../utils/auditLog');
+const { sendEmail } = require('../../utils/send_email');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -66,7 +62,7 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
     emailBody += `Reason/Comments from Approver:\n${reason_by_approver}\n\n`;
   }
 
-  emailBody += `Form Details:\n`;
+  emailBody += 'Form Details:\n';
   if (updatedForm.business_process) {
     emailBody += `- BusinessProcess: ${updatedForm.business_process}\n`;
   }
@@ -77,13 +73,13 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
     emailBody += `- Description: ${updatedForm.standard_control_description}\n`;
   }
 
-  emailBody += `\n`;
+  emailBody += '\n';
 
   if (status === 'Rejected') {
-    emailBody += `You can review the feedback above, make necessary changes, and resubmit the RACM for approval.\n\n`;
+    emailBody += 'You can review the feedback above, make necessary changes, and resubmit the RACM for approval.\n\n';
   }
 
-  emailBody += `Thank you for using the IFC system.\n\n`;
+  emailBody += 'Thank you for using the IFC system.\n\n';
   emailBody += `Best regards,\n${companyName}`;
 
   try {
@@ -98,8 +94,7 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   }
 }
 
-// Protected route: Get approver dashboard data
-router.get('/home-stats', verifyApproverAuth, async (req, res) => {
+async function getHomeStats(req, res) {
   try {
     const approverEmail = req.user.email_id;
 
@@ -171,100 +166,77 @@ router.get('/home-stats', verifyApproverAuth, async (req, res) => {
       message: 'Failed to fetch approver home stats',
     });
   }
-});
+}
 
-router.get('/dashboard', verifyApproverAuth, async (req, res) => {
+async function getDashboard(req, res) {
   try {
-    // Get approver info from middleware
     const approver = req.approver;
-    
-    // You can add dashboard-specific queries here
-    // For example, get pending approvals, statistics, etc.
-    
+
     res.status(200).json({
       success: true,
       message: 'Dashboard data retrieved successfully',
       approver: {
         id: approver.id,
-        email_id: approver.email_id
+        email_id: approver.email_id,
       },
-      // Add dashboard data here
-      data: {
-        // Example: pendingApprovals: [],
-        // Example: statistics: {}
-      }
+      data: {},
     });
   } catch (error) {
     console.error('Dashboard error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
-});
+}
 
-// Protected route: Get pending RACMs for approval
-router.get('/pending-approvals', verifyApproverAuth, async (req, res) => {
+async function getPendingApprovals(req, res) {
   try {
     const query = `
       SELECT * FROM control_forms 
       WHERE status = 'sent for approval'
       ORDER BY created_at DESC
     `;
-    
+
     const result = await pool.query(query);
-    
+
     res.status(200).json({
       success: true,
       message: 'Pending approvals retrieved successfully',
-      data: result.rows
+      data: result.rows,
     });
   } catch (error) {
     console.error('Pending approvals error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
-});
+}
 
-// Protected route: Approve or reject an RACM
-router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
+async function approveForm(req, res) {
   try {
     const { form_id } = req.params;
-    const { 
-      status, 
+    const {
+      status,
       reason_by_approver,
       control_design_procs,
       control_design_conclusion,
-      design_deficiency_desc
+      design_deficiency_desc,
     } = req.body;
     const approver = req.approver;
 
     if (!status || !['Approved', 'Rejected'].includes(status)) {
       return res.status(400).json({
         success: false,
-        message: 'status must be either "Approved" or "Rejected"'
+        message: 'status must be either "Approved" or "Rejected"',
       });
     }
 
-    // Log received data for debugging
-    console.log('Approver form update - Received fields:', {
-      form_id,
-      status,
-      control_design_procs,
-      control_design_conclusion,
-      design_deficiency_desc
-    });
-
-    // Build dynamic update query to include optional fields
     const updateFields = ['status = $1', 'reason_by_approver = $2'];
     const updateValues = [status, reason_by_approver || null];
     let paramIndex = 3;
 
-    // Always include approver-editable fields (even if empty strings)
-    // This ensures the fields are always updated when approver approves/rejects
-    // Preserve empty strings as they are (don't convert to null)
     updateFields.push(`control_design_procs = $${paramIndex}`);
     updateValues.push(control_design_procs !== undefined ? control_design_procs : null);
     paramIndex++;
@@ -272,36 +244,30 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
     updateFields.push(`control_design_conclusion = $${paramIndex}`);
     updateValues.push(control_design_conclusion !== undefined ? control_design_conclusion : null);
     paramIndex++;
-    
+
     updateFields.push(`design_deficiency_desc = $${paramIndex}`);
     updateValues.push(design_deficiency_desc !== undefined ? design_deficiency_desc : null);
     paramIndex++;
 
-    // Wall-clock IST timestamp (matches reminder_datetime semantics in control_forms)
     updateFields.push(
-      `approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')`
+      'approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE \'Asia/Kolkata\')'
     );
 
-    // Add form_id as the last parameter
     updateValues.push(form_id);
 
-    // Update the RACM
     const updateQuery = `
       UPDATE control_forms 
       SET ${updateFields.join(', ')}
       WHERE form_id = $${paramIndex}
       RETURNING *
     `;
-    
-    console.log('Update query:', updateQuery);
-    console.log('Update values:', updateValues);
-    
+
     const result = await pool.query(updateQuery, updateValues);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'RACM not found'
+        message: 'RACM not found',
       });
     }
 
@@ -316,26 +282,24 @@ router.post('/approve-form/:form_id', verifyApproverAuth, async (req, res) => {
       updatedForm
     );
 
-    // Log audit event for form approval/rejection
     const action = status === 'Approved' ? 'RACM Approved' : 'RACM Rejected';
     await logAuditEvent(action, approver.email_id, form_id);
 
     res.status(200).json({
       success: true,
       message: `RACM ${status.toLowerCase()} successfully`,
-      data: updatedForm
+      data: updatedForm,
     });
   } catch (error) {
     console.error('Approve form error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
-});
+}
 
-// Flip Approved ↔ Rejected within 15 days of approval_status_change_timestamp (same email + audit ref_data)
-router.post('/change-approval-decision/:form_id', verifyApproverAuth, async (req, res) => {
+async function changeApprovalDecision(req, res) {
   try {
     const { form_id } = req.params;
     const { status, reason_by_approver } = req.body;
@@ -415,7 +379,6 @@ router.post('/change-approval-decision/:form_id', verifyApproverAuth, async (req
     try {
       await client.query('BEGIN');
 
-      // Same archival as control_forms PUT resubmit: when moving off "Rejected", persist user's doc + rejection reason.
       if (curStatus === 'Rejected' && status === 'Approved') {
         const prevDoc =
           row.doc_uploaded_by_user != null ? String(row.doc_uploaded_by_user).trim() : '';
@@ -479,14 +442,12 @@ router.post('/change-approval-decision/:form_id', verifyApproverAuth, async (req
     console.error('Change approval decision error:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
-});
+}
 
-// Protected route: Get all RACMs (with filter options)
-router.get('/control-forms', verifyApproverAuth, async (req, res) => {
+async function getControlForms(req, res) {
   try {
     const { status, active } = req.query;
-    
-    // Join with companies table to get company_name and with ifc_users to get control_owner_name
+
     let query = `
       SELECT 
         cf.*,
@@ -500,30 +461,24 @@ router.get('/control-forms', verifyApproverAuth, async (req, res) => {
     const queryParams = [];
     let paramIndex = 1;
 
-    // Only fetch forms with status: "sent for approval", "Approved", or "Rejected"
     const allowedStatuses = ['sent for approval', 'Approved', 'Rejected'];
-    
+
     if (status) {
-      // Validate that the requested status is one of the allowed statuses
       if (allowedStatuses.includes(status)) {
         query += ` AND cf.status = $${paramIndex}`;
         queryParams.push(status);
         paramIndex++;
       } else {
-        // If invalid status, return empty result
-        query += ` AND 1=0`;
+        query += ' AND 1=0';
       }
     } else {
-      // When no status filter is provided, show all allowed statuses
       query += ` AND cf.status IN ('sent for approval', 'Approved', 'Rejected')`;
     }
 
     if (active !== undefined) {
       if (active === 'true' || active === '1') {
-        // Active: not null, not empty, and not '0'
         query += ` AND cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'`;
       } else if (active === 'false' || active === '0') {
-        // Inactive: null, empty, or '0'
         query += ` AND (cf.active IS NULL OR cf.active = '' OR cf.active = '0')`;
       }
     }
@@ -535,22 +490,21 @@ router.get('/control-forms', verifyApproverAuth, async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'RACMs retrieved successfully',
-      data: result.rows
+      data: result.rows,
     });
   } catch (error) {
     console.error('Get RACMs error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
-});
+}
 
-// Protected route: Get a specific RACM by form_id
-router.get('/control-forms/:form_id', verifyApproverAuth, async (req, res) => {
+async function getControlFormById(req, res) {
   try {
     const { form_id } = req.params;
-    
+
     const query = `
       SELECT
         cf.*,
@@ -567,26 +521,25 @@ router.get('/control-forms/:form_id', verifyApproverAuth, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'RACM not found'
+        message: 'RACM not found',
       });
     }
 
     res.status(200).json({
       success: true,
       message: 'RACM retrieved successfully',
-      data: result.rows[0]
+      data: result.rows[0],
     });
   } catch (error) {
     console.error('Get RACM error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
-});
+}
 
-// Rejection / resubmit history rows (control_form_history) for a form
-router.get('/control-form-history/:form_id', verifyApproverAuth, async (req, res) => {
+async function getControlFormHistory(req, res) {
   try {
     const { form_id } = req.params;
 
@@ -619,10 +572,9 @@ router.get('/control-form-history/:form_id', verifyApproverAuth, async (req, res
       message: 'Internal server error',
     });
   }
-});
+}
 
-// RACM audit trail for a form (audit_logs_racm)
-router.get('/racm-audit-logs/:form_id', verifyApproverAuth, async (req, res) => {
+async function getRacmAuditLogs(req, res) {
   try {
     const { form_id } = req.params;
     const query = `
@@ -643,6 +595,16 @@ router.get('/racm-audit-logs/:form_id', verifyApproverAuth, async (req, res) => 
       message: 'Internal server error',
     });
   }
-});
+}
 
-module.exports = router;
+module.exports = {
+  getHomeStats,
+  getDashboard,
+  getPendingApprovals,
+  approveForm,
+  changeApprovalDecision,
+  getControlForms,
+  getControlFormById,
+  getControlFormHistory,
+  getRacmAuditLogs,
+};

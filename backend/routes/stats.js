@@ -2,8 +2,12 @@ const express = require('express');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const { pool } = require('../utils/db');
+const { verifySiteadminAuth } = require('../modules/auth/auth.middleware');
 
 const router = express.Router();
+
+// Siteadmin APIs only
+router.use(verifySiteadminAuth);
 
 // Stats endpoint - Get counts of companies and users (defined before other routes)
 router.get('/', async (req, res) => {

@@ -12,7 +12,7 @@ import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Switch from '@mui/material/Switch'
 import {
-  FILTER_BOX_MIN_WIDTH,
+  FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
@@ -183,7 +183,7 @@ function ApproverDashboard() {
     }
   }
 
-  /** Display: DB value with first letter capitalized (empty → "—"). */
+  /** Display label for approver UI ("sent for approval" => "Pending", empty => "—"). */
   const formatStatus = (status) => {
     if (status === null || status === undefined) {
       return '—'
@@ -191,6 +191,9 @@ function ApproverDashboard() {
     const s = String(status).trim()
     if (s === '') {
       return '—'
+    }
+    if (s === 'sent for approval') {
+      return 'Pending'
     }
     return s.charAt(0).toUpperCase() + s.slice(1)
   }
@@ -373,7 +376,7 @@ function ApproverDashboard() {
     maxWidth: 420,
   }
   const filterControlSx = {
-    minWidth: FILTER_BOX_MIN_WIDTH,
+    minWidth: { xs: '100%', sm: FILTER_DROPDOWN_MIN_WIDTH_LG },
     '& .MuiOutlinedInput-root': {
       backgroundColor: 'transparent',
       '& fieldset': {
@@ -436,7 +439,7 @@ function ApproverDashboard() {
                 ? 'Approved RACM'
                 : filterStatus === 'rejected'
                 ? 'Rejected RACM'
-                : 'All RACM'}
+                : 'All RACMs'}
             </Typography>
             <Typography sx={PAGE_SUBHEADER_TEXT_SX}>
               Review active RACMs across companies, and open a control to approve or reject.

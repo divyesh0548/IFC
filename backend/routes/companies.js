@@ -2,8 +2,12 @@ const express = require('express');
 const crypto = require('crypto');
 const { pool } = require('../utils/db');
 const { sendEmail } = require('../utils/send_email');
+const { verifySiteadminAuth } = require('../modules/auth/auth.middleware');
 
 const router = express.Router();
+
+// Siteadmin APIs only
+router.use(verifySiteadminAuth);
 
 // Helper function to generate company identifier
 function generateCompanyIdentifier(companyName) {

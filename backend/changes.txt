@@ -84,6 +84,8 @@ RACM assignment can't be changed once it is Approved.
 
 Should we send emails to Approver when user sends RACM for approval.
 
+Are fields required for RACM to be created and set Active? Should we define a set of fields which are indispensable for RACM Creation?
+
 
 
 

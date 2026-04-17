@@ -5,12 +5,6 @@ const cookieParser = require('cookie-parser');
 // Load environment variables first
 dotenv.config();
 
-const authRoutes = require('./routes/auth');
-const companiesRoutes = require('./routes/companies');
-const companyCoRoutes = require('./routes/company_co');
-const controlFormsRoutes = require('./routes/control_forms');
-const approverRoutes = require('./routes/approver');
-const statsRoutes = require('./routes/stats');
 const { processExcelFiles } = require('./scripts/process_excel_files');
 const { processSamplingExcel } = require('./scripts/process_sampling_excel');
 const { runReminderEmails } = require('./scripts/reminder_emails');
@@ -61,14 +55,7 @@ app.use((req, res, next) => {
 });
 
 
-
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/companies', companiesRoutes);
-app.use('/api/company-co', companyCoRoutes);
-app.use('/api/control-forms', controlFormsRoutes);
-app.use('/api/approver', approverRoutes);
-app.use('/api/stats', statsRoutes);
+app.use('/api', require('./routes'));
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });

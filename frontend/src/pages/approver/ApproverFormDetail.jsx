@@ -38,6 +38,7 @@ import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants';
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields';
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext';
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 
 function ApproverFormDetail() {
@@ -66,6 +67,13 @@ function ApproverFormDetail() {
   const [rejectionHistoryRows, setRejectionHistoryRows] = useState([])
   const [rejectionHistoryOpen, setRejectionHistoryOpen] = useState(false)
   const [showScrollTop, setShowScrollTop] = useState(false)
+
+  useSyncGlobalLoading(
+    loading ||
+    approving ||
+    changeDecisionSubmitting ||
+    auditLogLoading
+  )
 
   const toastId = useRef(null)
 
@@ -1925,43 +1933,47 @@ function ApproverFormDetail() {
                           onClick={handleApprove}
                           disabled={approving}
                           variant="contained"
+                          color="success"
                           sx={{
                             minWidth: '120px',
-                            py: 1.5,
-                            fontWeight: 600,
+                            py: 1.2,
+                            fontWeight: 700,
+                            fontSize: '0.95rem',
                             textTransform: 'none',
-                            backgroundColor: '#10b981',
-                            color: '#ffffff',
+                            color: theme.palette.getContrastText(theme.palette.success.main),
                             '&:hover': {
-                              backgroundColor: '#059669',
+                              boxShadow: 'none',
                             },
                             '&:disabled': {
-                              backgroundColor: '#9ca3af',
+                              backgroundColor: 'action.disabledBackground',
+                              color: 'text.disabled',
                             },
                           }}
                         >
-                          {approving ? 'Processing...' : '✓ Approve'}
+                          {approving ? 'Processing...' : 'Approve'}
                         </Button>
                         <Button
                           onClick={handleReject}
                           disabled={approving}
                           variant="contained"
+                          color="error"
                           sx={{
                             minWidth: '120px',
-                            py: 1.5,
-                            fontWeight: 600,
+                            py: 1.2,
+                            fontWeight: 700,
+                            fontSize: '0.95rem',
                             textTransform: 'none',
-                            backgroundColor: '#ef4444',
-                            color: '#ffffff',
+                            color: theme.palette.getContrastText(theme.palette.error.main),
                             '&:hover': {
-                              backgroundColor: '#dc2626',
+                              boxShadow: 'none',
                             },
                             '&:disabled': {
-                              backgroundColor: '#9ca3af',
+                              backgroundColor: 'action.disabledBackground',
+                              color: 'text.disabled',
                             },
                           }}
                         >
-                          {approving ? 'Processing...' : '✗ Reject'}
+                          {approving ? 'Processing...' : 'Reject'}
                         </Button>
                       </Box>
                     </>
@@ -2346,4 +2358,3 @@ function ApproverFormDetail() {
 }
 
 export default ApproverFormDetail
-

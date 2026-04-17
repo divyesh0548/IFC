@@ -148,7 +148,7 @@ function CreateControlForm() {
       'Recurring and Daily',
       'Daily',
     ],
-    whether_fraud_risks_exist: ['Yes', 'No', 'Other']
+    whether_fraud_risks_exist: ['Yes', 'No']
   }
 
   const [dropdownSelections, setDropdownSelections] = useState({})
@@ -305,20 +305,20 @@ function CreateControlForm() {
   standard_control_description: 'Standard Control Description',
   sub_process: 'Sub Process',
   risk_description: 'Risk Description',
-  whether_fraud_risks_exist: 'Whether Fraud Risks Exist',
   control_objective: 'Control Objective',
-  process_walkthrough: 'Process Activity and Walkthrough Details',
-  control_relies_on_ipe: 'Does the Control Rely on IPE?',
-  audit_evidence_accuracy: 'Audit Evidence of Accuracy and Completeness',
+  process_walkthrough: 'Process activity and walkthrough details',
+  control_relies_on_ipe: 'Does the control rely on information produced by the entity?',
+  audit_evidence_accuracy: 'Will we obtain audit evidence of the accuracy and completeness of information produced by the entity by testing controls or by performing procedures directly on the information?',
   ipe_reference: 'IPE Reference',
-  key_control: 'Key Control',
+  key_control: 'Key Control (Yes / No)',
   application_name: 'Application Name',
   control_performer: 'Control Performer',
   control_owner: 'Control Owner',
   control_type_fo: 'Type of control (Operational/Financial)',
   control_type_ma: 'Type of control (Manual/ Automated)',
-  nature_of_control: 'Nature of Control',
-  control_frequency: 'Control Frequency',
+  nature_of_control: 'Nature of Control (Preventive or Detective)',
+  control_frequency: 'Frequency of Control',
+  whether_fraud_risks_exist: 'Whether fraud risk exists?',
   completeness: 'Completeness',
   existence_occurrence: 'Existence & Occurrence',
   rights_and_obligation: 'Rights and Obligations',
@@ -355,6 +355,25 @@ function CreateControlForm() {
     'control_type_ma',
     'nature_of_control',
     'control_frequency',
+  ]
+
+  // Exact display order requested for Control section (frontend-only ordering/wording)
+  const controlSectionFieldOrder = [
+    'control_objective',
+    'standard_control_description',
+    'process_walkthrough',
+    'control_type_fo',
+    'control_relies_on_ipe',
+    'ipe_reference',
+    'audit_evidence_accuracy',
+    'nature_of_control',
+    'control_type_ma',
+    'key_control',
+    'application_name',
+    'control_frequency',
+    'control_performer',
+    'control_owner',
+    'whether_fraud_risks_exist',
   ]
 
   const renderAssignableUserAutocomplete = (fieldId, labelText) => {
@@ -733,22 +752,7 @@ function CreateControlForm() {
                   gap: 3,
                 }}
               >
-                {fieldOrder
-                  .filter((field) =>
-                    !['business_process',
-                      'financial_year',
-                      'control_number',
-                      'area',
-                      'sub_process',
-                      'risk_description',
-                      'risk_heat',
-                      'completeness',
-                      'existence_occurrence',
-                      'valuation_and_allocation',
-                      'rights_and_obligation',
-                      'presentation_and_disclosure',
-                    ].includes(field)
-                  )
+                {controlSectionFieldOrder
                   .map((field) => {
                     const label = fieldLabels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                     const value = formData[field] || ''
@@ -824,35 +828,8 @@ function CreateControlForm() {
               </Box>
             </Box>
 
-            {/* Submit and Cancel Buttons */}
+            {/* Submit Button */}
             <Box sx={{ display: 'flex', gap: 2, mt: 4, flexWrap: 'wrap' }}>
-              <Button
-                type="button"
-                onClick={() => navigate('/company_co/upload-excel')}
-                variant="outlined"
-                sx={{
-                  py: 1.5,
-                  px: 3,
-                  minWidth: 140,
-                  fontSize: theme.typography.customSizes.medium,
-                  fontWeight: 600,
-                  textTransform: 'none',
-                  borderColor: theme.palette.mode === 'dark' 
-                    ? 'rgba(255, 255, 255, 0.23)' 
-                    : '#6b7280',
-                  color: theme.palette.text.primary,
-                  '&:hover': {
-                    borderColor: theme.palette.mode === 'dark' 
-                      ? 'rgba(255, 255, 255, 0.3)' 
-                      : '#4b5563',
-                    backgroundColor: theme.palette.mode === 'dark' 
-                      ? 'rgba(255, 255, 255, 0.08)' 
-                      : 'rgba(107, 114, 128, 0.08)',
-                  },
-                }}
-              >
-                Cancel
-              </Button>
               <Button
                 type="submit"
                 disabled={loading || !formData.business_process || !formData.financial_year}

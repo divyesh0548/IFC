@@ -6,7 +6,9 @@ import {
   Button,
   Card,
   CardContent,
-  Container,
+  Chip,
+  Divider,
+  Grid,
   IconButton,
   Stack,
   Tooltip,
@@ -14,123 +16,154 @@ import {
 } from '@mui/material'
 import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
+import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
+import SyncAltOutlinedIcon from '@mui/icons-material/SyncAltOutlined'
+import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
 import { useThemeMode } from '../contexts/ThemeContext'
 import { clearCachedUserProfile } from '../storageKeys'
+import { MAIN_CONTENT_MAX_WIDTH } from '../uiConstants'
 
 const portalContent = {
   hero: {
-    title: 'Why do we need an IFC portal at first place?',
+    eyebrow: 'Internal Financial Controls Portal',
+    title: 'A clearer control workflow for teams, coordinators, and approvers.',
     body: [
-      'Modern organizations deal with complex control environments, multiple stakeholders, and increasing regulatory scrutiny. Managing Internal Financial Controls manually leads to inefficiencies, lack of visibility, and audit risks.',
-      'An IFC portal centralizes and streamlines the entire control lifecycle, making governance more structured and reliable.',
+      'Modern organizations deal with complex control environments, multiple stakeholders, and increasing regulatory scrutiny. Managing Internal Financial Controls manually leads to inefficiencies, weak visibility, and avoidable audit risk.',
+      'This portal centralizes RACM activity, evidence, review decisions, and accountability into one structured operating surface.',
     ],
   },
+  highlights: [
+    {
+      value: '1',
+      label: 'central source',
+      description: 'RACMs, evidence, approvals, and history stay in a single governed workspace.',
+      icon: ShieldOutlinedIcon,
+    },
+    {
+      value: '24/7',
+      label: 'live visibility',
+      description: 'Stakeholders can track status, pending actions, and gaps without chasing updates.',
+      icon: VisibilityOutlinedIcon,
+    },
+    {
+      value: 'End-to-end',
+      label: 'traceability',
+      description: 'Every update, decision, and supporting input stays linked to the form lifecycle.',
+      icon: SyncAltOutlinedIcon,
+    },
+  ],
   sections: [
     {
       title: 'Need for Digitalization',
+      intro:
+        'The portal removes fragmented manual coordination and replaces it with a consistent operating flow.',
       subsections: [
         {
           title: 'Eliminates Manual Dependency',
           bullets: [
-            'Reduces reliance on emails, spreadsheets, and offline trackers',
-            'Minimizes human errors and version control issues',
+            'Reduces reliance on emails, spreadsheets, and offline trackers.',
+            'Minimizes human errors and version-control confusion.',
           ],
         },
         {
           title: 'Real-Time Visibility',
           bullets: [
-            'Instant access to control status, testing progress, and gaps',
-            'Enables management to take timely decisions',
+            'Instant access to control status, testing progress, and gaps.',
+            'Enables management to take timely decisions.',
           ],
         },
         {
           title: 'Centralized Data Repository',
           bullets: [
-            'All RACMs, evidence, and approvals stored in one place',
-            'Easy retrieval during audits and reviews',
+            'All RACMs, evidence, and approvals stored in one place.',
+            'Easy retrieval during audits and reviews.',
           ],
         },
         {
           title: 'Standardization of Processes',
           bullets: [
-            'Uniform workflows across departments and locations',
-            'Consistent control execution and documentation',
+            'Uniform workflows across departments and locations.',
+            'Consistent control execution and documentation.',
           ],
         },
       ],
     },
     {
       title: 'Improved Audit Trail Management',
+      intro:
+        'Audit readiness improves when the underlying workflow records decisions and supporting evidence by default.',
       subsections: [
         {
           title: 'End-to-End Traceability',
           bullets: [
-            'Tracks every action: creation, modification, testing, and approval',
-            'Maintains a clear history of control activities',
+            'Tracks every action from creation to approval.',
+            'Maintains a clear history of control activity.',
           ],
         },
         {
           title: 'Evidence-Based Compliance',
           bullets: [
-            'Supports uploading and linking of supporting documents',
-            'Ensures audit readiness at all times',
+            'Supports uploading and linking of supporting documents.',
+            'Keeps records audit-ready throughout the year.',
           ],
         },
         {
           title: 'Reduced Audit Effort',
           bullets: [
-            'Eliminates last-minute data collection',
-            'Auditors can access required information instantly',
+            'Eliminates last-minute data collection.',
+            'Auditors can access required information faster.',
           ],
         },
         {
-          title: 'Accountability & Ownership',
+          title: 'Accountability and Ownership',
           bullets: [
-            'Clearly defined roles and responsibilities',
-            'Easy identification of control owners and reviewers',
+            'Defines roles and responsibilities clearly.',
+            'Makes owners and reviewers easy to identify.',
           ],
         },
       ],
     },
     {
-      title: 'Operational Efficiency & Control Strengthening',
+      title: 'Operational Efficiency and Control Strengthening',
+      intro:
+        'A stronger control environment comes from timely movement, clearer priorities, and repeatable execution.',
       subsections: [
         {
           title: 'Automated Workflows',
           bullets: [
-            'Notifications, reminders, and approvals reduce delays',
-            'Ensures timely completion of control activities',
+            'Notifications, reminders, and approvals reduce delays.',
+            'Supports timely completion of control activities.',
           ],
         },
         {
           title: 'Risk-Based Monitoring',
           bullets: [
-            'Focus on high-risk areas with better tracking',
-            'Helps in proactive issue identification',
+            'Keeps focus on high-risk areas with better tracking.',
+            'Helps teams identify issues earlier.',
           ],
         },
         {
           title: 'Scalability',
           bullets: [
-            'Supports growing business complexity and regulatory requirements',
-            'Easily adaptable across entities and locations',
+            'Supports growing business complexity and regulatory requirements.',
+            'Adapts across entities and locations.',
           ],
         },
         {
           title: 'Business Impact',
-          fullWidth: true,
           bullets: [
-            'Faster audits and reduced compliance costs',
-            'Enhanced transparency and governance',
-            'Improved decision-making through structured data',
-            'Strengthened internal control environment',
+            'Faster audits and reduced compliance effort.',
+            'Enhanced transparency and governance.',
+            'Improved decision-making through structured data.',
+            'A stronger internal control environment.',
           ],
         },
       ],
     },
   ],
-  tagline:
-    'An IFC portal transforms control management from a reactive, manual process into a proactive, transparent, and audit-ready system.',
+  closing:
+    'An IFC portal shifts control management from reactive follow-up to a proactive, transparent, and audit-ready operating model.',
   legalDisclaimer:
     'All services provided by [Your Company Name] are in compliance with applicable financial and regulatory standards. For more details on our privacy policy and terms of service, please visit [link to privacy policy].',
 }
@@ -193,251 +226,395 @@ function Home() {
   const navButtonSx = {
     textTransform: 'none',
     borderRadius: 999,
-    px: 2.2,
-    py: 0.9,
-    fontWeight: 600,
+    px: 2.25,
+    py: 0.95,
+    fontWeight: 700,
   }
 
-  const surfaceSx = {
-    borderRadius: 4,
+  const pageShellSx = {
+    minHeight: '100vh',
+    background:
+      theme.palette.mode === 'dark'
+        ? `
+          radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.14), transparent 24%),
+          radial-gradient(circle at 100% 10%, rgba(14, 165, 233, 0.14), transparent 28%),
+          radial-gradient(circle at 50% 100%, rgba(34, 197, 94, 0.10), transparent 28%),
+          linear-gradient(180deg, #07111e 0%, #0d1a2b 45%, #132338 100%)
+        `
+        : `
+          radial-gradient(circle at 0% 0%, rgba(14, 165, 233, 0.14), transparent 24%),
+          radial-gradient(circle at 100% 12%, rgba(8, 145, 178, 0.14), transparent 30%),
+          radial-gradient(circle at 45% 100%, rgba(132, 204, 22, 0.10), transparent 30%),
+          linear-gradient(180deg, #f4f8fb 0%, #edf3f4 45%, #e7efeb 100%)
+        `,
+    '@keyframes homeFadeUp': {
+      '0%': { opacity: 0, transform: 'translateY(22px)' },
+      '100%': { opacity: 1, transform: 'translateY(0)' },
+    },
+  }
+
+  const shellInnerSx = {
+    width: '100%',
+    maxWidth: MAIN_CONTENT_MAX_WIDTH,
+    mx: 'auto',
+    px: { xs: 2, sm: 3, md: 4 },
+  }
+
+  const panelSx = {
+    borderRadius: 6,
     border: '1px solid',
-    borderColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.08)',
-    backgroundColor: alpha(theme.palette.background.paper, 0.82),
-    backdropFilter: 'blur(14px)',
-    boxShadow: theme.palette.mode === 'dark'
-      ? '0 18px 50px rgba(0,0,0,0.28)'
-      : '0 16px 40px rgba(15,23,42,0.08)',
+    borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.1 : 0.08),
+    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.72 : 0.84),
+    backdropFilter: 'blur(18px)',
+    boxShadow:
+      theme.palette.mode === 'dark'
+        ? '0 24px 60px rgba(0, 0, 0, 0.28)'
+        : '0 24px 60px rgba(15, 23, 42, 0.08)',
   }
 
-  const accent = theme.palette.mode === 'dark' ? theme.palette.primary.light : theme.palette.primary.main
-
-  const renderBulletList = (items) => (
-    <Box
-      component="ul"
-      sx={{
-        m: 0,
-        mt: 1.25,
-        pl: 2.25,
-        listStyleType: 'disc',
-        listStylePosition: 'outside',
-        '& li': {
-          pl: 0.5,
-          mb: 0.75,
-          color: 'text.secondary',
-          lineHeight: 1.75,
-          fontSize: '0.9375rem',
-          '&::marker': {
-            color: accent,
-          },
-        },
-      }}
-    >
-      {items.map((item) => (
-        <Box component="li" key={item}>
-          {item}
-        </Box>
-      ))}
-    </Box>
-  )
+  const bulletListSx = {
+    m: 0,
+    pl: 2.5,
+    '& li': {
+      color: 'text.secondary',
+      lineHeight: 1.75,
+      marginBottom: 0.8,
+      paddingLeft: 0.35,
+    },
+    '& li::marker': {
+      color: theme.palette.primary.main,
+    },
+  }
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        background: theme.palette.mode === 'dark'
-          ? 'radial-gradient(circle at top left, rgba(56,189,248,0.14), transparent 28%), radial-gradient(circle at top right, rgba(250,204,21,0.12), transparent 24%), linear-gradient(180deg, #0b1220 0%, #101827 100%)'
-          : 'radial-gradient(circle at top left, rgba(15,118,110,0.12), transparent 26%), radial-gradient(circle at top right, rgba(217,119,6,0.12), transparent 22%), linear-gradient(180deg, #f7f8f4 0%, #eef2e7 100%)',
-        '@keyframes riseIn': {
-          '0%': { opacity: 0, transform: 'translateY(18px)' },
-          '100%': { opacity: 1, transform: 'translateY(0)' },
-        },
-      }}
-    >
+    <Box sx={pageShellSx}>
       <Box
         sx={{
           position: 'sticky',
           top: 0,
-          zIndex: 10,
+          zIndex: 20,
           borderBottom: '1px solid',
-          borderColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)',
-          backgroundColor: alpha(theme.palette.background.paper, 0.72),
-          backdropFilter: 'blur(18px)',
+          borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.1 : 0.08),
+          backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.72 : 0.76),
+          backdropFilter: 'blur(20px)',
         }}
       >
-        <Container maxWidth="xl">
-          <Box sx={{ minHeight: 74, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, py: 1.25 }}>
+        <Box sx={{ ...shellInnerSx, py: 1.5 }}>
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={2}
+            sx={{ alignItems: { xs: 'flex-start', md: 'center' }, justifyContent: 'space-between' }}
+          >
             <Box>
-              <Typography sx={{ fontWeight: 800, fontSize: '1.05rem', letterSpacing: '-0.02em' }}>
+              <Typography sx={{ fontWeight: 800, letterSpacing: '-0.03em', fontSize: { xs: '1rem', md: '1.05rem' } }}>
                 Internal Financial Controls
               </Typography>
-              <Typography sx={{ color: 'text.secondary', fontSize: '0.82rem' }}>
-                Structured control assurance and audit workflow
+              <Typography sx={{ color: 'text.secondary', fontSize: '0.86rem', mt: 0.25 }}>
+                Structured governance, evidence tracking, and approval workflow
               </Typography>
             </Box>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
               {isAuthenticated ? (
                 <>
-                  <Button variant="contained" color="secondary" onClick={() => navigate(getDashboardPath())} sx={navButtonSx}>
+                  <Button variant="contained" color="primary" onClick={() => navigate(getDashboardPath())} sx={navButtonSx}>
                     Go to Dashboard
                   </Button>
-                  <Button variant="outlined" color="inherit" onClick={handleLogout} sx={navButtonSx}>
+                  <Button variant="outlined" color="primary" onClick={handleLogout} sx={navButtonSx}>
                     Logout
                   </Button>
                 </>
               ) : (
-                <Button component={Link} to="/login" variant="contained" color="secondary" sx={navButtonSx}>
+                <Button component={Link} to="/login" variant="contained" color="primary" sx={navButtonSx}>
                   Login
                 </Button>
               )}
               <Tooltip title={mode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'} arrow>
-                <IconButton onClick={toggleTheme} sx={{ border: '1px solid', borderColor: 'divider', backgroundColor: alpha(theme.palette.background.paper, 0.55) }}>
+                <IconButton
+                  onClick={toggleTheme}
+                  sx={{
+                    border: '1px solid',
+                    borderColor: alpha(theme.palette.text.primary, 0.12),
+                    backgroundColor: alpha(theme.palette.background.paper, 0.55),
+                  }}
+                >
                   {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
                 </IconButton>
               </Tooltip>
             </Stack>
-          </Box>
-        </Container>
+          </Stack>
+        </Box>
       </Box>
 
-      <Container maxWidth="xl" sx={{ py: { xs: 4, md: 6 } }}>
-        <Stack spacing={3} sx={{ animation: 'riseIn 700ms ease-out' }}>
-          <Card sx={{ ...surfaceSx, minWidth: 0 }}>
+      <Box sx={{ ...shellInnerSx, py: { xs: 4, md: 6 } }}>
+        <Stack spacing={{ xs: 3, md: 4 }} sx={{ animation: 'homeFadeUp 720ms ease-out' }}>
+          <Card sx={{ ...panelSx, overflow: 'hidden' }}>
             <CardContent sx={{ p: { xs: 3, md: 5 } }}>
-              <Box sx={{ width: '100%' }}>
-                <Typography
-                  component="h1"
-                  sx={{
-                    fontSize: { xs: '1.85rem', sm: '2.25rem', md: '2.65rem' },
-                    lineHeight: 1.12,
-                    fontWeight: 800,
-                    letterSpacing: '-0.03em',
-                    mb: 3,
-                    textAlign: 'left',
-                  }}
-                >
-                  {portalContent.hero.title}
-                </Typography>
-                <Stack spacing={2.25} sx={{ width: '100%' }}>
-                  {portalContent.hero.body.map((paragraph) => (
-                    <Typography
-                      key={paragraph.slice(0, 48)}
+              <Grid container spacing={{ xs: 3, md: 3 }} sx={{ alignItems: 'stretch' }}>
+                <Grid item xs={12} lg={8}>
+                  <Stack spacing={2.5}>
+                    <Chip
+                      label={portalContent.hero.eyebrow}
                       sx={{
-                        color: 'text.secondary',
-                        fontSize: { xs: '1rem', md: '1.05rem' },
-                        lineHeight: 1.85,
-                        width: '100%',
+                        alignSelf: 'flex-start',
+                        height: 34,
+                        borderRadius: 999,
+                        backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.12),
+                        color: theme.palette.text.primary,
+                        fontWeight: 700,
+                        letterSpacing: '0.02em',
+                      }}
+                    />
+                    <Typography
+                      component="h1"
+                      sx={{
+                        fontFamily: '"Aldrich", sans-serif',
+                        fontSize: { xs: '2.3rem', sm: '2.9rem', md: '3.6rem' },
+                        lineHeight: 1.02,
+                        letterSpacing: '-0.04em',
+                        maxWidth: '16ch',
                       }}
                     >
-                      {paragraph}
+                      {portalContent.hero.title}
                     </Typography>
-                  ))}
-                </Stack>
-              </Box>
+                    <Stack spacing={1.5}>
+                      {portalContent.hero.body.map((paragraph) => (
+                        <Typography
+                          key={paragraph.slice(0, 40)}
+                          sx={{
+                            color: 'text.secondary',
+                            fontSize: { xs: '1rem', md: '1.05rem' },
+                            lineHeight: 1.85,
+                          }}
+                        >
+                          {paragraph}
+                        </Typography>
+                      ))}
+                    </Stack>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ pt: 1 }}>
+                      {isAuthenticated ? (
+                        <Button variant="contained" color="primary" onClick={() => navigate(getDashboardPath())} sx={{ ...navButtonSx, px: 3 }}>
+                          Open workspace
+                        </Button>
+                      ) : (
+                        <Button component={Link} to="/login" variant="contained" color="primary" sx={{ ...navButtonSx, px: 3 }}>
+                          Access portal
+                        </Button>
+                      )}
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        sx={{ ...navButtonSx, px: 3 }}
+                        onClick={() => {
+                          const target = document.getElementById('ifc-value-sections')
+                          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }}
+                      >
+                        Explore benefits
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </Grid>
+
+                <Grid item xs={12} lg={4}>
+                  <Box
+                    sx={{
+                      height: '100%',
+                      minHeight: { xs: 320, md: 360 },
+                      borderRadius: 5,
+                      p: { xs: 2.5, md: 3 },
+                      position: 'relative',
+                      overflow: 'hidden',
+                      background:
+                        theme.palette.mode === 'dark'
+                          ? 'linear-gradient(160deg, rgba(10,25,47,0.94) 0%, rgba(13,35,63,0.9) 52%, rgba(8,20,36,0.96) 100%)'
+                          : 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(231,244,244,0.96) 55%, rgba(224,238,236,0.98) 100%)',
+                      border: '1px solid',
+                      borderColor: alpha(theme.palette.primary.main, 0.18),
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        width: 220,
+                        height: 220,
+                        borderRadius: '50%',
+                        top: -70,
+                        right: -60,
+                        backgroundColor: alpha(theme.palette.primary.main, 0.16),
+                        filter: 'blur(10px)',
+                      }}
+                    />
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        width: 180,
+                        height: 180,
+                        borderRadius: '50%',
+                        bottom: -70,
+                        left: -40,
+                        backgroundColor: alpha(theme.palette.secondary.main, 0.22),
+                        filter: 'blur(10px)',
+                      }}
+                    />
+
+                    <Stack spacing={2.2} sx={{ position: 'relative', zIndex: 1 }}>
+                      <Box>
+                        <Typography sx={{ color: 'text.secondary', fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                          What this portal improves
+                        </Typography>
+                        <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.3rem', md: '1.55rem' }, mt: 1 }}>
+                          Better control operations with less manual follow-up
+                        </Typography>
+                      </Box>
+
+                      <Stack spacing={1.5}>
+                        {portalContent.highlights.map((item) => {
+                          const Icon = item.icon
+                          return (
+                            <Box
+                              key={item.label}
+                              sx={{
+                                p: 2,
+                                borderRadius: 4,
+                                border: '1px solid',
+                                borderColor: alpha(theme.palette.text.primary, 0.1),
+                                backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.55),
+                              }}
+                            >
+                              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+                                <Box
+                                  sx={{
+                                    width: 42,
+                                    height: 42,
+                                    borderRadius: 3,
+                                    display: 'grid',
+                                    placeItems: 'center',
+                                    backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.12),
+                                    color: theme.palette.primary.main,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <Icon fontSize="small" />
+                                </Box>
+                                <Box>
+                                  <Typography sx={{ fontWeight: 800, fontSize: '1.05rem', lineHeight: 1.2 }}>
+                                    {item.value}{' '}
+                                    <Box component="span" sx={{ fontWeight: 700, color: 'text.secondary', fontSize: '0.88rem' }}>
+                                      {item.label}
+                                    </Box>
+                                  </Typography>
+                                  <Typography sx={{ color: 'text.secondary', mt: 0.5, lineHeight: 1.7, fontSize: '0.92rem' }}>
+                                    {item.description}
+                                  </Typography>
+                                </Box>
+                              </Stack>
+                            </Box>
+                          )
+                        })}
+                      </Stack>
+                    </Stack>
+                  </Box>
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
 
-          {portalContent.sections.map((section) => (
-            <Card key={section.title} sx={surfaceSx}>
-              <CardContent sx={{ p: { xs: 2.5, md: 3.5 } }}>
-                <Typography
-                  component="h2"
-                  sx={{
-                    fontSize: '1.35rem',
-                    fontWeight: 800,
-                    mb: 3,
-                    letterSpacing: '-0.02em',
-                    pb: 1.5,
-                    borderBottom: '1px solid',
-                    borderColor: 'divider',
-                  }}
-                >
-                  {section.title}
-                </Typography>
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
-                    columnGap: { md: 3 },
-                    rowGap: { xs: 2.5, md: 3 },
-                  }}
-                >
-                  {section.subsections.map((sub) => (
-                    <Box
-                      key={sub.title}
-                      sx={{
-                        gridColumn: sub.fullWidth ? { xs: '1 / -1', md: '1 / -1' } : undefined,
-                        minWidth: 0,
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          fontWeight: 700,
-                          fontSize: '0.9rem',
-                          letterSpacing: '0.06em',
-                          textTransform: 'uppercase',
-                          color: 'text.primary',
-                          lineHeight: 1.35,
-                          mb: 0.25,
-                        }}
-                      >
-                        {sub.title}
-                      </Typography>
-                      {renderBulletList(sub.bullets)}
-                    </Box>
-                  ))}
-                </Box>
-              </CardContent>
-            </Card>
-          ))}
+          <Stack id="ifc-value-sections" spacing={3}>
+            {portalContent.sections.map((section) => (
+              <Card key={section.title} sx={{ ...panelSx, overflow: 'hidden' }}>
+                <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+                  <Grid container spacing={{ xs: 3, md: 4 }}>
+                    <Grid item xs={12} lg={4}>
+                      <Stack spacing={2}>
+                        <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.55rem', md: '1.9rem' }, lineHeight: 1.15 }}>
+                          {section.title}
+                        </Typography>
+                        <Typography sx={{ color: 'text.secondary', lineHeight: 1.8 }}>{section.intro}</Typography>
+                      </Stack>
+                    </Grid>
 
-          <Box
+                    <Grid item xs={12} lg={8}>
+                      <Grid container spacing={2.25}>
+                        {section.subsections.map((sub) => (
+                          <Grid item xs={12} md={6} key={sub.title}>
+                            <Box
+                              sx={{
+                                height: '100%',
+                                p: 2.5,
+                                borderRadius: 4,
+                                border: '1px solid',
+                                borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.1 : 0.07),
+                                backgroundColor: alpha(
+                                  theme.palette.background.paper,
+                                  theme.palette.mode === 'dark' ? 0.08 : 0.58
+                                ),
+                              }}
+                            >
+                              <Stack spacing={1.25}>
+                                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                                  <CheckCircleOutlineRoundedIcon sx={{ fontSize: 18, color: theme.palette.primary.main }} />
+                                  <Typography sx={{ fontWeight: 700, lineHeight: 1.35 }}>{sub.title}</Typography>
+                                </Stack>
+                                <Box component="ul" sx={bulletListSx}>
+                                  {sub.bullets.map((bullet) => (
+                                    <Box component="li" key={bullet}>
+                                      {bullet}
+                                    </Box>
+                                  ))}
+                                </Box>
+                              </Stack>
+                            </Box>
+                          </Grid>
+                        ))}
+                      </Grid>
+                    </Grid>
+                  </Grid>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+
+          <Card
             sx={{
-              position: 'relative',
-              py: { xs: 3, md: 4 },
-              px: { xs: 2, md: 5 },
-              textAlign: 'center',
-              borderRadius: 4,
-              border: '1px solid',
-              borderColor: alpha(accent, 0.35),
-              background: alpha(accent, theme.palette.mode === 'dark' ? 0.08 : 0.06),
-              '&::before': {
-                content: '""',
-                position: 'absolute',
-                top: 0,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: 64,
-                height: 4,
-                borderRadius: '0 0 4px 4px',
-                bgcolor: accent,
-              },
+              ...panelSx,
+              background:
+                theme.palette.mode === 'dark'
+                  ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.22)} 0%, ${alpha(theme.palette.background.paper, 0.72)} 100%)`
+                  : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.12)} 0%, ${alpha(theme.palette.background.paper, 0.9)} 100%)`,
             }}
           >
-            <Typography
-              sx={{
-                fontSize: { xs: '1.125rem', md: '1.35rem' },
-                lineHeight: 1.65,
-                fontWeight: 600,
-                fontStyle: 'italic',
-                color: 'text.primary',
-                maxWidth: 'min(100%, 760px)',
-                mx: 'auto',
-              }}
-            >
-              {portalContent.tagline}
-            </Typography>
-          </Box>
+            <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+              <Stack spacing={2} sx={{ textAlign: 'center', alignItems: 'center' }}>
+                <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.4rem', md: '1.8rem' }, maxWidth: 900, lineHeight: 1.3 }}>
+                  {portalContent.closing}
+                </Typography>
+                <Typography sx={{ color: 'text.secondary', maxWidth: 820, lineHeight: 1.8 }}>
+                  Centralized workflow, audit visibility, and stronger ownership are what make the system useful in practice,
+                  not just documented on paper.
+                </Typography>
+                {isAuthenticated ? (
+                  <Button variant="contained" color="primary" onClick={() => navigate(getDashboardPath())} sx={{ ...navButtonSx, px: 3 }}>
+                    Continue to dashboard
+                  </Button>
+                ) : null}
+              </Stack>
+            </CardContent>
+          </Card>
 
-          <Card sx={surfaceSx}>
-            <CardContent sx={{ p: { xs: 2.5, md: 3.5 } }}>
-              <Typography sx={{ fontSize: '1.05rem', fontWeight: 800, mb: 1.5 }}>Legal disclaimer</Typography>
-              <Typography sx={{ color: 'text.secondary', lineHeight: 1.85, fontSize: '0.9375rem' }}>
-                {portalContent.legalDisclaimer}
-              </Typography>
+          <Card sx={panelSx}>
+            <CardContent sx={{ p: { xs: 3, md: 3.5 } }}>
+              <Stack spacing={2}>
+                <Typography sx={{ fontWeight: 800, fontSize: '1rem' }}>Legal disclaimer</Typography>
+                <Divider />
+                <Typography sx={{ color: 'text.secondary', lineHeight: 1.8, fontSize: '0.94rem' }}>
+                  {portalContent.legalDisclaimer}
+                </Typography>
+              </Stack>
             </CardContent>
           </Card>
         </Stack>
-      </Container>
+      </Box>
     </Box>
   )
 }

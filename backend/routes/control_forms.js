@@ -7,6 +7,7 @@ const path = require('path');
 const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
 const { sendEmail } = require('../utils/send_email');
 const { decryptToken } = require('../utils/auth_utility');
+const { verifyUserAuth } = require('../modules/auth/auth.middleware');
 const { logAuditEvent, EXCEL_BULK_RACM_UPLOAD_ACTION } = require('../utils/auditLog');
 const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/sample_required');
 const {
@@ -2063,7 +2064,7 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
 // Upload user document for a specific form
 // NOTE: This route now ONLY uploads to S3 and does NOT modify any table columns.
 // The control_forms row is updated later when the user actually resubmits the form.
-router.post('/:form_id/upload-document', verifyAuth, uploadUserDoc.single('document'), async (req, res) => {
+router.post('/:form_id/upload-document', verifyUserAuth, uploadUserDoc.single('document'), async (req, res) => {
   const { form_id } = req.params;
   
   if (!req.file) {

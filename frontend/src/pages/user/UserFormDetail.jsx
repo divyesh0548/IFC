@@ -491,7 +491,7 @@ function UserFormDetail() {
       }}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {/* Top summary card (3-col grid on md+, same box style as approver summary) */}
+          {/* Top summary card (4-col grid on md+, same box style as approver summary) */}
           <Box sx={{ width: '100%' }}>
             <Card
               sx={{
@@ -524,7 +524,7 @@ function UserFormDetail() {
                     gridTemplateColumns: {
                       xs: '1fr',
                       sm: 'repeat(2, 1fr)',
-                      md: 'repeat(3, 1fr)',
+                      md: 'repeat(4, 1fr)',
                     },
                     gap: 2,
                   }}

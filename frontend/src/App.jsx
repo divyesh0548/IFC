@@ -27,6 +27,7 @@ import ApproverFormDetail from './pages/approver/ApproverFormDetail'
 import UserFormDetail from './pages/user/UserFormDetail'
 import DashboardLayout from './components/DashboardLayout'
 import Company_co_home from './pages/company_co/Company_co_home'
+import CreateUser from './pages/company_co/CreateUser'
 import ProfilePage from './pages/ProfilePage'
 import { Toaster } from 'react-hot-toast'
 import { GlobalLoadingProvider, useGlobalLoading } from './contexts/GlobalLoadingContext'
@@ -180,6 +181,7 @@ function App() {
           <Route path="racm-management" element={<RacmManagementDashboard />} />
           <Route path="racm-assignment" element={<RacmAssignment />} />
           <Route path="user-management" element={<UserManagement />} />
+          <Route path="create-user" element={<CreateUser />} />
           <Route path="upload-excel" element={<ExcelUpload />} />
           <Route path="upload-excel/column-map" element={<ExcelColumnMap />} />
           <Route path="create-form" element={<CreateControlForm />} />

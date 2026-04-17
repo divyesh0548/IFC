@@ -70,6 +70,34 @@ function DashboardLayout() {
   }, [location.pathname])
 
   useEffect(() => {
+    if (isSiteadminRoute || isApproverRoute) return
+    if (companyName && String(companyName).trim() !== '') return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const response = await fetch('http://localhost:3000/api/auth/profile', {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+        const name = data?.profile?.company_name
+        if (!cancelled && response.ok && data?.success && name && String(name).trim() !== '') {
+          const normalizedName = String(name).trim()
+          setCompanyName(normalizedName)
+          localStorage.setItem(STORAGE_KEYS.companyName, normalizedName)
+        }
+      } catch (error) {
+        console.warn('Failed to fetch company name for navbar:', error)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [companyName, isApproverRoute, isSiteadminRoute])
+
+  useEffect(() => {
     document.body.classList.add('has-dashboard-navbar')
     return () => {
       document.body.classList.remove('has-dashboard-navbar')
