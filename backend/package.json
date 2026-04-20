@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "nodemon app.js",
     "start": "node index.js",
+    "migrate:hash-passwords": "node scripts/hash_existing_passwords.js",
+    "util:decrypt-password-hash": "node scripts/decrypt_password_hash.js",
+    "util:encrypt-password-hash": "node scripts/encrypt_password_hash.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

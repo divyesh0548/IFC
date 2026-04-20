@@ -5,6 +5,7 @@ const { logAuditEvent } = require('../utils/auditLog');
 const { sendEmail } = require('../utils/send_email');
 const { encryptToken, decryptToken, generateTempPassword } = require('../utils/auth_utility');
 const { getEmailFromAuthCookies } = require('../modules/auth/auth.middleware');
+const { hashPassword, verifyPassword, isPasswordHash, getPasswordPepper } = require('../utils/password');
 
 const router = express.Router();
 
@@ -22,9 +23,11 @@ router.post('/login', async (req, res) => {
   }
 
   try {
+    getPasswordPepper();
+
     // Query the ifc_users table
-    const query = 'SELECT * FROM ifc_users WHERE email_id = $1 AND password = $2';
-    const result = await pool.query(query, [email_id, password]);
+    const query = 'SELECT * FROM ifc_users WHERE email_id = $1';
+    const result = await pool.query(query, [email_id]);
 
     if (result.rows.length === 0) {
       return res.status(401).json({
@@ -35,6 +38,24 @@ router.post('/login', async (req, res) => {
 
     // Login successful - Generate JWT token
     const user = result.rows[0];
+    const passwordMatches = await verifyPassword(password, user.password);
+
+    if (!passwordMatches) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email ID or password'
+      });
+    }
+
+    if (!isPasswordHash(user.password)) {
+      const upgradedPasswordHash = await hashPassword(password);
+      await pool.query(
+        'UPDATE ifc_users SET password = $1 WHERE id = $2',
+        [upgradedPasswordHash, user.id]
+      );
+      user.password = upgradedPasswordHash;
+    }
+
     const jwtSecret = process.env.JWT_SECRET;
     
     if (!jwtSecret) {
@@ -465,6 +486,8 @@ router.post('/forgot-password', async (req, res) => {
   }
 
   try {
+    getPasswordPepper();
+
     // Check if user exists
     const userQuery = 'SELECT * FROM ifc_users WHERE email_id = $1';
     const userResult = await pool.query(userQuery, [email_id]);
@@ -479,6 +502,7 @@ router.post('/forgot-password', async (req, res) => {
 
     // Generate temporary password
     const tempPassword = generateTempPassword();
+    const tempPasswordHash = await hashPassword(tempPassword);
 
     // Update user with temporary password and set temp_login to 1
     const updateQuery = `
@@ -486,7 +510,7 @@ router.post('/forgot-password', async (req, res) => {
       SET password = $1, temp_login = 1 
       WHERE email_id = $2
     `;
-    await pool.query(updateQuery, [tempPassword, email_id]);
+    await pool.query(updateQuery, [tempPasswordHash, email_id]);
 
     // Send email with temporary password
     const emailSubject = 'Temporary Password for IFC Account';
@@ -525,9 +549,11 @@ router.post('/update-password', async (req, res) => {
   }
 
   try {
+    getPasswordPepper();
+
     // Verify current password (or temp password)
-    const verifyQuery = 'SELECT * FROM ifc_users WHERE email_id = $1 AND password = $2';
-    const verifyResult = await pool.query(verifyQuery, [email_id, currentPassword]);
+    const verifyQuery = 'SELECT * FROM ifc_users WHERE email_id = $1';
+    const verifyResult = await pool.query(verifyQuery, [email_id]);
 
     if (verifyResult.rows.length === 0) {
       return res.status(401).json({
@@ -536,13 +562,25 @@ router.post('/update-password', async (req, res) => {
       });
     }
 
+    const user = verifyResult.rows[0];
+    const passwordMatches = await verifyPassword(currentPassword, user.password);
+
+    if (!passwordMatches) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid current password'
+      });
+    }
+
+    const newPasswordHash = await hashPassword(newPassword);
+
     // Update password and set temp_login to 0
     const updateQuery = `
       UPDATE ifc_users 
       SET password = $1, temp_login = 0 
       WHERE email_id = $2
     `;
-    await pool.query(updateQuery, [newPassword, email_id]);
+    await pool.query(updateQuery, [newPasswordHash, email_id]);
 
     res.status(200).json({
       success: true,

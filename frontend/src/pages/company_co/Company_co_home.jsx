@@ -10,7 +10,6 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
-import { STORAGE_KEYS } from '../../storageKeys'
 
 function Company_co_home() {
   const theme = useTheme()
@@ -71,61 +70,23 @@ function Company_co_home() {
   useEffect(() => {
     const fetchHomeData = async () => {
       try {
-        const companyIdentifier = localStorage.getItem(STORAGE_KEYS.companyIdentifier) || ''
-        const [userResponse, companyUsersResponse, racmStatsResponse] = await Promise.all([
-          fetch('http://localhost:3000/api/auth/verify', {
-            method: 'GET',
-            credentials: 'include',
-          }),
-          fetch('http://localhost:3000/api/company-co/users?role=user&limit=200', {
-            credentials: 'include',
-          }),
-          companyIdentifier
-            ? fetch(
-                `http://localhost:3000/api/control-forms/stats?company_identifier=${encodeURIComponent(companyIdentifier)}`,
-                { credentials: 'include' }
-              )
-            : Promise.resolve(null),
-        ])
+        const response = await fetch('http://localhost:3000/api/company-co/home-stats', {
+          credentials: 'include',
+        })
+        const result = await response.json()
 
-        if (userResponse.ok) {
-          const userData = await userResponse.json()
-          if (userData?.success && userData?.user) {
-            setUsername(userData.user.emp_name || userData.user.name || userData.user.email_id || 'User')
-          } else {
-            setUsername('User')
-          }
-        } else {
-          setUsername('User')
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'Failed to fetch company coordinator home stats')
         }
 
-        let totalUsers = 0
-        if (companyUsersResponse.ok) {
-          const companyUsersData = await companyUsersResponse.json()
-          const usersList = Array.isArray(companyUsersData)
-            ? companyUsersData
-            : Array.isArray(companyUsersData?.users)
-              ? companyUsersData.users
-              : []
-          totalUsers = usersList.length
-        }
-
-        let totalRacms = 0
-        let approvedRacms = 0
-        let rejectedRacms = 0
-        if (racmStatsResponse?.ok) {
-          const statsData = await racmStatsResponse.json()
-          const racmStats = statsData?.data || {}
-          totalRacms = Number(racmStats.totalRacms || 0)
-          approvedRacms = Number(racmStats.approvedRacms || 0)
-          rejectedRacms = Number(racmStats.rejectedRacms || 0)
-        }
+        const homeStats = result.data || {}
+        setUsername(homeStats.coordinatorName || 'User')
 
         setStats({
-          totalUsers,
-          totalRacms,
-          approvedRacms,
-          rejectedRacms,
+          totalUsers: Number(homeStats.totalUsers || 0),
+          totalRacms: Number(homeStats.totalRacms || 0),
+          approvedRacms: Number(homeStats.approvedRacms || 0),
+          rejectedRacms: Number(homeStats.rejectedRacms || 0),
         })
       } catch (error) {
         console.error('Failed to fetch company coordinator home data:', error)

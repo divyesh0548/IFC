@@ -185,7 +185,7 @@ function CompanyCreation() {
     setLoading(true)
 
     try {
-      const response = await fetch('http://localhost:3000/api/companies/create', {
+      const response = await fetch('http://localhost:3000/api/siteadmin/companies/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

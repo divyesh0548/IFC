@@ -1,10 +1,7 @@
-const express = require('express');
 const crypto = require('crypto');
-const { pool } = require('../utils/db');
-const { sendEmail } = require('../utils/send_email');
-const { verifyCompanyCoordinator } = require('../modules/auth/auth.middleware');
-
-const router = express.Router();
+const { pool } = require('../../utils/db');
+const { sendEmail } = require('../../utils/send_email');
+const { hashPassword, getPasswordPepper } = require('../../utils/password');
 
 function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();
@@ -19,7 +16,7 @@ function buildFallbackName(email) {
   return localPart
     .split(/[._-]+/)
     .filter(Boolean)
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ') || 'User';
 }
 
@@ -61,6 +58,8 @@ async function getCoordinatorAndCompanyDetails(client, coordinator) {
 }
 
 async function createCompanyUser(client, coordinator, payload = {}) {
+  getPasswordPepper();
+
   const emailId = normalizeEmail(payload.email_id);
   const empCode = payload.emp_code && payload.emp_code.trim() ? payload.emp_code.trim() : null;
   const empName = payload.emp_name && payload.emp_name.trim() ? payload.emp_name.trim() : buildFallbackName(emailId);
@@ -98,6 +97,7 @@ async function createCompanyUser(client, coordinator, payload = {}) {
   }
 
   const tempPassword = crypto.randomBytes(8).toString('hex');
+  const tempPasswordHash = await hashPassword(tempPassword);
   const { companyIdentifier, companyCoordinatorName, companyDisplayName } =
     await getCoordinatorAndCompanyDetails(client, coordinator);
 
@@ -120,7 +120,7 @@ async function createCompanyUser(client, coordinator, payload = {}) {
     `,
     [
       emailId,
-      tempPassword,
+      tempPasswordHash,
       'user',
       companyIdentifier,
       1,
@@ -128,7 +128,7 @@ async function createCompanyUser(client, coordinator, payload = {}) {
       empName,
       designation,
       department,
-      mobile
+      mobile,
     ]
   );
 
@@ -166,17 +166,14 @@ Sharp and Tannan Associates
   };
 }
 
-// Get users for current company coordinator's company
-// Optional query: role (e.g. user), q (search emp_name / email_id), limit (cap 200).
-// When no optional params are used, behavior matches the original full-company list.
-router.get('/users', verifyCompanyCoordinator, async (req, res) => {
+async function getUsers(req, res) {
   try {
     const companyIdentifier = req.user.company_identifier;
 
     if (!companyIdentifier) {
       return res.status(200).json({
         success: true,
-        users: []
+        users: [],
       });
     }
 
@@ -207,7 +204,7 @@ router.get('/users', verifyCompanyCoordinator, async (req, res) => {
       paramIndex++;
     }
 
-    query += ` ORDER BY created_at DESC`;
+    query += ' ORDER BY created_at DESC';
 
     if (limitRaw !== undefined && limitRaw !== '') {
       const limitNum = parseInt(String(limitRaw), 10);
@@ -220,30 +217,95 @@ router.get('/users', verifyCompanyCoordinator, async (req, res) => {
 
     const usersResult = await pool.query(query, params);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      users: usersResult.rows
+      users: usersResult.rows,
     });
   } catch (error) {
     console.error('Error fetching users:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: 'Failed to fetch users'
+      message: 'Failed to fetch users',
     });
   }
-});
+}
 
-// Create User for Company API endpoint
-router.post('/create-user', verifyCompanyCoordinator, async (req, res) => {
-  const { 
-    email_id, 
-    emp_code, 
-    emp_name, 
-    designation, 
-    department, 
-    mobile 
+async function getHomeStats(req, res) {
+  try {
+    const companyIdentifier = req.user.company_identifier;
+
+    if (!companyIdentifier) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          coordinatorName: req.user.emp_name || req.user.email_id || 'User',
+          totalUsers: 0,
+          totalRacms: 0,
+          approvedRacms: 0,
+          rejectedRacms: 0,
+        },
+      });
+    }
+
+    const [usersResult, racmResult] = await Promise.all([
+      pool.query(
+        `
+          SELECT COUNT(*)::int AS total_users
+          FROM ifc_users
+          WHERE company_identifier = $1
+            AND role = 'user'
+        `,
+        [companyIdentifier]
+      ),
+      pool.query(
+        `
+          SELECT
+            COUNT(*)::int AS total_racms,
+            COUNT(*) FILTER (
+              WHERE LOWER(TRIM(COALESCE(status, ''))) = 'approved'
+            )::int AS approved_racms,
+            COUNT(*) FILTER (
+              WHERE LOWER(TRIM(COALESCE(status, ''))) = 'rejected'
+            )::int AS rejected_racms
+          FROM control_forms
+          WHERE company_identifier = $1
+        `,
+        [companyIdentifier]
+      ),
+    ]);
+
+    const userRow = usersResult.rows[0] || {};
+    const racmRow = racmResult.rows[0] || {};
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        coordinatorName: req.user.emp_name || req.user.email_id || 'User',
+        totalUsers: Number(userRow.total_users || 0),
+        totalRacms: Number(racmRow.total_racms || 0),
+        approvedRacms: Number(racmRow.approved_racms || 0),
+        rejectedRacms: Number(racmRow.rejected_racms || 0),
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator home stats error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch company coordinator home stats',
+    });
+  }
+}
+
+async function createUser(req, res) {
+  const {
+    email_id,
+    emp_code,
+    emp_name,
+    designation,
+    department,
+    mobile,
   } = req.body;
-  const coordinator = req.user; // Company coordinator info from middleware
+  const coordinator = req.user;
 
   const client = await pool.connect();
 
@@ -260,28 +322,23 @@ router.post('/create-user', verifyCompanyCoordinator, async (req, res) => {
 
     if (!emailSent) {
       console.warn(`Warning: Failed to send email to ${newUser.email_id}, but user was created successfully.`);
-      // Don't fail the transaction if email fails, but log it
     } else {
       console.log(`✓ User creation email sent successfully to ${newUser.email_id}`);
     }
 
     await client.query('COMMIT');
-    
-    // Small delay to ensure email is fully processed before returning
-    // This helps ensure proper sequencing: user creation email → form status update email
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'User created successfully',
       user: {
         id: newUser.id,
         email_id: newUser.email_id,
-        company_identifier: newUser.company_identifier
+        company_identifier: newUser.company_identifier,
       },
-      emailSent: emailSent
+      emailSent,
     });
-
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error creating user:', error);
@@ -289,27 +346,27 @@ router.post('/create-user', verifyCompanyCoordinator, async (req, res) => {
     if (error.statusCode) {
       return res.status(error.statusCode).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
 
-    if (error.code === '23505') { // Unique constraint violation
+    if (error.code === '23505') {
       return res.status(409).json({
         success: false,
-        message: 'User with this email already exists'
+        message: 'User with this email already exists',
       });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   } finally {
     client.release();
   }
-});
+}
 
-router.post('/create-users-bulk', verifyCompanyCoordinator, async (req, res) => {
+async function createUsersBulk(req, res) {
   const coordinator = req.user;
   const inputEmails = Array.isArray(req.body?.email_ids) ? req.body.email_ids : [];
   const normalizedEmails = [...new Set(inputEmails.map(normalizeEmail).filter(Boolean))];
@@ -368,44 +425,39 @@ router.post('/create-users-bulk', verifyCompanyCoordinator, async (req, res) => 
     if (error.statusCode) {
       return res.status(error.statusCode).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
 
     return res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   } finally {
     client.release();
   }
-});
+}
 
-// Delete users for current coordinator's company.
-// Side effect:
-// - Any RACMs in control_forms assigned to these users (control_forms.control_owner) are made inactive:
-//   control_owner = NULL and active = '0'
-// - Then the selected users are removed from ifc_users
-router.post('/delete-users', verifyCompanyCoordinator, async (req, res) => {
+async function deleteUsers(req, res) {
   const coordinator = req.user;
   const companyIdentifier = coordinator.company_identifier;
 
-  const emailIdsInput = Array.isArray(req.body?.email_ids) ? req.body.email_ids : []
-  const normalizedEmails = [...new Set(emailIdsInput.map(normalizeEmail).filter(Boolean))]
-  const invalidEmails = normalizedEmails.filter((email) => !isValidEmail(email))
+  const emailIdsInput = Array.isArray(req.body?.email_ids) ? req.body.email_ids : [];
+  const normalizedEmails = [...new Set(emailIdsInput.map(normalizeEmail).filter(Boolean))];
+  const invalidEmails = normalizedEmails.filter((email) => !isValidEmail(email));
 
   if (!companyIdentifier) {
     return res.status(400).json({
       success: false,
       message: 'Company identifier is missing for coordinator',
-    })
+    });
   }
 
   if (normalizedEmails.length === 0) {
     return res.status(400).json({
       success: false,
       message: 'No valid user emails provided for deletion',
-    })
+    });
   }
 
   if (invalidEmails.length > 0) {
@@ -413,13 +465,13 @@ router.post('/delete-users', verifyCompanyCoordinator, async (req, res) => {
       success: false,
       message: 'Invalid email format',
       invalidEmails,
-    })
+    });
   }
 
-  const client = await pool.connect()
+  const client = await pool.connect();
 
   try {
-    await client.query('BEGIN')
+    await client.query('BEGIN');
 
     const deactivatedRacmsQuery = `
       UPDATE control_forms
@@ -427,9 +479,9 @@ router.post('/delete-users', verifyCompanyCoordinator, async (req, res) => {
           active = '0'
       WHERE company_identifier = $1
         AND LOWER(TRIM(control_owner)) = ANY($2::text[])
-    `
+    `;
 
-    const deactivatedRacmsResult = await client.query(deactivatedRacmsQuery, [companyIdentifier, normalizedEmails])
+    const deactivatedRacmsResult = await client.query(deactivatedRacmsQuery, [companyIdentifier, normalizedEmails]);
 
     const deletedUsersQuery = `
       DELETE FROM ifc_users
@@ -437,69 +489,60 @@ router.post('/delete-users', verifyCompanyCoordinator, async (req, res) => {
         AND role = 'user'
         AND LOWER(TRIM(email_id)) = ANY($2::text[])
       RETURNING email_id
-    `
+    `;
 
-    const deletedUsersResult = await client.query(deletedUsersQuery, [companyIdentifier, normalizedEmails])
+    const deletedUsersResult = await client.query(deletedUsersQuery, [companyIdentifier, normalizedEmails]);
 
-    await client.query('COMMIT')
+    await client.query('COMMIT');
 
     return res.status(200).json({
       success: true,
       message: `Deleted ${deletedUsersResult.rowCount} user(s) successfully`,
-      deleted_users: deletedUsersResult.rows.map((r) => r.email_id),
+      deleted_users: deletedUsersResult.rows.map((row) => row.email_id),
       deactivated_racms: deactivatedRacmsResult.rowCount,
-    })
+    });
   } catch (error) {
-    await client.query('ROLLBACK')
-    console.error('Error deleting users:', error)
+    await client.query('ROLLBACK');
+    console.error('Error deleting users:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to delete user(s)',
-    })
+    });
   } finally {
-    client.release()
+    client.release();
   }
-})
+}
 
-// Check if user exists for the current coordinator's company with role = 'user'
-router.get('/check-user/:email', verifyCompanyCoordinator, async (req, res) => {
+async function checkUser(req, res) {
   let { email } = req.params;
 
-  // Decode URL-encoded email (e.g., %40 becomes @)
   try {
     email = decodeURIComponent(email);
   } catch (decodeError) {
     console.warn('Failed to decode email parameter, using as-is:', decodeError);
   }
 
-  // Trim whitespace and convert to lowercase for comparison
   email = email.trim().toLowerCase();
 
-  // Validate email format
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!isValidEmail(email)) {
     return res.status(400).json({
       success: false,
       message: 'Invalid email format',
-      exists: false
+      exists: false,
     });
   }
 
   try {
     const companyIdentifier = (req.user && req.user.company_identifier) || null;
 
-    // If coordinator does not have a company_identifier, we cannot match any company users
     if (!companyIdentifier) {
       console.warn('Company coordinator does not have company_identifier');
       return res.status(200).json({
         success: true,
-        exists: false
+        exists: false,
       });
     }
 
-    // Only consider users:
-    // - with the same company_identifier as the logged-in company coordinator
-    // - and with role = 'user'
-    // Use case-insensitive comparison and trim whitespace for email_id
     const checkUserQuery = `
       SELECT 1
       FROM ifc_users
@@ -513,36 +556,32 @@ router.get('/check-user/:email', verifyCompanyCoordinator, async (req, res) => {
 
     console.log(`User check for ${email} in company ${companyIdentifier}: ${existingUser.rows.length > 0 ? 'FOUND' : 'NOT FOUND'}`);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      exists: existingUser.rows.length > 0
+      exists: existingUser.rows.length > 0,
     });
   } catch (error) {
     console.error('Error checking user:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error checking user existence',
-      exists: false
+      exists: false,
     });
   }
-});
+}
 
-// Check user existence + role for the current coordinator's company.
-// Returns the actual role so the frontend can block non-"user" roles.
-router.get('/check-user-role/:email', verifyCompanyCoordinator, async (req, res) => {
+async function checkUserRole(req, res) {
   let { email } = req.params;
 
-  // Decode URL-encoded email (e.g., %40 becomes @)
   try {
     email = decodeURIComponent(email);
   } catch (decodeError) {
     console.warn('Failed to decode email parameter, using as-is:', decodeError);
   }
 
-  // Trim whitespace and convert to lowercase for comparison
   email = email.trim().toLowerCase();
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!isValidEmail(email)) {
     return res.status(400).json({
       success: false,
       message: 'Invalid email format',
@@ -594,10 +633,9 @@ router.get('/check-user-role/:email', verifyCompanyCoordinator, async (req, res)
       role: null,
     });
   }
-});
+}
 
-// RACM audit trail (same data as approver); restricted to forms in the coordinator's company
-router.get('/racm-audit-logs/:form_id', verifyCompanyCoordinator, async (req, res) => {
+async function getRacmAuditLogs(req, res) {
   try {
     const { form_id } = req.params;
     const companyIdentifier = req.user.company_identifier;
@@ -609,7 +647,7 @@ router.get('/racm-audit-logs/:form_id', verifyCompanyCoordinator, async (req, re
     }
 
     const own = await pool.query(
-      `SELECT 1 FROM control_forms WHERE form_id = $1 AND company_identifier = $2 LIMIT 1`,
+      'SELECT 1 FROM control_forms WHERE form_id = $1 AND company_identifier = $2 LIMIT 1',
       [form_id, companyIdentifier]
     );
     if (own.rows.length === 0) {
@@ -629,17 +667,26 @@ router.get('/racm-audit-logs/:form_id', verifyCompanyCoordinator, async (req, re
       [form_id]
     );
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: result.rows,
     });
   } catch (error) {
     console.error('Get RACM audit logs (company_co) error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Internal server error',
     });
   }
-});
+}
 
-module.exports = router;
+module.exports = {
+  getUsers,
+  getHomeStats,
+  createUser,
+  createUsersBulk,
+  deleteUsers,
+  checkUser,
+  checkUserRole,
+  getRacmAuditLogs,
+};

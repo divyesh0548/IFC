@@ -19,6 +19,7 @@ import {
   RACM_FIELD_LABELS,
   RACM_BULK_IMPORT_SESSION_KEY,
 } from '../../racmFormDetailFields'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { useUnsavedChangesWarning } from '../../utils/useUnsavedChangesWarning'
 
@@ -215,9 +216,11 @@ function buildColumnMapping(headers, selections) {
 function ExcelColumnMap() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
+  const [initializing, setInitializing] = useState(true)
   const [payload, setPayload] = useState(null)
   const [selections, setSelections] = useState(null)
   const initialSelectionsRef = useRef(null)
+  useSyncGlobalLoading(initializing || loading)
   const headers = useMemo(() => (payload ? collectHeaders(payload.rows) : []), [payload])
 
   const hasAnyProgress = useMemo(() => {
@@ -261,6 +264,8 @@ function ExcelColumnMap() {
       console.error(e)
       toast.error('Could not load import session.')
       navigate('/company_co/upload-excel', { replace: true })
+    } finally {
+      setInitializing(false)
     }
   }, [navigate])
 

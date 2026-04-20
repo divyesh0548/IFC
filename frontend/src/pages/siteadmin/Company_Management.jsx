@@ -26,7 +26,7 @@ function Company_Management() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch('http://localhost:3000/api/companies', {
+      const response = await fetch('http://localhost:3000/api/siteadmin/companies', {
         method: 'GET',
         credentials: 'include',
       })

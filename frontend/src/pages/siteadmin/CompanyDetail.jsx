@@ -48,7 +48,7 @@ function CompanyDetail() {
     setError(null)
     try {
       const response = await fetch(
-        `http://localhost:3000/api/companies/${company_identifier}`,
+        `http://localhost:3000/api/siteadmin/companies/${company_identifier}`,
         { method: 'GET', credentials: 'include' }
       )
       const data = await response.json()

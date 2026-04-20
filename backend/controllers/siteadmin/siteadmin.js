@@ -1,13 +1,7 @@
-const express = require('express');
 const crypto = require('crypto');
-const { pool } = require('../utils/db');
-const { sendEmail } = require('../utils/send_email');
-const { verifySiteadminAuth } = require('../modules/auth/auth.middleware');
-
-const router = express.Router();
-
-// Siteadmin APIs only
-router.use(verifySiteadminAuth);
+const { pool } = require('../../utils/db');
+const { sendEmail } = require('../../utils/send_email');
+const { hashPassword, getPasswordPepper } = require('../../utils/password');
 
 // Helper function to generate company identifier
 function generateCompanyIdentifier(companyName) {
@@ -17,16 +11,16 @@ function generateCompanyIdentifier(companyName) {
     .toUpperCase()
     .substring(0, 6)
     .padEnd(6, 'X'); // Pad with X if less than 6 chars
-  
+
   // Generate 4 random alphanumeric characters (numbers and uppercase letters)
   const randomPart = crypto.randomBytes(2).toString('hex').toUpperCase().substring(0, 4);
-  
+
   // Combine to make 10 characters total
   return (namePart + randomPart).substring(0, 10);
 }
 
 // Get all companies API endpoint
-router.get('/', async (req, res) => {
+async function getCompanies(req, res) {
   try {
     const query = 'SELECT * FROM companies ORDER BY created_at DESC';
     const result = await pool.query(query);
@@ -44,13 +38,13 @@ router.get('/', async (req, res) => {
       message: 'Error fetching companies'
     });
   }
-});
+}
 
 // Get single company by company_identifier API endpoint
-router.get('/:company_identifier', async (req, res) => {
+async function getCompanyByIdentifier(req, res) {
   try {
     const { company_identifier } = req.params;
-    
+
     const query = 'SELECT * FROM companies WHERE company_identifier = $1';
     const result = await pool.query(query, [company_identifier]);
 
@@ -73,10 +67,10 @@ router.get('/:company_identifier', async (req, res) => {
       message: 'Error fetching company'
     });
   }
-});
+}
 
 // Create Company API endpoint
-router.post('/create', async (req, res) => {
+async function createCompany(req, res) {
   const {
     company_name,
     registered_email,
@@ -90,8 +84,8 @@ router.post('/create', async (req, res) => {
   } = req.body;
 
   // Validate required fields
-  if (!company_name || !registered_email || !registered_address || 
-      !unique_identification_number || !gst || !pan || 
+  if (!company_name || !registered_email || !registered_address ||
+      !unique_identification_number || !gst || !pan ||
       !number_of_corporate_offices || !number_of_factory_units) {
     return res.status(400).json({
       success: false,
@@ -108,8 +102,9 @@ router.post('/create', async (req, res) => {
   }
 
   const client = await pool.connect();
-  
+
   try {
+    getPasswordPepper();
     await client.query('BEGIN');
 
     // Generate company identifier
@@ -149,8 +144,8 @@ router.post('/create', async (req, res) => {
       if (userCheck.rows.length > 0) {
         // Update existing user with company_identifier
         const updateUserQuery = `
-          UPDATE ifc_users 
-          SET company_identifier = $1 
+          UPDATE ifc_users
+          SET company_identifier = $1
           WHERE email_id = $2
         `;
         await client.query(updateUserQuery, [company_identifier, company_coordinator_email]);
@@ -158,14 +153,15 @@ router.post('/create', async (req, res) => {
         // Create new user with company_identifier
         // Generate a temporary password (user will need to reset it)
         const tempPassword = crypto.randomBytes(8).toString('hex');
-        
+        const tempPasswordHash = await hashPassword(tempPassword);
+
         const insertUserQuery = `
           INSERT INTO ifc_users (email_id, password, role, company_identifier, temp_login)
           VALUES ($1, $2, $3, $4, $5)
         `;
         await client.query(insertUserQuery, [
           company_coordinator_email,
-          tempPassword,
+          tempPasswordHash,
           'company_co',
           company_identifier,
           1 // Set temp_login to 1 to force password update on first login
@@ -196,7 +192,7 @@ IFC System
         `;
 
         const emailSent = await sendEmail(company_coordinator_email, emailSubject, emailText);
-        
+
         if (!emailSent) {
           console.warn(`Warning: Failed to send email to ${company_coordinator_email}, but user was created successfully.`);
           // Don't fail the transaction if email fails, but log it
@@ -219,7 +215,7 @@ IFC System
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error creating company:', error);
-    
+
     if (error.code === '23505') { // Unique constraint violation
       return res.status(409).json({
         success: false,
@@ -234,7 +230,10 @@ IFC System
   } finally {
     client.release();
   }
-});
+}
 
-module.exports = router;
-
+module.exports = {
+  getCompanies,
+  getCompanyByIdentifier,
+  createCompany,
+};

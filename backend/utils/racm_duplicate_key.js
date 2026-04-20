@@ -4,7 +4,7 @@
  */
 
 const DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE =
-  'Your company already has a RACM with the same Business Process, Financial Year, and Control Number. Other companies may use the same combination.';
+  'Your company already has a RACM with the same Business Process, Financial Year, and Control Number. Duplication is not allowed.';
 
 /**
  * @param {{ skippedCount: number, duplicateCount: number, errorCount: number, duplicateControlNumberSamples?: string[] }} stats

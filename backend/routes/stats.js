@@ -47,8 +47,14 @@ router.get('/', async (req, res) => {
 
 router.get('/users/monthly-stats', async (req, res) => {
     try {
-      const selectedYear = req.query.year ? parseInt(req.query.year) : new Date().getFullYear();
-    //   const selectedYear = 2026;
+      const currentYear = new Date().getFullYear();
+      const selectedYear = req.query.year ? Number.parseInt(req.query.year, 10) : currentYear;
+      if (!Number.isInteger(selectedYear) || selectedYear < 1900 || selectedYear > currentYear + 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid year',
+        });
+      }
       
       const query = `
       SELECT 
@@ -168,4 +174,3 @@ router.get('/users/year-range', async (req, res) => {
 });
 
 module.exports = router;
-

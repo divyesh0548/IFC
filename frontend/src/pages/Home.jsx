@@ -350,8 +350,21 @@ function Home() {
         <Stack spacing={{ xs: 3, md: 4 }} sx={{ animation: 'homeFadeUp 720ms ease-out' }}>
           <Card sx={{ ...panelSx, overflow: 'hidden' }}>
             <CardContent sx={{ p: { xs: 3, md: 5 } }}>
-              <Grid container spacing={{ xs: 3, md: 3 }} sx={{ alignItems: 'stretch' }}>
-                <Grid item xs={12} lg={8}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: { xs: 'column', md: 'row' },
+                  alignItems: 'stretch',
+                  gap: { xs: 3, md: 3 },
+                }}
+              >
+                <Box
+                  sx={{
+                    width: { xs: '100%', md: '60%' },
+                    flex: { md: '0 0 60%' },
+                    minWidth: 0,
+                  }}
+                >
                   <Stack spacing={2.5}>
                     <Chip
                       label={portalContent.hero.eyebrow}
@@ -414,13 +427,21 @@ function Home() {
                       </Button>
                     </Stack>
                   </Stack>
-                </Grid>
+                </Box>
 
-                <Grid item xs={12} lg={4}>
+                <Box
+                  sx={{
+                    width: { xs: '100%', md: '40%' },
+                    flex: { md: '0 0 40%' },
+                    minWidth: 0,
+                  }}
+                >
                   <Box
                     sx={{
                       height: '100%',
                       minHeight: { xs: 320, md: 360 },
+                      display: 'flex',
+                      flexDirection: 'column',
                       borderRadius: 5,
                       p: { xs: 2.5, md: 3 },
                       position: 'relative',
@@ -515,8 +536,8 @@ function Home() {
                       </Stack>
                     </Stack>
                   </Box>
-                </Grid>
-              </Grid>
+                </Box>
+              </Box>
             </CardContent>
           </Card>
 

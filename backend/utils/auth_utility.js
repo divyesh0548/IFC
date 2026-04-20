@@ -1,11 +1,23 @@
 const crypto = require('crypto');
 
+function getEncryptionKey() {
+  const encryptionKeyHex = String(process.env.ENCRYPTION_KEY || '').trim();
+
+  if (!encryptionKeyHex) {
+    throw new Error('ENCRYPTION_KEY is not configured');
+  }
+
+  if (!/^[0-9a-fA-F]{64}$/.test(encryptionKeyHex)) {
+    throw new Error('ENCRYPTION_KEY must be a 64-character hex string');
+  }
+
+  return Buffer.from(encryptionKeyHex, 'hex');
+}
+
 /** Encrypt JWT string with AES-256-GCM (iv:authTag:ciphertext hex). */
 function encryptToken(token) {
   const algorithm = 'aes-256-gcm';
-  const encryptionKeyHex = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
-
-  const encryptionKey = Buffer.from(encryptionKeyHex.slice(0, 64), 'hex');
+  const encryptionKey = getEncryptionKey();
   const iv = crypto.randomBytes(16);
 
   const cipher = crypto.createCipheriv(algorithm, encryptionKey, iv);
@@ -20,8 +32,7 @@ function encryptToken(token) {
 function decryptToken(encryptedToken) {
   try {
     const algorithm = 'aes-256-gcm';
-    const encryptionKeyHex = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
-    const encryptionKey = Buffer.from(encryptionKeyHex.slice(0, 64), 'hex');
+    const encryptionKey = getEncryptionKey();
 
     const parts = encryptedToken.split(':');
     if (parts.length !== 3) {
@@ -40,7 +51,7 @@ function decryptToken(encryptedToken) {
 
     return decrypted;
   } catch (error) {
-    throw new Error('Token decryption failed');
+    throw new Error(`Token decryption failed: ${error.message}`);
   }
 }
 
