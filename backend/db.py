@@ -281,7 +281,6 @@ def create_control_forms_table(cursor):
         nature_of_control character varying(255) NULL,
         control_owner character varying(255) NULL,
         control_frequency character varying(255) NULL,
-        doc_uploaded_by_user character varying(255) NULL,
         active character varying(255) NULL,
         status character varying(255) NULL,
         reason_by_approver text NULL,
@@ -293,7 +292,6 @@ def create_control_forms_table(cursor):
         remarks_by_user text NULL,
         business_process character varying(255) NULL,
         financial_year character varying(255) NULL,
-        sample_doc character varying(255) NULL,
         sample_required text NULL,
         completeness boolean NULL,
         existence_occurrence boolean NULL,
@@ -336,6 +334,66 @@ def create_control_forms_table(cursor):
     """
     
     create_table_with_constraint(cursor, 'control_forms', create_table_query, 'control_forms_pkey', add_constraint_query)
+
+def create_sample_docs_table(cursor):
+    """Creates sample_docs table for RACM sample document URLs."""
+    print("\n[sample_docs]")
+
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.sample_docs (
+        id serial NOT NULL,
+        form_id character varying(255) NULL,
+        sample_doc character varying(255) NULL,
+        created_at timestamp without time zone NULL DEFAULT (
+            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+        )
+    );
+    """
+
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'sample_docs_pkey'
+        ) THEN
+            ALTER TABLE public.sample_docs
+            ADD CONSTRAINT sample_docs_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+
+    create_table_with_constraint(cursor, 'sample_docs', create_table_query, 'sample_docs_pkey', add_constraint_query)
+
+def create_doc_uploaded_by_user_table(cursor):
+    """Creates doc_uploaded_by_user table for RACM user-uploaded document URLs."""
+    print("\n[doc_uploaded_by_user]")
+
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS public.doc_uploaded_by_user (
+        id serial NOT NULL,
+        form_id character varying(255) NULL,
+        doc_uploaded_by_user character varying(255) NULL,
+        created_at timestamp without time zone NULL DEFAULT (
+            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+        )
+    );
+    """
+
+    add_constraint_query = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'doc_uploaded_by_user_pkey'
+        ) THEN
+            ALTER TABLE public.doc_uploaded_by_user
+            ADD CONSTRAINT doc_uploaded_by_user_pkey PRIMARY KEY (id);
+        END IF;
+    END $$;
+    """
+
+    create_table_with_constraint(cursor, 'doc_uploaded_by_user', create_table_query, 'doc_uploaded_by_user_pkey', add_constraint_query)
 
 def create_excel_files_table(cursor):
     """Creates the excel_files table if it doesn't exist."""
@@ -779,6 +837,8 @@ def create_all_tables():
         print("=" * 70)
     
         # create_companies_table(cursor)
+        create_sample_docs_table(cursor)
+        create_doc_uploaded_by_user_table(cursor)
         create_control_forms_table(cursor)
         # create_excel_files_table(cursor)
         # create_ifc_users_table(cursor)

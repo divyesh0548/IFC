@@ -6,7 +6,6 @@ const cookieParser = require('cookie-parser');
 dotenv.config();
 
 const { processExcelFiles } = require('./scripts/process_excel_files');
-const { processSamplingExcel } = require('./scripts/process_sampling_excel');
 const { runReminderEmails } = require('./scripts/reminder_emails');
 const { runBootstrap } = require('./config/bootstrap');
 require('./utils/db'); // Load shared pool (timezone set there)
@@ -76,20 +75,6 @@ processExcelFiles().catch(error => {
   console.error('Error processing Excel files on startup:', error);
 });
 
-// Start scheduled task to process sampling Excel files every 1 minute
-console.log('Starting sampling Excel file processor scheduler (runs every 1 minute)...');
-setInterval(async () => {
-  try {
-    await processSamplingExcel();
-  } catch (error) {
-    console.error('Error in scheduled sampling Excel file processing:', error);
-  }
-}, 60 * 1000); // 60 seconds = 1 minute
-
-// Process any existing unprocessed sampling files on server start
-processSamplingExcel().catch(error => {
-  console.error('Error processing sampling Excel files on startup:', error);
-});
 
 // Reminder emails for control_forms (runs every 1 minute)
 console.log('Starting reminder emails scheduler (runs every 1 minute)...');

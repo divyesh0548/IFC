@@ -1,6 +1,10 @@
 const { pool } = require('../../utils/db');
 const { logAuditEvent } = require('../../utils/auditLog');
 const { sendEmail } = require('../../utils/send_email');
+const {
+  attachControlFormDocuments,
+  getLatestUserDocument,
+} = require('../../utils/racm_documents');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -199,6 +203,7 @@ async function getPendingApprovals(req, res) {
     `;
 
     const result = await pool.query(query);
+    await attachControlFormDocuments(pool, result.rows);
 
     res.status(200).json({
       success: true,
@@ -272,6 +277,7 @@ async function approveForm(req, res) {
     }
 
     const updatedForm = result.rows[0];
+    await attachControlFormDocuments(pool, [updatedForm]);
     const processOwnerEmail = updatedForm.control_owner;
 
     await notifyProcessOwnerRacmDecision(
@@ -380,8 +386,7 @@ async function changeApprovalDecision(req, res) {
       await client.query('BEGIN');
 
       if (curStatus === 'Rejected' && status === 'Approved') {
-        const prevDoc =
-          row.doc_uploaded_by_user != null ? String(row.doc_uploaded_by_user).trim() : '';
+        const prevDoc = await getLatestUserDocument(client, form_id);
         const prevReason =
           row.reason_by_approver != null ? String(row.reason_by_approver).trim() : '';
         if (prevDoc || prevReason) {
@@ -410,6 +415,7 @@ async function changeApprovalDecision(req, res) {
 
       await client.query('COMMIT');
       updatedForm = updateResult.rows[0];
+      await attachControlFormDocuments(client, [updatedForm]);
     } catch (dbErr) {
       try {
         await client.query('ROLLBACK');
@@ -486,6 +492,7 @@ async function getControlForms(req, res) {
     query += ' ORDER BY cf.created_at DESC';
 
     const result = await pool.query(query, queryParams);
+    await attachControlFormDocuments(pool, result.rows);
 
     res.status(200).json({
       success: true,
@@ -524,6 +531,8 @@ async function getControlFormById(req, res) {
         message: 'RACM not found',
       });
     }
+
+    await attachControlFormDocuments(pool, [result.rows[0]]);
 
     res.status(200).json({
       success: true,

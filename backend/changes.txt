@@ -109,3 +109,26 @@ Bulk upload/update (for specific fields) in user creation.
 Provide a template for it.
 
 Sample doc is not required. (give warning)
+
+
+
+AI insights
+RAMC : 
+preventive ratio
+manual semi automated
+cycle wise key control
+AI Summary
+
+
+There can be multiple sample document in a RACM and also document uploaded by user.
+
+make user : yugma and mayank sir 
+
+
+Create a user role with view only rights.
+
+Multiple process owners ?
+
+Multiple approvers?
+
+New fields "Other Affected Account(s)", "Control Name"

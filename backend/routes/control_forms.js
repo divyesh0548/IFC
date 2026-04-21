@@ -11,6 +11,13 @@ const { verifyUserAuth } = require('../modules/auth/auth.middleware');
 const { logAuditEvent, EXCEL_BULK_RACM_UPLOAD_ACTION } = require('../utils/auditLog');
 const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/sample_required');
 const {
+  attachControlFormDocuments,
+  getControlFormDocumentRows,
+  getLatestUserDocument,
+  insertSampleDocument,
+  insertUserDocument,
+} = require('../utils/racm_documents');
+const {
   DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE,
   formatBulkImportZeroInsertedMessage,
   formatBulkImportSuccessMessage,
@@ -691,6 +698,7 @@ router.get('/', verifyAuth, async (req, res) => {
     query += ' ORDER BY cf.created_at DESC';
     
     const result = await pool.query(query, queryParams);
+    await attachControlFormDocuments(pool, result.rows);
     
     res.status(200).json({
       success: true,
@@ -845,6 +853,7 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
     }
     
     const formData = result.rows[0];
+    await attachControlFormDocuments(pool, [formData]);
     
     // Authorization check: For users with role 'user', verify they are the control_owner
     // company_co and approver roles can still access (existing behavior)
@@ -915,7 +924,6 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
         control_number,
         company_identifier,
         status AS current_status,
-        doc_uploaded_by_user AS current_doc_uploaded_by_user,
         reason_by_approver AS current_reason_by_approver
       FROM control_forms 
       WHERE form_id = $1
@@ -937,6 +945,9 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     );
     const isAssignmentUpdate = assignmentInChangesArray || assignmentInFieldsArray || control_owner !== undefined;
     const isRacmAssignmentOperation = Boolean(isAssignmentUpdate && assignmentEmail);
+    const hasUserDocumentUpload = doc_uploaded_by_user !== undefined
+      && doc_uploaded_by_user !== null
+      && String(doc_uploaded_by_user).trim() !== '';
 
     // Check if user is an approver (only approvers can edit conclusion/procedures/deficiency fields)
     const isApprover = !!req.cookies.approverAuthToken;
@@ -988,7 +999,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       completeness, existence_occurrence, rights_and_obligation,
       valuation_and_allocation, presentation_and_disclosure,
       due_date, reminder_frequency,
-      doc_uploaded_by_user, status, reason_by_approver, remarks_by_user
+      status, reason_by_approver, remarks_by_user
     };
 
     if (!isRacmAssignmentOperation && control_owner !== undefined) {
@@ -1023,12 +1034,10 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     const isResubmission = status === 'sent for approval'
       && currentForm
       && currentForm.current_status === 'Rejected'
-      && doc_uploaded_by_user !== undefined
-      && doc_uploaded_by_user !== null
-      && String(doc_uploaded_by_user).trim() !== '';
+      && hasUserDocumentUpload;
 
     if (isResubmission) {
-      const previousDoc = currentForm.current_doc_uploaded_by_user;
+      const previousDoc = await getLatestUserDocument(client, form_id);
       const previousReason = currentForm.current_reason_by_approver;
 
       if (
@@ -1046,8 +1055,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
             previousReason || null
           ]);
 
-          // Ensure old approver reason is cleared from the live form row on resubmission;
-          // doc_uploaded_by_user will be overwritten by the new value via updateFields.
+          // Ensure old approver reason is cleared from the live form row on resubmission.
           updateFields.push(`reason_by_approver = $${paramIndex}`);
           updateValues.push(null);
           paramIndex++;
@@ -1063,7 +1071,8 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
     }
 
-    if (updateFields.length === 0 && !isRacmAssignmentOperation && active === undefined) {
+    if (updateFields.length === 0 && !isRacmAssignmentOperation && active === undefined && !hasUserDocumentUpload) {
+      await client.query('ROLLBACK');
       return res.status(400).json({
         success: false,
         message: 'No fields to update'
@@ -1152,6 +1161,10 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
             result = activeResult;
           }
         }
+      }
+
+      if (result.rows.length > 0) {
+        await insertUserDocument(client, form_id, doc_uploaded_by_user);
       }
     } catch (dbError) {
       await client.query('ROLLBACK');
@@ -1292,6 +1305,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     }
 
     const updatedRow = result.rows[0];
+    await attachControlFormDocuments(client, [updatedRow]);
     const dataForClient =
       req.user.role === 'user'
         ? shapeControlFormJsonForProcessOwner(updatedRow)
@@ -1973,13 +1987,11 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Check if form exists (and fetch document columns for cleanup)
+    // Check if form exists.
     const checkQuery = `
       SELECT 
         id, 
-        company_identifier,
-        doc_uploaded_by_user,
-        sample_doc
+        company_identifier
       FROM control_forms 
       WHERE form_id = $1
     `;
@@ -2011,13 +2023,11 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
     }
 
     // Delete any associated documents from S3 before deleting the DB row
-    const docUrlsToDelete = [];
-    if (form.doc_uploaded_by_user && String(form.doc_uploaded_by_user).trim() !== '') {
-      docUrlsToDelete.push(String(form.doc_uploaded_by_user).trim());
-    }
-    if (form.sample_doc && String(form.sample_doc).trim() !== '') {
-      docUrlsToDelete.push(String(form.sample_doc).trim());
-    }
+    const { sampleDocsByFormId, userDocsByFormId } = await getControlFormDocumentRows(client, [form_id]);
+    const docUrlsToDelete = [
+      ...(userDocsByFormId.get(form_id) || []).map((doc) => doc.doc_uploaded_by_user),
+      ...(sampleDocsByFormId.get(form_id) || []).map((doc) => doc.sample_doc),
+    ].filter((value) => value && String(value).trim() !== '');
 
     try {
       for (const s3Key of docUrlsToDelete) {
@@ -2032,6 +2042,9 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
         error: s3Error.message
       });
     }
+
+    await client.query('DELETE FROM doc_uploaded_by_user WHERE form_id = $1', [form_id]);
+    await client.query('DELETE FROM sample_docs WHERE form_id = $1', [form_id]);
 
     // Delete the RACM
     const deleteQuery = 'DELETE FROM control_forms WHERE form_id = $1';
@@ -2110,15 +2123,19 @@ router.get('/:form_id/check-sampling-exists', verifyAuth, async (req, res) => {
   const client = await pool.connect();
 
   try {
-    // Check sample_doc column in control_forms table
-    const checkFormQuery = 'SELECT sample_doc FROM control_forms WHERE form_id = $1';
-    const formResult = await client.query(checkFormQuery, [form_id]);
-    
-    let exists = false;
-    if (formResult.rows.length > 0) {
-      const samplingDoc = formResult.rows[0].sample_doc;
-      exists = samplingDoc && samplingDoc.trim() !== '';
+    const formResult = await client.query('SELECT 1 FROM control_forms WHERE form_id = $1 LIMIT 1', [form_id]);
+    if (formResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found',
+      });
     }
+
+    const sampleResult = await client.query(
+      'SELECT 1 FROM sample_docs WHERE form_id = $1 AND NULLIF(TRIM(sample_doc), \'\') IS NOT NULL LIMIT 1',
+      [form_id]
+    );
+    const exists = sampleResult.rows.length > 0;
 
     res.status(200).json({
       success: true,
@@ -2172,23 +2189,7 @@ router.post('/:form_id/upload-sampling-excel', verifyAuth, upload.single('excelF
     const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/sample_docs');
     console.log(`Sampling Excel file uploaded to S3 with key: ${s3Key}`);
     
-    // Update sample_doc column in control_forms table
-    const updateQuery = `
-      UPDATE control_forms
-      SET sample_doc = $1
-      WHERE form_id = $2
-      RETURNING form_id, sample_doc;
-    `;
-
-    const result = await client.query(updateQuery, [s3Key, form_id]);
-
-    if (result.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: 'Control form not found'
-      });
-    }
+    const sampleDoc = await insertSampleDocument(client, form_id, s3Key);
 
     await client.query('COMMIT');
 
@@ -2196,8 +2197,9 @@ router.post('/:form_id/upload-sampling-excel', verifyAuth, upload.single('excelF
       success: true,
       message: 'Sampling Excel file uploaded successfully',
       data: {
-        form_id: result.rows[0].form_id,
-        sample_doc: result.rows[0].sample_doc,
+        form_id,
+        sample_doc: sampleDoc.sample_doc,
+        sample_docs: [sampleDoc],
         file_name: fileName
       }
     });
@@ -2218,4 +2220,3 @@ router.post('/:form_id/upload-sampling-excel', verifyAuth, upload.single('excelF
 
 
 module.exports = router;
-

@@ -24,6 +24,24 @@ const REQUIRED_TABLES = {
     },
     primaryKey: 'id',
   },
+  sample_docs: {
+    columns: {
+      id: 'serial',
+      form_id: 'character varying(255) NULL',
+      sample_doc: 'character varying(255) NULL',
+      created_at: "timestamp without time zone NULL DEFAULT ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text)",
+    },
+    primaryKey: 'id',
+  },
+  doc_uploaded_by_user: {
+    columns: {
+      id: 'serial',
+      form_id: 'character varying(255) NULL',
+      doc_uploaded_by_user: 'character varying(255) NULL',
+      created_at: "timestamp without time zone NULL DEFAULT ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text)",
+    },
+    primaryKey: 'id',
+  },
   companies: {
     columns: {
       id: 'serial',
@@ -61,7 +79,6 @@ const REQUIRED_TABLES = {
       ipe_reference: 'text NULL',
       nature_of_control: 'character varying(255) NULL',
       control_frequency: 'character varying(255) NULL',
-      doc_uploaded_by_user: 'character varying(255) NULL',
       active: 'character varying(255) NULL',
       status: 'character varying(255) NULL',
       reason_by_approver: 'text NULL',
@@ -71,7 +88,6 @@ const REQUIRED_TABLES = {
       remarks_by_user: 'text NULL',
       business_process: 'character varying(255) NULL',
       financial_year: 'character varying(255) NULL',
-      sample_doc: 'character varying(255) NULL',
       sample_required: 'text NULL',
       completeness: 'boolean NULL',
       existence_occurrence: 'boolean NULL',
