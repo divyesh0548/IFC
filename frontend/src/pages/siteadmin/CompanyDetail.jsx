@@ -20,6 +20,7 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { MAIN_CONTENT_MAX_WIDTH } from '../../uiConstants'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function CompanyDetail() {
   const theme = useTheme()
@@ -29,6 +30,7 @@ function CompanyDetail() {
   const [company, setCompany] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  useSyncGlobalLoading(loading)
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A'
@@ -83,6 +85,8 @@ function CompanyDetail() {
       { label: 'Registration Date', value: formatDate(company.created_at) },
     ]
   }, [company])
+
+  const companyUnits = Array.isArray(company?.company_units) ? company.company_units : []
 
   const DetailItem = ({ label, value, strong }) => (
     <Box
@@ -225,6 +229,54 @@ function CompanyDetail() {
                       />
                     ))}
                   </Stack>
+
+                  <Box sx={{ mt: 4 }}>
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: 800,
+                        mb: 2,
+                        color: 'text.primary',
+                      }}
+                    >
+                      Unit Details
+                    </Typography>
+
+                    {companyUnits.length === 0 ? (
+                      <Alert severity="info">
+                        No unit details available.
+                      </Alert>
+                    ) : (
+                      <Grid container spacing={2}>
+                        {companyUnits.map((unit) => (
+                          <Grid item xs={12} key={unit.id || unit.unit_id} sx={{ width: '100%' }}>
+                            <Card
+                              variant="outlined"
+                              sx={{
+                                width: '100%',
+                                borderRadius: 2,
+                                bgcolor: 'background.default',
+                              }}
+                            >
+                              <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'text.primary' }}>
+                                  {unit.unit_name || 'N/A'}
+                                </Typography>
+                                <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                                  <Grid item xs={12} sm={4}>
+                                    <DetailItem label="Unit ID" value={unit.unit_id} />
+                                  </Grid>
+                                  <Grid item xs={12} sm={8}>
+                                    <DetailItem label="Unit Address" value={unit.unit_address || 'N/A'} />
+                                  </Grid>
+                                </Grid>
+                              </CardContent>
+                            </Card>
+                          </Grid>
+                        ))}
+                      </Grid>
+                    )}
+                  </Box>
                 </Box>
               )}
             </CardContent>

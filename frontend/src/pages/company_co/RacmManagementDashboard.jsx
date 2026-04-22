@@ -56,6 +56,9 @@ function RacmManagementDashboard() {
   const [filterStatus, setFilterStatus] = useState('all') // 'all', 'Approved', 'Rejected', 'Pending'
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
+  const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific assigned unit
+  const [coordinatorUnits, setCoordinatorUnits] = useState([])
+  const [companyUnitCount, setCompanyUnitCount] = useState(0)
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
   const [cellWordWrap, setCellWordWrap] = useState(false)
@@ -147,7 +150,44 @@ function RacmManagementDashboard() {
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterActive, filterStatus, filterBusinessProcess, filterFinancialYear])
+  }, [companyIdentifier, filterActive, filterStatus, filterBusinessProcess, filterFinancialYear, filterUnit])
+
+  useEffect(() => {
+    const fetchCoordinatorUnits = async () => {
+      if (!companyIdentifier) return
+
+      try {
+        const response = await fetch('http://localhost:3000/api/company-co/unit-management', {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+
+        if (response.ok && data.success) {
+          const assignedUnits = Array.isArray(data.data?.currentCoordinatorUnits)
+            ? data.data.currentCoordinatorUnits
+            : []
+          const companyUnits = Array.isArray(data.data?.units) ? data.data.units : []
+          setCoordinatorUnits(assignedUnits)
+          setCompanyUnitCount(companyUnits.length)
+
+          setFilterUnit((current) => {
+            if (current === 'all') return current
+            return assignedUnits.some((unit) => unit.unit_id === current) ? current : 'all'
+          })
+        } else {
+          setCoordinatorUnits([])
+          setCompanyUnitCount(0)
+        }
+      } catch (error) {
+        console.error('Error fetching coordinator units:', error)
+        setCoordinatorUnits([])
+        setCompanyUnitCount(0)
+      }
+    }
+
+    fetchCoordinatorUnits()
+  }, [companyIdentifier])
 
   useEffect(() => {
     if (companyIdentifier) {
@@ -242,6 +282,10 @@ function RacmManagementDashboard() {
 
       if (filterFinancialYear !== 'all') {
         url += `&financial_year=${encodeURIComponent(filterFinancialYear)}`
+      }
+
+      if (filterUnit !== 'all') {
+        url += `&unit_id=${encodeURIComponent(filterUnit)}`
       }
       
       const response = await fetch(url, {
@@ -1109,6 +1153,9 @@ function RacmManagementDashboard() {
       const formIds = Array.from(selectedForms)
       let successCount = 0
       let failCount = 0
+      let deletedS3ObjectCount = 0
+      let deletedSampleDocRows = 0
+      let deletedUserDocRows = 0
 
       // Delete each form sequentially
       for (const formId of formIds) {
@@ -1122,6 +1169,9 @@ function RacmManagementDashboard() {
 
           if (response.ok && data.success) {
             successCount++
+            deletedS3ObjectCount += Number(data.deleted_documents?.s3_objects || 0)
+            deletedSampleDocRows += Number(data.deleted_documents?.sample_doc_rows || 0)
+            deletedUserDocRows += Number(data.deleted_documents?.user_uploaded_rows || 0)
           } else {
             failCount++
             console.error(`Failed to delete form ${formId}:`, data.message)
@@ -1133,7 +1183,11 @@ function RacmManagementDashboard() {
       }
 
       if (successCount > 0) {
-        toast.success(`Successfully deleted ${successCount} RACM(s)`)
+        const documentCount = deletedS3ObjectCount + deletedSampleDocRows + deletedUserDocRows
+        const documentMessage = documentCount > 0
+          ? ` Removed ${deletedS3ObjectCount} S3 document(s), ${deletedSampleDocRows} sample document row(s), and ${deletedUserDocRows} user-uploaded document row(s).`
+          : ''
+        toast.success(`Successfully deleted ${successCount} RACM(s).${documentMessage}`)
       }
       if (failCount > 0) {
         toast.error(`Failed to delete ${failCount} RACM(s)`)
@@ -1222,6 +1276,9 @@ function RacmManagementDashboard() {
   const handleActivityChange = (value) => {
     setFilterActive(value)
   }
+
+  const showUnitColumn = companyUnitCount > 1 && coordinatorUnits.length > 0
+  const showUnitFilter = coordinatorUnits.length > 1
 
   // Add click outside handler
   useEffect(() => {
@@ -1477,6 +1534,50 @@ function RacmManagementDashboard() {
               width: { xs: '100%', sm: 'auto' },
             }}
           >
+              {showUnitFilter && (
+                <FormControl
+                  variant="outlined"
+                  disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
+                  sx={{
+                    minWidth: '200px',
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'transparent',
+                      '& fieldset': {
+                        borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
+                      },
+                      '&:hover fieldset': {
+                        borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                      },
+                    },
+                    '& .MuiInputLabel-root': {
+                      color: theme.palette.text.primary,
+                    },
+                    '& .MuiSelect-root': {
+                      color: theme.palette.text.primary,
+                    },
+                  }}
+                >
+                  <InputLabel id="unit-filter-label">Unit</InputLabel>
+                  <Select
+                    labelId="unit-filter-label"
+                    id="unit-filter"
+                    value={filterUnit}
+                    label="Unit"
+                    onChange={(e) => setFilterUnit(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    {coordinatorUnits.map((unit) => (
+                      <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
+                        {unit.unit_name || unit.unit_id}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+
               {/* Business Process Filter */}
               <FormControl 
                 variant="outlined" 
@@ -1806,6 +1907,26 @@ function RacmManagementDashboard() {
                     >
                       Financial Year
                     </Box>
+                    {showUnitColumn && (
+                      <Box
+                        component="th"
+                        sx={{
+                          px: 2.5,
+                          py: 1.5,
+                          textAlign: 'left',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          color: theme.palette.text.secondary,
+                          width: '180px',
+                          minWidth: '160px',
+                          maxWidth: '220px',
+                        }}
+                      >
+                        Unit
+                      </Box>
+                    )}
                     <Box
                       component="th"
                       sx={{
@@ -1994,6 +2115,26 @@ function RacmManagementDashboard() {
                             {form.financial_year || 'N/A'}
                           </Box>
                         </Box>
+                        {showUnitColumn && (
+                          <Box
+                            component="td"
+                            sx={dataCellSx({
+                              px: 2.5,
+                              py: 2,
+                              width: '180px',
+                              minWidth: '160px',
+                              maxWidth: '220px',
+                              fontSize: '0.875rem',
+                              color: theme.palette.text.primary,
+                            })}
+                          >
+                            <Tooltip title={form.unit_name || form.unit_id || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                              <Box component="span" sx={dataCellTextSx}>
+                                {form.unit_name || form.unit_id || 'N/A'}
+                              </Box>
+                            </Tooltip>
+                          </Box>
+                        )}
                         <Box
                           component="td"
                           sx={{
@@ -3092,6 +3233,27 @@ function RacmManagementDashboard() {
             >
               Are you sure you want to delete the selected RACM(s)? This action cannot be undone.
             </DialogContentText>
+            <Box
+              sx={{
+                mt: 2,
+                p: 1.5,
+                borderRadius: 1.5,
+                border: '1px solid',
+                borderColor: theme.palette.error.main,
+                backgroundColor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.14 : 0.08),
+              }}
+            >
+              <Typography
+                variant="body2"
+                sx={{
+                  color: theme.palette.error.main,
+                  fontWeight: 700,
+                  lineHeight: 1.6,
+                }}
+              >
+                Warning: all associated sample documents and user-uploaded documents will be permanently removed from S3 and deleted from the document tables.
+              </Typography>
+            </Box>
             <Box sx={{ mt: 2 }}>
               <Typography
                 variant="body2"

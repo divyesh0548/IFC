@@ -68,7 +68,8 @@ const columnPatterns = [
   {
     keywords: ['risk','heat'],
     dbColumn: 'risk_heat',
-    priority: 2
+    priority: 2,
+    requireAllKeywords: true
   },
   {
     keywords: ['rights', 'obligations'],
@@ -191,6 +192,10 @@ function normalizeColumnName(excelColumnName) {
   // If we found a good match (at least 50% of keywords), return it
   if (bestMatch && bestScore >= 0.5) {
     return isIgnoredControlFormImportColumn(bestMatch) ? null : bestMatch;
+  }
+
+  if (hasKeywordMatch(normalized, 'risk') && !hasKeywordMatch(normalized, 'heat')) {
+    return 'risk_description';
   }
   
   // Fallback: convert to snake_case

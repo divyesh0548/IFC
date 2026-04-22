@@ -100,8 +100,8 @@ async function insertUserDocument(db, formId, docUrl) {
 
   const result = await db.query(
     `
-      INSERT INTO doc_uploaded_by_user (form_id, doc_uploaded_by_user)
-      VALUES ($1, $2)
+      INSERT INTO doc_uploaded_by_user (form_id, doc_uploaded_by_user, created_at)
+      VALUES ($1, $2, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
       RETURNING id, form_id, doc_uploaded_by_user, created_at
     `,
     [formId, value]
@@ -116,8 +116,8 @@ async function insertSampleDocument(db, formId, docUrl) {
 
   const result = await db.query(
     `
-      INSERT INTO sample_docs (form_id, sample_doc)
-      VALUES ($1, $2)
+      INSERT INTO sample_docs (form_id, sample_doc, created_at)
+      VALUES ($1, $2, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
       RETURNING id, form_id, sample_doc, created_at
     `,
     [formId, value]

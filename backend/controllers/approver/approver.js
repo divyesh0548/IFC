@@ -11,6 +11,36 @@ const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
 
 const APPROVAL_DECISION_CHANGE_WINDOW_MS = 15 * 24 * 60 * 60 * 1000;
 
+async function getApproverMappedUnits(approverEmail) {
+  const result = await pool.query(
+    `
+      SELECT
+        cum.company_identifier,
+        c.company_name,
+        cum.unit_id,
+        cum.unit_name,
+        cum.unit_address
+      FROM company_unit_master cum
+      LEFT JOIN companies c
+        ON c.company_identifier = cum.company_identifier
+      WHERE LOWER(TRIM(COALESCE(cum.approver_email_id, ''))) = LOWER(TRIM($1))
+      ORDER BY c.company_name NULLS LAST, cum.unit_name NULLS LAST, cum.unit_id
+    `,
+    [approverEmail]
+  );
+
+  return result.rows;
+}
+
+function scopedApproverRacmJoin(alias = 'cf') {
+  return `
+    INNER JOIN company_unit_master approver_units
+      ON approver_units.company_identifier = ${alias}.company_identifier
+     AND approver_units.unit_id = ${alias}.unit_id
+     AND LOWER(TRIM(COALESCE(approver_units.approver_email_id, ''))) = LOWER(TRIM($1))
+  `;
+}
+
 /**
  * Notify process owner of RACM Approved/Rejected (same content as initial approve/reject flow).
  */
@@ -104,7 +134,8 @@ async function getHomeStats(req, res) {
 
     const [
       approverResult,
-      companiesResult,
+      companyResult,
+      mappedUnits,
       usersResult,
       racmStatsResult,
     ] = await Promise.all([
@@ -117,44 +148,65 @@ async function getHomeStats(req, res) {
         `,
         [approverEmail]
       ),
-      pool.query('SELECT COUNT(*)::int AS count FROM companies'),
       pool.query(
         `
-          SELECT COUNT(*)::int AS count
-          FROM ifc_users
-          WHERE role NOT IN ('approver', 'siteadmin', 'company_co', 'auditor')
-        `
+          SELECT c.company_name
+          FROM ifc_users u
+          LEFT JOIN companies c ON c.company_identifier = u.company_identifier
+          WHERE u.email_id = $1
+          LIMIT 1
+        `,
+        [approverEmail]
       ),
-      pool.query(`
+      getApproverMappedUnits(approverEmail),
+      pool.query(
+        `
+          SELECT COUNT(DISTINCT u.id)::int AS count
+          FROM company_unit_master cum
+          INNER JOIN ifc_users u
+            ON u.company_identifier = cum.company_identifier
+           AND u.unit_id = cum.unit_id
+           AND u.role = 'user'
+          WHERE LOWER(TRIM(COALESCE(cum.approver_email_id, ''))) = LOWER(TRIM($1))
+        `,
+        [approverEmail]
+      ),
+      pool.query(
+        `
         SELECT
-          COUNT(*) FILTER (
-            WHERE active IS NOT NULL AND active != '' AND active != '0'
+          COUNT(DISTINCT cf.id) FILTER (
+            WHERE cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'
           )::int AS active_racms,
-          COUNT(*) FILTER (
-            WHERE active IS NOT NULL AND active != '' AND active != '0'
-              AND status = 'Approved'
+          COUNT(DISTINCT cf.id) FILTER (
+            WHERE cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'
+              AND cf.status = 'Approved'
           )::int AS approved_racms,
-          COUNT(*) FILTER (
-            WHERE active IS NOT NULL AND active != '' AND active != '0'
-              AND status = 'Rejected'
+          COUNT(DISTINCT cf.id) FILTER (
+            WHERE cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'
+              AND cf.status = 'Rejected'
           )::int AS rejected_racms,
-          COUNT(*) FILTER (
-            WHERE active IS NOT NULL AND active != '' AND active != '0'
-              AND status = 'sent for approval'
+          COUNT(DISTINCT cf.id) FILTER (
+            WHERE cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'
+              AND cf.status = 'sent for approval'
           )::int AS pending_racms,
-          COUNT(*) FILTER (
-            WHERE active IS NOT NULL AND active != '' AND active != '0'
-              AND status IN ('Approved', 'Rejected', 'sent for approval')
+          COUNT(DISTINCT cf.id) FILTER (
+            WHERE cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'
+              AND cf.status IN ('Approved', 'Rejected', 'sent for approval')
           )::int AS total_racms
-        FROM control_forms
-      `),
+        FROM control_forms cf
+        ${scopedApproverRacmJoin('cf')}
+      `,
+        [approverEmail]
+      ),
     ]);
 
     res.status(200).json({
       success: true,
       data: {
         approver_name: approverResult.rows[0]?.emp_name || '',
-        total_companies: companiesResult.rows[0]?.count || 0,
+        company_name: companyResult.rows[0]?.company_name || mappedUnits[0]?.company_name || '',
+        mapped_units: mappedUnits,
+        total_units: mappedUnits.length,
         total_users: usersResult.rows[0]?.count || 0,
         total_active_racms: racmStatsResult.rows[0]?.active_racms || 0,
         total_approved_racms: racmStatsResult.rows[0]?.approved_racms || 0,
@@ -196,13 +248,16 @@ async function getDashboard(req, res) {
 
 async function getPendingApprovals(req, res) {
   try {
+    const approverEmail = req.approver.email_id;
     const query = `
-      SELECT * FROM control_forms 
-      WHERE status = 'sent for approval'
-      ORDER BY created_at DESC
+      SELECT cf.*
+      FROM control_forms cf
+      ${scopedApproverRacmJoin('cf')}
+      WHERE cf.status = 'sent for approval'
+      ORDER BY cf.created_at DESC
     `;
 
-    const result = await pool.query(query);
+    const result = await pool.query(query, [approverEmail]);
     await attachControlFormDocuments(pool, result.rows);
 
     res.status(200).json({
@@ -259,11 +314,19 @@ async function approveForm(req, res) {
     );
 
     updateValues.push(form_id);
+    updateValues.push(approver.email_id);
 
     const updateQuery = `
       UPDATE control_forms 
       SET ${updateFields.join(', ')}
       WHERE form_id = $${paramIndex}
+        AND EXISTS (
+          SELECT 1
+          FROM company_unit_master approver_units
+          WHERE approver_units.company_identifier = control_forms.company_identifier
+            AND approver_units.unit_id = control_forms.unit_id
+            AND LOWER(TRIM(COALESCE(approver_units.approver_email_id, ''))) = LOWER(TRIM($${paramIndex + 1}))
+        )
       RETURNING *
     `;
 
@@ -272,7 +335,7 @@ async function approveForm(req, res) {
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'RACM not found',
+        message: 'RACM not found or not assigned to this approver',
       });
     }
 
@@ -318,9 +381,17 @@ async function changeApprovalDecision(req, res) {
       });
     }
 
-    const currentResult = await pool.query('SELECT * FROM control_forms WHERE form_id = $1', [form_id]);
+    const currentResult = await pool.query(
+      `
+        SELECT cf.*
+        FROM control_forms cf
+        ${scopedApproverRacmJoin('cf')}
+        WHERE cf.form_id = $2
+      `,
+      [approver.email_id, form_id]
+    );
     if (currentResult.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'RACM not found' });
+      return res.status(404).json({ success: false, message: 'RACM not found or not assigned to this approver' });
     }
 
     const row = currentResult.rows[0];
@@ -404,13 +475,20 @@ async function changeApprovalDecision(req, res) {
              reason_by_approver = $2,
              approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
          WHERE form_id = $3
+           AND EXISTS (
+             SELECT 1
+             FROM company_unit_master approver_units
+             WHERE approver_units.company_identifier = control_forms.company_identifier
+               AND approver_units.unit_id = control_forms.unit_id
+               AND LOWER(TRIM(COALESCE(approver_units.approver_email_id, ''))) = LOWER(TRIM($4))
+           )
          RETURNING *`,
-        [status, reasonFinal, form_id]
+        [status, reasonFinal, form_id, approver.email_id]
       );
 
       if (updateResult.rows.length === 0) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ success: false, message: 'RACM not found' });
+        return res.status(404).json({ success: false, message: 'RACM not found or not assigned to this approver' });
       }
 
       await client.query('COMMIT');
@@ -453,19 +531,22 @@ async function changeApprovalDecision(req, res) {
 async function getControlForms(req, res) {
   try {
     const { status, active } = req.query;
+    const approverEmail = req.approver.email_id;
 
     let query = `
       SELECT 
         cf.*,
         c.company_name,
-        NULLIF(TRIM(u.emp_name), '') AS control_owner_name
+        NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
+        NULLIF(TRIM(approver_units.unit_name), '') AS unit_name
       FROM control_forms cf
+      ${scopedApproverRacmJoin('cf')}
       LEFT JOIN companies c ON cf.company_identifier = c.company_identifier
       LEFT JOIN ifc_users u ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
       WHERE 1=1
     `;
-    const queryParams = [];
-    let paramIndex = 1;
+    const queryParams = [approverEmail];
+    let paramIndex = 2;
 
     const allowedStatuses = ['sent for approval', 'Approved', 'Rejected'];
 
@@ -511,24 +592,27 @@ async function getControlForms(req, res) {
 async function getControlFormById(req, res) {
   try {
     const { form_id } = req.params;
+    const approverEmail = req.approver.email_id;
 
     const query = `
       SELECT
         cf.*,
         c.company_name,
-        NULLIF(TRIM(u.emp_name), '') AS control_owner_name
+        NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
+        NULLIF(TRIM(approver_units.unit_name), '') AS unit_name
       FROM control_forms cf
+      ${scopedApproverRacmJoin('cf')}
       LEFT JOIN companies c ON cf.company_identifier = c.company_identifier
       LEFT JOIN ifc_users u
         ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
-      WHERE cf.form_id = $1
+      WHERE cf.form_id = $2
     `;
-    const result = await pool.query(query, [form_id]);
+    const result = await pool.query(query, [approverEmail, form_id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'RACM not found',
+        message: 'RACM not found or not assigned to this approver',
       });
     }
 
@@ -551,12 +635,22 @@ async function getControlFormById(req, res) {
 async function getControlFormHistory(req, res) {
   try {
     const { form_id } = req.params;
+    const approverEmail = req.approver.email_id;
 
-    const exists = await pool.query('SELECT 1 FROM control_forms WHERE form_id = $1 LIMIT 1', [form_id]);
+    const exists = await pool.query(
+      `
+        SELECT 1
+        FROM control_forms cf
+        ${scopedApproverRacmJoin('cf')}
+        WHERE cf.form_id = $2
+        LIMIT 1
+      `,
+      [approverEmail, form_id]
+    );
     if (exists.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'RACM not found',
+        message: 'RACM not found or not assigned to this approver',
       });
     }
 
@@ -586,6 +680,24 @@ async function getControlFormHistory(req, res) {
 async function getRacmAuditLogs(req, res) {
   try {
     const { form_id } = req.params;
+    const approverEmail = req.approver.email_id;
+    const exists = await pool.query(
+      `
+        SELECT 1
+        FROM control_forms cf
+        ${scopedApproverRacmJoin('cf')}
+        WHERE cf.form_id = $2
+        LIMIT 1
+      `,
+      [approverEmail, form_id]
+    );
+    if (exists.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found or not assigned to this approver',
+      });
+    }
+
     const query = `
       SELECT id, timestamp, action, user_email_id, form_id, ref_data
       FROM audit_logs_racm

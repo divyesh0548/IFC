@@ -37,4 +37,30 @@ Rejection history will be populated even if it is a change of decision by approv
 
 
 
+New Unit based IFC Testing model. 
+
+1. Company will have sub-units. If not, then there will be at least one unit by default.
+
+2. Each unit can have different company coordinator and approvers. One coordinator and approver can be assigned to multiple units but not vice-versa.
+
+3. Company Coordinator will manage the unit mapping. Also Unit, Approver and Company Coordinator creation.
+
+4. Users will be seperated based on unit.
+
+5. One RACM will only belong to one Unit of the company.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

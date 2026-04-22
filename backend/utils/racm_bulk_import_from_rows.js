@@ -143,6 +143,7 @@ const MAPPABLE_DB_COLUMNS = new Set([
 const SERVER_FILLED_DB_COLUMNS = new Set([
   'company_identifier',
   'form_id',
+  'unit_id',
   'business_process',
   'financial_year',
   'due_date',
@@ -188,6 +189,7 @@ const INSERT_COLUMNS = [
   'control_type_ma',
   'form_id',
   'company_identifier',
+  'unit_id',
   'business_process',
   'financial_year',
   'sample_required',
@@ -270,6 +272,7 @@ async function insertRacmRowsFromTransformedData(client, options) {
     financialYear,
     fileDueDate,
     fileReminderFrequency,
+    unitId,
   } = options;
 
   const columnList = INSERT_COLUMNS.join(', ');
@@ -320,6 +323,7 @@ async function insertRacmRowsFromTransformedData(client, options) {
       const values = INSERT_COLUMNS.map((col) => {
         if (col === 'company_identifier') return companyIdentifier;
         if (col === 'form_id') return formId;
+        if (col === 'unit_id') return unitId || null;
         if (col === 'business_process') return businessProcess;
         if (col === 'financial_year') {
           return financialYear || null;

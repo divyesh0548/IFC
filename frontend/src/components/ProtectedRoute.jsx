@@ -1,17 +1,16 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 
 function ProtectedRoute({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(null)
+  const [requiresPasswordUpdate, setRequiresPasswordUpdate] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [verifiedPath, setVerifiedPath] = useState(null)
   const location = useLocation()
-  const hasVerifiedRef = useRef(false)
 
   useEffect(() => {
-    // Only verify on initial mount, not on every route change
-    if (hasVerifiedRef.current) {
-      return
-    }
+    let cancelled = false
+    const pathBeingVerified = location.pathname
 
     const verifyToken = async () => {
       setLoading(true)
@@ -23,28 +22,36 @@ function ProtectedRoute({ children }) {
 
         const data = await response.json()
 
+        if (cancelled) return
+
         if (response.ok && data.success && data.user?.role === 'siteadmin') {
           setIsAuthenticated(true)
-          hasVerifiedRef.current = true
+          setRequiresPasswordUpdate(Boolean(data.requiresPasswordUpdate))
         } else {
           setIsAuthenticated(false)
-          hasVerifiedRef.current = false
+          setRequiresPasswordUpdate(false)
         }
       } catch (error) {
+        if (cancelled) return
         console.error('Token verification error:', error)
         setIsAuthenticated(false)
-        hasVerifiedRef.current = false
+        setRequiresPasswordUpdate(false)
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setVerifiedPath(pathBeingVerified)
+          setLoading(false)
+        }
       }
     }
 
     verifyToken()
-    // Only verify on mount, not on every pathname change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
-  if (loading) {
+    return () => {
+      cancelled = true
+    }
+  }, [location.pathname])
+
+  if (loading || verifiedPath !== location.pathname) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-primary">
         <div className="text-secondary text-lg">Loading...</div>
@@ -54,6 +61,10 @@ function ProtectedRoute({ children }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />
+  }
+
+  if (requiresPasswordUpdate && location.pathname !== '/update-password') {
+    return <Navigate to="/update-password" replace state={{ from: location }} />
   }
 
   return children

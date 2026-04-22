@@ -1,21 +1,19 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
 
 function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
   const [isAuthenticated, setIsAuthenticated] = useState(null)
   const [userRole, setUserRole] = useState(null)
+  const [requiresPasswordUpdate, setRequiresPasswordUpdate] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [verifiedPath, setVerifiedPath] = useState(null)
   const location = useLocation()
-  const hasVerifiedRef = useRef(false)
   useSyncGlobalLoading(loading)
 
   useEffect(() => {
-    // Only verify on initial mount, not on every route change
-    // Skip verification if we've already verified successfully
-    if (hasVerifiedRef.current) {
-      return
-    }
+    let cancelled = false
+    const pathBeingVerified = location.pathname
 
     const verifyToken = async () => {
       setLoading(true)
@@ -28,33 +26,40 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
 
         const data = await response.json()
 
+        if (cancelled) return
+
         if (response.ok && data.success) {
           setIsAuthenticated(true)
           setUserRole(data.user.role)
-          setLoading(false)
-          hasVerifiedRef.current = true
+          setRequiresPasswordUpdate(Boolean(data.requiresPasswordUpdate))
         } else {
           // Verification failed
           setIsAuthenticated(false)
           setUserRole(null)
-          hasVerifiedRef.current = false
-          setLoading(false)
+          setRequiresPasswordUpdate(false)
         }
       } catch (error) {
+        if (cancelled) return
         console.error('Token verification error:', error)
         setIsAuthenticated(false)
         setUserRole(null)
-        hasVerifiedRef.current = false
-        setLoading(false)
+        setRequiresPasswordUpdate(false)
+      } finally {
+        if (!cancelled) {
+          setVerifiedPath(pathBeingVerified)
+          setLoading(false)
+        }
       }
     }
 
     verifyToken()
-    // Only verify on mount, not on every pathname change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
-  if (loading) {
+    return () => {
+      cancelled = true
+    }
+  }, [location.pathname])
+
+  if (loading || verifiedPath !== location.pathname) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-primary">
         <div className="text-secondary text-lg">Loading...</div>
@@ -67,11 +72,15 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
     return <Navigate to="/login" replace />
   }
 
+  if (requiresPasswordUpdate && location.pathname !== '/update-password') {
+    return <Navigate to="/update-password" replace state={{ from: location }} />
+  }
+
   // Check if user role is allowed
   if (allowedRoles.length > 0 && !allowedRoles.includes(userRole)) {
     // Redirect based on role to appropriate dashboard
     const roleDashboards = {
-      'user': '/user/dashboard',
+      'user': '/user/home',
       'company_co': '/company_co/home',
       'approver': '/approver/home',
       'siteadmin': '/siteadmin/dashboard',

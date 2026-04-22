@@ -83,6 +83,41 @@ function findHeaderRow(worksheet) {
   }
 }
 
+function findManualHeaderRow(worksheet, headerRowNumber) {
+  const excelRowNumber = Number(headerRowNumber)
+  if (!Number.isInteger(excelRowNumber) || excelRowNumber < 1) {
+    throw new Error('Header row number must be 1 or greater.')
+  }
+
+  const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1')
+  const row = excelRowNumber - 1
+  if (row > range.e.r) {
+    throw new Error(`Header row ${excelRowNumber} is outside the selected sheet range.`)
+  }
+
+  let firstNonEmptyCol = -1
+  let lastNonEmptyCol = -1
+
+  for (let col = range.s.c; col <= range.e.c; col++) {
+    const cellAddress = XLSX.utils.encode_cell({ r: row, c: col })
+    const cell = worksheet[cellAddress]
+    if (cell && cell.v !== undefined && cell.v !== null && String(cell.v).trim() !== '') {
+      if (firstNonEmptyCol === -1) firstNonEmptyCol = col
+      lastNonEmptyCol = col
+    }
+  }
+
+  if (firstNonEmptyCol === -1) {
+    throw new Error(`Header row ${excelRowNumber} does not contain any headers.`)
+  }
+
+  return {
+    row,
+    startCol: firstNonEmptyCol,
+    endCol: lastNonEmptyCol,
+  }
+}
+
 function extractHeaders(worksheet, headerLocation) {
   const headers = []
   const headerRow = headerLocation.row
@@ -125,12 +160,14 @@ function extractDataRows(worksheet, headers, headerLocation) {
   return dataRows
 }
 
-function parseSheet(worksheet, sheetName) {
+function parseSheet(worksheet, sheetName, options = {}) {
   if (!worksheet['!ref']) {
     return []
   }
 
-  const headerLocation = findHeaderRow(worksheet)
+  const headerLocation = options.headerRowNumber
+    ? findManualHeaderRow(worksheet, options.headerRowNumber)
+    : findHeaderRow(worksheet)
   const headers = extractHeaders(worksheet, headerLocation)
   const dataRows = extractDataRows(worksheet, headers, headerLocation)
 
@@ -145,7 +182,7 @@ function parseSheet(worksheet, sheetName) {
  * @param {ArrayBuffer} arrayBuffer — from File.arrayBuffer()
  * @returns {Array<Record<string, string|null>>} Raw row objects keyed by Excel header labels
  */
-export function parseRacmExcelFromArrayBuffer(arrayBuffer) {
+export function parseRacmExcelFromArrayBuffer(arrayBuffer, options = {}) {
   try {
     const workbook = XLSX.read(arrayBuffer, { type: 'array' })
     const sheetNames = workbook.SheetNames
@@ -160,7 +197,7 @@ export function parseRacmExcelFromArrayBuffer(arrayBuffer) {
       const sheetName = sheetNames[i]
       const worksheet = workbook.Sheets[sheetName]
       try {
-        const sheetData = parseSheet(worksheet, sheetName)
+        const sheetData = parseSheet(worksheet, sheetName, options)
         allDataRows.push(...sheetData)
       } catch {
         continue

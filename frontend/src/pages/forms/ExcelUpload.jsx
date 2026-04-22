@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { alpha, useTheme } from '@mui/material/styles'
 import { useNavigate } from 'react-router-dom'
 import Button from '@mui/material/Button'
@@ -41,9 +41,13 @@ function ExcelUpload() {
   const [preview, setPreview] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [businessProcess, setBusinessProcess] = useState('')
+  const [unitId, setUnitId] = useState('')
+  const [unitOptions, setUnitOptions] = useState([])
   const [financialYear, setFinancialYear] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [reminderFrequency, setReminderFrequency] = useState('')
+  const [headerMode, setHeaderMode] = useState('auto')
+  const [headerRowNumber, setHeaderRowNumber] = useState('')
   const [mappingDialogOpen, setMappingDialogOpen] = useState(false)
   const [pendingImport, setPendingImport] = useState(null)
   const accentColor = theme.palette.primary.main
@@ -54,9 +58,12 @@ function ExcelUpload() {
     !!file ||
     !!preview ||
     String(businessProcess || '').trim() !== '' ||
+    String(unitId || '').trim() !== '' ||
     String(financialYear || '').trim() !== '' ||
     String(dueDate || '').trim() !== '' ||
     String(reminderFrequency || '').trim() !== '' ||
+    headerMode !== 'auto' ||
+    String(headerRowNumber || '').trim() !== '' ||
     !!pendingImport
   const hasReminderValues = String(dueDate || '').trim() !== '' || String(reminderFrequency || '').trim() !== ''
 
@@ -82,6 +89,35 @@ function ExcelUpload() {
     const endYearShort = String((startYear + 1) % 100).padStart(2, '0')
     return `${startYear}-${endYearShort}`
   })
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchUnits = async () => {
+      try {
+        const response = await fetch('http://localhost:3000/api/company-co/unit-management', {
+          credentials: 'include',
+        })
+        const result = await response.json()
+
+        if (!cancelled && response.ok && result?.success) {
+          const units = Array.isArray(result.data?.currentCoordinatorUnits)
+            ? result.data.currentCoordinatorUnits
+            : []
+          setUnitOptions(units)
+          setUnitId((current) => current || units[0]?.unit_id || '')
+        }
+      } catch (error) {
+        console.error('Failed to fetch units for RACM upload:', error)
+      }
+    }
+
+    fetchUnits()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const getTomorrowDateString = () => {
     const d = new Date()
@@ -188,9 +224,12 @@ function ExcelUpload() {
     setFile(null)
     setPreview(null)
     setBusinessProcess('')
+    setUnitId(unitOptions[0]?.unit_id || '')
     setFinancialYear('')
     setDueDate('')
     setReminderFrequency('')
+    setHeaderMode('auto')
+    setHeaderRowNumber('')
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (formEvent?.target && typeof formEvent.target.reset === 'function') {
       formEvent.target.reset()
@@ -203,6 +242,7 @@ function ExcelUpload() {
       rows,
       businessProcess: bp,
       financialYear: fy,
+      unitId: selectedUnitId,
       dueDateValue,
       reminderFrequencyValue,
     } = ctx
@@ -212,6 +252,7 @@ function ExcelUpload() {
       const payload = {
         businessProcess: bp,
         financialYear: fy,
+        unit_id: selectedUnitId,
         rows,
       }
       if (dueDateValue && reminderFrequencyValue) {
@@ -270,6 +311,11 @@ function ExcelUpload() {
       return
     }
 
+    if (!unitId) {
+      toast.error('Please select a unit')
+      return
+    }
+
     if (!financialYear) {
       toast.error('Please select a financial year')
       return
@@ -282,10 +328,21 @@ function ExcelUpload() {
       return
     }
 
+    const headerRowValue = String(headerRowNumber || '').trim()
+    const manualHeaderRowNumber = headerMode === 'manual' ? Number(headerRowValue) : null
+    if (headerMode === 'manual') {
+      if (!headerRowValue || !Number.isInteger(manualHeaderRowNumber) || manualHeaderRowNumber < 1) {
+        toast.error('Please enter a valid header row number starting from 1.')
+        return
+      }
+    }
+
     let rows
     try {
       const buffer = await file.arrayBuffer()
-      rows = parseRacmExcelFromArrayBuffer(buffer)
+      rows = parseRacmExcelFromArrayBuffer(buffer, {
+        headerRowNumber: manualHeaderRowNumber,
+      })
     } catch (parseErr) {
       toast.error(parseErr.message || 'Could not read the Excel file.')
       return
@@ -299,6 +356,7 @@ function ExcelUpload() {
     setPendingImport({
       rows,
       businessProcess,
+      unitId,
       financialYear,
       dueDateValue,
       reminderFrequencyValue,
@@ -333,6 +391,7 @@ function ExcelUpload() {
       const sessionPayload = {
         rows: p.rows,
         businessProcess: p.businessProcess,
+        unitId: p.unitId,
         financialYear: p.financialYear,
         fileName: p.fileName || '',
       }
@@ -672,7 +731,7 @@ function ExcelUpload() {
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+                  gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
                   gap: 2,
                   mb: 2.5,
                 }}
@@ -689,6 +748,23 @@ function ExcelUpload() {
                     {businessProcessOptions.map((option) => (
                       <MenuItem key={option} value={option}>
                         {option}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <FormControl fullWidth required disabled={loading || unitOptions.length === 0} variant="outlined">
+                  <InputLabel id="unit-label">Unit</InputLabel>
+                  <Select
+                    labelId="unit-label"
+                    id="unit"
+                    value={unitId}
+                    label="Unit"
+                    onChange={(e) => setUnitId(e.target.value)}
+                  >
+                    {unitOptions.map((unit) => (
+                      <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
+                        {unit.unit_name || unit.unit_id}
                       </MenuItem>
                     ))}
                   </Select>
@@ -806,6 +882,59 @@ function ExcelUpload() {
                 </Box>
               </Paper>
 
+              <Paper
+                elevation={0}
+                sx={{
+                  p: { xs: 2, sm: 2.2 },
+                  mb: 2.5,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor:
+                    theme.palette.mode === 'dark'
+                      ? alpha(theme.palette.common.white, 0.07)
+                      : alpha(theme.palette.divider, 0.95),
+                  backgroundColor: theme.palette.mode === 'dark'
+                    ? alpha(theme.palette.common.white, 0.025)
+                    : alpha('#f8fafc', 0.85),
+                }}
+              >
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(160px, 0.5fr)' },
+                    gap: 2,
+                    alignItems: 'start',
+                  }}
+                >
+                  <FormControl fullWidth disabled={loading} variant="outlined">
+                    <InputLabel id="header-mode-label">Header Location</InputLabel>
+                    <Select
+                      labelId="header-mode-label"
+                      value={headerMode}
+                      label="Header Location"
+                      onChange={(e) => {
+                        setHeaderMode(e.target.value)
+                        if (e.target.value === 'auto') setHeaderRowNumber('')
+                      }}
+                    >
+                      <MenuItem value="auto">Auto detect header</MenuItem>
+                      <MenuItem value="manual">Use Excel row number</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    label="Header Row Number"
+                    type="number"
+                    value={headerRowNumber}
+                    onChange={(e) => setHeaderRowNumber(e.target.value)}
+                    disabled={loading || headerMode === 'auto'}
+                    required={headerMode === 'manual'}
+                    inputProps={{ min: 1, step: 1 }}
+                    helperText="Use Excel row numbering, starting from 1."
+                    fullWidth
+                  />
+                </Box>
+              </Paper>
+
               <Box
                 sx={{
                   display: 'flex',
@@ -815,7 +944,7 @@ function ExcelUpload() {
               >
                 <Button
                   type="submit"
-                  disabled={loading || mappingDialogOpen || !file || !businessProcess || !financialYear}
+                  disabled={loading || mappingDialogOpen || !file || !businessProcess || !unitId || !financialYear}
                   variant="contained"
                   color="secondary"
                   sx={{

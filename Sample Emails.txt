@@ -1,0 +1,135 @@
+====================================== User Creation ===============================
+
+Subject : Welcome to IFC - Let's get started
+
+Body : 
+
+Hi User1xyz,
+
+Hope you're having a good week!
+
+I am Divyesh Parmar at XYZ company organization. We have been engaged to carry out an internal financial control review. This is a yearly exercise. If you have not participated before, we’ve put together a short introductory video (just a few minutes) to get you up to speed. You can watch it here: [Video Link]
+
+Here is a brief overview of Internal Financial Controls.
+
+Internal financial controls are the everyday steps we take to keep our financial information accurate and safe. IFC testing checks whether those steps are working.
+
+The control flow is as follows: You upload evidence that you've performed the control. Our tester reviews it and passes or fails the control based on whether it is working effectively. That's it!
+
+Your evidence is the proof that shows our controls are doing their job.
+
+Here are your login credentials. (This is a temporary password, please change it after logging in.)
+
+Email ID: user1xyz@gmail.com
+Password: 619c0cf05d5b51fd
+Portal: http://localhost:5173
+
+Thanks & Regards,
+Divyesh Parmar
+Sharp and Tannan Associates
+
+
+
+
+
+
+
+
+
+================================= RACM Asignment ====================================
+
+Subject : Your IFC testing for Capital Expenditure is ready
+
+Body : 
+
+Hi User1xyz,
+
+Hope you're having a good week!
+
+I'm reaching out because your Internal Financial Controls assignment for Capital Expenditure is now ready in the system. Nothing complicated; we just need your help to keep things moving.
+
+Here's what we need from you:
+
+1. You'll see the risk and control matrix from last year. Take a quick look through from here (View of the Risk & Control key issues) especially the risks we identified and the controls we put in place. You'll also spot the evidence that was submitted last year, which should give you a good sense of what we're looking for. (You will be able to download the evidence that was submitted last year.)
+
+2. Upload the evidence for this year's testing against each control. The period and the amount of samples can be viewed in the RACM detail page.
+
+What happens next?
+
+Once you submit your evidence, our tester will review it to check if the control is operating effectively. They'll either pass or fail the control based on what they see. So the clearer your evidence, the smoother that review goes!
+
+Deadline: TBD
+
+Access your RACM: http://localhost:5173/user/form/QZPF8VZ8NFF1LL6
+
+Portal: http://localhost:5173
+
+Just shout if you hit any snags or have questions or you have any feedback on the performance of the controls or have noted any significant breaches; I'm happy to help.
+
+Thanks for cooperating.
+
+Regards,
+Divyesh Parmar
+XYZ company
+
+
+
+
+
+
+
+=============================== Approver Creation ==================================
+
+Subject : Welcome to XYZ company - Your Temporary Login Credentials
+
+Body : 
+
+Dear Approver,
+
+Your company account has been created successfully.
+
+Company: XYZ company
+
+Your temporary login credentials:
+Email: approver1@gmail.com
+Temporary Password: 1fe90f5ec0834246
+
+IMPORTANT: Please login using these credentials and update your password immediately for security purposes.
+
+Login URL: http://localhost:5173
+
+After logging in, you will be prompted to update your temporary password to a permanent one.
+
+Best regards,
+IFC System
+
+
+
+
+
+
+
+
+
+============================== Reminder Email for RACM Submission (to user) ==================================
+
+Subject : Reminder: RACM pending – Financial Statement Closure Process
+
+Body : 
+
+Hi,
+
+This is a reminder that your RACM (Risk and Control Matrix) is pending.
+
+Control: Testing of process owner on excel file upload. Also reminder frequency
+Business Process: Financial Statement Closure Process
+Due date: 2026-03-29
+
+Access your RACM: http://localhost:5173/user/form/CFC2OGGFYB2ZXE3
+
+Portal: http://localhost:5173
+
+Please complete and submit your evidence at your earliest convenience.
+
+Regards,
+IFC System

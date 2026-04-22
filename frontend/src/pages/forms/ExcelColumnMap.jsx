@@ -56,7 +56,7 @@ const SIMPLE_COLUMN_MAPPING = {
 const COLUMN_PATTERNS = [
   { keywords: ['account', 'balance', 'disclosure'], dbColumn: 'area', priority: 1 },
   { keywords: ['business', 'cycle', 'process'], dbColumn: 'business_process', priority: 1 },
-  { keywords: ['risk', 'heat'], dbColumn: 'risk_heat', priority: 2 },
+  { keywords: ['risk', 'heat'], dbColumn: 'risk_heat', priority: 2, requireAllKeywords: true },
   { keywords: ['rights', 'obligations'], dbColumn: 'rights_and_obligation', priority: 1 },
   { keywords: ['presentation', 'disclosure'], dbColumn: 'presentation_and_disclosure', priority: 1 },
   {
@@ -119,6 +119,10 @@ function detectDbColumnFromHeader(excelHeader) {
   }
   if (bestMatch && bestScore >= 0.5) return bestMatch
 
+  if (hasKeywordMatch(normalized, 'risk') && !hasKeywordMatch(normalized, 'heat')) {
+    return 'risk_description'
+  }
+
   return normalized.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || null
 }
 
@@ -128,6 +132,22 @@ function collectHeaders(rows) {
       Object.keys(row || {}).forEach((k) => set.add(k))
     })
   return [...set]
+}
+
+function buildUniqueAutoDetectedByHeader(headers) {
+  const usedFields = new Set()
+  const out = {}
+  headers.forEach((header) => {
+    const detected = detectDbColumnFromHeader(header)
+    const resolved = detected && MAPPABLE_SET.has(detected) ? detected : null
+    if (resolved && !usedFields.has(resolved)) {
+      out[header] = resolved
+      usedFields.add(resolved)
+    } else {
+      out[header] = null
+    }
+  })
+  return out
 }
 
 /**
@@ -244,7 +264,7 @@ function ExcelColumnMap() {
         return
       }
       const data = JSON.parse(raw)
-      if (!data?.rows?.length || !data.businessProcess || !data.financialYear) {
+      if (!data?.rows?.length || !data.businessProcess || !data.financialYear || !data.unitId) {
         toast.error('Invalid import session.')
         sessionStorage.removeItem(RACM_BULK_IMPORT_SESSION_KEY)
         navigate('/company_co/upload-excel', { replace: true })
@@ -252,11 +272,10 @@ function ExcelColumnMap() {
       }
       setPayload(data)
       const hdrs = collectHeaders(data.rows)
+      const uniqueAutoDetected = buildUniqueAutoDetectedByHeader(hdrs)
       const init = {}
       hdrs.forEach((h) => {
-        const detected = detectDbColumnFromHeader(h)
-        const resolved = detected && MAPPABLE_SET.has(detected) ? detected : null
-        init[h] = resolved ? AUTO : SKIP
+        init[h] = uniqueAutoDetected[h] ? AUTO : SKIP
       })
       initialSelectionsRef.current = init
       setSelections(init)
@@ -287,13 +306,18 @@ function ExcelColumnMap() {
     [fieldOptions]
   )
   const autoDetectedByHeader = useMemo(() => {
+    return buildUniqueAutoDetectedByHeader(headers)
+  }, [headers])
+  const mappedFieldByHeader = useMemo(() => {
+    if (!selections) return {}
     const out = {}
     headers.forEach((header) => {
-      const detected = detectDbColumnFromHeader(header)
-      out[header] = detected && MAPPABLE_SET.has(detected) ? detected : null
+      out[header] = getEffectiveMappedField(header, selections, autoDetectedByHeader)
     })
     return out
-  }, [headers])
+  }, [headers, selections, autoDetectedByHeader])
+  const isFieldUsedByAnotherHeader = (field, currentHeader) =>
+    headers.some((header) => header !== currentHeader && mappedFieldByHeader[header] === field)
 
   const handleBack = () => {
     sessionStorage.removeItem(RACM_BULK_IMPORT_SESSION_KEY)
@@ -324,6 +348,7 @@ function ExcelColumnMap() {
     const body = {
       businessProcess: payload.businessProcess,
       financialYear: payload.financialYear,
+      unit_id: payload.unitId,
       rows: payload.rows,
       column_mapping,
     }
@@ -682,7 +707,11 @@ function ExcelColumnMap() {
                       </MenuItem>
                       <MenuItem value={SKIP}>Skip — do not import</MenuItem>
                       {fieldOptions.map((opt) => (
-                        <MenuItem key={opt.value} value={opt.value}>
+                        <MenuItem
+                          key={opt.value}
+                          value={opt.value}
+                          disabled={isFieldUsedByAnotherHeader(opt.value, header)}
+                        >
                           {opt.label}
                         </MenuItem>
                       ))}

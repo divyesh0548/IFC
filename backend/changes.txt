@@ -1,13 +1,4 @@
 
-In RACM assignment display user email ID as well as name.
-
-Create a new column in excel file for process owner. It can be empty in some case. But form can't become active without user assignment. On upload if it is empty then diaply warning, and on set Active display error.
-
-
-Last 3 columns will only be filled by approver. After they are filled, it will be visible to users and coordinator.
-
-User remarks is not mendatory.
-
 
 Provide 2 columns to company co : Due date and Reminder frequency. (These are mendatory and included in bulk upload) Can be empty during bulk upload, before RACm assignment these are mendatory.
 
@@ -125,10 +116,23 @@ There can be multiple sample document in a RACM and also document uploaded by us
 make user : yugma and mayank sir 
 
 
-Create a user role with view only rights.
+Create a user role with view only rights. (Auditor) 
 
-Multiple process owners ?
+What restrictions to impose for uploading the sample document?
 
-Multiple approvers?
+Generate sample documents dates/intervals from past date of the date of RACM creation. (Do not include any future date)
 
-New fields "Other Affected Account(s)", "Control Name"
+A company can have multiple units for easy management. Units will be created by company coordinator. By defaul a company will have a main unit.
+
+Company coordinator can create approver for comapny, user and another company coordinator.
+
+There will be no centralized approver from now on.
+
+
+
+Pending Prompt for Codex.
+
+
+
+
+3. In frontend, hardcoded backend url is used. .env is created, so user url from that file.

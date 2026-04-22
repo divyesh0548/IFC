@@ -30,18 +30,19 @@ console.log(`S3 Client initialized - Region: ${AWS_REGION}, Bucket: ${BUCKET_NAM
  * @param {Buffer} fileBuffer - The file buffer to upload
  * @param {string} fileName - The original file name
  * @param {string} folderPath - The folder path in S3 (e.g., 'IFC/control_form_excel_files')
+ * @param {object} options - Upload options
+ * @param {boolean} options.preserveFileName - Store the object with the original file name instead of a generated name
  * @returns {Promise<string>} - The S3 key (full path) of the uploaded file
  */
-async function uploadFileToS3(fileBuffer, fileName, folderPath = 'IFC/control_form_excel_files') {
+async function uploadFileToS3(fileBuffer, fileName, folderPath = 'IFC/control_form_excel_files', options = {}) {
   try {
-    // Generate unique filename with timestamp
-    const timestamp = Date.now();
-    const randomSuffix = Math.round(Math.random() * 1E9);
-    const ext = fileName.substring(fileName.lastIndexOf('.'));
-    const uniqueFileName = `${timestamp}-${randomSuffix}${ext}`;
+    const originalFileName = pathSafeFileName(fileName);
+    const s3FileName = options.preserveFileName
+      ? originalFileName
+      : buildUniqueFileName(originalFileName);
     
     // Construct S3 key (full path)
-    const s3Key = `${folderPath}/${uniqueFileName}`;
+    const s3Key = `${folderPath}/${s3FileName}`;
     
     // Upload to S3
     const command = new PutObjectCommand({
@@ -59,6 +60,21 @@ async function uploadFileToS3(fileBuffer, fileName, folderPath = 'IFC/control_fo
     console.error('Error uploading file to S3:', error);
     throw new Error(`Failed to upload file to S3: ${error.message}`);
   }
+}
+
+function pathSafeFileName(fileName) {
+  const normalized = String(fileName || 'uploaded_file').replace(/\\/g, '/');
+  const parts = normalized.split('/');
+  const baseName = parts[parts.length - 1] || 'uploaded_file';
+  return baseName.trim() || 'uploaded_file';
+}
+
+function buildUniqueFileName(fileName) {
+  const timestamp = Date.now();
+  const randomSuffix = Math.round(Math.random() * 1E9);
+  const extIndex = fileName.lastIndexOf('.');
+  const ext = extIndex >= 0 ? fileName.substring(extIndex) : '';
+  return `${timestamp}-${randomSuffix}${ext}`;
 }
 
 /**

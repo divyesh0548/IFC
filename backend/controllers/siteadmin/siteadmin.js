@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const { pool } = require('../../utils/db');
 const { sendEmail } = require('../../utils/send_email');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
+const { deleteFileFromS3 } = require('../../utils/s3Upload');
+const { getControlFormDocumentRows } = require('../../utils/racm_documents');
 
 // Helper function to generate company identifier
 function generateCompanyIdentifier(companyName) {
@@ -17,6 +19,42 @@ function generateCompanyIdentifier(companyName) {
 
   // Combine to make 10 characters total
   return (namePart + randomPart).substring(0, 10);
+}
+
+function generateUnitIdentifier(unitName) {
+  const namePart = String(unitName || 'UNIT')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toUpperCase()
+    .substring(0, 6)
+    .padEnd(6, 'X');
+
+  const randomPart = crypto.randomBytes(2).toString('hex').toUpperCase().substring(0, 4);
+
+  return (namePart + randomPart).substring(0, 10);
+}
+
+function normalizeCompanyUnits(companyUnits) {
+  const units = Array.isArray(companyUnits) && companyUnits.length > 0
+    ? companyUnits
+    : [{ unit_name: 'Main Unit', unit_address: '' }];
+
+  return units
+    .map((unit) => ({
+      unit_name: String(unit?.unit_name ?? unit?.unit ?? '').trim(),
+      unit_address: String(unit?.unit_address ?? '').trim(),
+    }));
+}
+
+function normalizeCoordinatorUnitIndexes(coordinatorUnitIndexes, unitCount) {
+  if (!Array.isArray(coordinatorUnitIndexes)) {
+    return [];
+  }
+
+  return [...new Set(
+    coordinatorUnitIndexes
+      .map((index) => Number(index))
+      .filter((index) => Number.isInteger(index) && index >= 0 && index < unitCount)
+  )];
 }
 
 // Get all companies API endpoint
@@ -55,10 +93,23 @@ async function getCompanyByIdentifier(req, res) {
       });
     }
 
+    const unitsResult = await pool.query(
+      `
+        SELECT id, unit_id, unit_name, unit_address, coordinator_email_id
+        FROM company_unit_master
+        WHERE company_identifier = $1
+        ORDER BY id ASC
+      `,
+      [company_identifier]
+    );
+
     res.status(200).json({
       success: true,
       message: 'Company retrieved successfully',
-      data: result.rows[0]
+      data: {
+        ...result.rows[0],
+        company_units: unitsResult.rows,
+      }
     });
   } catch (error) {
     console.error('Error fetching company:', error);
@@ -80,7 +131,9 @@ async function createCompany(req, res) {
     pan,
     number_of_corporate_offices,
     number_of_factory_units,
-    company_coordinator_email
+    company_coordinator_email,
+    company_units,
+    company_coordinator_unit_indexes
   } = req.body;
 
   // Validate required fields
@@ -93,13 +146,48 @@ async function createCompany(req, res) {
     });
   }
 
-  // Validate company coordinator email if provided
-  if (company_coordinator_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(company_coordinator_email)) {
+  const coordinatorEmail = String(company_coordinator_email || '').trim();
+
+  if (!coordinatorEmail) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company coordinator email is required'
+    });
+  }
+
+  // Validate company coordinator email
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(coordinatorEmail)) {
     return res.status(400).json({
       success: false,
       message: 'Invalid company coordinator email format'
     });
   }
+
+  const normalizedCompanyUnits = normalizeCompanyUnits(company_units);
+  if (normalizedCompanyUnits.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'At least one company unit must be provided'
+    });
+  }
+  if (normalizedCompanyUnits.some((unit) => unit.unit_name === '')) {
+    return res.status(400).json({
+      success: false,
+      message: 'Unit name is required for every company unit'
+    });
+  }
+
+  const coordinatorUnitIndexes = normalizeCoordinatorUnitIndexes(
+    company_coordinator_unit_indexes,
+    normalizedCompanyUnits.length
+  );
+  if (coordinatorUnitIndexes.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company coordinator must be mapped with at least one company unit'
+    });
+  }
+  const coordinatorUnitIndexSet = new Set(coordinatorUnitIndexes);
 
   const client = await pool.connect();
 
@@ -135,11 +223,47 @@ async function createCompany(req, res) {
 
     const company = companyResult.rows[0];
 
+    const insertUnitQuery = `
+      INSERT INTO company_unit_master (
+        company_identifier, unit_name, unit_address, unit_id, coordinator_email_id
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, unit_id, unit_name, unit_address, coordinator_email_id;
+    `;
+    const companyUnits = [];
+    for (const [index, unit] of normalizedCompanyUnits.entries()) {
+      let insertedUnit = null;
+      let attempts = 0;
+
+      while (!insertedUnit && attempts < 5) {
+        attempts += 1;
+        const unitId = generateUnitIdentifier(unit.unit_name);
+
+        try {
+          const unitResult = await client.query(insertUnitQuery, [
+            company_identifier,
+            unit.unit_name,
+            unit.unit_address || null,
+            unitId,
+            coordinatorUnitIndexSet.has(index) ? coordinatorEmail : null
+          ]);
+          insertedUnit = unitResult.rows[0];
+        } catch (unitError) {
+          if (unitError.code === '23505' && attempts < 5) {
+            continue;
+          }
+          throw unitError;
+        }
+      }
+
+      companyUnits.push(insertedUnit);
+    }
+
     // If company coordinator email is provided, create/update user in ifc_users table
-    if (company_coordinator_email) {
+    if (coordinatorEmail) {
       // Check if user already exists
       const checkUserQuery = 'SELECT * FROM ifc_users WHERE email_id = $1';
-      const userCheck = await client.query(checkUserQuery, [company_coordinator_email]);
+      const userCheck = await client.query(checkUserQuery, [coordinatorEmail]);
 
       if (userCheck.rows.length > 0) {
         // Update existing user with company_identifier
@@ -148,7 +272,7 @@ async function createCompany(req, res) {
           SET company_identifier = $1
           WHERE email_id = $2
         `;
-        await client.query(updateUserQuery, [company_identifier, company_coordinator_email]);
+        await client.query(updateUserQuery, [company_identifier, coordinatorEmail]);
       } else {
         // Create new user with company_identifier
         // Generate a temporary password (user will need to reset it)
@@ -160,7 +284,7 @@ async function createCompany(req, res) {
           VALUES ($1, $2, $3, $4, $5)
         `;
         await client.query(insertUserQuery, [
-          company_coordinator_email,
+          coordinatorEmail,
           tempPasswordHash,
           'company_co',
           company_identifier,
@@ -175,10 +299,9 @@ Dear Company Coordinator,
 Your company account has been created successfully.
 
 Company: ${company_name}
-Company Identifier: ${company_identifier}
 
 Your temporary login credentials:
-Email: ${company_coordinator_email}
+Email: ${coordinatorEmail}
 Temporary Password: ${tempPassword}
 
 IMPORTANT: Please login using these credentials and update your password immediately for security purposes.
@@ -191,10 +314,10 @@ Best regards,
 IFC System
         `;
 
-        const emailSent = await sendEmail(company_coordinator_email, emailSubject, emailText);
+        const emailSent = await sendEmail(coordinatorEmail, emailSubject, emailText);
 
         if (!emailSent) {
-          console.warn(`Warning: Failed to send email to ${company_coordinator_email}, but user was created successfully.`);
+          console.warn(`Warning: Failed to send email to ${coordinatorEmail}, but user was created successfully.`);
           // Don't fail the transaction if email fails, but log it
         }
       }
@@ -209,7 +332,8 @@ IFC System
         id: company.id,
         company_identifier: company.company_identifier,
         company_name: company_name
-      }
+      },
+      company_units: companyUnits
     });
 
   } catch (error) {
@@ -217,6 +341,13 @@ IFC System
     console.error('Error creating company:', error);
 
     if (error.code === '23505') { // Unique constraint violation
+      if (String(error.constraint || '').includes('company_unit_master')) {
+        return res.status(409).json({
+          success: false,
+          message: 'Company unit identifier already exists. Please try again.'
+        });
+      }
+
       return res.status(409).json({
         success: false,
         message: 'Company with this identifier already exists'
@@ -232,8 +363,154 @@ IFC System
   }
 }
 
+// Delete Company API endpoint
+async function deleteCompany(req, res) {
+  const { company_identifier } = req.params;
+  const deleteRacms = req.body?.deleteRacms === true || req.body?.delete_racms === true;
+  const deleteUsers = req.body?.deleteUsers === true || req.body?.delete_users === true;
+
+  if (!company_identifier || String(company_identifier).trim() === '') {
+    return res.status(400).json({
+      success: false,
+      message: 'Company identifier is required'
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const companyResult = await client.query(
+      'SELECT id, company_identifier, company_name FROM companies WHERE company_identifier = $1 LIMIT 1',
+      [company_identifier]
+    );
+
+    if (companyResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Company not found'
+      });
+    }
+
+    const formsResult = await client.query(
+      'SELECT form_id FROM control_forms WHERE company_identifier = $1',
+      [company_identifier]
+    );
+    const formIds = formsResult.rows
+      .map((row) => (row.form_id == null ? '' : String(row.form_id).trim()))
+      .filter(Boolean);
+
+    let deletedS3Objects = 0;
+    let deletedUserDocRows = 0;
+    let deletedSampleDocRows = 0;
+    let deletedRacmRows = 0;
+
+    if (deleteRacms && formIds.length > 0) {
+      const { sampleDocsByFormId, userDocsByFormId } = await getControlFormDocumentRows(client, formIds);
+      const docUrlsToDelete = Array.from(
+        new Set(
+          formIds
+            .flatMap((formId) => [
+              ...(userDocsByFormId.get(formId) || []).map((doc) => doc.doc_uploaded_by_user),
+              ...(sampleDocsByFormId.get(formId) || []).map((doc) => doc.sample_doc),
+            ])
+            .map((value) => (value == null ? '' : String(value).trim()))
+            .filter(Boolean)
+        )
+      );
+
+      for (const s3Key of docUrlsToDelete) {
+        try {
+          await deleteFileFromS3(s3Key);
+          deletedS3Objects += 1;
+        } catch (s3Error) {
+          console.error(`Error deleting company document from S3 (${s3Key}):`, s3Error);
+        }
+      }
+
+      const deletedUserDocsResult = await client.query(
+        'DELETE FROM doc_uploaded_by_user WHERE form_id = ANY($1::text[])',
+        [formIds]
+      );
+      deletedUserDocRows = deletedUserDocsResult.rowCount;
+
+      const deletedSampleDocsResult = await client.query(
+        'DELETE FROM sample_docs WHERE form_id = ANY($1::text[])',
+        [formIds]
+      );
+      deletedSampleDocRows = deletedSampleDocsResult.rowCount;
+
+      const deletedRacmsResult = await client.query(
+        'DELETE FROM control_forms WHERE company_identifier = $1',
+        [company_identifier]
+      );
+      deletedRacmRows = deletedRacmsResult.rowCount;
+    }
+
+    const deletedUnitResult = await client.query(
+      'DELETE FROM company_unit_master WHERE company_identifier = $1',
+      [company_identifier]
+    );
+
+    let deletedUserRows = 0;
+    let detachedUserRows = 0;
+    if (deleteUsers) {
+      const deletedUsersResult = await client.query(
+        'DELETE FROM ifc_users WHERE company_identifier = $1',
+        [company_identifier]
+      );
+      deletedUserRows = deletedUsersResult.rowCount;
+    } else {
+      const detachedUsersResult = await client.query(
+        'UPDATE ifc_users SET company_identifier = NULL WHERE company_identifier = $1',
+        [company_identifier]
+      );
+      detachedUserRows = detachedUsersResult.rowCount;
+    }
+
+    const deletedCompanyResult = await client.query(
+      'DELETE FROM companies WHERE company_identifier = $1',
+      [company_identifier]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Company deleted successfully',
+      data: {
+        company_identifier,
+        delete_users: deleteUsers,
+        delete_racms: deleteRacms,
+        deleted_company_rows: deletedCompanyResult.rowCount,
+        deleted_unit_rows: deletedUnitResult.rowCount,
+        deleted_user_rows: deletedUserRows,
+        detached_user_rows: detachedUserRows,
+        deleted_racm_rows: deletedRacmRows,
+        deleted_documents: {
+          s3_objects: deletedS3Objects,
+          user_uploaded_rows: deletedUserDocRows,
+          sample_doc_rows: deletedSampleDocRows,
+        },
+      },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting company:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   getCompanies,
   getCompanyByIdentifier,
   createCompany,
+  deleteCompany,
 };

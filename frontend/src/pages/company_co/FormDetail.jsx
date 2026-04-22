@@ -19,11 +19,15 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Autocomplete from '@mui/material/Autocomplete';
 import Checkbox from '@mui/material/Checkbox';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded';
+import DeleteRoundedIcon from '@mui/icons-material/DeleteRounded';
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
@@ -57,9 +61,11 @@ function FormDetail() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [editableFields, setEditableFields] = useState({})
   const [saving, setSaving] = useState(false)
-  const [samplingFile, setSamplingFile] = useState(null)
   const [uploadingSampling, setUploadingSampling] = useState(false)
   const [samplingExists, setSamplingExists] = useState(false)
+  const [sampleDocsDialogOpen, setSampleDocsDialogOpen] = useState(false)
+  const [userDocsDialogOpen, setUserDocsDialogOpen] = useState(false)
+  const [deletingSampleDocId, setDeletingSampleDocId] = useState(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [moreActionsDialogOpen, setMoreActionsDialogOpen] = useState(false)
@@ -97,6 +103,7 @@ function FormDetail() {
     updating ||
     saving ||
     uploadingSampling ||
+    Boolean(deletingSampleDocId) ||
     deleting ||
     replicating ||
     creatingUser ||
@@ -176,7 +183,7 @@ function FormDetail() {
     // If setting to active and sample document is missing, block activation.
     if (
       newActiveStatus === '1' &&
-      (!formData.sample_doc || formData.sample_doc.trim() === '')
+      !hasSampleDocs()
     ) {
       toast.error('Sample document is missing')
       return
@@ -252,8 +259,8 @@ function FormDetail() {
           active: newActiveStatus
         })
         const statusMessage = newActiveStatus === '1'
-          ? 'Form set to Active successfully'
-          : 'Form set to Inactive successfully'
+          ? 'RACM set to Active successfully'
+          : 'RACM set to Inactive successfully'
         toast.success(statusMessage)
       } else {
         console.error('Error updating form:', data.message)
@@ -269,8 +276,14 @@ function FormDetail() {
 
   const handleCreateUserConfirm = async () => {
     const email = (processOwnerEmail || '').trim()
+    const unitId = formData?.unit_id ? String(formData.unit_id).trim() : ''
     if (!email) {
       toast.error('Process owner email is missing')
+      return
+    }
+
+    if (!unitId) {
+      toast.error('RACM unit is missing. Cannot create user for assignment.')
       return
     }
 
@@ -284,6 +297,7 @@ function FormDetail() {
         credentials: 'include',
         body: JSON.stringify({
           email_id: email,
+          unit_id: unitId,
         }),
       })
 
@@ -527,8 +541,11 @@ function FormDetail() {
   const assignableUsers = companyUsers.filter((user) => {
     const formCompany = (formData?.company_identifier || '').trim()
     const userCompany = (user.company_identifier || '').trim()
+    const formUnitId = (formData?.unit_id || '').trim()
+    const userUnitId = (user.unit_id || '').trim()
     const isSameCompany = !userCompany || userCompany === formCompany
-    return isSameCompany && user.role === 'user'
+    const isSameUnit = formUnitId && userUnitId && userUnitId === formUnitId
+    return isSameCompany && isSameUnit && user.role === 'user'
   })
 
   const handleOpenAssignmentDialog = async () => {
@@ -557,10 +574,7 @@ function FormDetail() {
       formData?.reminder_frequency !== undefined &&
       String(formData.reminder_frequency).trim() !== ''
     const hasReminderSettings = hasDueDate && hasReminderFrequency
-    const hasSampleDoc =
-      formData?.sample_doc !== null &&
-      formData?.sample_doc !== undefined &&
-      String(formData.sample_doc).trim() !== ''
+    const hasSampleDoc = hasSampleDocs()
     const canAutoActivate = hasReminderSettings && hasSampleDoc
 
     setUpdating(true)
@@ -654,7 +668,7 @@ function FormDetail() {
     // Track modified fields by comparing original formData with editableFields
     const modifiedFields = []
     const modifiedChanges = []
-    const normalizedEditableFields = { ...editableFields }
+    const changedFieldsPayload = {}
     fieldOrder.forEach(key => {
       if (!excludedFields.includes(key) && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)) {
         const originalValue = assertionFields.includes(key)
@@ -664,21 +678,27 @@ function FormDetail() {
           ? (editableFields[key] === true || editableFields[key] === 'true' || editableFields[key] === '1' || editableFields[key] === 1)
           : (editableFields[key] ?? '')
 
-        // Ensure payload never sends '' for boolean assertion fields
-        if (assertionFields.includes(key)) {
-          normalizedEditableFields[key] = !!newValue
-        }
         // Compare values (convert to string for comparison)
         if (String(originalValue).trim() !== String(newValue).trim()) {
+          const payloadValue = assertionFields.includes(key)
+            ? !!newValue
+            : (newValue === '' ? null : newValue)
+
+          changedFieldsPayload[key] = payloadValue
           modifiedFields.push(key)
           modifiedChanges.push({
             column_name: key,
             old_value: originalValue === '' ? null : originalValue,
-            new_value: newValue === '' ? null : newValue
+            new_value: payloadValue
           })
         }
       }
     })
+
+    if (modifiedFields.length === 0) {
+      toast.error('No changes to save')
+      return
+    }
 
     setSaving(true)
     try {
@@ -689,7 +709,7 @@ function FormDetail() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          ...normalizedEditableFields,
+          ...changedFieldsPayload,
           modifiedFields: modifiedFields, // Backward-compatible metadata
           modifiedChanges: modifiedChanges // [{ column_name, old_value, new_value }, ...]
         }),
@@ -772,6 +792,54 @@ function FormDetail() {
     return status.charAt(0).toUpperCase() + status.slice(1)
   }
 
+  const getFileName = (filePath) => {
+    if (!filePath) return ''
+    const parts = String(filePath).split(/[/\\]/)
+    return parts[parts.length - 1] || String(filePath)
+  }
+
+  const getSampleDocs = () => {
+    const docs = Array.isArray(formData?.sample_docs)
+      ? formData.sample_docs
+      : []
+    const normalizedDocs = docs
+      .map((doc, index) => ({
+        id: doc.id || `sample-doc-${index}`,
+        sample_doc: doc.sample_doc,
+        created_at: doc.created_at,
+      }))
+      .filter((doc) => String(doc.sample_doc || '').trim() !== '')
+
+    if (normalizedDocs.length > 0) return normalizedDocs
+
+    const legacyDoc = String(formData?.sample_doc || '').trim()
+    return legacyDoc
+      ? [{ id: 'sample-doc-current', sample_doc: legacyDoc, created_at: null }]
+      : []
+  }
+
+  const getUserDocs = () => {
+    const docs = Array.isArray(formData?.doc_uploaded_by_user_docs)
+      ? formData.doc_uploaded_by_user_docs
+      : []
+    const normalizedDocs = docs
+      .map((doc, index) => ({
+        id: doc.id || `user-doc-${index}`,
+        doc_uploaded_by_user: doc.doc_uploaded_by_user,
+        created_at: doc.created_at,
+      }))
+      .filter((doc) => String(doc.doc_uploaded_by_user || '').trim() !== '')
+
+    if (normalizedDocs.length > 0) return normalizedDocs
+
+    const legacyDoc = String(formData?.doc_uploaded_by_user || '').trim()
+    return legacyDoc
+      ? [{ id: 'user-doc-current', doc_uploaded_by_user: legacyDoc, created_at: null }]
+      : []
+  }
+
+  const hasSampleDocs = () => getSampleDocs().length > 0
+
   const checkSamplingExists = async () => {
     try {
       const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}/check-sampling-exists`, {
@@ -791,36 +859,30 @@ function FormDetail() {
     }
   }
 
-  const handleSamplingUploadClick = async () => {
-    // Quick check: if sample_doc is already set in formData, show message immediately
-    if (formData?.sample_doc && formData.sample_doc.trim() !== '') {
-      toast.error('Sample document already uploaded for this form.')
-      // Reload formData after 1.5 seconds
-      setTimeout(() => {
-        fetchFormData()
-      }, 1500)
-      return
-    }
+  const handleOpenSampleDocsDialog = () => {
+    setSampleDocsDialogOpen(true)
+  }
 
-    // Check if sampling document already exists
-    const exists = await checkSamplingExists()
-    if (exists) {
-      setSamplingExists(exists)
-      toast.error('Sample document already uploaded for this form.')
-      // Reload formData after 1.5 seconds
-      setTimeout(() => {
-        fetchFormData()
-      }, 1500)
-      return
-    }
+  const handleCloseSampleDocsDialog = () => {
+    if (uploadingSampling || deletingSampleDocId) return
+    setSampleDocsDialogOpen(false)
+  }
 
-    // If no existing document, proceed with file selection
+  const handleOpenUserDocsDialog = () => {
+    setUserDocsDialogOpen(true)
+  }
+
+  const handleCloseUserDocsDialog = () => {
+    setUserDocsDialogOpen(false)
+  }
+
+  const handleSamplingUploadClick = () => {
     fileInputRef.current?.click()
   }
 
   const handleSamplingFileChange = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
 
     // Validate file type
     const validTypes = [
@@ -828,32 +890,38 @@ function FormDetail() {
       'application/vnd.ms-excel', // .xls
     ]
 
-    if (!validTypes.includes(file.type)) {
-      toast.error('Invalid file type. Please upload an Excel file (.xlsx, .xls)')
+    const hasInvalidType = files.some((file) => {
+      const fileName = String(file.name || '').toLowerCase()
+      return !validTypes.includes(file.type) && !fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')
+    })
+    if (hasInvalidType) {
+      toast.error('Invalid file type. Please upload only Excel files (.xlsx, .xls)')
       return
     }
 
     // Validate file size (10MB limit)
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit.')
+    const hasOversizedFile = files.some((file) => file.size > 10 * 1024 * 1024)
+    if (hasOversizedFile) {
+      toast.error('Each file must be 10MB or smaller.')
       return
     }
 
-    // Upload file directly
-    setSamplingFile(file)
-    await handleSamplingUpload(file)
+    await handleSamplingUpload(files)
   }
 
-  const handleSamplingUpload = async (file) => {
-    if (!file) {
-      toast.error('Please select a file')
+  const handleSamplingUpload = async (files) => {
+    const selectedFiles = Array.isArray(files) ? files : [files].filter(Boolean)
+    if (selectedFiles.length === 0) {
+      toast.error('Please select at least one file')
       return
     }
 
     setUploadingSampling(true)
     try {
       const uploadFormData = new FormData()
-      uploadFormData.append('excelFile', file)
+      selectedFiles.forEach((file) => {
+        uploadFormData.append('excelFiles', file)
+      })
 
       const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}/upload-sampling-excel`, {
         method: 'POST',
@@ -864,22 +932,23 @@ function FormDetail() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        toast.success('Sample document uploaded successfully')
-        setSamplingFile(null)
+        const uploadedDocs = Array.isArray(data.data?.sample_docs) ? data.data.sample_docs : []
+        toast.success(`${uploadedDocs.length || selectedFiles.length} sample document(s) uploaded successfully`)
         if (fileInputRef.current) {
           fileInputRef.current.value = ''
         }
-        // Update local state immediately to disable the button without waiting for refetch
         setFormData(prev => ({
           ...prev,
-          sample_doc: data.data?.sample_doc || prev?.sample_doc || 'uploaded'
+          sample_doc: data.data?.sample_doc || prev?.sample_doc || uploadedDocs[0]?.sample_doc || 'uploaded',
+          sample_docs: [
+            ...(Array.isArray(prev?.sample_docs) ? prev.sample_docs : []),
+            ...uploadedDocs,
+          ],
         }))
         setSamplingExists(true)
-        // Refresh form data to ensure everything is in sync
         fetchFormData()
       } else {
         toast.error(data.message || 'Failed to upload sampling Excel file')
-        setSamplingFile(null)
         if (fileInputRef.current) {
           fileInputRef.current.value = ''
         }
@@ -887,12 +956,133 @@ function FormDetail() {
     } catch (error) {
       console.error('Error uploading sampling Excel file:', error)
       toast.error('Error uploading sampling Excel file')
-      setSamplingFile(null)
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
     } finally {
       setUploadingSampling(false)
+    }
+  }
+
+  const handleDownloadSampleDocument = async (filePath) => {
+    if (!filePath) return
+
+    try {
+      const fileName = getFileName(filePath)
+      const response = await fetch(`http://localhost:3000/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        toast.success('Sample document downloaded successfully')
+        return
+      }
+
+      let errorMessage = 'Failed to download sample document'
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.message || errorData.error || errorMessage
+      } catch (e) {
+        errorMessage = `Download failed with status ${response.status}`
+      }
+      toast.error(errorMessage)
+    } catch (error) {
+      console.error('Error downloading sample document:', error)
+      toast.error(`Error downloading sample document: ${error.message}`)
+    }
+  }
+
+  const handleDownloadUserDocument = async (filePath) => {
+    if (!filePath) return
+
+    try {
+      const fileName = getFileName(filePath)
+      const response = await fetch(`http://localhost:3000/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        return
+      }
+
+      let errorMessage = 'Failed to download user document'
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.message || errorData.error || errorMessage
+      } catch (e) {
+        errorMessage = `Download failed with status ${response.status}`
+      }
+      toast.error(errorMessage)
+    } catch (error) {
+      console.error('Error downloading user document:', error)
+      toast.error(`Error downloading user document: ${error.message}`)
+    }
+  }
+
+  const handleDeleteSampleDocument = async (doc) => {
+    const docId = doc?.id
+    const fileName = getFileName(doc?.sample_doc)
+    if (!docId || String(docId).startsWith('sample-doc-')) {
+      toast.error('Sample document row id is missing')
+      return
+    }
+
+    const confirmed = window.confirm(`Delete sample document "${fileName}" permanently?`)
+    if (!confirmed) return
+
+    setDeletingSampleDocId(docId)
+    try {
+      const response = await fetch(
+        `http://localhost:3000/api/control-forms/${form_id}/sample-docs/${encodeURIComponent(docId)}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        }
+      )
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast.success('Sample document deleted successfully')
+        setFormData((prev) => {
+          const previousDocs = Array.isArray(prev?.sample_docs) ? prev.sample_docs : []
+          const remainingDocs = previousDocs.filter((item) => String(item.id) !== String(docId))
+          return {
+            ...prev,
+            sample_docs: remainingDocs,
+            sample_doc: remainingDocs[remainingDocs.length - 1]?.sample_doc || null,
+          }
+        })
+        const remainingCount = sampleDocs.filter((item) => String(item.id) !== String(docId)).length
+        setSamplingExists(remainingCount > 0)
+        fetchFormData()
+      } else {
+        toast.error(data.message || 'Failed to delete sample document')
+      }
+    } catch (error) {
+      console.error('Error deleting sample document:', error)
+      toast.error('Error deleting sample document')
+    } finally {
+      setDeletingSampleDocId(null)
     }
   }
 
@@ -1216,6 +1406,10 @@ function FormDetail() {
   }
 
   const isActive = formData?.active && formData.active !== '' && formData.active !== '0'
+  const sampleDocs = getSampleDocs()
+  const sampleDocCount = sampleDocs.length
+  const userDocs = getUserDocs()
+  const userDocCount = userDocs.length
   const popupLabelSx = {
     minWidth: '300px',
     maxWidth: '300px',
@@ -1369,6 +1563,35 @@ function FormDetail() {
                   >
                     Audit logs
                   </Button>
+                  <Box
+                    sx={{
+                      textAlign: { xs: 'left', sm: 'right' },
+                      minWidth: 0,
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        display: 'block',
+                        color: 'text.secondary',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Created At
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formatDateTime(formData?.created_at)}
+                    </Typography>
+                  </Box>
                 </Box>
                 {/* Top metrics in equal-width grid */}
                 <Box
@@ -1535,7 +1758,7 @@ function FormDetail() {
                   </Box>
                 </Box>
 
-                {/* Reminder + Assignment + Created At + Control Number (25% each on desktop) */}
+                {/* Reminder + Assignment + Unit Name + Control Number (25% each on desktop) */}
                 <Box
                   sx={{
                     display: 'grid',
@@ -1704,7 +1927,7 @@ function FormDetail() {
                     </Box>
                   </Box>
 
-                  {/* Created At */}
+                  {/* Unit Name */}
                   <Box
                     sx={{
                       p: 2,
@@ -1726,7 +1949,7 @@ function FormDetail() {
                         letterSpacing: '0.5px',
                       }}
                     >
-                      Created At
+                      Unit Name
                     </Typography>
                     <Typography
                       variant="body2"
@@ -1736,7 +1959,7 @@ function FormDetail() {
                         lineHeight: 1.6,
                       }}
                     >
-                      {formatDateTime(formData?.created_at)}
+                      {(formData?.unit_name || formData?.unit_id || '').toString().trim() || '-'}
                     </Typography>
                   </Box>
 
@@ -1775,6 +1998,7 @@ function FormDetail() {
                       {(formData?.control_number || '').toString().trim() || '-'}
                     </Typography>
                   </Box>
+
                 </Box>
 
                 {/* Bottom action buttons (4 in one row: RACM Assignment area has its own button; here: Modify, Upload, Set Active, Delete) */}
@@ -1816,17 +2040,18 @@ function FormDetail() {
                     <input
                       ref={fileInputRef}
                       type="file"
+                      multiple
                       accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                       onChange={handleSamplingFileChange}
                       style={{ display: 'none' }}
-                      disabled={(formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists || uploadingSampling}
+                      disabled={uploadingSampling}
                     />
                     <Button
-                      onClick={handleSamplingUploadClick}
-                      disabled={(formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists || uploadingSampling || isEditMode}
+                      onClick={handleOpenSampleDocsDialog}
+                      disabled={uploadingSampling}
                       fullWidth
                       variant="outlined"
-                      startIcon={(formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists ? <CheckCircleIcon /> : <CloudUploadIcon />}
+                      startIcon={sampleDocCount > 0 || samplingExists ? <CheckCircleIcon /> : <CloudUploadIcon />}
                       sx={{
                         py: 1.5,
                         fontWeight: 600,
@@ -1860,7 +2085,7 @@ function FormDetail() {
                         },
                       }}
                     >
-                      {uploadingSampling ? 'Uploading...' : ((formData?.sample_doc && formData.sample_doc.trim() !== '') || samplingExists ? 'Sample Document Uploaded' : 'Upload Sample Document')}
+                      {uploadingSampling ? 'Uploading...' : `Sample Documents (${sampleDocCount})`}
                     </Button>
                   </Box>
 
@@ -2695,7 +2920,7 @@ function FormDetail() {
           )}
 
           {/* Approval section – doc/remarks/reason */}
-          {(formData.doc_uploaded_by_user || formData.remarks_by_user || formData.reason_by_approver) && (
+          {(userDocCount > 0 || formData.remarks_by_user || formData.reason_by_approver) && (
             <Card
               sx={{
                 borderRadius: 3,
@@ -2733,110 +2958,133 @@ function FormDetail() {
                     mt: 2,
                   }}
                 >
-                  {/* Doc Uploaded By User */}
-                  {formData.doc_uploaded_by_user && (
+                  {(userDocCount > 0 || typeof formData.remarks_by_user !== 'undefined') && (
                     <Box
                       sx={{
-                        p: 2.5,
-                        borderRadius: 2,
-                        backgroundColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.03)'
-                          : 'rgba(0, 0, 0, 0.02)',
-                        border: '1px solid',
-                        borderColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.08)'
-                          : 'rgba(0, 0, 0, 0.06)',
-                        transition: 'all 0.2s ease-in-out',
-                        '&:hover': {
-                          backgroundColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.05)'
-                            : 'rgba(0, 0, 0, 0.04)',
-                        },
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+                        gap: 3,
                       }}
                     >
-                      <Typography
-                        variant="caption"
-                        component="dt"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          mb: 1.5,
-                          color: 'text.primary',
-                          fontSize: theme.typography.customSizes.small,
-                        }}
-                      >
-                        {fieldLabels.doc_uploaded_by_user}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        component="dd"
-                        sx={{
-                          color: 'text.secondary',
-                          wordBreak: 'break-word',
-                          lineHeight: 1.6,
-                          fontSize: theme.typography.customSizes.medium,
-                        }}
-                      >
-                        {String(formData.doc_uploaded_by_user)}
-                      </Typography>
-                    </Box>
-                  )}
+                      {/* Doc Uploaded By User */}
+                      {userDocCount > 0 && (
+                        <Box
+                          component="button"
+                          type="button"
+                          onClick={handleOpenUserDocsDialog}
+                          sx={{
+                            p: 2.5,
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
+                            width: '100%',
+                            minWidth: 0,
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            font: 'inherit',
+                            transition: 'all 0.2s ease-in-out',
+                            '&:hover': {
+                              backgroundColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.05)'
+                                : 'rgba(0, 0, 0, 0.04)',
+                            },
+                            '&:focus-visible': {
+                              outline: `2px solid ${theme.palette.primary.main}`,
+                              outlineOffset: 2,
+                            },
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            component="dt"
+                            sx={{
+                              display: 'block',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              mb: 1.5,
+                              color: 'text.primary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            {fieldLabels.doc_uploaded_by_user}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            component="dd"
+                            sx={{
+                              color: 'text.primary',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
+                              fontWeight: 600,
+                            }}
+                          >
+                            User Uploaded Documents ({userDocCount})
+                          </Typography>
+                        </Box>
+                      )}
 
-                  {/* Remarks By User if present on payload */}
-                  {typeof formData.remarks_by_user !== 'undefined' && (
-                    <Box
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 2,
-                        backgroundColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.03)'
-                          : 'rgba(0, 0, 0, 0.02)',
-                        border: '1px solid',
-                        borderColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.08)'
-                          : 'rgba(0, 0, 0, 0.06)',
-                        transition: 'all 0.2s ease-in-out',
-                        '&:hover': {
-                          backgroundColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.05)'
-                            : 'rgba(0, 0, 0, 0.04)',
-                        },
-                      }}
-                    >
-                      <Typography
-                        variant="caption"
-                        component="dt"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          mb: 1.5,
-                          color: 'text.primary',
-                          fontSize: theme.typography.customSizes.small,
-                        }}
-                      >
-                        Remarks By User
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        component="dd"
-                        sx={{
-                          color:
-                            !formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
-                              ? 'text.disabled'
-                              : 'text.secondary',
-                          wordBreak: 'break-word',
-                          lineHeight: 1.6,
-                          fontSize: theme.typography.customSizes.medium,
-                        }}
-                      >
-                        {!formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
-                          ? '-'
-                          : String(formData.remarks_by_user)}
-                      </Typography>
+                      {/* Remarks By User if present on payload */}
+                      {typeof formData.remarks_by_user !== 'undefined' && (
+                        <Box
+                          sx={{
+                            p: 2.5,
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
+                            minWidth: 0,
+                            transition: 'all 0.2s ease-in-out',
+                            '&:hover': {
+                              backgroundColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.05)'
+                                : 'rgba(0, 0, 0, 0.04)',
+                            },
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            component="dt"
+                            sx={{
+                              display: 'block',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              mb: 1.5,
+                              color: 'text.primary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            Remarks By User
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            component="dd"
+                            sx={{
+                              color:
+                                !formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
+                                  ? 'text.disabled'
+                                  : 'text.secondary',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
+                            }}
+                          >
+                            {!formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
+                              ? '-'
+                              : String(formData.remarks_by_user)}
+                          </Typography>
+                        </Box>
+                      )}
                     </Box>
                   )}
 
@@ -3006,6 +3254,208 @@ function FormDetail() {
         </DialogActions>
       </Dialog>
 
+      {/* Sample Documents Dialog */}
+      <Dialog
+        open={sampleDocsDialogOpen}
+        onClose={handleCloseSampleDocsDialog}
+        aria-labelledby="sample-documents-dialog-title"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '94%', sm: '640px' },
+            maxWidth: '720px',
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="sample-documents-dialog-title"
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 700,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          Sample Documents ({sampleDocCount})
+        </DialogTitle>
+        <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
+          {sampleDocs.length > 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              {sampleDocs.map((doc, index) => (
+                <Box
+                  key={doc.id || `${doc.sample_doc}-${index}`}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    p: 1.5,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                  }}
+                >
+                  <InsertDriveFileRoundedIcon color="action" />
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 600,
+                        color: 'text.primary',
+                        overflowWrap: 'anywhere',
+                      }}
+                    >
+                      {getFileName(doc.sample_doc)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                    </Typography>
+                  </Box>
+                  <Tooltip title="Download">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDownloadSampleDocument(doc.sample_doc)}
+                        disabled={uploadingSampling || Boolean(deletingSampleDocId)}
+                        aria-label={`Download ${getFileName(doc.sample_doc)}`}
+                      >
+                        <DownloadRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="Delete">
+                    <span>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => handleDeleteSampleDocument(doc)}
+                        disabled={uploadingSampling || Boolean(deletingSampleDocId)}
+                        aria-label={`Delete ${getFileName(doc.sample_doc)}`}
+                      >
+                        <DeleteRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No sample documents uploaded.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
+          <Button onClick={handleCloseSampleDocsDialog} disabled={uploadingSampling || Boolean(deletingSampleDocId)}>
+            Close
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<CloudUploadIcon />}
+            onClick={handleSamplingUploadClick}
+            disabled={uploadingSampling || Boolean(deletingSampleDocId) || isEditMode}
+          >
+            {uploadingSampling ? 'Uploading...' : 'Upload Documents'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* User Uploaded Documents Dialog */}
+      <Dialog
+        open={userDocsDialogOpen}
+        onClose={handleCloseUserDocsDialog}
+        aria-labelledby="user-documents-dialog-title"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '94%', sm: '640px' },
+            maxWidth: '720px',
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="user-documents-dialog-title"
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 700,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          User Uploaded Documents ({userDocCount})
+        </DialogTitle>
+        <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
+          {userDocs.length > 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              {userDocs.map((doc, index) => {
+                const docPath = doc.doc_uploaded_by_user
+                return (
+                  <Box
+                    key={doc.id || `${docPath}-${index}`}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      p: 1.5,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                    }}
+                  >
+                    <InsertDriveFileRoundedIcon color="action" />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 600,
+                          color: 'text.primary',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
+                        {getFileName(docPath)}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                      </Typography>
+                    </Box>
+                    <Tooltip title="Download">
+                      <span>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleDownloadUserDocument(docPath)}
+                          aria-label={`Download ${getFileName(docPath)}`}
+                        >
+                          <DownloadRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </Box>
+                )
+              })}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No user uploaded documents available.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={handleCloseUserDocsDialog}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* RACM Assignment Dialog */}
       <Dialog
         open={assignmentDialogOpen}
@@ -3151,7 +3601,7 @@ function FormDetail() {
                 Delete
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                This RACM will be removed permanently, including all linked documents stored in the database.
+                This RACM will be removed permanently, including all sample documents and user-uploaded documents from storage and the database.
               </Typography>
             </Box>
             <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
@@ -3382,7 +3832,7 @@ function FormDetail() {
               mb: 2,
             }}
           >
-            Are you sure you want to delete this RACM? This action cannot be undone and will permanently delete the form and all associated data.
+            Are you sure you want to delete this RACM? This action cannot be undone. The form, all sample documents, all user-uploaded documents, and their database rows will be removed permanently.
           </DialogContentText>
         </DialogContent>
         <DialogActions

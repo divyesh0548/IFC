@@ -614,7 +614,7 @@ function UserManagement() {
                       </TableCell>
                     ) : null}
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>
-                      {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (cc)' : ''}` : '-'}
+                      {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (cc)' : ''}` : ''}
                     </TableCell>
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.email_id || '-'}</TableCell>
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.department || '-'}</TableCell>

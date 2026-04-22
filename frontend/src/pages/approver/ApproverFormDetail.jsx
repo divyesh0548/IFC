@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -43,7 +43,6 @@ import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 
 function ApproverFormDetail() {
   const theme = useTheme()
-  const navigate = useNavigate()
   const { form_id } = useParams()
   const [formData, setFormData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -391,7 +390,7 @@ function ApproverFormDetail() {
           if (errorData.debug) {
             console.error('Download error debug info:', errorData.debug)
           }
-        } catch (e) {
+        } catch {
           // If response is not JSON, use status-based message
           if (status === 400) {
             errorMessage = 'Bad request: File path is required'
@@ -530,6 +529,7 @@ function ApproverFormDetail() {
     'form_id',
     'company_identifier',
     'company_name',
+    'unit_name',
     'control_owner_name',
     'created_at',
     'active',
@@ -976,6 +976,44 @@ function ApproverFormDetail() {
                     </Typography>
                   </Box>
 
+                  {/* Unit */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Unit
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                        overflowWrap: 'anywhere',
+                      }}
+                    >
+                      {(formData?.unit_name && String(formData.unit_name).trim()) || '-'}
+                    </Typography>
+                  </Box>
+
                   {/* Control Number */}
                   <Box
                     sx={{
@@ -1144,7 +1182,7 @@ function ApproverFormDetail() {
                   }}
                 >
                   {['area', 'sub_process', 'risk_description', 'risk_heat']
-                    .filter((key) => formData.hasOwnProperty(key) && !excludedFields.includes(key))
+                    .filter((key) => Object.prototype.hasOwnProperty.call(formData, key) && !excludedFields.includes(key))
                     .map((key) => {
                       const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                       const value = formData[key]
@@ -1247,7 +1285,7 @@ function ApproverFormDetail() {
                   }}
                 >
                   {['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure']
-                    .filter((key) => formData.hasOwnProperty(key) && !excludedFields.includes(key))
+                    .filter((key) => Object.prototype.hasOwnProperty.call(formData, key) && !excludedFields.includes(key))
                     .map((key) => {
                       const label = fieldLabels[key]
                       const value = formData[key]
@@ -1397,7 +1435,7 @@ function ApproverFormDetail() {
                       if (['doc_uploaded_by_user', 'remarks_by_user'].includes(key)) {
                         return false
                       }
-                      return formData.hasOwnProperty(key) && !excludedFields.includes(key)
+                      return Object.prototype.hasOwnProperty.call(formData, key) && !excludedFields.includes(key)
                     }),
                     fieldOrder
                   )

@@ -9,6 +9,34 @@ const { hashPassword, verifyPassword, isPasswordHash, getPasswordPepper } = requ
 
 const router = express.Router();
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isDatabaseConnectionError(error) {
+  return (
+    error?.code === 'ECONNRESET' ||
+    error?.code === 'ECONNREFUSED' ||
+    error?.code === 'ETIMEDOUT' ||
+    String(error?.message || '').includes('ECONNRESET')
+  );
+}
+
+async function queryUserByEmailForAuth(emailId, columns = 'id, email_id, role, company_identifier, emp_name, temp_login') {
+  const userQuery = `SELECT ${columns} FROM ifc_users WHERE email_id = $1`;
+
+  try {
+    return await pool.query(userQuery, [emailId]);
+  } catch (error) {
+    if (!isDatabaseConnectionError(error)) {
+      throw error;
+    }
+
+    console.warn('Auth user lookup connection reset; retrying once:', error.message);
+    return pool.query(userQuery, [emailId]);
+  }
+}
+
 // ==================== UNIFIED LOGIN ENDPOINT ====================
 // Unified Login API endpoint (checks ifc_users table for all roles)
 router.post('/login', async (req, res) => {
@@ -177,8 +205,7 @@ router.get('/verify', async (req, res) => {
     const decoded = jwt.verify(decryptedToken, jwtSecret);
     
     // Get user details from database to include role and company_identifier
-    const userQuery = 'SELECT id, email_id, role, company_identifier, emp_name FROM ifc_users WHERE email_id = $1';
-    const userResult = await pool.query(userQuery, [decoded.email_id]);
+    const userResult = await queryUserByEmailForAuth(decoded.email_id);
     
     if (userResult.rows.length === 0) {
       return res.status(401).json({
@@ -198,10 +225,19 @@ router.get('/verify', async (req, res) => {
         role: user.role,
         company_identifier: user.company_identifier,
         emp_name: user.emp_name
-      }
+      },
+      requiresPasswordUpdate: user.temp_login === 1 || user.temp_login === true
     });
 
   } catch (error) {
+    if (isDatabaseConnectionError(error)) {
+      console.error('Auth verification database error:', error.message);
+      return res.status(503).json({
+        success: false,
+        message: 'Authentication service temporarily unavailable'
+      });
+    }
+
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
@@ -238,6 +274,19 @@ function buildProfilePayload(row, companyNameFallback) {
     email_id: row.email_id ?? null,
     phone: row.phone ?? row.mobile ?? null,
     company_name: companyName ?? null,
+    company_identifier: row.company_identifier ?? null,
+    unit_id: row.unit_id ?? null,
+    unit_name: row.unit_name ?? null,
+    company_details: {
+      company_name: companyName ?? null,
+      registered_email: row.registered_email ?? null,
+      registered_address: row.registered_address ?? null,
+      unique_identification_number: row.unique_identification_number ?? null,
+      gst: row.gst ?? null,
+      pan: row.pan ?? null,
+      number_of_corporate_offices: row.number_of_corporate_offices ?? null,
+      number_of_factory_units: row.number_of_factory_units ?? null,
+    },
     department: row.department ?? null,
     designation: row.designation ?? null,
   };
@@ -269,10 +318,22 @@ router.get('/profile', async (req, res) => {
         u.mobile AS phone,
         u.department,
         u.designation,
+        u.unit_id,
         u.company_identifier,
-        c.company_name
+        c.company_name,
+        c.registered_email,
+        c.registered_address,
+        c.unique_identification_number,
+        c.gst,
+        c.pan,
+        c.number_of_corporate_offices,
+        c.number_of_factory_units,
+        cum.unit_name
       FROM ifc_users u
       LEFT JOIN companies c ON u.company_identifier = c.company_identifier
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = u.company_identifier
+       AND cum.unit_id = u.unit_id
       WHERE u.email_id = $1
       LIMIT 1
     `;
@@ -541,19 +602,34 @@ router.post('/forgot-password', async (req, res) => {
 router.post('/update-password', async (req, res) => {
   const { email_id, currentPassword, newPassword } = req.body;
 
-  if (!email_id || !newPassword) {
+  if (!email_id || !currentPassword || !newPassword) {
     return res.status(400).json({
       success: false,
-      message: 'Email ID and new password are required'
+      message: 'Email ID, current password, and new password are required'
     });
   }
 
   try {
     getPasswordPepper();
 
+    const sessionEmail = getEmailFromAuthCookies(req);
+    if (!sessionEmail) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    if (normalizeEmail(sessionEmail) !== normalizeEmail(email_id)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication session does not match this user'
+      });
+    }
+
     // Verify current password (or temp password)
-    const verifyQuery = 'SELECT * FROM ifc_users WHERE email_id = $1';
-    const verifyResult = await pool.query(verifyQuery, [email_id]);
+    const verifyQuery = 'SELECT * FROM ifc_users WHERE LOWER(TRIM(email_id)) = $1';
+    const verifyResult = await pool.query(verifyQuery, [normalizeEmail(sessionEmail)]);
 
     if (verifyResult.rows.length === 0) {
       return res.status(401).json({
@@ -566,9 +642,16 @@ router.post('/update-password', async (req, res) => {
     const passwordMatches = await verifyPassword(currentPassword, user.password);
 
     if (!passwordMatches) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
         message: 'Invalid current password'
+      });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password cannot be the same as your temporary password'
       });
     }
 
@@ -578,13 +661,23 @@ router.post('/update-password', async (req, res) => {
     const updateQuery = `
       UPDATE ifc_users 
       SET password = $1, temp_login = 0 
-      WHERE email_id = $2
+      WHERE LOWER(TRIM(email_id)) = $2
+      RETURNING id, email_id, role, company_identifier, emp_name, temp_login
     `;
-    await pool.query(updateQuery, [newPasswordHash, email_id]);
+    const updateResult = await pool.query(updateQuery, [newPasswordHash, normalizeEmail(sessionEmail)]);
+    const updatedUser = updateResult.rows[0];
 
     res.status(200).json({
       success: true,
-      message: 'Password updated successfully'
+      message: 'Password updated successfully',
+      user: updatedUser ? {
+        id: updatedUser.id,
+        email_id: updatedUser.email_id,
+        role: updatedUser.role,
+        company_identifier: updatedUser.company_identifier,
+        emp_name: updatedUser.emp_name
+      } : null,
+      requiresPasswordUpdate: false
     });
 
   } catch (error) {

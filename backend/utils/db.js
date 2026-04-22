@@ -20,4 +20,8 @@ pool.on('connect', async (client) => {
   await client.query("SET timezone = 'Asia/Kolkata'");
 });
 
+pool.on('error', (error) => {
+  console.error('Unexpected database pool error:', error.message);
+});
+
 module.exports = { pool };

@@ -1,5 +1,8 @@
 const { pool } = require('../utils/db');
 
+const IST_TIMESTAMP_DEFAULT =
+  "timestamp without time zone NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'::text)";
+
 const REQUIRED_TABLES = {
   audit_logs: {
     columns: {
@@ -29,7 +32,7 @@ const REQUIRED_TABLES = {
       id: 'serial',
       form_id: 'character varying(255) NULL',
       sample_doc: 'character varying(255) NULL',
-      created_at: "timestamp without time zone NULL DEFAULT ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text)",
+      created_at: IST_TIMESTAMP_DEFAULT,
     },
     primaryKey: 'id',
   },
@@ -38,7 +41,7 @@ const REQUIRED_TABLES = {
       id: 'serial',
       form_id: 'character varying(255) NULL',
       doc_uploaded_by_user: 'character varying(255) NULL',
-      created_at: "timestamp without time zone NULL DEFAULT ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text)",
+      created_at: IST_TIMESTAMP_DEFAULT,
     },
     primaryKey: 'id',
   },
@@ -58,6 +61,20 @@ const REQUIRED_TABLES = {
         "timestamp without time zone NULL DEFAULT ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text)",
     },
     primaryKey: 'id',
+    unique: ['company_identifier'],
+  },
+  company_unit_master: {
+    columns: {
+      id: 'serial',
+      company_identifier: 'character varying(255) NULL',
+      unit_name: 'character varying(255) NULL',
+      unit_address: 'text NULL',
+      unit_id: 'character varying(255) NULL',
+      coordinator_email_id: 'character varying(255) NULL',
+      approver_email_id: 'character varying(255) NULL',
+    },
+    primaryKey: 'id',
+    unique: ['unit_id'],
   },
   control_form_history: {
     columns: {
@@ -85,6 +102,7 @@ const REQUIRED_TABLES = {
       created_at: "timestamp without time zone NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'::text)",
       company_identifier: 'character varying(255) NULL',
       form_id: 'character varying(255) NULL',
+      unit_id: 'character varying(255) NULL',
       remarks_by_user: 'text NULL',
       business_process: 'character varying(255) NULL',
       financial_year: 'character varying(255) NULL',
@@ -116,6 +134,7 @@ const REQUIRED_TABLES = {
       approval_status_change_timestamp: 'timestamp without time zone NULL',
     },
     primaryKey: 'id',
+    unique: ['form_id'],
   },
   ifc_users: {
     columns: {
@@ -132,6 +151,7 @@ const REQUIRED_TABLES = {
       designation: 'character varying(255) NULL',
       department: 'character varying(255) NULL',
       mobile: 'character varying(255) NULL',
+      unit_id: 'character varying(255) NULL',
     },
     primaryKey: 'id',
   },
@@ -208,6 +228,66 @@ async function ensurePrimaryKey(client, tableName, primaryKey) {
   console.log(`[db-init] Added PK ${finalConstraintName}`);
 }
 
+async function ensureUniqueConstraint(client, tableName, columnName) {
+  const uniqueOnColumn = await client.query(
+    `
+      SELECT 1
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      JOIN unnest(c.conkey) WITH ORDINALITY AS keys(attnum, ord) ON true
+      JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = keys.attnum
+      WHERE n.nspname = 'public'
+        AND t.relname = $1
+        AND c.contype = 'u'
+      GROUP BY c.oid
+      HAVING array_agg(a.attname::text ORDER BY keys.ord) = ARRAY[$2]::text[]
+      LIMIT 1
+    `,
+    [tableName, columnName]
+  );
+  if (uniqueOnColumn.rows.length > 0) return;
+
+  const duplicates = await client.query(
+    `
+      SELECT ${quoteIdentifier(columnName)} AS value, COUNT(*) AS count
+      FROM ${fqTable(tableName)}
+      WHERE ${quoteIdentifier(columnName)} IS NOT NULL
+      GROUP BY ${quoteIdentifier(columnName)}
+      HAVING COUNT(*) > 1
+      ORDER BY COUNT(*) DESC
+      LIMIT 5
+    `
+  );
+  if (duplicates.rows.length > 0) {
+    const sampleValues = duplicates.rows
+      .map((row) => `${row.value} (${row.count})`)
+      .join(', ');
+    throw new Error(
+      `[db-init] Cannot add unique constraint on ${tableName}.${columnName}; duplicate values found: ${sampleValues}`
+    );
+  }
+
+  const constraintName = `${tableName}_${columnName}_key`;
+  const sameNameElsewhere = await client.query(
+    `
+      SELECT 1
+      FROM pg_constraint
+      WHERE conname = $1
+      LIMIT 1
+    `,
+    [constraintName]
+  );
+
+  const finalConstraintName =
+    sameNameElsewhere.rows.length > 0 ? `${constraintName}_public` : constraintName;
+
+  await client.query(
+    `ALTER TABLE ${fqTable(tableName)} ADD CONSTRAINT ${quoteIdentifier(finalConstraintName)} UNIQUE (${quoteIdentifier(columnName)})`
+  );
+  console.log(`[db-init] Added unique constraint ${finalConstraintName}`);
+}
+
 async function ensureTable(client, tableName, spec) {
   const exists = await tableExists(client, tableName);
   const columns = Object.entries(spec.columns);
@@ -236,6 +316,29 @@ async function ensureTable(client, tableName, spec) {
   if (spec.primaryKey) {
     await ensurePrimaryKey(client, tableName, spec.primaryKey);
   }
+
+  if (Array.isArray(spec.unique)) {
+    for (const columnName of spec.unique) {
+      await ensureUniqueConstraint(client, tableName, columnName);
+    }
+  }
+}
+
+async function ensureDocumentCreatedAtDefaults(client) {
+  const tables = ['sample_docs', 'doc_uploaded_by_user'];
+  for (const tableName of tables) {
+    const exists = await tableExists(client, tableName);
+    if (!exists) continue;
+
+    const existingColumns = await getExistingColumns(client, tableName);
+    if (!existingColumns.has('created_at')) continue;
+
+    await client.query(
+      `ALTER TABLE ${fqTable(tableName)}
+       ALTER COLUMN "created_at" SET DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'::text)`
+    );
+    console.log(`[db-init] Ensured IST default for ${tableName}.created_at`);
+  }
 }
 
 async function ensureRequiredTablesAndColumns() {
@@ -244,6 +347,7 @@ async function ensureRequiredTablesAndColumns() {
     for (const [tableName, spec] of Object.entries(REQUIRED_TABLES)) {
       await ensureTable(client, tableName, spec);
     }
+    await ensureDocumentCreatedAtDefaults(client);
   } finally {
     client.release();
   }

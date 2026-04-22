@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
@@ -9,108 +9,205 @@ import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
-import DomainRoundedIcon from '@mui/icons-material/DomainRounded'
-import GroupRoundedIcon from '@mui/icons-material/GroupRounded'
+import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
-import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
+import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
+import PendingActionsRoundedIcon from '@mui/icons-material/PendingActionsRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
+import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
-import CorporateFareRoundedIcon from '@mui/icons-material/CorporateFareRounded'
+import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
-function ApproverHome() {
+function normalizeStatus(status) {
+  return String(status || '').trim().toLowerCase()
+}
+
+const COMPANY_DETAIL_LABELS = {
+  company_name: 'Company Name',
+  registered_email: 'Registered Email',
+  registered_address: 'Registered Address',
+  unique_identification_number: 'Unique Identification Number',
+  gst: 'GST',
+  pan: 'PAN',
+  number_of_corporate_offices: 'Corporate Offices',
+  number_of_factory_units: 'Factory Units',
+}
+
+function DetailRow({ label, value }) {
+  const theme = useTheme()
+  return (
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: { xs: '1fr', sm: '160px minmax(0, 1fr)' },
+        gap: { xs: 0.4, sm: 2 },
+        py: 1.2,
+        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
+        '&:last-of-type': {
+          borderBottom: 'none',
+        },
+      }}
+    >
+      <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: theme.palette.text.secondary }}>
+        {label}
+      </Typography>
+      <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: theme.palette.text.primary, wordBreak: 'break-word' }}>
+        {value || '-'}
+      </Typography>
+    </Box>
+  )
+}
+
+function UserHome() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
-  const [companyDetailsOpen, setCompanyDetailsOpen] = useState(false)
+  const [companyDialogOpen, setCompanyDialogOpen] = useState(false)
+  const [profile, setProfile] = useState(null)
+  const [forms, setForms] = useState([])
   useSyncGlobalLoading(loading)
-  const [stats, setStats] = useState({
-    approver_name: '',
-    company_name: '',
-    mapped_units: [],
-    total_units: 0,
-    total_users: 0,
-    total_active_racms: 0,
-    total_approved_racms: 0,
-    total_rejected_racms: 0,
-    total_pending_racms: 0,
-    total_racms: 0,
-  })
 
   useEffect(() => {
-    const fetchHomeStats = async () => {
+    let cancelled = false
+
+    const fetchHomeData = async () => {
+      setLoading(true)
       try {
-        const response = await fetch('http://localhost:3000/api/approver/home-stats', {
+        const profileResponse = await fetch('http://localhost:3000/api/auth/profile', {
           method: 'GET',
           credentials: 'include',
         })
+        const profileData = await profileResponse.json()
 
-        const data = await response.json()
+        if (profileResponse.status === 401) {
+          navigate('/login', { replace: true })
+          return
+        }
 
-        if (response.ok && data.success) {
-          setStats(data.data)
+        if (!profileResponse.ok || !profileData?.success) {
+          throw new Error(profileData?.message || 'Failed to fetch profile')
+        }
+
+        const nextProfile = profileData.profile || {}
+        if (cancelled) return
+        setProfile(nextProfile)
+
+        if (!nextProfile.email_id) {
+          setForms([])
+          return
+        }
+
+        const formsResponse = await fetch(
+          `http://localhost:3000/api/control-forms?control_owner=${encodeURIComponent(nextProfile.email_id)}&active=true`,
+          {
+            method: 'GET',
+            credentials: 'include',
+          },
+        )
+        const formsData = await formsResponse.json()
+
+        if (formsResponse.status === 401) {
+          navigate('/login', { replace: true })
+          return
+        }
+
+        if (!formsResponse.ok || !formsData?.success) {
+          throw new Error(formsData?.message || 'Failed to fetch RACM stats')
+        }
+
+        if (!cancelled) {
+          setForms(Array.isArray(formsData.data) ? formsData.data : [])
         }
       } catch (error) {
-        console.error('Failed to fetch approver home stats:', error)
+        console.error('Failed to fetch user home data:', error)
+        if (!cancelled) {
+          toast.error('Failed to load user home data')
+          setForms([])
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
 
-    fetchHomeStats()
-  }, [])
+    fetchHomeData()
 
-  const displayName = stats.approver_name?.trim() || 'Approver'
+    return () => {
+      cancelled = true
+    }
+  }, [navigate])
+
+  const stats = useMemo(() => {
+    return forms.reduce(
+      (acc, form) => {
+        const status = normalizeStatus(form.status)
+        acc.totalRacms += 1
+        if (status === 'approved') {
+          acc.approvedRacms += 1
+        } else if (status !== 'rejected') {
+          acc.pendingRacms += 1
+        }
+        return acc
+      },
+      {
+        totalRacms: 0,
+        approvedRacms: 0,
+        pendingRacms: 0,
+      },
+    )
+  }, [forms])
+
+  const displayName = profile?.emp_name?.trim() || profile?.email_id || 'User'
+  const unitDisplay = profile?.unit_name || profile?.unit_id || '-'
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
-  const mappedUnits = Array.isArray(stats.mapped_units) ? stats.mapped_units : []
-  const approverCompanyName = String(stats.company_name || mappedUnits[0]?.company_name || '').trim()
-  const companyGroups = mappedUnits.reduce((groups, unit) => {
-    const key = unit.company_identifier || 'unknown-company'
-    if (!groups[key]) {
-      groups[key] = {
-        company_identifier: unit.company_identifier,
-        company_name: unit.company_name || unit.company_identifier || 'Company',
-        units: [],
-      }
-    }
-    groups[key].units.push(unit)
-    return groups
-  }, {})
-  const companyDetails = Object.values(companyGroups)
+  const companyDetailRows = Object.entries(profile?.company_details || {})
+    .filter(([key]) => !['id', 'company_identifier', 'created_at'].includes(key))
+    .map(([key, value]) => ({
+      label: COMPANY_DETAIL_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
+      value,
+    }))
 
-  const topStatCards = [
+  const statCards = [
     {
-      title: 'Mapped Units',
-      value: stats.total_units,
-      icon: <CorporateFareRoundedIcon sx={{ fontSize: 22 }} />,
-      accent: theme.palette.primary.main,
+      label: 'Total RACMs',
+      value: stats.totalRacms,
+      icon: <FactCheckRoundedIcon sx={{ fontSize: 22 }} />,
+      color: theme.palette.primary.main,
     },
     {
-      title: 'Users',
-      value: stats.total_users,
-      icon: <GroupRoundedIcon sx={{ fontSize: 22 }} />,
-      accent: blueTokens.accent || theme.palette.info.main,
+      label: 'Pending RACMs',
+      value: stats.pendingRacms,
+      icon: <PendingActionsRoundedIcon sx={{ fontSize: 22 }} />,
+      color: theme.palette.warning.main,
+    },
+    {
+      label: 'Approved RACMs',
+      value: stats.approvedRacms,
+      icon: <TaskAltRoundedIcon sx={{ fontSize: 22 }} />,
+      color: theme.palette.success.main,
     },
   ]
 
-  const workTiles = [
+  const tiles = [
     {
-      eyebrow: 'Primary',
-      title: 'Approval Dashboard',
-      description: 'Open the full approval queue to filter RACMs, inspect details, and submit decisions.',
-      icon: <DashboardRoundedIcon sx={{ fontSize: 38 }} />,
-      action: 'Open dashboard',
-      path: '/approver/dashboard',
+      eyebrow: 'Company',
+      title: 'Company Details',
+      description: 'View your company profile and the unit mapped to your user account.',
+      action: 'View details',
+      icon: <BusinessRoundedIcon sx={{ fontSize: 38 }} />,
       accent: theme.palette.primary.main,
+      onClick: () => setCompanyDialogOpen(true),
     },
     {
-      eyebrow: 'Priority',
-      title: 'Pending Review Focus',
-      description: 'Start with the unresolved queue and move quickly through pending approvals across companies.',
-      icon: <TaskAltRoundedIcon sx={{ fontSize: 38 }} />,
-      action: 'Review pending',
-      path: '/approver/dashboard',
-      accent: theme.palette.warning.main,
+      eyebrow: 'RACM',
+      title: 'Dashboard',
+      description: 'Open your RACM list to review assignments, upload evidence, and track status.',
+      action: 'Open dashboard',
+      icon: <DashboardRoundedIcon sx={{ fontSize: 38 }} />,
+      accent: blueTokens.accent || theme.palette.info.main,
+      onClick: () => navigate('/user/dashboard'),
     },
   ]
 
@@ -135,7 +232,7 @@ function ApproverHome() {
             theme.palette.mode === 'dark'
               ? alpha(theme.palette.common.white, 0.08)
               : alpha(theme.palette.primary.main, 0.12),
-          background: theme.palette.gradients?.hero || `linear-gradient(135deg, ${alpha(theme.palette.primary.light, 0.22)} 0%, ${alpha(theme.palette.background.paper, 0.96)} 100%)`,
+          background: theme.palette.gradients?.hero,
           boxShadow:
             theme.palette.mode === 'dark'
               ? '0 20px 48px rgba(0, 0, 0, 0.32)'
@@ -199,7 +296,7 @@ function ApproverHome() {
                 }}
               />
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: theme.palette.text.secondary }}>
-                Approver workspace
+                User workspace
               </Typography>
             </Box>
 
@@ -225,52 +322,21 @@ function ApproverHome() {
                 lineHeight: 1.7,
               }}
             >
-              Review approval activity for your assigned units, keep pending RACMs moving, and use the dashboard as the operational hub for decisions.
+              Track your assigned RACMs, monitor pending evidence work, and open the dashboard whenever you need the full list.
             </Typography>
-
-            {approverCompanyName && (
-              <Typography
-                sx={{
-                  mt: 1,
-                  color: theme.palette.text.primary,
-                  fontSize: { xs: '1rem', sm: '1.08rem' },
-                  fontWeight: 800,
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                {approverCompanyName}
-              </Typography>
-            )}
-
-            <Box sx={{ mt: 2.2, display: 'flex', flexWrap: 'wrap', gap: 1.2 }}>
-              <Button
-                variant="contained"
-                startIcon={<DomainRoundedIcon />}
-                onClick={() => setCompanyDetailsOpen(true)}
-                sx={{
-                  textTransform: 'none',
-                  fontWeight: 800,
-                  borderRadius: 2,
-                  px: 2.2,
-                  py: 1,
-                }}
-              >
-                Company Details
-              </Button>
-            </Box>
 
             <Box
               sx={{
                 mt: 2.5,
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' },
                 gap: 1.5,
-                maxWidth: 520,
+                maxWidth: 760,
               }}
             >
-              {topStatCards.map((card) => (
+              {statCards.map((card) => (
                 <Paper
-                  key={card.title}
+                  key={card.label}
                   elevation={0}
                   sx={{
                     p: 1.35,
@@ -289,9 +355,9 @@ function ApproverHome() {
                         display: 'grid',
                         placeItems: 'center',
                         flexShrink: 0,
-                        color: card.accent,
-                        border: `1px solid ${alpha(card.accent, 0.45)}`,
-                        backgroundColor: alpha(card.accent, theme.palette.mode === 'dark' ? 0.12 : 0.08),
+                        color: card.color,
+                        border: `1px solid ${alpha(card.color, 0.45)}`,
+                        backgroundColor: alpha(card.color, theme.palette.mode === 'dark' ? 0.12 : 0.08),
                       }}
                     >
                       {card.icon}
@@ -307,7 +373,7 @@ function ApproverHome() {
                           mb: 0.25,
                         }}
                       >
-                        {card.title}
+                        {card.label}
                       </Typography>
                       <Typography
                         sx={{
@@ -318,66 +384,13 @@ function ApproverHome() {
                           lineHeight: 1.2,
                         }}
                       >
-                        {loading ? '—' : card.value}
+                        {loading ? '--' : card.value}
                       </Typography>
                     </Box>
                   </Box>
                 </Paper>
               ))}
             </Box>
-
-            <Paper
-              elevation={0}
-              sx={{
-                mt: 2,
-                p: 1.6,
-                borderRadius: 2,
-                border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-                backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.22 : 0.64),
-                maxWidth: 720,
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: '0.72rem',
-                  fontWeight: 900,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: theme.palette.text.secondary,
-                  mb: 1,
-                }}
-              >
-                Units Mapped To You
-              </Typography>
-              {mappedUnits.length > 0 ? (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {mappedUnits.map((unit) => (
-                    <Box
-                      key={`${unit.company_identifier || 'company'}-${unit.unit_id}`}
-                      sx={{
-                        px: 1.2,
-                        py: 0.75,
-                        borderRadius: 1.5,
-                        border: `1px solid ${alpha(theme.palette.primary.main, 0.22)}`,
-                        backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.07),
-                        maxWidth: '100%',
-                      }}
-                    >
-                      <Typography sx={{ fontSize: '0.84rem', fontWeight: 800, color: theme.palette.text.primary }}>
-                        {unit.unit_name || unit.unit_id || 'Unit'}
-                      </Typography>
-                      <Typography sx={{ fontSize: '0.74rem', color: theme.palette.text.secondary, overflowWrap: 'anywhere' }}>
-                        {unit.company_name || unit.company_identifier || '-'}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Box>
-              ) : (
-                <Typography sx={{ fontSize: '0.9rem', color: theme.palette.text.secondary }}>
-                  No units are currently mapped to this approver.
-                </Typography>
-              )}
-            </Paper>
           </Box>
 
           <Paper
@@ -399,7 +412,7 @@ function ApproverHome() {
               minHeight: 'auto',
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb: 0 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
               <Box
                 sx={{
                   width: 42,
@@ -418,18 +431,13 @@ function ApproverHome() {
                   Snapshot
                 </Typography>
                 <Typography sx={{ fontSize: '1.05rem', fontWeight: 800, color: theme.palette.text.primary }}>
-                  Approval Overview
+                  RACM Overview
                 </Typography>
               </Box>
             </Box>
 
             <Box sx={{ display: 'grid', gap: 0.85 }}>
-              {[
-                { label: 'Total RACMs', value: stats.total_racms, color: theme.palette.primary.main },
-                { label: 'Pending RACMs', value: stats.total_pending_racms, color: theme.palette.warning.main },
-                { label: 'Approved RACMs', value: stats.total_approved_racms, color: theme.palette.success.main },
-                { label: 'Rejected RACMs', value: stats.total_rejected_racms, color: theme.palette.error.main },
-              ].map((item) => (
+              {statCards.map((item) => (
                 <Box
                   key={item.label}
                   sx={{
@@ -437,7 +445,7 @@ function ApproverHome() {
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: 2,
-                    py: 0.85,
+                    py: 0.9,
                     borderBottom: `1px solid ${alpha(theme.palette.divider, 0.75)}`,
                     '&:last-of-type': {
                       borderBottom: 'none',
@@ -473,14 +481,14 @@ function ApproverHome() {
         sx={{
           width: '100%',
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', lg: '1.2fr 0.8fr' },
+          gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
           gap: 2.5,
         }}
       >
-        {workTiles.map((tile) => (
+        {tiles.map((tile) => (
           <Paper
             key={tile.title}
-            onClick={() => navigate(tile.path)}
+            onClick={tile.onClick}
             elevation={0}
             sx={{
               p: 0,
@@ -529,15 +537,7 @@ function ApproverHome() {
                 background: `linear-gradient(180deg, ${alpha(tile.accent, theme.palette.mode === 'dark' ? 0.18 : 0.08)} 0%, transparent 100%)`,
               }}
             >
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  justifyContent: 'space-between',
-                  gap: 1.5,
-                  width: '100%',
-                }}
-              >
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, width: '100%' }}>
                 <Box
                   sx={{
                     width: 56,
@@ -562,10 +562,7 @@ function ApproverHome() {
                     py: 0.65,
                     borderRadius: 999,
                     backgroundColor: alpha(tile.accent, theme.palette.mode === 'dark' ? 0.14 : 0.1),
-                    color:
-                      theme.palette.mode === 'dark'
-                        ? alpha(theme.palette.common.white, 0.86)
-                        : tile.accent,
+                    color: theme.palette.mode === 'dark' ? alpha(theme.palette.common.white, 0.86) : tile.accent,
                   }}
                 >
                   <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
@@ -575,37 +572,15 @@ function ApproverHome() {
               </Box>
 
               <Box sx={{ display: 'grid', gap: 0.9 }}>
-                <Typography
-                  sx={{
-                    fontWeight: 800,
-                    color: theme.palette.text.primary,
-                    fontSize: '1.08rem',
-                    lineHeight: 1.3,
-                  }}
-                >
+                <Typography sx={{ fontWeight: 800, color: theme.palette.text.primary, fontSize: '1.08rem', lineHeight: 1.3 }}>
                   {tile.title}
                 </Typography>
-                <Typography
-                  sx={{
-                    textAlign: 'left',
-                    color: alpha(theme.palette.text.secondary, 0.92),
-                    fontSize: '0.92rem',
-                    lineHeight: 1.6,
-                  }}
-                >
+                <Typography sx={{ textAlign: 'left', color: alpha(theme.palette.text.secondary, 0.92), fontSize: '0.92rem', lineHeight: 1.6 }}>
                   {tile.description}
                 </Typography>
               </Box>
 
-              <Box
-                sx={{
-                  mt: 'auto',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 0.8,
-                  color: tile.accent,
-                }}
-              >
+              <Box sx={{ mt: 'auto', display: 'flex', alignItems: 'center', gap: 0.8, color: tile.accent }}>
                 <Typography sx={{ fontSize: '0.88rem', fontWeight: 800 }}>
                   {tile.action}
                 </Typography>
@@ -617,69 +592,42 @@ function ApproverHome() {
       </Box>
 
       <Dialog
-        open={companyDetailsOpen}
-        onClose={() => setCompanyDetailsOpen(false)}
-        maxWidth="md"
+        open={companyDialogOpen}
+        onClose={() => setCompanyDialogOpen(false)}
+        maxWidth="sm"
         fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle sx={{ fontWeight: 900 }}>Company Details</DialogTitle>
-        <DialogContent dividers>
-          {companyDetails.length > 0 ? (
-            <Box sx={{ display: 'grid', gap: 1.5 }}>
-              {companyDetails.map((company) => (
-                <Paper
-                  key={company.company_identifier || company.company_name}
-                  elevation={0}
-                  sx={{
-                    p: 1.6,
-                    borderRadius: 2,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                  }}
-                >
-                  <Typography sx={{ fontWeight: 900, color: theme.palette.text.primary }}>
-                    {company.company_name}
-                  </Typography>
-                  <Typography sx={{ mb: 1.25, fontSize: '0.82rem', color: theme.palette.text.secondary }}>
-                    {company.company_identifier || '-'}
-                  </Typography>
-                  <Box sx={{ display: 'grid', gap: 0.9 }}>
-                    {company.units.map((unit) => (
-                      <Box
-                        key={`${company.company_identifier || company.company_name}-${unit.unit_id}`}
-                        sx={{
-                          p: 1.2,
-                          borderRadius: 1.5,
-                          backgroundColor: alpha(theme.palette.action.hover, 0.7),
-                        }}
-                      >
-                        <Typography sx={{ fontWeight: 800, fontSize: '0.92rem' }}>
-                          {unit.unit_name || unit.unit_id || 'Unit'}
-                        </Typography>
-                        <Typography sx={{ fontSize: '0.78rem', color: theme.palette.text.secondary }}>
-                          Unit ID: {unit.unit_id || '-'}
-                        </Typography>
-                        {unit.unit_address && (
-                          <Typography sx={{ mt: 0.35, fontSize: '0.78rem', color: theme.palette.text.secondary }}>
-                            {unit.unit_address}
-                          </Typography>
-                        )}
-                      </Box>
-                    ))}
-                  </Box>
-                </Paper>
-              ))}
-            </Box>
-          ) : (
-            <Typography color="text.secondary">No company units are currently mapped to this approver.</Typography>
-          )}
+        <DialogTitle sx={{ fontWeight: 800 }}>Company Details</DialogTitle>
+        <DialogContent>
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: 'divider',
+              backgroundColor: alpha(theme.palette.background.paper, 0.75),
+            }}
+          >
+            {companyDetailRows.map((row) => (
+              <DetailRow key={row.label} label={row.label} value={row.value} />
+            ))}
+            <DetailRow label="Unit" value={unitDisplay} />
+          </Box>
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={() => setCompanyDetailsOpen(false)}>Close</Button>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={() => setCompanyDialogOpen(false)}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
+          >
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
   )
 }
 
-export default ApproverHome
+export default UserHome

@@ -5,6 +5,7 @@ import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Paper from '@mui/material/Paper'
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
+import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded'
@@ -31,6 +32,14 @@ function Company_co_home() {
       description: 'Create and maintain user accounts, permissions, and access roles.',
       path: '/company_co/user-management',
       icon: <PeopleAltRoundedIcon sx={{ fontSize: 38 }} />,
+      accent: sharedTileAccent,
+    },
+    {
+      eyebrow: 'Units',
+      title: 'Unit Management',
+      description: 'Review unit mappings for coordinators and approvers across the company.',
+      path: '/company_co/unit-management',
+      icon: <ApartmentRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },
     {

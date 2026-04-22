@@ -5,6 +5,11 @@ const { verifyCompanyCoordinator } = require('../../modules/auth/auth.middleware
 const router = express.Router();
 
 router.get('/home-stats', verifyCompanyCoordinator, controller.getHomeStats);
+router.get('/unit-management', verifyCompanyCoordinator, controller.getUnitManagement);
+router.post('/unit-management/units', verifyCompanyCoordinator, controller.createCompanyUnit);
+router.patch('/unit-management/units/:unit_id/assignment', verifyCompanyCoordinator, controller.updateUnitAssignment);
+router.post('/unit-management/coordinators', verifyCompanyCoordinator, controller.createUnitCoordinator);
+router.post('/unit-management/approvers', verifyCompanyCoordinator, controller.createUnitApprover);
 router.get('/users', verifyCompanyCoordinator, controller.getUsers);
 router.post('/create-user', verifyCompanyCoordinator, controller.createUser);
 router.post('/create-users-bulk', verifyCompanyCoordinator, controller.createUsersBulk);

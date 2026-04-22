@@ -1,10 +1,11 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import TextField from '@mui/material/TextField'
+import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import Button from '@mui/material/Button'
 import InputAdornment from '@mui/material/InputAdornment'
@@ -28,10 +29,57 @@ function CreateUser() {
   const [designation, setDesignation] = useState('')
   const [department, setDepartment] = useState('')
   const [mobile, setMobile] = useState('')
+  const [unitId, setUnitId] = useState('')
+  const [unitOptions, setUnitOptions] = useState([])
+  const [unitsLoading, setUnitsLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  useSyncGlobalLoading(loading)
+  useSyncGlobalLoading(loading || unitsLoading)
+
+  useEffect(() => {
+    let active = true
+
+    const fetchCoordinatorUnits = async () => {
+      setUnitsLoading(true)
+      try {
+        const response = await fetch('http://localhost:3000/api/company-co/unit-management', {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+
+        if (!active) return
+
+        if (response.ok && data.success) {
+          const units = Array.isArray(data.data?.currentCoordinatorUnits)
+            ? data.data.currentCoordinatorUnits
+            : []
+          setUnitOptions(units)
+          setUnitId((currentUnitId) => currentUnitId || units[0]?.unit_id || '')
+        } else {
+          toast.error(data.message || 'Failed to load assigned units')
+          setUnitOptions([])
+        }
+      } catch (err) {
+        console.error('Fetch assigned units error:', err)
+        if (active) {
+          toast.error('Failed to load assigned units')
+          setUnitOptions([])
+        }
+      } finally {
+        if (active) {
+          setUnitsLoading(false)
+        }
+      }
+    }
+
+    fetchCoordinatorUnits()
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const validateEmail = (emailValue) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -50,6 +98,7 @@ function CreateUser() {
     setDesignation('')
     setDepartment('')
     setMobile('')
+    setUnitId(unitOptions[0]?.unit_id || '')
     setError('')
   }
 
@@ -66,6 +115,13 @@ function CreateUser() {
 
     if (!validateEmail(email)) {
       const errorMsg = 'Please enter a valid email address'
+      setError(errorMsg)
+      toast.error(errorMsg)
+      return
+    }
+
+    if (!unitId) {
+      const errorMsg = 'Unit is required'
       setError(errorMsg)
       toast.error(errorMsg)
       return
@@ -94,6 +150,7 @@ function CreateUser() {
           designation: designation.trim() || null,
           department: department.trim() || null,
           mobile: mobile.trim() || null,
+          unit_id: unitId,
         }),
       })
 
@@ -174,6 +231,39 @@ function CreateUser() {
                     }}
                   >
                     <Typography sx={{ fontWeight: 700, mb: 0.25 }}>User details</Typography>
+
+                    <TextField
+                      id="unit_id"
+                      name="unit_id"
+                      label="Unit"
+                      select
+                      variant="outlined"
+                      value={unitId}
+                      onChange={(e) => setUnitId(e.target.value)}
+                      required
+                      disabled={loading || unitsLoading || unitOptions.length === 0}
+                      helperText={
+                        unitsLoading
+                          ? 'Loading assigned units...'
+                          : unitOptions.length === 0
+                            ? 'No units are mapped with your coordinator account.'
+                            : 'Only units mapped with your coordinator account are available.'
+                      }
+                      fullWidth
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <ApartmentRoundedIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+                          </InputAdornment>
+                        ),
+                      }}
+                    >
+                      {unitOptions.map((unit) => (
+                        <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
+                          {unit.unit_name || unit.unit_id}
+                        </MenuItem>
+                      ))}
+                    </TextField>
 
                     <TextField
                       id="email"
@@ -312,7 +402,7 @@ function CreateUser() {
                 >
                   <Button
                     type="submit"
-                    disabled={loading}
+                    disabled={loading || unitsLoading || unitOptions.length === 0}
                     variant="contained"
                     color="secondary"
                     sx={{

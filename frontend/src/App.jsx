@@ -1,7 +1,7 @@
 import './index.css'
 import Home from './pages/Home'
 import Login from './pages/Login'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Navigate, Routes, Route, useLocation } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import LinearProgress from '@mui/material/LinearProgress'
 import Company_Management from './pages/siteadmin/Company_Management'
@@ -10,12 +10,14 @@ import CompanyDetail from './pages/siteadmin/CompanyDetail'
 import Siteadmin_Dashboard from './pages/siteadmin/Siteadmin_dashboard'
 import Auditor_dashboard from './pages/auditor/Auditor_dashboard'
 import User_dashboard from './pages/user/User_dashboard'
+import UserHome from './pages/user/UserHome'
 import ForgotPassword from './pages/ForgotPassword'
 import UpdatePassword from './pages/UpdatePassword'
 import RoleBasedProtectedRoute from './components/RoleBasedProtectedRoute'
 import Company_Co_dashboard from './pages/company_co/Company_co_dashboard'
 import RacmAssignment from './pages/company_co/RacmAssignment'
 import UserManagement from './pages/company_co/User_Management'
+import UnitManagement from './pages/company_co/UnitManagement'
 import ExcelUpload from './pages/forms/ExcelUpload'
 import ExcelColumnMap from './pages/forms/ExcelColumnMap'
 import FormDetail from './pages/company_co/FormDetail'
@@ -162,6 +164,8 @@ function App() {
             </RoleBasedProtectedRoute>
           } 
         >
+          <Route index element={<Navigate to="home" replace />} />
+          <Route path="home" element={<UserHome />} />
           <Route path="dashboard" element={<User_dashboard />} />
           <Route path="form/:form_id" element={<UserFormDetail />} />
           <Route path="profile" element={<ProfilePage />} />
@@ -181,6 +185,7 @@ function App() {
           <Route path="racm-management" element={<RacmManagementDashboard />} />
           <Route path="racm-assignment" element={<RacmAssignment />} />
           <Route path="user-management" element={<UserManagement />} />
+          <Route path="unit-management" element={<UnitManagement />} />
           <Route path="create-user" element={<CreateUser />} />
           <Route path="upload-excel" element={<ExcelUpload />} />
           <Route path="upload-excel/column-map" element={<ExcelColumnMap />} />

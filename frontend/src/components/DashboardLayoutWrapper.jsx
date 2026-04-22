@@ -67,6 +67,11 @@ const getNavigationForRole = (role) => {
     case 'user':
       baseNav.push(
         {
+          path: '/user/home',
+          title: 'Home',
+          icon: <DashboardIcon />,
+        },
+        {
           path: '/user/dashboard',
           title: 'Dashboard',
           icon: <DashboardIcon />,
@@ -207,6 +212,7 @@ function DashboardLayoutWrapper({ children, userRole, onLogout }) {
             const isActive = location.pathname === item.path || 
                            (item.path !== '/siteadmin/dashboard' && 
                             item.path !== '/company_co/dashboard' && 
+                            item.path !== '/user/home' &&
                             item.path !== '/user/dashboard' && 
                             item.path !== '/approver/dashboard' && 
                             item.path !== '/auditor/dashboard' &&

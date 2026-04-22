@@ -42,6 +42,11 @@ function Login() {
         const data = await response.json()
 
         if (response.ok && data.success) {
+          if (data.requiresPasswordUpdate) {
+            navigate('/update-password', { replace: true })
+            return
+          }
+
           const companyIdentifier = data.user?.company_identifier
           if (companyIdentifier) {
             try {
@@ -73,7 +78,7 @@ function Login() {
             // Default role-based redirect
             const role = data.user?.role
             const roleRoutes = {
-              user: '/user/dashboard',
+              user: '/user/home',
               company_co: '/company_co/home',
               approver: '/approver/home',
               siteadmin: '/siteadmin/dashboard',
@@ -157,7 +162,7 @@ function Login() {
           // Default role-based redirect
           const role = data.user.role
           const roleRoutes = {
-            'user': '/user/dashboard',
+            'user': '/user/home',
             'company_co': '/company_co/home',
             'approver': '/approver/home',
             'siteadmin': '/siteadmin/dashboard',

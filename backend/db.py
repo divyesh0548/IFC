@@ -345,7 +345,7 @@ def create_sample_docs_table(cursor):
         form_id character varying(255) NULL,
         sample_doc character varying(255) NULL,
         created_at timestamp without time zone NULL DEFAULT (
-            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+            CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'::text
         )
     );
     """
@@ -375,7 +375,7 @@ def create_doc_uploaded_by_user_table(cursor):
         form_id character varying(255) NULL,
         doc_uploaded_by_user character varying(255) NULL,
         created_at timestamp without time zone NULL DEFAULT (
-            (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text
+            CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'::text
         )
     );
     """

@@ -5,7 +5,6 @@ const cookieParser = require('cookie-parser');
 // Load environment variables first
 dotenv.config();
 
-const { processExcelFiles } = require('./scripts/process_excel_files');
 const { runReminderEmails } = require('./scripts/reminder_emails');
 const { runBootstrap } = require('./config/bootstrap');
 require('./utils/db'); // Load shared pool (timezone set there)
@@ -17,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'http://localhost:5173'); // Vite default port
   res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   
   if (req.method === 'OPTIONS') {
@@ -58,21 +57,6 @@ app.use('/api', require('./routes'));
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
-});
-
-// Start scheduled task to process Excel files every 1 minute
-console.log('Starting Excel file processor scheduler (runs every 1 minute)...');
-setInterval(async () => {
-  try {
-    await processExcelFiles();
-  } catch (error) {
-    console.error('Error in scheduled Excel file processing:', error);
-  }
-}, 60 * 1000); // 60 seconds = 1 minute
-
-// Process any existing unprocessed files on server start
-processExcelFiles().catch(error => {
-  console.error('Error processing Excel files on startup:', error);
 });
 
 

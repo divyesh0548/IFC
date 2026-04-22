@@ -259,6 +259,63 @@ function shapeControlFormJsonForProcessOwner(row) {
   return copy;
 }
 
+function isDatabaseConnectionError(error) {
+  return (
+    error?.code === 'ECONNRESET' ||
+    error?.code === 'ECONNREFUSED' ||
+    error?.code === 'ETIMEDOUT' ||
+    String(error?.message || '').includes('ECONNRESET')
+  );
+}
+
+const INACTIVE_RACM_APPROVER_MESSAGE = 'Approver of this RACM is not active';
+
+async function getControlFormApproverDetails(clientOrPool, formId) {
+  const result = await clientOrPool.query(
+    `
+      SELECT
+        cf.form_id,
+        cf.control_owner,
+        cf.company_identifier,
+        cf.unit_id,
+        cum.approver_email_id,
+        NULLIF(TRIM(approver.emp_name), '') AS approver_name,
+        approver.temp_login AS approver_temp_login,
+        COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(cum.approver_email_id), '')) AS approver_display_name
+      FROM control_forms cf
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = cf.company_identifier
+       AND cum.unit_id = cf.unit_id
+      LEFT JOIN ifc_users approver
+        ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(cum.approver_email_id, '')))
+      WHERE cf.form_id = $1
+      LIMIT 1
+    `,
+    [formId]
+  );
+
+  return result.rows[0] || null;
+}
+
+function isApproverTempLogin(details) {
+  return Number(details?.approver_temp_login) === 1;
+}
+
+async function queryAuthenticatedUser(emailId) {
+  const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
+
+  try {
+    return await pool.query(userQuery, [emailId]);
+  } catch (error) {
+    if (!isDatabaseConnectionError(error)) {
+      throw error;
+    }
+
+    console.warn('Auth user lookup connection reset; retrying once:', error.message);
+    return pool.query(userQuery, [emailId]);
+  }
+}
+
 // Middleware to verify authentication (unified authentication system)
 async function verifyAuth(req, res, next) {
   try {
@@ -274,11 +331,20 @@ async function verifyAuth(req, res, next) {
     }
 
     const jwtSecret = process.env.JWT_SECRET;
-    const decoded = jwt.verify(decryptToken(token), jwtSecret);
+    let decoded;
+
+    try {
+      decoded = jwt.verify(decryptToken(token), jwtSecret);
+    } catch (error) {
+      console.error('❌ Invalid or expired token:', error.message);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
     
     // Get user details from database to include role and company_identifier
-    const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
-    const userResult = await pool.query(userQuery, [decoded.email_id]);
+    const userResult = await queryAuthenticatedUser(decoded.email_id);
     
     if (userResult.rows.length === 0) {
       return res.status(401).json({
@@ -308,10 +374,12 @@ async function verifyAuth(req, res, next) {
       });
     }
     
-    console.error('❌ Token verification failed:', error.message);
-    return res.status(401).json({
+    console.error('❌ Authentication user lookup failed:', error.message);
+    return res.status(isDatabaseConnectionError(error) ? 503 : 500).json({
       success: false,
-      message: 'Token verification failed'
+      message: isDatabaseConnectionError(error)
+        ? 'Authentication service temporarily unavailable'
+        : 'Authentication lookup failed'
     });
   }
 }
@@ -455,6 +523,7 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
 
     const businessProcess = req.body.businessProcess;
     const financialYear = req.body.financialYear;
+    const unitId = req.body.unit_id ? String(req.body.unit_id).trim() : '';
     const rows = req.body.rows;
 
     if (!businessProcess || String(businessProcess).trim() === '') {
@@ -462,6 +531,9 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
     }
     if (!financialYear || String(financialYear).trim() === '') {
       return res.status(400).json({ success: false, message: 'Financial year is required' });
+    }
+    if (!unitId) {
+      return res.status(400).json({ success: false, message: 'Unit is required' });
     }
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ success: false, message: 'No data rows provided' });
@@ -514,10 +586,31 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
     try {
       await client.query('BEGIN');
 
+      const unitResult = await client.query(
+        `
+          SELECT unit_id
+          FROM company_unit_master
+          WHERE company_identifier = $1
+            AND unit_id = $2
+            AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = LOWER(TRIM($3))
+          LIMIT 1
+        `,
+        [companyIdentifier, unitId, coordinatorEmailId]
+      );
+
+      if (unitResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid unit selected',
+        });
+      }
+
       const importStats = await insertRacmRowsFromTransformedData(client, {
         transformedData,
         companyIdentifier,
         coordinatorEmailId,
+        unitId,
         businessProcess: String(businessProcess).trim(),
         financialYear: String(financialYear).trim(),
         fileDueDate: dueDate || null,
@@ -582,10 +675,10 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
   }
 });
 
-// Get all RACM forms (with optional company_identifier, control_owner, active, business_process, status, financial_year, sub_process, and cycle filters)
+// Get all RACM forms (with optional company_identifier, control_owner, active, business_process, status, financial_year, sub_process, cycle, and unit filters)
 router.get('/', verifyAuth, async (req, res) => {
   try {
-    const { company_identifier, control_owner, active, business_process, status, financial_year, cycle, sub_process } = req.query;
+    const { company_identifier, control_owner, active, business_process, status, financial_year, cycle, sub_process, unit_id } = req.query;
     
     // Debug logging
     console.log('RACM GET request filters:', {
@@ -595,14 +688,19 @@ router.get('/', verifyAuth, async (req, res) => {
       status,
       financial_year,
       cycle,
-      sub_process
+      sub_process,
+      unit_id,
     });
     
     let query = `
       SELECT
         cf.*,
+        NULLIF(TRIM(cum.unit_name), '') AS unit_name,
         NULLIF(TRIM(u.emp_name), '') AS control_owner_name
       FROM control_forms cf
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = cf.company_identifier
+       AND cum.unit_id = cf.unit_id
       LEFT JOIN ifc_users u
         ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
       WHERE 1=1
@@ -618,9 +716,26 @@ router.get('/', verifyAuth, async (req, res) => {
         queryParams.push(coordinatorCompanyIdentifier);
         paramIndex++;
       }
+      query += `
+        AND EXISTS (
+          SELECT 1
+          FROM company_unit_master coordinator_units
+          WHERE coordinator_units.company_identifier = cf.company_identifier
+            AND coordinator_units.unit_id = cf.unit_id
+            AND LOWER(TRIM(COALESCE(coordinator_units.coordinator_email_id, ''))) = LOWER(TRIM($${paramIndex}))
+        )
+      `;
+      queryParams.push(req.user.email_id);
+      paramIndex++;
     } else if (company_identifier) {
       query += ` AND cf.company_identifier = $${paramIndex}`;
       queryParams.push(company_identifier);
+      paramIndex++;
+    }
+
+    if (unit_id) {
+      query += ` AND cf.unit_id = $${paramIndex}`;
+      queryParams.push(String(unit_id).trim());
       paramIndex++;
     }
     
@@ -841,8 +956,23 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
     const loggedInUserEmail = req.user.email_id;
     const loggedInUserRole = req.user.role;
     
-    // SELECT * returns all columns including control_design_procs
-    const query = 'SELECT * FROM control_forms WHERE form_id = $1';
+    // SELECT cf.* returns all RACM columns; unit and approver details are joined for display.
+    const query = `
+      SELECT
+        cf.*,
+        cum.unit_name,
+        cum.approver_email_id,
+        NULLIF(TRIM(approver.emp_name), '') AS approver_name,
+        approver.temp_login AS approver_temp_login,
+        COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(cum.approver_email_id), '')) AS approver_display_name
+      FROM control_forms cf
+      LEFT JOIN company_unit_master cum
+        ON cum.unit_id = cf.unit_id
+       AND cum.company_identifier = cf.company_identifier
+      LEFT JOIN ifc_users approver
+        ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(cum.approver_email_id, '')))
+      WHERE cf.form_id = $1
+    `;
     const result = await pool.query(query, [form_id]);
     
     if (result.rows.length === 0) {
@@ -903,7 +1033,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     completeness, existence_occurrence, rights_and_obligation,
     valuation_and_allocation, presentation_and_disclosure,
     due_date, reminder_frequency,
-    doc_uploaded_by_user, active, status, reason_by_approver, remarks_by_user,
+    doc_uploaded_by_user, doc_uploaded_by_user_docs, active, status, reason_by_approver, remarks_by_user,
     modifiedFields, // Array of modified field names from frontend
     modifiedChanges // Array of { column_name, old_value, new_value } from frontend
   } = req.body;
@@ -922,6 +1052,10 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
         business_process,
         financial_year,
         control_number,
+        control_frequency,
+        created_at,
+        due_date,
+        unit_id,
         company_identifier,
         status AS current_status,
         reason_by_approver AS current_reason_by_approver
@@ -930,12 +1064,46 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     `;
     const currentFormResult = await client.query(getCurrentFormQuery, [form_id]);
     const currentForm = currentFormResult.rows.length > 0 ? currentFormResult.rows[0] : null;
+    if (!currentForm) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found',
+      });
+    }
+
+    if (status === 'sent for approval' && req.user?.role === 'user') {
+      const processOwnerEmail = String(currentForm.control_owner || '').trim().toLowerCase();
+      const userEmail = String(req.user.email_id || '').trim().toLowerCase();
+
+      if (processOwnerEmail !== userEmail) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You are not authorized to update this form.',
+        });
+      }
+
+      const approverDetails = await getControlFormApproverDetails(client, form_id);
+      if (isApproverTempLogin(approverDetails)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: INACTIVE_RACM_APPROVER_MESSAGE,
+        });
+      }
+    }
+
     const currentActiveStatus = currentForm?.active && currentForm.active !== '' && currentForm.active !== '0' ? '1' : '0';
     const hasChangesArray = Array.isArray(modifiedChanges) && modifiedChanges.length > 0;
     const hasFieldsArray = Array.isArray(modifiedFields) && modifiedFields.length > 0;
     const assignmentEmail = control_owner !== undefined && control_owner !== null
       ? String(control_owner).trim()
       : '';
+    const normalizeAssignmentEmail = (value) =>
+      value == null ? '' : String(value).trim().toLowerCase();
+    const currentAssignmentEmail = normalizeAssignmentEmail(currentForm?.control_owner);
+    const nextAssignmentEmail = normalizeAssignmentEmail(control_owner);
     const assignmentInChangesArray = hasChangesArray && modifiedChanges.some((item) => {
       const col = item?.column_name || item?.column || item?.field;
       return String(col || '').trim() === 'control_owner';
@@ -943,11 +1111,78 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     const assignmentInFieldsArray = hasFieldsArray && modifiedFields.some(
       (col) => String(col || '').trim() === 'control_owner'
     );
-    const isAssignmentUpdate = assignmentInChangesArray || assignmentInFieldsArray || control_owner !== undefined;
+    const isControlOwnerChanged = control_owner !== undefined
+      && nextAssignmentEmail !== ''
+      && nextAssignmentEmail !== currentAssignmentEmail;
+    const isAssignmentUpdate = Boolean(
+      (assignmentInChangesArray || assignmentInFieldsArray || control_owner !== undefined)
+      && isControlOwnerChanged
+    );
     const isRacmAssignmentOperation = Boolean(isAssignmentUpdate && assignmentEmail);
-    const hasUserDocumentUpload = doc_uploaded_by_user !== undefined
-      && doc_uploaded_by_user !== null
-      && String(doc_uploaded_by_user).trim() !== '';
+    const requestedActiveStatus = active !== undefined
+      ? (active === '1' || active === 1 || active === true ? '1' : '0')
+      : null;
+    const targetOwnerEmail = isRacmAssignmentOperation
+      ? assignmentEmail
+      : (control_owner !== undefined && control_owner !== null
+          ? String(control_owner).trim()
+          : String(currentForm?.control_owner || '').trim());
+    const shouldValidateOwnerUnit = req.user?.role === 'company_co'
+      && targetOwnerEmail
+      && (isRacmAssignmentOperation || requestedActiveStatus === '1');
+
+    if (shouldValidateOwnerUnit) {
+      const formCompanyIdentifier = currentForm?.company_identifier
+        ? String(currentForm.company_identifier).trim()
+        : '';
+      const formUnitId = currentForm?.unit_id ? String(currentForm.unit_id).trim() : '';
+
+      if (!formUnitId) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'RACM unit is missing. Cannot assign a process owner.',
+        });
+      }
+
+      const ownerUnitResult = await client.query(
+        `
+          SELECT unit_id
+          FROM ifc_users
+          WHERE company_identifier = $1
+            AND role = 'user'
+            AND LOWER(TRIM(email_id)) = LOWER(TRIM($2))
+            AND unit_id = $3
+          LIMIT 1
+        `,
+        [formCompanyIdentifier, targetOwnerEmail, formUnitId]
+      );
+
+      if (ownerUnitResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Process Owner must be a user from the same unit as this RACM',
+        });
+      }
+    }
+
+    const normalizeUserDocumentUrl = (value) => {
+      if (value && typeof value === 'object') {
+        return value.doc_uploaded_by_user == null ? '' : String(value.doc_uploaded_by_user).trim();
+      }
+      return value == null ? '' : String(value).trim();
+    };
+    const uploadedUserDocumentUrls = Array.isArray(doc_uploaded_by_user_docs)
+      ? doc_uploaded_by_user_docs
+          .map(normalizeUserDocumentUrl)
+          .filter(Boolean)
+      : (
+          doc_uploaded_by_user !== undefined && doc_uploaded_by_user !== null
+            ? [normalizeUserDocumentUrl(doc_uploaded_by_user)].filter(Boolean)
+            : []
+        );
+    const hasUserDocumentUpload = uploadedUserDocumentUrls.length > 0;
 
     // Check if user is an approver (only approvers can edit conclusion/procedures/deficiency fields)
     const isApprover = !!req.cookies.approverAuthToken;
@@ -979,11 +1214,21 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     const updateValues = [];
     let paramIndex = 1;
 
+    const normalizeFrequencyForCompare = (value) =>
+      value == null ? '' : String(value).trim().toLowerCase().replace(/&/g, 'and').replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+    const nextControlFrequency = control_frequency !== undefined
+      ? (control_frequency ? String(control_frequency).trim() : null)
+      : undefined;
+    const isControlFrequencyChange = control_frequency !== undefined
+      && normalizeFrequencyForCompare(nextControlFrequency) !== normalizeFrequencyForCompare(currentForm?.control_frequency);
     const derivedSampleSize = control_frequency !== undefined
-      ? getSampleSizeByFrequency(control_frequency ? String(control_frequency).trim() : null)
+      ? getSampleSizeByFrequency(nextControlFrequency)
       : undefined;
     const sampleSizeForUpdate = control_frequency !== undefined
       ? (derivedSampleSize !== null ? String(derivedSampleSize) : null)
+      : undefined;
+    const sampleRequiredForUpdate = isControlFrequencyChange
+      ? calculateSampleRequired(nextControlFrequency, currentForm?.created_at || new Date())
       : undefined;
 
     const fieldsToUpdate = {
@@ -995,14 +1240,14 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       audit_evidence_accuracy, key_control, application_name,
       control_performer, control_design_procs,
       control_design_conclusion, design_deficiency_desc,
-      sample_size: sampleSizeForUpdate, control_type_fo, control_type_ma,
+      sample_size: sampleSizeForUpdate, sample_required: sampleRequiredForUpdate, control_type_fo, control_type_ma,
       completeness, existence_occurrence, rights_and_obligation,
       valuation_and_allocation, presentation_and_disclosure,
       due_date, reminder_frequency,
       status, reason_by_approver, remarks_by_user
     };
 
-    if (!isRacmAssignmentOperation && control_owner !== undefined) {
+    if (!isRacmAssignmentOperation && control_owner !== undefined && nextAssignmentEmail !== currentAssignmentEmail) {
       fieldsToUpdate.control_owner = control_owner;
     }
     if (!(isRacmAssignmentOperation && active !== undefined) && active !== undefined) {
@@ -1164,7 +1409,9 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
 
       if (result.rows.length > 0) {
-        await insertUserDocument(client, form_id, doc_uploaded_by_user);
+        for (const userDocUrl of uploadedUserDocumentUrls) {
+          await insertUserDocument(client, form_id, userDocUrl);
+        }
       }
     } catch (dbError) {
       await client.query('ROLLBACK');
@@ -1191,6 +1438,8 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
         message: 'RACM not found'
       });
     }
+
+    const updatedRow = result.rows[0];
 
     await client.query('COMMIT');
 
@@ -1257,54 +1506,66 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     // Send email to control_owner if active status changed
     if (active !== undefined && currentForm) {
       const newActiveStatus = active === '1' || active === 1 || active === true ? '1' : '0';
-      if (newActiveStatus !== currentActiveStatus && currentForm.control_owner) {
-        const processOwnerEmail = currentForm.control_owner.trim();
-        const formDescription = currentForm.standard_control_description || 'RACM';
+      const processOwnerEmail = updatedRow?.control_owner ? String(updatedRow.control_owner).trim() : '';
+      if (newActiveStatus !== currentActiveStatus && processOwnerEmail) {
         const businessProcess = currentForm.business_process || '';
-        const getProcessOwnerNameQuery = 'SELECT emp_name FROM ifc_users WHERE email_id = $1 LIMIT 1';
-        const processOwnerResult = await client.query(getProcessOwnerNameQuery, [processOwnerEmail]);
-        const processOwnerName = processOwnerResult.rows[0]?.emp_name?.trim() || '';
-        const coordinatorEmail = req.user?.email_id || '';
-        let coordinatorName = '';
-        let coordinatorCompanyName = '';
-        if (coordinatorEmail) {
-          const getCoordinatorDetailsQuery = 'SELECT emp_name, company_identifier FROM ifc_users WHERE email_id = $1 LIMIT 1';
-          const coordinatorResult = await client.query(getCoordinatorDetailsQuery, [coordinatorEmail]);
-          coordinatorName = coordinatorResult.rows[0]?.emp_name?.trim() || '';
-          const coordinatorCompanyIdentifier = coordinatorResult.rows[0]?.company_identifier || '';
-          if (coordinatorCompanyIdentifier) {
-            const getCompanyNameQuery = 'SELECT company_name FROM companies WHERE company_identifier = $1 LIMIT 1';
-            const companyResult = await client.query(getCompanyNameQuery, [coordinatorCompanyIdentifier]);
-            coordinatorCompanyName = companyResult.rows[0]?.company_name?.trim() || '';
+        const formCompanyIdentifier = updatedRow?.company_identifier || currentForm.company_identifier || '';
+        const getProcessOwnerNameQuery = `
+          SELECT emp_name
+          FROM ifc_users
+          WHERE company_identifier = $1
+            AND role = 'user'
+            AND LOWER(TRIM(email_id)) = LOWER(TRIM($2))
+          LIMIT 1
+        `;
+        const processOwnerResult = await client.query(getProcessOwnerNameQuery, [formCompanyIdentifier, processOwnerEmail]);
+        if (processOwnerResult.rows.length === 0) {
+          console.warn(
+            `Skipping RACM status email for ${form_id}: recipient ${processOwnerEmail} does not exist as a user in company ${formCompanyIdentifier}.`
+          );
+        } else {
+          const processOwnerName = processOwnerResult.rows[0]?.emp_name?.trim() || '';
+          const coordinatorEmail = req.user?.email_id || '';
+          let coordinatorName = '';
+          let coordinatorCompanyName = '';
+          if (coordinatorEmail) {
+            const getCoordinatorDetailsQuery = 'SELECT emp_name, company_identifier FROM ifc_users WHERE email_id = $1 LIMIT 1';
+            const coordinatorResult = await client.query(getCoordinatorDetailsQuery, [coordinatorEmail]);
+            coordinatorName = coordinatorResult.rows[0]?.emp_name?.trim() || '';
+            const coordinatorCompanyIdentifier = coordinatorResult.rows[0]?.company_identifier || '';
+            if (coordinatorCompanyIdentifier) {
+              const getCompanyNameQuery = 'SELECT company_name FROM companies WHERE company_identifier = $1 LIMIT 1';
+              const companyResult = await client.query(getCompanyNameQuery, [coordinatorCompanyIdentifier]);
+              coordinatorCompanyName = companyResult.rows[0]?.company_name?.trim() || '';
+            }
           }
-        }
-        const statusLabel = newActiveStatus === '1' ? 'Active' : 'Inactive';
-        const emailPayload = buildControlFormStatusEmail(
-          statusLabel,
-          businessProcess,
-          processOwnerName,
-          coordinatorName,
-          coordinatorCompanyName,
-          currentForm.due_date,
-          form_id
-        );
+          const statusLabel = newActiveStatus === '1' ? 'Active' : 'Inactive';
+          const dueDateForEmail = updatedRow?.due_date || currentForm.due_date;
+          const emailPayload = buildControlFormStatusEmail(
+            statusLabel,
+            businessProcess,
+            processOwnerName,
+            coordinatorName,
+            coordinatorCompanyName,
+            dueDateForEmail,
+            form_id
+          );
 
-        if (emailPayload.shouldSend) {
-          // Small delay to ensure user creation email (if user was just created) is sent first
-          // This ensures proper sequencing: user creation email → form status update email
-          await new Promise(resolve => setTimeout(resolve, 500));
+          if (emailPayload.shouldSend) {
+            // Small delay to ensure user creation email (if user was just created) is sent first.
+            await new Promise(resolve => setTimeout(resolve, 500));
 
-          const emailSent = await sendEmail(processOwnerEmail, emailPayload.subject, emailPayload.text);
-          if (!emailSent) {
-            console.warn(`Warning: Failed to send status update email to ${processOwnerEmail}, but form was updated successfully.`);
-          } else {
-            console.log(`✓ Form status update email sent successfully to ${processOwnerEmail}`);
+            const emailSent = await sendEmail(processOwnerEmail, emailPayload.subject, emailPayload.text);
+            if (!emailSent) {
+              console.warn(`Warning: Failed to send status update email to ${processOwnerEmail}, but form was updated successfully.`);
+            } else {
+              console.log(`✓ Form status update email sent successfully to ${processOwnerEmail}`);
+            }
           }
         }
       }
     }
 
-    const updatedRow = result.rows[0];
     await attachControlFormDocuments(client, [updatedRow]);
     const dataForClient =
       req.user.role === 'user'
@@ -1842,13 +2103,6 @@ router.post('/replicate', verifyAuth, async (req, res) => {
     const createdFormIds = [];
     const skippedDuplicates = [];
 
-    // Helper: extract first 4-digit year from a FY string like "2025-26"
-    const extractStartYear = (fy) => {
-      if (!fy) return null;
-      const match = String(fy).match(/(\d{4})/);
-      return match ? Number(match[1]) : null;
-    };
-
     for (const row of selectResult.rows) {
       // Build insert columns dynamically based on fetched row keys
       const insertObj = {};
@@ -1889,35 +2143,19 @@ router.post('/replicate', verifyAuth, async (req, res) => {
         console.error('[control_forms replicate] duplicate check error:', e)
       }
 
-      // Adjust Sample Required text years based on FY shift, if possible
-      try {
-        const originalFY = row.financial_year ? String(row.financial_year).trim() : null;
-        const targetFY = insertObj.financial_year;
-        const sourceYear = extractStartYear(originalFY);
-        const targetYear = extractStartYear(targetFY);
+      const currentTimestamp = new Date();
+      const controlFrequencyValue = insertObj.control_frequency ? String(insertObj.control_frequency).trim() : null;
 
-        if (
-          typeof insertObj.sample_required === 'string' &&
-          insertObj.sample_required.trim() !== '' &&
-          sourceYear &&
-          targetYear
-        ) {
-          const yearDelta = targetYear - sourceYear;
-          if (yearDelta !== 0) {
-            insertObj.sample_required = insertObj.sample_required.replace(/\d{4}/g, (match) => {
-              const num = Number(match);
-              if (Number.isNaN(num)) return match;
-              return String(num + yearDelta);
-            });
-          }
+      // Recompute Sample Required from the RACM creation timestamp.
+      try {
+        if ('sample_required' in insertObj) {
+          insertObj.sample_required = calculateSampleRequired(controlFrequencyValue, currentTimestamp);
         }
       } catch (e) {
-        console.error('[control_forms replicate] sample_required year-shift error:', e);
+        console.error('[control_forms replicate] sample_required recalculation error:', e);
       }
 
       // Recompute sample_size if it exists in schema (based on control_frequency)
-      const currentTimestamp = new Date();
-      const controlFrequencyValue = insertObj.control_frequency ? String(insertObj.control_frequency).trim() : null;
       try {
         if ('sample_size' in insertObj) {
           const sampleSize = getSampleSizeByFrequency(controlFrequencyValue);
@@ -2022,12 +2260,20 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       }
     }
 
-    // Delete any associated documents from S3 before deleting the DB row
+    // Delete all sample and user-uploaded documents from S3 before deleting DB rows.
     const { sampleDocsByFormId, userDocsByFormId } = await getControlFormDocumentRows(client, [form_id]);
-    const docUrlsToDelete = [
-      ...(userDocsByFormId.get(form_id) || []).map((doc) => doc.doc_uploaded_by_user),
-      ...(sampleDocsByFormId.get(form_id) || []).map((doc) => doc.sample_doc),
-    ].filter((value) => value && String(value).trim() !== '');
+    const sampleDocs = sampleDocsByFormId.get(form_id) || [];
+    const userDocs = userDocsByFormId.get(form_id) || [];
+    const docUrlsToDelete = Array.from(
+      new Set(
+        [
+          ...userDocs.map((doc) => doc.doc_uploaded_by_user),
+          ...sampleDocs.map((doc) => doc.sample_doc),
+        ]
+          .map((value) => (value == null ? '' : String(value).trim()))
+          .filter(Boolean)
+      )
+    );
 
     try {
       for (const s3Key of docUrlsToDelete) {
@@ -2043,8 +2289,14 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       });
     }
 
-    await client.query('DELETE FROM doc_uploaded_by_user WHERE form_id = $1', [form_id]);
-    await client.query('DELETE FROM sample_docs WHERE form_id = $1', [form_id]);
+    const deletedUserDocsResult = await client.query(
+      'DELETE FROM doc_uploaded_by_user WHERE form_id = $1',
+      [form_id]
+    );
+    const deletedSampleDocsResult = await client.query(
+      'DELETE FROM sample_docs WHERE form_id = $1',
+      [form_id]
+    );
 
     // Delete the RACM
     const deleteQuery = 'DELETE FROM control_forms WHERE form_id = $1';
@@ -2057,7 +2309,12 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'RACM deleted successfully'
+      message: 'RACM deleted successfully',
+      deleted_documents: {
+        s3_objects: docUrlsToDelete.length,
+        user_uploaded_rows: deletedUserDocsResult.rowCount,
+        sample_doc_rows: deletedSampleDocsResult.rowCount,
+      }
     });
 
   } catch (error) {
@@ -2074,36 +2331,132 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
   }
 });
 
+router.get('/:form_id/approver-status', verifyUserAuth, async (req, res) => {
+  const { form_id } = req.params;
+
+  try {
+    const approverDetails = await getControlFormApproverDetails(pool, form_id);
+
+    if (!approverDetails) {
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found',
+      });
+    }
+
+    const processOwnerEmail = String(approverDetails.control_owner || '').trim().toLowerCase();
+    const userEmail = String(req.user?.email_id || '').trim().toLowerCase();
+
+    if (processOwnerEmail !== userEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You are not authorized to view this form.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        approver_email_id: approverDetails.approver_email_id || null,
+        approver_name: approverDetails.approver_name || null,
+        approver_display_name: approverDetails.approver_display_name || approverDetails.approver_email_id || null,
+        approver_temp_login: approverDetails.approver_temp_login,
+        approver_active: !isApproverTempLogin(approverDetails),
+      },
+    });
+  } catch (error) {
+    console.error('Error checking RACM approver status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error checking RACM approver status',
+      error: error.message,
+    });
+  }
+});
+
 // Upload user document for a specific form
 // NOTE: This route now ONLY uploads to S3 and does NOT modify any table columns.
 // The control_forms row is updated later when the user actually resubmits the form.
-router.post('/:form_id/upload-document', verifyUserAuth, uploadUserDoc.single('document'), async (req, res) => {
+router.post(
+  '/:form_id/upload-document',
+  verifyUserAuth,
+  uploadUserDoc.fields([
+    { name: 'documents', maxCount: 20 },
+    { name: 'document', maxCount: 1 },
+  ]),
+  async (req, res) => {
   const { form_id } = req.params;
+  const files = [
+    ...((req.files && req.files.documents) || []),
+    ...((req.files && req.files.document) || []),
+  ];
   
-  if (!req.file) {
+  if (files.length === 0) {
     return res.status(400).json({
       success: false,
-      message: 'No file uploaded'
+      message: 'No files uploaded'
     });
   }
 
   try {
-    const fileName = req.file.originalname;
-    const fileBuffer = req.file.buffer;
+    const approverDetails = await getControlFormApproverDetails(pool, form_id);
 
-    // Upload file to S3
-    console.log(`Uploading user document to S3: ${fileName}`);
-    const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/user_docs');
-    console.log(`User document uploaded to S3 with key: ${s3Key}`);
+    if (!approverDetails) {
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found',
+      });
+    }
+
+    const processOwnerEmail = String(approverDetails.control_owner || '').trim().toLowerCase();
+    const userEmail = String(req.user?.email_id || '').trim().toLowerCase();
+
+    if (processOwnerEmail !== userEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You are not authorized to update this form.',
+      });
+    }
+
+    if (isApproverTempLogin(approverDetails)) {
+      return res.status(400).json({
+        success: false,
+        message: INACTIVE_RACM_APPROVER_MESSAGE,
+      });
+    }
+
+    const uploadedDocs = [];
+
+    for (const file of files) {
+      const fileName = file.originalname;
+      const fileBuffer = file.buffer;
+
+      // Upload file to S3
+      console.log(`Uploading user document to S3: ${fileName}`);
+      const s3Key = await uploadFileToS3(fileBuffer, fileName, `IFC/user_docs/${form_id}`, {
+        preserveFileName: true,
+      });
+      console.log(`User document uploaded to S3 with key: ${s3Key}`);
+
+      uploadedDocs.push({
+        doc_uploaded_by_user: s3Key,
+        file_name: fileName,
+      });
+    }
+
+    const latestDoc = uploadedDocs[uploadedDocs.length - 1] || null;
 
     // Do NOT update control_forms here; just return the S3 key to the frontend
     res.status(200).json({
       success: true,
-      message: 'Document uploaded successfully',
+      message: uploadedDocs.length === 1
+        ? 'Document uploaded successfully'
+        : 'Documents uploaded successfully',
       data: {
         form_id,
-        doc_uploaded_by_user: s3Key,
-        file_name: fileName
+        doc_uploaded_by_user: latestDoc?.doc_uploaded_by_user || null,
+        doc_uploaded_by_user_docs: uploadedDocs,
+        file_names: uploadedDocs.map((doc) => doc.file_name)
       }
     });
   } catch (error) {
@@ -2153,11 +2506,108 @@ router.get('/:form_id/check-sampling-exists', verifyAuth, async (req, res) => {
   }
 });
 
-// Upload sampling Excel file for a specific form
-router.post('/:form_id/upload-sampling-excel', verifyAuth, upload.single('excelFile'), async (req, res) => {
+// Delete one sample document for a RACM
+router.delete('/:form_id/sample-docs/:sample_doc_id', verifyAuth, async (req, res) => {
+  const { form_id, sample_doc_id } = req.params;
+  const client = await pool.connect();
+
+  try {
+    if (!/^\d+$/.test(String(sample_doc_id || ''))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid sample document id',
+      });
+    }
+
+    if (req.user?.role !== 'company_co') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied',
+      });
+    }
+
+    await client.query('BEGIN');
+
+    const docResult = await client.query(
+      `
+        SELECT sd.id, sd.form_id, sd.sample_doc, cf.company_identifier
+        FROM sample_docs sd
+        JOIN control_forms cf ON cf.form_id = sd.form_id
+        WHERE sd.id = $1 AND sd.form_id = $2
+        LIMIT 1
+      `,
+      [sample_doc_id, form_id]
+    );
+
+    if (docResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Sample document not found',
+      });
+    }
+
+    const sampleDoc = docResult.rows[0];
+    const userCompanyIdentifier = String(req.user?.company_identifier || '').trim();
+    const formCompanyIdentifier = String(sampleDoc.company_identifier || '').trim();
+    if (userCompanyIdentifier && formCompanyIdentifier && userCompanyIdentifier !== formCompanyIdentifier) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only delete sample documents from your own company.',
+      });
+    }
+
+    const s3Key = String(sampleDoc.sample_doc || '').trim();
+    if (s3Key) {
+      await deleteFileFromS3(s3Key);
+    }
+
+    await client.query(
+      'DELETE FROM sample_docs WHERE id = $1 AND form_id = $2',
+      [sample_doc_id, form_id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Sample document deleted successfully',
+      data: {
+        id: sampleDoc.id,
+        form_id,
+        sample_doc: sampleDoc.sample_doc,
+      },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting sample document:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error deleting sample document',
+      error: error.message,
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Upload one or more sampling Excel files for a specific form
+router.post(
+  '/:form_id/upload-sampling-excel',
+  verifyAuth,
+  upload.fields([
+    { name: 'excelFiles', maxCount: 20 },
+    { name: 'excelFile', maxCount: 1 },
+  ]),
+  async (req, res) => {
   const { form_id } = req.params;
+  const files = [
+    ...((req.files && req.files.excelFiles) || []),
+    ...((req.files && req.files.excelFile) || []),
+  ];
   
-  if (!req.file) {
+  if (files.length === 0) {
     return res.status(400).json({
       success: false,
       message: 'No file uploaded'
@@ -2181,26 +2631,34 @@ router.post('/:form_id/upload-sampling-excel', verifyAuth, upload.single('excelF
       });
     }
 
-    const fileName = req.file.originalname;
-    const fileBuffer = req.file.buffer;
+    const sampleDocs = [];
+    for (const file of files) {
+      const fileName = file.originalname;
+      const fileBuffer = file.buffer;
 
-    // Upload file to S3 in IFC/sample_docs path
-    console.log(`Uploading sampling Excel file to S3: ${fileName}`);
-    const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/sample_docs');
-    console.log(`Sampling Excel file uploaded to S3 with key: ${s3Key}`);
-    
-    const sampleDoc = await insertSampleDocument(client, form_id, s3Key);
+      // Upload file to S3 in IFC/sample_docs path
+      console.log(`Uploading sampling Excel file to S3: ${fileName}`);
+      const s3Key = await uploadFileToS3(fileBuffer, fileName, `IFC/sample_docs/${form_id}`, {
+        preserveFileName: true,
+      });
+      console.log(`Sampling Excel file uploaded to S3 with key: ${s3Key}`);
+
+      const sampleDoc = await insertSampleDocument(client, form_id, s3Key);
+      if (sampleDoc) {
+        sampleDocs.push(sampleDoc);
+      }
+    }
 
     await client.query('COMMIT');
 
     res.status(200).json({
       success: true,
-      message: 'Sampling Excel file uploaded successfully',
+      message: 'Sampling Excel file(s) uploaded successfully',
       data: {
         form_id,
-        sample_doc: sampleDoc.sample_doc,
-        sample_docs: [sampleDoc],
-        file_name: fileName
+        sample_doc: sampleDocs[sampleDocs.length - 1]?.sample_doc || null,
+        sample_docs: sampleDocs,
+        file_names: files.map((file) => file.originalname)
       }
     });
 

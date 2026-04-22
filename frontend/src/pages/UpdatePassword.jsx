@@ -19,7 +19,7 @@ import { useThemeMode } from '../contexts/ThemeContext'
 import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
 
 const ROLE_HOME_ROUTES = {
-  user: '/user/dashboard',
+  user: '/user/home',
   company_co: '/company_co/home',
   approver: '/approver/home',
   siteadmin: '/siteadmin/dashboard',
@@ -50,12 +50,14 @@ function UpdatePassword() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  useSyncGlobalLoading(loading)
+  useSyncGlobalLoading(loading || checkingSession)
 
   useEffect(() => {
     const fetchUserInfo = async () => {
+      setCheckingSession(true)
       try {
         const response = await fetch('http://localhost:3000/api/auth/verify', {
           method: 'GET',
@@ -68,11 +70,13 @@ function UpdatePassword() {
           setEmail_id(data.user.email_id)
           setUserRole(data.user.role ?? null)
         } else {
-          navigate('/login')
+          navigate('/login', { replace: true })
         }
       } catch (err) {
         console.error('Error fetching user info:', err)
-        navigate('/login')
+        navigate('/login', { replace: true })
+      } finally {
+        setCheckingSession(false)
       }
     }
 
@@ -90,6 +94,13 @@ function UpdatePassword() {
 
     if (newPassword.length < 6) {
       setError('Password must be at least 6 characters long')
+      return
+    }
+
+    if (currentPassword === newPassword) {
+      const msg = 'New password cannot be the same as your temporary password'
+      setError(msg)
+      toast.error(msg)
       return
     }
 
@@ -111,9 +122,16 @@ function UpdatePassword() {
 
       const data = await response.json()
 
+      if (response.status === 401) {
+        toast.error(data.message || 'Your session has expired. Please login again.')
+        navigate('/login', { replace: true })
+        return
+      }
+
       if (response.ok && data.success) {
         toast.success(data.message || 'Password updated successfully')
-        const dest = (userRole && ROLE_HOME_ROUTES[userRole]) || '/user/dashboard'
+        const updatedRole = data.user?.role || userRole
+        const dest = (updatedRole && ROLE_HOME_ROUTES[updatedRole]) || '/login'
         navigate(dest, { replace: true })
       } else {
         setError(data.message || 'Failed to update password')
@@ -127,6 +145,10 @@ function UpdatePassword() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (checkingSession) {
+    return null
   }
 
   return (

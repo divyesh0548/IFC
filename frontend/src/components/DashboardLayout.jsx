@@ -31,7 +31,7 @@ import { MAIN_CONTENT_MAX_WIDTH } from '../uiConstants'
 const getHomePath = (pathname) => {
   if (pathname.startsWith('/company_co')) return '/company_co/home'
   if (pathname.startsWith('/siteadmin')) return '/siteadmin/dashboard'
-  if (pathname.startsWith('/user')) return '/user/dashboard'
+  if (pathname.startsWith('/user')) return '/user/home'
   if (pathname.startsWith('/approver')) return '/approver/home'
   if (pathname.startsWith('/auditor')) return '/auditor/dashboard'
   return '/'
@@ -58,7 +58,6 @@ function DashboardLayout() {
   const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || '')
   const homePath = getHomePath(location.pathname)
   const isAtHome = location.pathname === homePath
-  const isApproverRoute = location.pathname.startsWith('/approver')
   const isSiteadminRoute = location.pathname.startsWith('/siteadmin')
   const isCreateCompanyPage = location.pathname === '/siteadmin/create-company'
   const isFullWidthPage =
@@ -66,11 +65,19 @@ function DashboardLayout() {
   const boundaryPaddingX = { xs: 3, sm: 4, md: 5 }
 
   useEffect(() => {
-    setCompanyName(localStorage.getItem(STORAGE_KEYS.companyName) || '')
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setCompanyName(localStorage.getItem(STORAGE_KEYS.companyName) || '')
+      }
+    })
+    return () => {
+      cancelled = true
+    }
   }, [location.pathname])
 
   useEffect(() => {
-    if (isSiteadminRoute || isApproverRoute) return
+    if (isSiteadminRoute) return
     if (companyName && String(companyName).trim() !== '') return
 
     let cancelled = false
@@ -95,7 +102,7 @@ function DashboardLayout() {
     return () => {
       cancelled = true
     }
-  }, [companyName, isApproverRoute, isSiteadminRoute])
+  }, [companyName, isSiteadminRoute])
 
   useEffect(() => {
     document.body.classList.add('has-dashboard-navbar')
@@ -169,49 +176,32 @@ function DashboardLayout() {
                 minWidth: 0,
               }}
             >
-              {isApproverRoute ? (
-                <Typography
-                  noWrap
-                  sx={{
-                    fontWeight: 800,
-                    fontSize: '1.2rem',
-                    lineHeight: 1.2,
-                    letterSpacing: '-0.02em',
-                    color: theme.palette.navbar.fg,
-                  }}
-                >
-                  Internal Financial Controls
-                </Typography>
-              ) : (
-                <>
-                  <Typography
-                    noWrap
-                    sx={{
-                      fontWeight: 800,
-                      fontSize: '1.2rem',
-                      lineHeight: 1.2,
-                      letterSpacing: '-0.02em',
-                      color: theme.palette.mode === 'dark' ? theme.palette.navbar.fg : theme.palette.text.primary,
-                    }}
-                  >
-                    {isSiteadminRoute ? 'Admin' : (companyName || 'Company')}
-                  </Typography>
-                  <Typography
-                    noWrap
-                    sx={{
-                      fontWeight: 400,
-                      fontSize: '0.95rem',
-                      lineHeight: 1.3,
-                      color:
-                        theme.palette.mode === 'dark'
-                          ? 'rgba(238, 238, 238, 0.78)'
-                          : alpha(theme.palette.text.primary, 0.78),
-                    }}
-                  >
-                    Internal Financial Controls
-                  </Typography>
-                </>
-              )}
+              <Typography
+                noWrap
+                sx={{
+                  fontWeight: 800,
+                  fontSize: '1.2rem',
+                  lineHeight: 1.2,
+                  letterSpacing: '-0.02em',
+                  color: theme.palette.mode === 'dark' ? theme.palette.navbar.fg : theme.palette.text.primary,
+                }}
+              >
+                {isSiteadminRoute ? 'Admin' : (companyName || 'Company')}
+              </Typography>
+              <Typography
+                noWrap
+                sx={{
+                  fontWeight: 400,
+                  fontSize: '0.95rem',
+                  lineHeight: 1.3,
+                  color:
+                    theme.palette.mode === 'dark'
+                      ? 'rgba(238, 238, 238, 0.78)'
+                      : alpha(theme.palette.text.primary, 0.78),
+                }}
+              >
+                Internal Financial Controls
+              </Typography>
             </Box>
             <Tooltip title={mode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'} arrow>
               <IconButton
