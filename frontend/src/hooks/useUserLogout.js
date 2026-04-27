@@ -1,13 +1,14 @@
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
-import { clearCachedUserProfile } from '../storageKeys'
+import { clearCachedUserProfile } from '../storageKeys'
+import { apiUrl } from '../config/api'
 
 export function useUserLogout() {
   const navigate = useNavigate()
 
   const handleLogout = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/auth/user/logout', {
+      const response = await fetch(apiUrl('/api/auth/user/logout'), {
         method: 'POST',
         credentials: 'include', // Important: sends cookies
       })

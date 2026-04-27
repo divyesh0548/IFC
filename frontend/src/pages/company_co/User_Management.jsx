@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
@@ -7,6 +7,10 @@ import Paper from '@mui/material/Paper'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CircularProgress from '@mui/material/CircularProgress'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -35,7 +39,8 @@ import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
-import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { apiUrl } from '../../config/api'
 
 function UserManagement() {
   const theme = useTheme()
@@ -46,6 +51,7 @@ function UserManagement() {
   const [users, setUsers] = useState([])
   const [usersLoading, setUsersLoading] = useState(true)
   const [usersError, setUsersError] = useState('')
+  const [unitFilter, setUnitFilter] = useState('all')
 
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedUserEmails, setSelectedUserEmails] = useState(new Set())
@@ -85,11 +91,66 @@ function UserManagement() {
     setError('')
   }
 
+  const splitUnitValue = (value) => {
+    if (Array.isArray(value)) {
+      return value.map((item) => String(item || '').trim()).filter(Boolean)
+    }
+
+    return String(value || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  const getUserUnitIds = (user) => splitUnitValue(user.unit_id)
+  const getUserUnitNames = (user) => splitUnitValue(user.unit_name)
+
+  const unitOptions = useMemo(() => {
+    const unitsById = new Map()
+    let hasUnassigned = false
+
+    users.forEach((user) => {
+      const unitIds = getUserUnitIds(user)
+      const unitNames = getUserUnitNames(user)
+
+      if (unitIds.length === 0) {
+        hasUnassigned = true
+        return
+      }
+
+      unitIds.forEach((unitId, index) => {
+        if (!unitsById.has(unitId)) {
+          unitsById.set(unitId, unitNames[index] || unitId)
+        }
+      })
+    })
+
+    const options = Array.from(unitsById.entries())
+      .map(([unitId, unitName]) => ({ unitId, unitName }))
+      .sort((a, b) => String(a.unitName).localeCompare(String(b.unitName)))
+
+    if (hasUnassigned) {
+      options.push({ unitId: '__unassigned__', unitName: 'Unassigned' })
+    }
+
+    return options
+  }, [users])
+
+  const filteredUsers = useMemo(() => {
+    if (unitFilter === 'all') return users
+
+    return users.filter((user) => {
+      const unitIds = getUserUnitIds(user)
+      if (unitFilter === '__unassigned__') return unitIds.length === 0
+      return unitIds.includes(unitFilter)
+    })
+  }, [users, unitFilter])
+
   const fetchUsers = useCallback(async () => {
     setUsersLoading(true)
     setUsersError('')
     try {
-      const response = await fetch('http://localhost:3000/api/company-co/users', {
+      const response = await fetch(apiUrl('/api/company-co/users'), {
         method: 'GET',
         credentials: 'include',
       })
@@ -113,6 +174,10 @@ function UserManagement() {
   useEffect(() => {
     fetchUsers()
   }, [fetchUsers])
+
+  useEffect(() => {
+    setSelectedUserEmails(new Set())
+  }, [unitFilter])
 
   // Reset selection when delete mode is turned off (matches RacmManagementDashboard behavior)
   useEffect(() => {
@@ -200,7 +265,7 @@ function UserManagement() {
     setLoading(true)
 
     try {
-      const response = await fetch('http://localhost:3000/api/company-co/create-user', {
+      const response = await fetch(apiUrl('/api/company-co/create-user'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -518,6 +583,24 @@ function UserManagement() {
             User Management
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 220 } }}>
+              <InputLabel id="unit-filter-label">Unit</InputLabel>
+              <Select
+                labelId="unit-filter-label"
+                id="unit-filter"
+                value={unitFilter}
+                label="Unit"
+                onChange={(e) => setUnitFilter(e.target.value)}
+                disabled={usersLoading || unitOptions.length === 0}
+              >
+                <MenuItem value="all">All Units</MenuItem>
+                {unitOptions.map((unit) => (
+                  <MenuItem key={unit.unitId} value={unit.unitId}>
+                    {unit.unitName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <Button
               variant="contained"
               color="secondary"
@@ -540,7 +623,7 @@ function UserManagement() {
                   handleDeleteModeToggle()
                 }
               }}
-              disabled={usersLoading || users.length === 0 || deletingUsers || (deleteMode && selectedUserEmails.size === 0)}
+              disabled={usersLoading || filteredUsers.length === 0 || deletingUsers || (deleteMode && selectedUserEmails.size === 0)}
               sx={{ textTransform: 'none', fontWeight: 600 }}
             >
               {deleteMode
@@ -582,6 +665,7 @@ function UserManagement() {
                 {deleteMode ? <TableCell sx={{ py: 2, px: 3, width: 54 }} /> : null}
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Employee Name</TableCell>
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Email ID</TableCell>
+                <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Unit</TableCell>
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Department</TableCell>
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Designation</TableCell>
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Mobile</TableCell>
@@ -590,18 +674,24 @@ function UserManagement() {
             <TableBody>
               {usersLoading ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 6 : 5} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={deleteMode ? 7 : 6} align="center" sx={{ py: 5 }}>
                     <CircularProgress size={26} />
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 6 : 5} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={deleteMode ? 7 : 6} align="center" sx={{ py: 5 }}>
                     No users found for your company.
                   </TableCell>
                 </TableRow>
+              ) : filteredUsers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={deleteMode ? 7 : 6} align="center" sx={{ py: 5 }}>
+                    No users found for the selected unit.
+                  </TableCell>
+                </TableRow>
               ) : (
-                users.map((user, idx) => (
+                filteredUsers.map((user, idx) => (
                   <TableRow key={`${user.email_id}-${idx}`}>
                     {deleteMode ? (
                       <TableCell sx={{ py: 1.8, px: 3, width: 54 }}>
@@ -617,6 +707,7 @@ function UserManagement() {
                       {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (cc)' : ''}` : ''}
                     </TableCell>
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.email_id || '-'}</TableCell>
+                    <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.unit_name || user.unit_id || '-'}</TableCell>
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.department || '-'}</TableCell>
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.designation || '-'}</TableCell>
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.mobile || '-'}</TableCell>
@@ -727,7 +818,7 @@ function UserManagement() {
               setDeletingUsers(true)
               try {
                 const emailIds = Array.from(selectedUserEmails)
-                const response = await fetch('http://localhost:3000/api/company-co/delete-users', {
+                const response = await fetch(apiUrl('/api/company-co/delete-users'), {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',

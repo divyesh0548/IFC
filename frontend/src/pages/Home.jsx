@@ -23,6 +23,7 @@ import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlin
 import { useThemeMode } from '../contexts/ThemeContext'
 import { clearCachedUserProfile } from '../storageKeys'
 import { MAIN_CONTENT_MAX_WIDTH } from '../uiConstants'
+import { apiUrl } from '../config/api'
 
 const portalContent = {
   hero: {
@@ -181,7 +182,7 @@ function Home() {
 
   const checkAuthOnHome = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/auth/verify', {
+      const response = await fetch(apiUrl('/api/auth/verify'), {
         method: 'GET',
         credentials: 'include',
       })
@@ -210,7 +211,7 @@ function Home() {
 
   const handleLogout = async () => {
     try {
-      await fetch('http://localhost:3000/api/auth/logout', {
+      await fetch(apiUrl('/api/auth/logout'), {
         method: 'POST',
         credentials: 'include',
       })

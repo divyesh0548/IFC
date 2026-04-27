@@ -22,6 +22,7 @@ import {
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { useUnsavedChangesWarning } from '../../utils/useUnsavedChangesWarning'
+import { apiUrl } from '../../config/api'
 
 const AUTO = '__auto__'
 const SKIP = '__skip__'
@@ -359,7 +360,7 @@ function ExcelColumnMap() {
 
     setLoading(true)
     try {
-      const response = await fetch('http://localhost:3000/api/control-forms/bulk-import-rows', {
+      const response = await fetch(apiUrl('/api/control-forms/bulk-import-rows'), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

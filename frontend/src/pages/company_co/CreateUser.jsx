@@ -17,7 +17,8 @@ import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
 import { toast } from 'react-hot-toast'
-import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { apiUrl } from '../../config/api'
 
 function CreateUser() {
   const theme = useTheme()
@@ -43,7 +44,7 @@ function CreateUser() {
     const fetchCoordinatorUnits = async () => {
       setUnitsLoading(true)
       try {
-        const response = await fetch('http://localhost:3000/api/company-co/unit-management', {
+        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -137,7 +138,7 @@ function CreateUser() {
     setLoading(true)
 
     try {
-      const response = await fetch('http://localhost:3000/api/company-co/create-user', {
+      const response = await fetch(apiUrl('/api/company-co/create-user'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

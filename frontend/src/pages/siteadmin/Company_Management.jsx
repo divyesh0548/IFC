@@ -20,6 +20,7 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import { toast } from 'react-hot-toast'
 import { MAIN_CONTENT_MAX_WIDTH } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { apiUrl, API_BASE_URL } from '../../config/api'
 
 function Company_Management() {
   const theme = useTheme()
@@ -44,7 +45,7 @@ function Company_Management() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch('http://localhost:3000/api/siteadmin/companies', {
+      const response = await fetch(apiUrl('/api/siteadmin/companies'), {
         method: 'GET',
         credentials: 'include',
       })
@@ -105,7 +106,7 @@ function Company_Management() {
     setError(null)
     try {
       const response = await fetch(
-        `http://localhost:3000/api/siteadmin/companies/${encodeURIComponent(selectedCompany.company_identifier)}`,
+        `${API_BASE_URL}/api/siteadmin/companies/${encodeURIComponent(selectedCompany.company_identifier)}`,
         {
           method: 'DELETE',
           credentials: 'include',

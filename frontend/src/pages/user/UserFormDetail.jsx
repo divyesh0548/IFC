@@ -26,6 +26,7 @@ import * as XLSX from 'xlsx'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { apiUrl, API_BASE_URL } from '../../config/api'
 
 function UserFormDetail() {
   const theme = useTheme()
@@ -58,7 +59,7 @@ function UserFormDetail() {
     const checkAuthAndFetch = async () => {
       // First check authentication
       try {
-        const authResponse = await fetch('http://localhost:3000/api/auth/verify', {
+        const authResponse = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -88,7 +89,7 @@ function UserFormDetail() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'GET',
         credentials: 'include',
       })
@@ -146,7 +147,7 @@ function UserFormDetail() {
   }
 
   const checkApproverActiveForSubmission = async () => {
-    const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}/approver-status`, {
+    const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/approver-status`, {
       method: 'GET',
       credentials: 'include',
     })
@@ -204,7 +205,7 @@ function UserFormDetail() {
           formDataUpload.append('documents', file)
         })
 
-        const uploadResponse = await fetch(`http://localhost:3000/api/control-forms/${form_id}/upload-document`, {
+        const uploadResponse = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/upload-document`, {
           method: 'POST',
           credentials: 'include',
           body: formDataUpload
@@ -228,7 +229,7 @@ function UserFormDetail() {
       }
 
       // Then update only remarks, document, and status (users cannot edit other fields)
-      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -334,7 +335,7 @@ function UserFormDetail() {
     
     try {
       const fileName = getFileName(filePath)
-      const response = await fetch(`http://localhost:3000/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
         method: 'GET',
         credentials: 'include',
       })

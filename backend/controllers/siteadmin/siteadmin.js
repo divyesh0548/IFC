@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { pool } = require('../../utils/db');
-const { sendEmail } = require('../../utils/send_email');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
+const { encryptTempPassword } = require('../../utils/login_email');
 const { deleteFileFromS3 } = require('../../utils/s3Upload');
 const { getControlFormDocumentRows } = require('../../utils/racm_documents');
 
@@ -55,6 +55,14 @@ function normalizeCoordinatorUnitIndexes(coordinatorUnitIndexes, unitCount) {
       .map((index) => Number(index))
       .filter((index) => Number.isInteger(index) && index >= 0 && index < unitCount)
   )];
+}
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
 }
 
 // Get all companies API endpoint
@@ -278,48 +286,28 @@ async function createCompany(req, res) {
         // Generate a temporary password (user will need to reset it)
         const tempPassword = crypto.randomBytes(8).toString('hex');
         const tempPasswordHash = await hashPassword(tempPassword);
+        const tempPasswordEncrypted = encryptTempPassword(tempPassword);
 
         const insertUserQuery = `
-          INSERT INTO ifc_users (email_id, password, role, company_identifier, temp_login)
-          VALUES ($1, $2, $3, $4, $5)
+          INSERT INTO ifc_users (
+            email_id,
+            password,
+            role,
+            company_identifier,
+            temp_login,
+            login_email_sent,
+            temp_password_encrypted
+          )
+          VALUES ($1, $2, $3, $4, $5, FALSE, $6)
         `;
         await client.query(insertUserQuery, [
           coordinatorEmail,
           tempPasswordHash,
           'company_co',
           company_identifier,
-          1 // Set temp_login to 1 to force password update on first login
+          1, // Set temp_login to 1 to force password update on first login
+          tempPasswordEncrypted
         ]);
-
-        // Send email with temporary password
-        const emailSubject = `Welcome to ${company_name} - Your Temporary Login Credentials`;
-        const emailText = `
-Dear Company Coordinator,
-
-Your company account has been created successfully.
-
-Company: ${company_name}
-
-Your temporary login credentials:
-Email: ${coordinatorEmail}
-Temporary Password: ${tempPassword}
-
-IMPORTANT: Please login using these credentials and update your password immediately for security purposes.
-
-Login URL: http://localhost:5173/user/login
-
-After logging in, you will be prompted to update your temporary password to a permanent one.
-
-Best regards,
-IFC System
-        `;
-
-        const emailSent = await sendEmail(coordinatorEmail, emailSubject, emailText);
-
-        if (!emailSent) {
-          console.warn(`Warning: Failed to send email to ${coordinatorEmail}, but user was created successfully.`);
-          // Don't fail the transaction if email fails, but log it
-        }
       }
     }
 
@@ -508,9 +496,122 @@ async function deleteCompany(req, res) {
   }
 }
 
+async function getAuditors(req, res) {
+  try {
+    const result = await pool.query(
+      `
+        SELECT id, email_id, role, created_at, temp_login, login_email_sent
+        FROM ifc_users
+        WHERE role = 'auditor'
+        ORDER BY created_at DESC NULLS LAST, id DESC
+      `
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Auditors retrieved successfully',
+      data: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Error fetching auditors:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch auditors',
+    });
+  }
+}
+
+async function createAuditor(req, res) {
+  const emailId = normalizeEmail(req.body?.email_id);
+
+  if (!emailId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email ID is required',
+    });
+  }
+
+  if (!isValidEmail(emailId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid email format',
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    getPasswordPepper();
+    await client.query('BEGIN');
+
+    const existingUser = await client.query(
+      'SELECT id FROM ifc_users WHERE LOWER(TRIM(email_id)) = $1 LIMIT 1',
+      [emailId]
+    );
+
+    if (existingUser.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        message: 'User with this email already exists',
+      });
+    }
+
+    const tempPassword = crypto.randomBytes(8).toString('hex');
+    const tempPasswordHash = await hashPassword(tempPassword);
+    const tempPasswordEncrypted = encryptTempPassword(tempPassword);
+
+    const auditorResult = await client.query(
+      `
+        INSERT INTO ifc_users (
+          email_id,
+          password,
+          role,
+          temp_login,
+          login_email_sent,
+          temp_password_encrypted
+        )
+        VALUES ($1, $2, 'auditor', 1, FALSE, $3)
+        RETURNING id, email_id, role, created_at, temp_login, login_email_sent
+      `,
+      [emailId, tempPasswordHash, tempPasswordEncrypted]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      success: true,
+      message: 'Auditor created successfully',
+      data: {
+        auditor: auditorResult.rows[0],
+        loginEmailQueued: true,
+      },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error creating auditor:', error);
+
+    if (error.code === '23505') {
+      return res.status(409).json({
+        success: false,
+        message: 'User with this email already exists',
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   getCompanies,
   getCompanyByIdentifier,
   createCompany,
   deleteCompany,
+  getAuditors,
+  createAuditor,
 };

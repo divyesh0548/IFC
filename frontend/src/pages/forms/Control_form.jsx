@@ -3,7 +3,8 @@ import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
-import FormControlLabel from '@mui/material/FormControlLabel'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import { apiUrl } from '../../config/api'
 
 function Control_form() {
   const theme = useTheme()
@@ -70,7 +71,7 @@ function Control_form() {
 
     try {
       // TODO: Implement API call to save form data
-      // const response = await fetch('http://localhost:3000/api/control-form', {
+      // const response = await fetch(apiUrl('/api/control-form'), {
       //   method: 'POST',
       //   headers: {
       //     'Content-Type': 'application/json',

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
+import { apiUrl } from '../config/api'
 
 function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
   const [isAuthenticated, setIsAuthenticated] = useState(null)
@@ -19,7 +20,7 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
       setLoading(true)
       try {
         // Use unified verify endpoint
-        const response = await fetch('http://localhost:3000/api/auth/verify', {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -84,7 +85,7 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
       'company_co': '/company_co/home',
       'approver': '/approver/home',
       'siteadmin': '/siteadmin/dashboard',
-      'auditor': '/auditor/dashboard'
+      'auditor': '/auditor/home'
     }
     
     const redirectPath = roleDashboards[userRole] || '/login'

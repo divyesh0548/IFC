@@ -284,10 +284,73 @@ async function verifySiteadminAuth(req, res, next) {
   }
 }
 
+/** Auditor only (`ifc_users.role === 'auditor'`). */
+async function verifyAuditorAuth(req, res, next) {
+  try {
+    const token = req.cookies.authToken || req.cookies.auditorAuthToken;
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error',
+      });
+    }
+
+    const decoded = jwt.verify(decryptToken(token), jwtSecret);
+    const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
+    const userResult = await pool.query(userQuery, [decoded.email_id]);
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const user = userResult.rows[0];
+    if (user.role !== 'auditor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Auditor role required.',
+      });
+    }
+
+    req.user = {
+      id: user.id,
+      email_id: user.email_id,
+      role: user.role,
+      company_identifier: user.company_identifier,
+    };
+
+    next();
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token',
+      });
+    }
+    console.error('Auditor authentication error:', error);
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication failed',
+    });
+  }
+}
+
 module.exports = {
   getEmailFromAuthCookies,
   verifyCompanyCoordinator,
   verifyApproverAuth,
   verifyUserAuth,
   verifySiteadminAuth,
+  verifyAuditorAuth,
 };

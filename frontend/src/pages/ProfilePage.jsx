@@ -9,7 +9,8 @@ import Button from '@mui/material/Button'
 import { toast } from 'react-hot-toast'
 import { MAIN_CONTENT_MAX_WIDTH, PAGE_SUBHEADER_TEXT_SX } from '../uiConstants'
 import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
-import { readCachedUserProfile, writeCachedUserProfile } from '../storageKeys'
+import { readCachedUserProfile, writeCachedUserProfile } from '../storageKeys'
+import { apiUrl } from '../config/api'
 
 const FIELDS = [
   { key: 'emp_name', label: 'Employee name' },
@@ -49,7 +50,7 @@ function ProfilePage() {
       setLoading(true)
       setError('')
       try {
-        const response = await fetch('http://localhost:3000/api/auth/profile', {
+        const response = await fetch(apiUrl('/api/auth/profile'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -102,7 +103,7 @@ function ProfilePage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const response = await fetch('http://localhost:3000/api/auth/profile', {
+      const response = await fetch(apiUrl('/api/auth/profile'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

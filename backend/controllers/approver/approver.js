@@ -17,6 +17,13 @@ async function getApproverMappedUnits(approverEmail) {
       SELECT
         cum.company_identifier,
         c.company_name,
+        c.registered_email,
+        c.registered_address,
+        c.unique_identification_number,
+        c.gst,
+        c.pan,
+        c.number_of_corporate_offices,
+        c.number_of_factory_units,
         cum.unit_id,
         cum.unit_name,
         cum.unit_address
@@ -110,7 +117,7 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   emailBody += '\n';
 
   if (status === 'Rejected') {
-    emailBody += 'You can review the feedback above, make necessary changes, and resubmit the RACM for approval.\n\n';
+    emailBody += 'You can review the feedback above, uploade the necessary documents for it, and resubmit the RACM for approval.\n\n';
   }
 
   emailBody += 'Thank you for using the IFC system.\n\n';
@@ -131,6 +138,10 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
 async function getHomeStats(req, res) {
   try {
     const approverEmail = req.user.email_id;
+    const requestedUnitId = req.query.unit_id ? String(req.query.unit_id).trim() : '';
+    const unitFilterSql = requestedUnitId ? ' AND cum.unit_id = $2' : '';
+    const racmUnitFilterSql = requestedUnitId ? ' WHERE cf.unit_id = $2' : '';
+    const scopedParams = requestedUnitId ? [approverEmail, requestedUnitId] : [approverEmail];
 
     const [
       approverResult,
@@ -150,7 +161,16 @@ async function getHomeStats(req, res) {
       ),
       pool.query(
         `
-          SELECT c.company_name
+          SELECT
+            c.company_identifier,
+            c.company_name,
+            c.registered_email,
+            c.registered_address,
+            c.unique_identification_number,
+            c.gst,
+            c.pan,
+            c.number_of_corporate_offices,
+            c.number_of_factory_units
           FROM ifc_users u
           LEFT JOIN companies c ON c.company_identifier = u.company_identifier
           WHERE u.email_id = $1
@@ -168,8 +188,9 @@ async function getHomeStats(req, res) {
            AND u.unit_id = cum.unit_id
            AND u.role = 'user'
           WHERE LOWER(TRIM(COALESCE(cum.approver_email_id, ''))) = LOWER(TRIM($1))
+          ${unitFilterSql}
         `,
-        [approverEmail]
+        scopedParams
       ),
       pool.query(
         `
@@ -195,16 +216,35 @@ async function getHomeStats(req, res) {
           )::int AS total_racms
         FROM control_forms cf
         ${scopedApproverRacmJoin('cf')}
+        ${racmUnitFilterSql}
       `,
-        [approverEmail]
+        scopedParams
       ),
     ]);
+
+    const companyRow = companyResult.rows[0] || {};
+    const firstMappedUnit = mappedUnits[0] || {};
+    const companyDetails = {
+      company_name: companyRow.company_name || firstMappedUnit.company_name || null,
+      registered_email: companyRow.registered_email || firstMappedUnit.registered_email || null,
+      registered_address: companyRow.registered_address || firstMappedUnit.registered_address || null,
+      unique_identification_number:
+        companyRow.unique_identification_number || firstMappedUnit.unique_identification_number || null,
+      gst: companyRow.gst || firstMappedUnit.gst || null,
+      pan: companyRow.pan || firstMappedUnit.pan || null,
+      number_of_corporate_offices:
+        companyRow.number_of_corporate_offices || firstMappedUnit.number_of_corporate_offices || null,
+      number_of_factory_units:
+        companyRow.number_of_factory_units || firstMappedUnit.number_of_factory_units || null,
+    };
 
     res.status(200).json({
       success: true,
       data: {
         approver_name: approverResult.rows[0]?.emp_name || '',
-        company_name: companyResult.rows[0]?.company_name || mappedUnits[0]?.company_name || '',
+        company_name: companyDetails.company_name || '',
+        company_identifier: companyRow.company_identifier || firstMappedUnit.company_identifier || '',
+        company_details: companyDetails,
         mapped_units: mappedUnits,
         total_units: mappedUnits.length,
         total_users: usersResult.rows[0]?.count || 0,
@@ -249,15 +289,17 @@ async function getDashboard(req, res) {
 async function getPendingApprovals(req, res) {
   try {
     const approverEmail = req.approver.email_id;
+    const requestedUnitId = req.query.unit_id ? String(req.query.unit_id).trim() : '';
     const query = `
       SELECT cf.*
       FROM control_forms cf
       ${scopedApproverRacmJoin('cf')}
       WHERE cf.status = 'sent for approval'
+      ${requestedUnitId ? 'AND cf.unit_id = $2' : ''}
       ORDER BY cf.created_at DESC
     `;
 
-    const result = await pool.query(query, [approverEmail]);
+    const result = await pool.query(query, requestedUnitId ? [approverEmail, requestedUnitId] : [approverEmail]);
     await attachControlFormDocuments(pool, result.rows);
 
     res.status(200).json({
@@ -293,8 +335,16 @@ async function approveForm(req, res) {
       });
     }
 
+    const approverReason = reason_by_approver != null ? String(reason_by_approver).trim() : '';
+    if (status === 'Rejected' && !approverReason) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reason is required when rejecting.',
+      });
+    }
+
     const updateFields = ['status = $1', 'reason_by_approver = $2'];
-    const updateValues = [status, reason_by_approver || null];
+    const updateValues = [status, approverReason || null];
     let paramIndex = 3;
 
     updateFields.push(`control_design_procs = $${paramIndex}`);
@@ -347,7 +397,7 @@ async function approveForm(req, res) {
       processOwnerEmail,
       form_id,
       status,
-      reason_by_approver || '',
+      approverReason,
       updatedForm
     );
 
@@ -531,6 +581,7 @@ async function changeApprovalDecision(req, res) {
 async function getControlForms(req, res) {
   try {
     const { status, active } = req.query;
+    const requestedUnitId = req.query.unit_id ? String(req.query.unit_id).trim() : '';
     const approverEmail = req.approver.email_id;
 
     let query = `
@@ -568,6 +619,12 @@ async function getControlForms(req, res) {
       } else if (active === 'false' || active === '0') {
         query += ` AND (cf.active IS NULL OR cf.active = '' OR cf.active = '0')`;
       }
+    }
+
+    if (requestedUnitId) {
+      query += ` AND cf.unit_id = $${paramIndex}`;
+      queryParams.push(requestedUnitId);
+      paramIndex++;
     }
 
     query += ' ORDER BY cf.created_at DESC';

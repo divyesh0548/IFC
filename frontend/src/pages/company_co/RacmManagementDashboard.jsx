@@ -21,7 +21,8 @@ import DialogActions from '@mui/material/DialogActions'
 import TextField from '@mui/material/TextField'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import {
+import { apiUrl, API_BASE_URL } from '../../config/api'
+import { 
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
@@ -126,7 +127,7 @@ function RacmManagementDashboard() {
     // Fetch user role and company_identifier on component mount
     const fetchUserInfo = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/verify', {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -157,7 +158,7 @@ function RacmManagementDashboard() {
       if (!companyIdentifier) return
 
       try {
-        const response = await fetch('http://localhost:3000/api/company-co/unit-management', {
+        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -232,7 +233,7 @@ function RacmManagementDashboard() {
     }
 
     try {
-      const url = `http://localhost:3000/api/control-forms?company_identifier=${encodeURIComponent(companyId)}`
+      const url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyId)}`
       const response = await fetch(url, {
         method: 'GET',
         credentials: 'include',
@@ -263,7 +264,7 @@ function RacmManagementDashboard() {
     
     setLoading(true)
     try {
-      let url = `http://localhost:3000/api/control-forms?company_identifier=${encodeURIComponent(companyIdentifier)}`
+      let url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyIdentifier)}`
       
       if (filterActive === 'active') {
         url += '&active=true'
@@ -384,7 +385,7 @@ function RacmManagementDashboard() {
 
     setSetDueDateSubmitting(true)
     try {
-      const response = await fetch('http://localhost:3000/api/control-forms/bulk-set-due-date', {
+      const response = await fetch(apiUrl('/api/control-forms/bulk-set-due-date'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -474,7 +475,7 @@ function RacmManagementDashboard() {
     if (!email || !email.trim()) return { exists: false, role: null }
 
     try {
-      const response = await fetch(`http://localhost:3000/api/company-co/check-user-role/${encodeURIComponent(email.trim())}`, {
+      const response = await fetch(`${API_BASE_URL}/api/company-co/check-user-role/${encodeURIComponent(email.trim())}`, {
         method: 'GET',
         credentials: 'include',
       })
@@ -558,7 +559,6 @@ function RacmManagementDashboard() {
         String(form.sample_doc).trim() !== ''
       if (!hasSampleDoc) {
         sampleDocMissingFormIds.push(form.form_id)
-        continue
       }
 
       validFormIds.push(form.form_id)
@@ -677,7 +677,6 @@ function RacmManagementDashboard() {
     const hasAnyIssues =
       (emptyOwnerFormIds?.length || 0) > 0 ||
       (reminderMissingFormIds?.length || 0) > 0 ||
-      (sampleDocMissingFormIds?.length || 0) > 0 ||
       (nonUserRoleForms?.length || 0) > 0 ||
       (missingFormIds?.length || 0) > 0
 
@@ -704,6 +703,10 @@ function RacmManagementDashboard() {
       return
     }
 
+    if ((sampleDocMissingFormIds?.length || 0) > 0) {
+      toast(`${sampleDocMissingFormIds.length} RACM(s) missing sample document. Proceeding to set Active.`)
+    }
+
     await performSetActive(validFormIds)
   }
 
@@ -724,7 +727,7 @@ function RacmManagementDashboard() {
 
       for (const formId of selectedFormIds) {
         try {
-          const response = await fetch(`http://localhost:3000/api/control-forms/${formId}`, {
+          const response = await fetch(`${API_BASE_URL}/api/control-forms/${formId}`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
@@ -807,7 +810,7 @@ function RacmManagementDashboard() {
 
     setCreatingMissingUsers(true)
     try {
-      const response = await fetch('http://localhost:3000/api/company-co/create-users-bulk', {
+      const response = await fetch(apiUrl('/api/company-co/create-users-bulk'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -955,7 +958,7 @@ function RacmManagementDashboard() {
 
     setReplicating(true)
     try {
-      const response = await fetch('http://localhost:3000/api/control-forms/replicate', {
+      const response = await fetch(apiUrl('/api/control-forms/replicate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -1006,7 +1009,6 @@ function RacmManagementDashboard() {
     const reminderFrequency = form?.reminder_frequency
     const hasDueDate = Boolean(dueDate)
     const hasReminderFrequency = reminderFrequency !== null && reminderFrequency !== undefined && String(reminderFrequency).trim() !== ''
-    const hasSampleDoc = form?.sample_doc !== null && form?.sample_doc !== undefined && String(form.sample_doc).trim() !== ''
 
     // For single RACM selection, show ALL applicable problems (in precedence order),
     // but still block selection if any problem exists.
@@ -1028,9 +1030,6 @@ function RacmManagementDashboard() {
     if (!hasDueDate || !hasReminderFrequency) {
       problemLines.push('Due date / reminder frequency is missing.')
     }
-    if (!hasSampleDoc) {
-      problemLines.push('Sample document is missing.')
-    }
 
     if (problemLines.length > 0) {
       showSetActiveSelectionInfoDialog({
@@ -1041,7 +1040,6 @@ function RacmManagementDashboard() {
             : [],
         missingUserEmails: email && userRoleCheck && !userRoleCheck.exists ? [email] : [],
         reminderMissingCount: (!hasDueDate || !hasReminderFrequency) ? 1 : 0,
-        sampleDocMissingCount: !hasSampleDoc ? 1 : 0,
         eligibleFormIds: [],
         isSingle: true,
         singleProblemLines: problemLines,
@@ -1079,6 +1077,10 @@ function RacmManagementDashboard() {
       }
 
       if (selectedFormIds.includes(formId)) {
+        const hasSampleDoc = form?.sample_doc !== null && form?.sample_doc !== undefined && String(form.sample_doc).trim() !== ''
+        if (!hasSampleDoc) {
+          toast('Sample document is missing. RACM can still be set Active.')
+        }
         newSelected.add(formId)
         setSelectedForms(newSelected)
       }
@@ -1111,12 +1113,15 @@ function RacmManagementDashboard() {
       const { selectedFormIds, nonUserRoleForms, emptyOwnerFormIds, missingEmails, reminderMissingFormIds, sampleDocMissingFormIds, validFormIds } = await classifyFormsForSetActive(forms)
       setSelectedForms(new Set(selectedFormIds))
 
+      if ((sampleDocMissingFormIds?.length || 0) > 0) {
+        toast(`${sampleDocMissingFormIds.length} RACM(s) missing sample document. They can still be set Active.`)
+      }
+
       if (
         (emptyOwnerFormIds?.length || 0) > 0 ||
         (nonUserRoleForms?.length || 0) > 0 ||
         (missingEmails?.length || 0) > 0 ||
-        (reminderMissingFormIds?.length || 0) > 0 ||
-        (sampleDocMissingFormIds?.length || 0) > 0
+        (reminderMissingFormIds?.length || 0) > 0
       ) {
         showSetActiveSelectionInfoDialog({
           emptyOwnerCount: emptyOwnerFormIds?.length || 0,
@@ -1160,7 +1165,7 @@ function RacmManagementDashboard() {
       // Delete each form sequentially
       for (const formId of formIds) {
         try {
-          const response = await fetch(`http://localhost:3000/api/control-forms/${formId}`, {
+          const response = await fetch(`${API_BASE_URL}/api/control-forms/${formId}`, {
             method: 'DELETE',
             credentials: 'include',
           })
@@ -2850,19 +2855,6 @@ function RacmManagementDashboard() {
                     }}
                   >
                     Reminder columns missing (due date / reminder frequency): <strong>{missingReminderCount}</strong>
-                  </Typography>
-                ) : null}
-
-                {missingSampleDocCount > 0 ? (
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: theme.palette.text.primary,
-                      fontWeight: 500,
-                      mb: 1,
-                    }}
-                  >
-                    Sample document missing: <strong>{missingSampleDocCount}</strong>
                   </Typography>
                 ) : null}
 

@@ -16,14 +16,15 @@ import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import { toast } from 'react-hot-toast'
 import { useThemeMode } from '../contexts/ThemeContext'
-import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
+import { apiUrl } from '../config/api'
 
 const ROLE_HOME_ROUTES = {
   user: '/user/home',
   company_co: '/company_co/home',
   approver: '/approver/home',
   siteadmin: '/siteadmin/dashboard',
-  auditor: '/auditor/dashboard',
+  auditor: '/auditor/home',
 }
 
 const filledFieldSx = (theme) => ({
@@ -59,7 +60,7 @@ function UpdatePassword() {
     const fetchUserInfo = async () => {
       setCheckingSession(true)
       try {
-        const response = await fetch('http://localhost:3000/api/auth/verify', {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -107,7 +108,7 @@ function UpdatePassword() {
     setLoading(true)
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/update-password', {
+      const response = await fetch(apiUrl('/api/auth/update-password'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

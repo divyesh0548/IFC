@@ -20,6 +20,7 @@ import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Switch from '@mui/material/Switch'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { apiUrl, API_BASE_URL } from '../../config/api'
 
 function User_dashboard() {
   const theme = useTheme()
@@ -59,7 +60,7 @@ function User_dashboard() {
     // Fetch user info on component mount
     const fetchUserInfo = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/verify', {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -91,7 +92,7 @@ function User_dashboard() {
     setLoading(true)
     try {
       // Build URL with control_owner, active, and optional filters
-      let url = `http://localhost:3000/api/control-forms?control_owner=${encodeURIComponent(userEmail)}&active=true`
+      let url = `${API_BASE_URL}/api/control-forms?control_owner=${encodeURIComponent(userEmail)}&active=true`
       
       // Add status filter parameter to API (API handles all filtering)
       if (filter !== 'all') {
@@ -164,6 +165,17 @@ function User_dashboard() {
   const getStatusColor = (status) => {
     const { backgroundColor, color } = getStatusBadgeSolidColors(status)
     return { bg: backgroundColor, color }
+  }
+
+  const formatDate = (date) => {
+    if (!date) return 'N/A'
+    const parsedDate = new Date(date)
+    if (Number.isNaN(parsedDate.getTime())) return 'N/A'
+    return parsedDate.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
   }
 
   const truncatedTextSx = {
@@ -475,7 +487,22 @@ function User_dashboard() {
                         color: theme.palette.text.secondary,
                       }}
                     >
-                      Created At
+                      Financial Year
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
+                      Due Date
                     </Box>
                   </Box>
                 </Box>
@@ -578,9 +605,20 @@ function User_dashboard() {
                           })}
                         >
                           <Box component="span" sx={dataCellTextSx}>
-                            {form.created_at
-                              ? new Date(form.created_at).toLocaleDateString()
-                              : 'N/A'}
+                            {form.financial_year || 'N/A'}
+                          </Box>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={dataCellSx({
+                            px: 3,
+                            py: 2,
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          })}
+                        >
+                          <Box component="span" sx={dataCellTextSx}>
+                            {formatDate(form.due_date)}
                           </Box>
                         </Box>
                       </Box>

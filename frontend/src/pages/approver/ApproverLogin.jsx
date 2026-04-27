@@ -12,7 +12,8 @@ import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Alert from '@mui/material/Alert'
 import { toast } from 'react-hot-toast'
-import { STORAGE_KEYS, clearCachedUserProfile } from '../../storageKeys'
+import { STORAGE_KEYS, clearCachedUserProfile } from '../../storageKeys'
+import { apiUrl } from '../../config/api'
 
 function ApproverLogin() {
   const theme = useTheme()
@@ -29,7 +30,7 @@ function ApproverLogin() {
     setError('')
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/approver/login', {
+      const response = await fetch(apiUrl('/api/auth/approver/login'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

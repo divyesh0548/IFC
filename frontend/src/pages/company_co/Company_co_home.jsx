@@ -11,6 +11,7 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
+import { apiUrl } from '../../config/api'
 
 function Company_co_home() {
   const theme = useTheme()
@@ -79,7 +80,7 @@ function Company_co_home() {
   useEffect(() => {
     const fetchHomeData = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/company-co/home-stats', {
+        const response = await fetch(apiUrl('/api/company-co/home-stats'), {
           credentials: 'include',
         })
         const result = await response.json()

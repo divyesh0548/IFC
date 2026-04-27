@@ -1,29 +1,66 @@
 const express = require('express');
 const dotenv = require('dotenv');
+const cors = require('cors');
 const cookieParser = require('cookie-parser');
 
 // Load environment variables first
 dotenv.config();
 
 const { runReminderEmails } = require('./scripts/reminder_emails');
+const { runPendingLoginEmails } = require('./scripts/login_email_sender');
 const { runBootstrap } = require('./config/bootstrap');
 require('./utils/db'); // Load shared pool (timezone set there)
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+function buildAllowedOrigins() {
+  const configuredOrigins = [
+    process.env.VITE_FRONTEND_URL,
+  ]
+    .filter(Boolean)
+    .flatMap((value) => String(value).split(','))
+    .map((value) => value.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
+  return new Set([
+    ...configuredOrigins,
+    'http://localhost:5173',
+  ]);
+}
+
+const allowedOrigins = buildAllowedOrigins();
+
 // CORS configuration to allow credentials
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'http://localhost:5173'); // Vite default port
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+// app.use((req, res, next) => {
+//   res.header('Access-Control-Allow-Origin', 'http://localhost:5173'); // Vite default port
+//   res.header('Access-Control-Allow-Credentials', 'true');
+//   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+//   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  next();
-});
+//   if (req.method === 'OPTIONS') {
+//     return res.sendStatus(200);
+//   }
+//   next();
+// });
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    const normalizedOrigin = String(origin).replace(/\/+$/, '');
+    if (allowedOrigins.has(normalizedOrigin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+}));
 
 // Middleware (large limit for client-parsed Excel row payloads)
 app.use(express.json({ limit: '25mb' }));
@@ -70,12 +107,27 @@ setInterval(async () => {
   }
 }, 60 * 1000);
 
+// Login emails for newly created temp-login users (runs every 1 minute)
+console.log('Starting login email scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await runPendingLoginEmails();
+  } catch (error) {
+    console.error('Error in login email job:', error);
+  }
+}, 60 * 1000);
+
 // Run bootstrap tasks, then start server
 (async () => {
   try {
     await runBootstrap();
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
+      setTimeout(() => {
+        runPendingLoginEmails().catch((error) => {
+          console.error('Error in initial login email job:', error);
+        });
+      }, 0);
     });
   } catch (error) {
     console.error('Server bootstrap failed. Exiting process.', error);

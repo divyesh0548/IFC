@@ -34,6 +34,7 @@ import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
+import { apiUrl, API_BASE_URL } from '../../config/api'
 
 const ASSIGNABLE_USER_INITIAL_LIMIT = 5
 const ASSIGNABLE_USER_SEARCH_LIMIT = 50
@@ -129,7 +130,7 @@ function FormDetail() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'GET',
         credentials: 'include',
       })
@@ -157,14 +158,14 @@ function FormDetail() {
     if (!email || !email.trim()) return { exists: false, role: null }
 
     try {
-      const response = await fetch(`http://localhost:3000/api/company-co/check-user-role/${encodeURIComponent(email.trim())}`, {
+      const response = await fetch(`${API_BASE_URL}/api/company-co/check-user-role/${encodeURIComponent(email.trim())}`, {
         method: 'GET',
         credentials: 'include',
       })
 
       const data = await response.json()
       if (!response.ok || !data.success) return { exists: false, role: null }
-      return { exists: !!data.exists, role: data.role ?? null }
+      return { exists: !!data.exists, role: data.role ?? null, unit_id: data.unit_id ?? null }
     } catch (error) {
       console.error('Error checking user role:', error)
       return { exists: false, role: null }
@@ -179,15 +180,6 @@ function FormDetail() {
     // Determine new active status
     const isCurrentlyActive = formData.active && formData.active !== '' && formData.active !== '0'
     const newActiveStatus = isCurrentlyActive ? '0' : '1'
-
-    // If setting to active and sample document is missing, block activation.
-    if (
-      newActiveStatus === '1' &&
-      !hasSampleDocs()
-    ) {
-      toast.error('Sample document is missing')
-      return
-    }
 
     await validateAndToggleActive(newActiveStatus)
   }
@@ -223,6 +215,13 @@ function FormDetail() {
           toast.error('Process Owner must be a normal user')
           return
         }
+
+        const racmUnitId = formData?.unit_id ? String(formData.unit_id).trim() : ''
+        const ownerUnitId = ownerCheck.unit_id ? String(ownerCheck.unit_id).trim() : ''
+        if (racmUnitId && ownerUnitId && racmUnitId !== ownerUnitId) {
+          toast.error('User belongs to other unit of the company, Please assign RACM to other user')
+          return
+        }
       }
 
       // 4) If process owner is valid but reminder settings are missing, block activation
@@ -232,6 +231,10 @@ function FormDetail() {
       }
     }
 
+    if (newActiveStatus === '1' && !hasSampleDocs()) {
+      toast('Sample document is missing. Proceeding to set Active.')
+    }
+
     // Proceed with setting active/inactive
     await performToggleActive(newActiveStatus)
   }
@@ -239,7 +242,7 @@ function FormDetail() {
   const performToggleActive = async (newActiveStatus) => {
     setUpdating(true)
     try {
-      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -289,7 +292,7 @@ function FormDetail() {
 
     setCreatingUser(true)
     try {
-      const response = await fetch('http://localhost:3000/api/company-co/create-user', {
+      const response = await fetch(apiUrl('/api/company-co/create-user'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -452,7 +455,7 @@ function FormDetail() {
 
     setSavingSchedule(true)
     try {
-      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -487,7 +490,7 @@ function FormDetail() {
   const fetchCompanyUsers = async () => {
     setUsersLoading(true)
     try {
-      const response = await fetch('http://localhost:3000/api/company-co/users', {
+      const response = await fetch(apiUrl('/api/company-co/users'), {
         method: 'GET',
         credentials: 'include',
       })
@@ -518,7 +521,7 @@ function FormDetail() {
         params.set('q', trimmedQ)
       }
       const response = await fetch(
-        `http://localhost:3000/api/company-co/users?${params.toString()}`,
+        `${API_BASE_URL}/api/company-co/users?${params.toString()}`,
         {
           method: 'GET',
           credentials: 'include',
@@ -575,11 +578,11 @@ function FormDetail() {
       String(formData.reminder_frequency).trim() !== ''
     const hasReminderSettings = hasDueDate && hasReminderFrequency
     const hasSampleDoc = hasSampleDocs()
-    const canAutoActivate = hasReminderSettings && hasSampleDoc
+    const canAutoActivate = hasReminderSettings
 
     setUpdating(true)
     try {
-      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -595,10 +598,12 @@ function FormDetail() {
       const data = await response.json()
       if (response.ok && data.success) {
         toast.success('Sucessfully Updated RACM Assignment')
+        if (canAutoActivate && !hasSampleDoc) {
+          toast('Sample document is missing. RACM was set Active.')
+        }
         if (!canAutoActivate) {
           const missing = []
           if (!hasReminderSettings) missing.push('Reminder settings')
-          if (!hasSampleDoc) missing.push('Sample document')
           toast.error(`RACM assigned, but could not set Active. Missing: ${missing.join(', ')}`)
         }
         handleCloseAssignmentDialog()
@@ -702,7 +707,7 @@ function FormDetail() {
 
     setSaving(true)
     try {
-      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -754,7 +759,7 @@ function FormDetail() {
     setAuditLogRows([])
     try {
       const response = await fetch(
-        `http://localhost:3000/api/company-co/racm-audit-logs/${encodeURIComponent(form_id)}`,
+        `${API_BASE_URL}/api/company-co/racm-audit-logs/${encodeURIComponent(form_id)}`,
         { method: 'GET', credentials: 'include' }
       )
       const data = await response.json()
@@ -773,7 +778,7 @@ function FormDetail() {
 
   const formatStatus = (status) => {
     if (!status || status === '' || status === null) {
-      return 'To be sent by user'
+      return '-'
     }
 
     if (status === 'Approved') {
@@ -842,7 +847,7 @@ function FormDetail() {
 
   const checkSamplingExists = async () => {
     try {
-      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}/check-sampling-exists`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/check-sampling-exists`, {
         method: 'GET',
         credentials: 'include',
       })
@@ -923,7 +928,7 @@ function FormDetail() {
         uploadFormData.append('excelFiles', file)
       })
 
-      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}/upload-sampling-excel`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/upload-sampling-excel`, {
         method: 'POST',
         credentials: 'include',
         body: uploadFormData,
@@ -969,7 +974,7 @@ function FormDetail() {
 
     try {
       const fileName = getFileName(filePath)
-      const response = await fetch(`http://localhost:3000/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
         method: 'GET',
         credentials: 'include',
       })
@@ -1007,7 +1012,7 @@ function FormDetail() {
 
     try {
       const fileName = getFileName(filePath)
-      const response = await fetch(`http://localhost:3000/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
         method: 'GET',
         credentials: 'include',
       })
@@ -1053,7 +1058,7 @@ function FormDetail() {
     setDeletingSampleDocId(docId)
     try {
       const response = await fetch(
-        `http://localhost:3000/api/control-forms/${form_id}/sample-docs/${encodeURIComponent(docId)}`,
+        `${API_BASE_URL}/api/control-forms/${form_id}/sample-docs/${encodeURIComponent(docId)}`,
         {
           method: 'DELETE',
           credentials: 'include',
@@ -1097,7 +1102,7 @@ function FormDetail() {
   const handleDeleteConfirm = async () => {
     setDeleting(true)
     try {
-      const response = await fetch(`http://localhost:3000/api/control-forms/${form_id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'DELETE',
         credentials: 'include',
       })
@@ -1168,7 +1173,7 @@ function FormDetail() {
 
     setReplicating(true)
     try {
-      const response = await fetch('http://localhost:3000/api/control-forms/replicate', {
+      const response = await fetch(apiUrl('/api/control-forms/replicate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

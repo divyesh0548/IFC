@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { pool } = require('../../utils/db');
-const { sendEmail } = require('../../utils/send_email');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
+const { encryptTempPassword } = require('../../utils/login_email');
 
 function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();
@@ -23,50 +23,12 @@ function generateUnitIdentifier(unitName) {
   return (namePart + randomPart).substring(0, 10);
 }
 
-async function getCoordinatorAndCompanyDetails(client, coordinator) {
-  const companyIdentifier = coordinator.company_identifier || null;
-  let companyCoordinatorName = '';
-  let companyName = '';
-
-  if (coordinator.id) {
-    const coordinatorResult = await client.query(
-      `
-        SELECT emp_name
-        FROM ifc_users
-        WHERE id = $1
-      `,
-      [coordinator.id]
-    );
-    companyCoordinatorName = coordinatorResult.rows[0]?.emp_name || '';
-  }
-
-  if (companyIdentifier) {
-    const companyResult = await client.query(
-      `
-        SELECT company_name
-        FROM companies
-        WHERE company_identifier = $1
-        LIMIT 1
-      `,
-      [companyIdentifier]
-    );
-    companyName = companyResult.rows[0]?.company_name || '';
-  }
-
-  return {
-    companyIdentifier,
-    companyCoordinatorName,
-    companyDisplayName: companyName || 'your company',
-  };
-}
-
 async function createCompanyUser(client, coordinator, payload = {}) {
   getPasswordPepper();
 
   const emailId = normalizeEmail(payload.email_id);
   const empCode = payload.emp_code && payload.emp_code.trim() ? payload.emp_code.trim() : null;
   const empName = payload.emp_name && payload.emp_name.trim() ? payload.emp_name.trim() : null;
-  const emailGreeting = empName ? `Hi ${empName},` : 'Hi,';
   const designation = payload.designation && payload.designation.trim() ? payload.designation.trim() : null;
   const department = payload.department && payload.department.trim() ? payload.department.trim() : null;
   const mobile = payload.mobile && payload.mobile.trim() ? payload.mobile.trim() : null;
@@ -131,8 +93,7 @@ async function createCompanyUser(client, coordinator, payload = {}) {
 
   const tempPassword = crypto.randomBytes(8).toString('hex');
   const tempPasswordHash = await hashPassword(tempPassword);
-  const { companyCoordinatorName, companyDisplayName } =
-    await getCoordinatorAndCompanyDetails(client, coordinator);
+  const tempPasswordEncrypted = encryptTempPassword(tempPassword);
 
   const userResult = await client.query(
     `
@@ -147,9 +108,11 @@ async function createCompanyUser(client, coordinator, payload = {}) {
         designation,
         department,
         mobile,
-        unit_id
+        unit_id,
+        login_email_sent,
+        temp_password_encrypted
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE, $12)
       RETURNING id, email_id, company_identifier, unit_id
     `,
     [
@@ -164,40 +127,13 @@ async function createCompanyUser(client, coordinator, payload = {}) {
       department,
       mobile,
       unitId,
+      tempPasswordEncrypted,
     ]
   );
 
-  const emailSubject = 'Welcome to IFC - Let\'s get started';
-  const emailText = `${emailGreeting}
-
-Hope you're having a good week!
-
-I am ${companyCoordinatorName} at ${companyDisplayName} organization. We have been engaged to carry out an internal financial control review. This is a yearly exercise. If you have not participated before, we’ve put together a short introductory video (just a few minutes) to get you up to speed. You can watch it here: [Video Link]
-
-Here is a brief overview of Internal Financial Controls.
-
-Internal financial controls are the everyday steps we take to keep our financial information accurate and safe. IFC testing checks whether those steps are working.
-
-The control flow is as follows: You upload evidence that you've performed the control. Our tester reviews it and passes or fails the control based on whether it is working effectively. That's it!
-
-Your evidence is the proof that shows our controls are doing their job.
-
-Here are your login credentials. (This is a temporary password, please change it after logging in.)
-
-Email ID: ${emailId}
-Password: ${tempPassword}
-Portal: ${process.env.FRONTEND_URL}
-
-Thanks & Regards,
-${companyCoordinatorName}
-${companyDisplayName}
-    `;
-
-  const emailSent = await sendEmail(emailId, emailSubject, emailText);
-
   return {
     user: userResult.rows[0],
-    emailSent,
+    loginEmailQueued: true,
   };
 }
 
@@ -290,14 +226,23 @@ async function createUnitMappedPrivilegedUser(client, coordinator, payload = {},
 
   const tempPassword = crypto.randomBytes(8).toString('hex');
   const tempPasswordHash = await hashPassword(tempPassword);
+  const tempPasswordEncrypted = encryptTempPassword(tempPassword);
 
   const userResult = await client.query(
     `
-      INSERT INTO ifc_users (email_id, password, role, company_identifier, temp_login)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO ifc_users (
+        email_id,
+        password,
+        role,
+        company_identifier,
+        temp_login,
+        login_email_sent,
+        temp_password_encrypted
+      )
+      VALUES ($1, $2, $3, $4, $5, FALSE, $6)
       RETURNING id, email_id, role, company_identifier
     `,
-    [emailId, tempPasswordHash, config.role, companyIdentifier, 1]
+    [emailId, tempPasswordHash, config.role, companyIdentifier, 1, tempPasswordEncrypted]
   );
 
   await client.query(
@@ -309,41 +254,10 @@ async function createUnitMappedPrivilegedUser(client, coordinator, payload = {},
     [emailId, unitResult.rows[0].id]
   );
 
-  const companyResult = await client.query(
-    'SELECT company_name FROM companies WHERE company_identifier = $1 LIMIT 1',
-    [companyIdentifier]
-  );
-  const companyName = companyResult.rows[0]?.company_name || 'your company';
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173/user/login';
-
-  const emailSubject = `Welcome to ${companyName} - Your Temporary Login Credentials`;
-  const emailText = `
-Dear ${config.roleLabel},
-
-Your company account has been created successfully.
-
-Company: ${companyName}
-
-Your temporary login credentials:
-Email: ${emailId}
-Temporary Password: ${tempPassword}
-
-IMPORTANT: Please login using these credentials and update your password immediately for security purposes.
-
-Login URL: ${frontendUrl}
-
-After logging in, you will be prompted to update your temporary password to a permanent one.
-
-Best regards,
-IFC System
-        `;
-
-  const emailSent = await sendEmail(emailId, emailSubject, emailText);
-
   return {
     user: userResult.rows[0],
     unit: unitResult.rows[0],
-    emailSent,
+    loginEmailQueued: true,
   };
 }
 
@@ -363,29 +277,80 @@ async function getUsers(req, res) {
     const limitRaw = req.query.limit;
 
     let query = `
-      SELECT email_id, role, emp_name, designation, department, mobile, company_identifier, unit_id
-      FROM ifc_users
-      WHERE company_identifier = $1
+      SELECT
+        u.email_id,
+        u.role,
+        u.emp_name,
+        u.designation,
+        u.department,
+        u.mobile,
+        u.company_identifier,
+        CASE
+          WHEN u.role = 'company_co' THEN coordinator_units.unit_ids
+          WHEN u.role = 'approver' THEN approver_units.unit_ids
+          ELSE NULLIF(TRIM(u.unit_id), '')
+        END AS unit_id,
+        CASE
+          WHEN u.role = 'company_co' THEN coordinator_units.unit_names
+          WHEN u.role = 'approver' THEN approver_units.unit_names
+          ELSE NULLIF(TRIM(user_unit.unit_name), '')
+        END AS unit_name
+      FROM ifc_users u
+      LEFT JOIN company_unit_master user_unit
+        ON user_unit.company_identifier = u.company_identifier
+       AND user_unit.unit_id = u.unit_id
+      LEFT JOIN LATERAL (
+        SELECT
+          STRING_AGG(mapped_units.unit_id, ', ' ORDER BY mapped_units.unit_name, mapped_units.unit_id) AS unit_ids,
+          STRING_AGG(mapped_units.unit_name, ', ' ORDER BY mapped_units.unit_name, mapped_units.unit_id) AS unit_names
+        FROM (
+          SELECT DISTINCT
+            NULLIF(TRIM(unit_id), '') AS unit_id,
+            NULLIF(TRIM(unit_name), '') AS unit_name
+          FROM company_unit_master
+          WHERE company_identifier = u.company_identifier
+            AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = LOWER(TRIM(u.email_id))
+            AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+        ) mapped_units
+      ) coordinator_units ON u.role = 'company_co'
+      LEFT JOIN LATERAL (
+        SELECT
+          STRING_AGG(mapped_units.unit_id, ', ' ORDER BY mapped_units.unit_name, mapped_units.unit_id) AS unit_ids,
+          STRING_AGG(mapped_units.unit_name, ', ' ORDER BY mapped_units.unit_name, mapped_units.unit_id) AS unit_names
+        FROM (
+          SELECT DISTINCT
+            NULLIF(TRIM(unit_id), '') AS unit_id,
+            NULLIF(TRIM(unit_name), '') AS unit_name
+          FROM company_unit_master
+          WHERE company_identifier = u.company_identifier
+            AND LOWER(TRIM(COALESCE(approver_email_id, ''))) = LOWER(TRIM(u.email_id))
+            AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+        ) mapped_units
+      ) approver_units ON u.role = 'approver'
+      WHERE u.company_identifier = $1
     `;
     const params = [companyIdentifier];
     let paramIndex = 2;
 
     if (roleParam) {
-      query += ` AND role = $${paramIndex}`;
+      query += ` AND u.role = $${paramIndex}`;
       params.push(roleParam);
       paramIndex++;
     }
 
     if (qRaw) {
       query += ` AND (
-        LOWER(COALESCE(emp_name, '')) LIKE $${paramIndex}
-        OR LOWER(TRIM(email_id)) LIKE $${paramIndex}
+        LOWER(COALESCE(u.emp_name, '')) LIKE $${paramIndex}
+        OR LOWER(TRIM(u.email_id)) LIKE $${paramIndex}
+        OR LOWER(COALESCE(user_unit.unit_name, '')) LIKE $${paramIndex}
+        OR LOWER(COALESCE(coordinator_units.unit_names, '')) LIKE $${paramIndex}
+        OR LOWER(COALESCE(approver_units.unit_names, '')) LIKE $${paramIndex}
       )`;
       params.push(`%${qRaw.toLowerCase()}%`);
       paramIndex++;
     }
 
-    query += ' ORDER BY created_at DESC';
+    query += ' ORDER BY u.created_at DESC';
 
     if (limitRaw !== undefined && limitRaw !== '') {
       const limitNum = parseInt(String(limitRaw), 10);
@@ -625,7 +590,7 @@ async function createUnitCoordinator(req, res) {
   try {
     await client.query('BEGIN');
 
-    const { user, unit, emailSent } = await createUnitMappedPrivilegedUser(
+    const { user, unit, loginEmailQueued } = await createUnitMappedPrivilegedUser(
       client,
       req.user,
       req.body,
@@ -634,14 +599,10 @@ async function createUnitCoordinator(req, res) {
 
     await client.query('COMMIT');
 
-    if (!emailSent) {
-      console.warn(`Warning: Failed to send email to ${user.email_id}, but company coordinator was created successfully.`);
-    }
-
     return res.status(201).json({
       success: true,
       message: 'Company coordinator created successfully',
-      data: { user, unit, emailSent },
+      data: { user, unit, loginEmailQueued },
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -676,7 +637,7 @@ async function createUnitApprover(req, res) {
   try {
     await client.query('BEGIN');
 
-    const { user, unit, emailSent } = await createUnitMappedPrivilegedUser(
+    const { user, unit, loginEmailQueued } = await createUnitMappedPrivilegedUser(
       client,
       req.user,
       req.body,
@@ -685,14 +646,10 @@ async function createUnitApprover(req, res) {
 
     await client.query('COMMIT');
 
-    if (!emailSent) {
-      console.warn(`Warning: Failed to send email to ${user.email_id}, but approver was created successfully.`);
-    }
-
     return res.status(201).json({
       success: true,
       message: 'Approver created successfully',
-      data: { user, unit, emailSent },
+      data: { user, unit, loginEmailQueued },
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -953,7 +910,7 @@ async function createUser(req, res) {
 
   try {
     await client.query('BEGIN');
-    const { user: newUser, emailSent } = await createCompanyUser(client, coordinator, {
+    const { user: newUser, loginEmailQueued } = await createCompanyUser(client, coordinator, {
       email_id,
       emp_code,
       emp_name,
@@ -962,12 +919,6 @@ async function createUser(req, res) {
       mobile,
       unit_id,
     });
-
-    if (!emailSent) {
-      console.warn(`Warning: Failed to send email to ${newUser.email_id}, but user was created successfully.`);
-    } else {
-      console.log(`✓ User creation email sent successfully to ${newUser.email_id}`);
-    }
 
     await client.query('COMMIT');
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -981,7 +932,7 @@ async function createUser(req, res) {
         company_identifier: newUser.company_identifier,
         unit_id: newUser.unit_id,
       },
-      emailSent,
+      loginEmailQueued,
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -1037,12 +988,12 @@ async function createUsersBulk(req, res) {
 
     for (const emailId of emailIds) {
       try {
-        const { user, emailSent } = await createCompanyUser(client, coordinator, { email_id: emailId });
+        const { user, loginEmailQueued } = await createCompanyUser(client, coordinator, { email_id: emailId });
         createdUsers.push({
           id: user.id,
           email_id: user.email_id,
           company_identifier: user.company_identifier,
-          emailSent,
+          loginEmailQueued,
         });
       } catch (error) {
         if (error.statusCode === 409) {
@@ -1117,25 +1068,95 @@ async function deleteUsers(req, res) {
   try {
     await client.query('BEGIN');
 
+    const coordinatorUnitsResult = await client.query(
+      `
+        SELECT unit_id
+        FROM company_unit_master
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
+      `,
+      [companyIdentifier, normalizeEmail(coordinator.email_id)]
+    );
+
+    const mappedUnitIds = coordinatorUnitsResult.rows
+      .map((row) => (row.unit_id == null ? '' : String(row.unit_id).trim()))
+      .filter(Boolean);
+
+    if (mappedUnitIds.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'You are not mapped to any unit, so you cannot delete users',
+      });
+    }
+
+    const usersToDeleteResult = await client.query(
+      `
+        SELECT
+          LOWER(TRIM(email_id)) AS email_id,
+          unit_id
+        FROM ifc_users
+        WHERE company_identifier = $1
+          AND role = 'user'
+          AND LOWER(TRIM(email_id)) = ANY($2::text[])
+        FOR UPDATE
+      `,
+      [companyIdentifier, normalizedEmails]
+    );
+
+    const foundEmails = new Set(usersToDeleteResult.rows.map((row) => row.email_id));
+    const missingEmails = normalizedEmails.filter((emailId) => !foundEmails.has(emailId));
+    if (missingEmails.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'One or more selected users were not found for this company',
+        missingEmails,
+      });
+    }
+
+    const mappedUnitSet = new Set(mappedUnitIds);
+    const unauthorizedUsers = usersToDeleteResult.rows.filter((row) => {
+      const userUnitId = row.unit_id == null ? '' : String(row.unit_id).trim();
+      return !userUnitId || !mappedUnitSet.has(userUnitId);
+    });
+
+    if (unauthorizedUsers.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'You can delete only users from units mapped to you',
+        unauthorized_users: unauthorizedUsers.map((row) => row.email_id),
+      });
+    }
+
     const deactivatedRacmsQuery = `
       UPDATE control_forms
       SET control_owner = NULL,
           active = '0'
       WHERE company_identifier = $1
         AND LOWER(TRIM(control_owner)) = ANY($2::text[])
+        AND unit_id = ANY($3::text[])
     `;
 
-    const deactivatedRacmsResult = await client.query(deactivatedRacmsQuery, [companyIdentifier, normalizedEmails]);
+    const deactivatedRacmsResult = await client.query(
+      deactivatedRacmsQuery,
+      [companyIdentifier, normalizedEmails, mappedUnitIds]
+    );
 
     const deletedUsersQuery = `
       DELETE FROM ifc_users
       WHERE company_identifier = $1
         AND role = 'user'
         AND LOWER(TRIM(email_id)) = ANY($2::text[])
+        AND unit_id = ANY($3::text[])
       RETURNING email_id
     `;
 
-    const deletedUsersResult = await client.query(deletedUsersQuery, [companyIdentifier, normalizedEmails]);
+    const deletedUsersResult = await client.query(
+      deletedUsersQuery,
+      [companyIdentifier, normalizedEmails, mappedUnitIds]
+    );
 
     await client.query('COMMIT');
 
@@ -1246,7 +1267,7 @@ async function checkUserRole(req, res) {
     }
 
     const checkUserQuery = `
-      SELECT role
+      SELECT role, unit_id
       FROM ifc_users
       WHERE LOWER(TRIM(email_id)) = $1
         AND company_identifier = $2
@@ -1260,6 +1281,7 @@ async function checkUserRole(req, res) {
         success: true,
         exists: false,
         role: null,
+        unit_id: null,
       });
     }
 
@@ -1267,6 +1289,7 @@ async function checkUserRole(req, res) {
       success: true,
       exists: true,
       role: existingUser.rows[0]?.role || null,
+      unit_id: existingUser.rows[0]?.unit_id || null,
     });
   } catch (error) {
     console.error('Error checking user role:', error);

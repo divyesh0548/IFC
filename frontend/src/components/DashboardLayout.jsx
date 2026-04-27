@@ -27,13 +27,14 @@ import { useThemeMode } from '../contexts/ThemeContext'
 import { toast } from 'react-hot-toast'
 import { STORAGE_KEYS, clearCachedUserProfile } from '../storageKeys'
 import { MAIN_CONTENT_MAX_WIDTH } from '../uiConstants'
+import { apiUrl } from '../config/api'
 
 const getHomePath = (pathname) => {
   if (pathname.startsWith('/company_co')) return '/company_co/home'
   if (pathname.startsWith('/siteadmin')) return '/siteadmin/dashboard'
   if (pathname.startsWith('/user')) return '/user/home'
   if (pathname.startsWith('/approver')) return '/approver/home'
-  if (pathname.startsWith('/auditor')) return '/auditor/dashboard'
+  if (pathname.startsWith('/auditor')) return '/auditor/home'
   return '/'
 }
 
@@ -83,7 +84,7 @@ function DashboardLayout() {
     let cancelled = false
     ;(async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/profile', {
+        const response = await fetch(apiUrl('/api/auth/profile'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -113,7 +114,7 @@ function DashboardLayout() {
 
   const handleUnifiedLogout = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/auth/logout', {
+      const response = await fetch(apiUrl('/api/auth/logout'), {
         method: 'POST',
         credentials: 'include',
       })

@@ -21,6 +21,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { MAIN_CONTENT_MAX_WIDTH } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { API_BASE_URL } from '../../config/api'
 
 function CompanyDetail() {
   const theme = useTheme()
@@ -50,7 +51,7 @@ function CompanyDetail() {
     setError(null)
     try {
       const response = await fetch(
-        `http://localhost:3000/api/siteadmin/companies/${company_identifier}`,
+        `${API_BASE_URL}/api/siteadmin/companies/${company_identifier}`,
         { method: 'GET', credentials: 'include' }
       )
       const data = await response.json()

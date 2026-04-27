@@ -1,10 +1,4 @@
 
-
-Provide 2 columns to company co : Due date and Reminder frequency. (These are mendatory and included in bulk upload) Can be empty during bulk upload, before RACm assignment these are mendatory.
-
-
-Give an option to duplicate existing RACM with year change. Multiple RACM can be selected for duplication. 
-
 On rejected do not remove resaon and old file. Maintain them in history. 
 
 Provide link of RACM link in Assignemnt email.
@@ -47,24 +41,6 @@ Sample Size
 
 
 
-columns to be removed : process, control_to_address, mrc_or_not character, source_data_report_logic_report_parameters, type_of_risk_mitigation_method character, reviewer_process_supervisor character, docs_to_review_for_dms_audit, basis_of_sampling, type_of_risk_associated, financial_reporting, checks_performed, type_of_control, findings, gap_description_resolution, accuracy
-
-
-
-
-columns to be altered : 
-valuation --> Valuation & allocation
-ownership_of_rights_and_obligations --> Rights and obligations
-presentation --> Presentation and Disclosure
-description_of_control --> Standard Control Description
-relevant_data_elements_of_ipe  --> IPE Reference
-type_of_control --> Type of Control O_F 
-type_of_control --> Type of Control M_A
-effective_or_not_effective --> Conclusion on design of control
-sampling_doc --> Sample Doc
-
-
-
 
 Scenarios to consider:
 
@@ -96,7 +72,7 @@ Those last three column, which are to be updated by approver, needs to be insert
 
 
 
-Bulk upload/update (for specific fields) in user creation.
+Bulk upload/update (for specific fields) in user creation. Export user list in excel format.
 Provide a template for it.
 
 Sample doc is not required. (give warning)
@@ -118,21 +94,21 @@ make user : yugma and mayank sir
 
 Create a user role with view only rights. (Auditor) 
 
-What restrictions to impose for uploading the sample document?
-
 Generate sample documents dates/intervals from past date of the date of RACM creation. (Do not include any future date)
 
 A company can have multiple units for easy management. Units will be created by company coordinator. By defaul a company will have a main unit.
 
 Company coordinator can create approver for comapny, user and another company coordinator.
 
-There will be no centralized approver from now on.
 
+Scenarios and Doubts :
 
+What restrictions to impose for uploading the sample document as well for user to upload document?
 
-Pending Prompt for Codex.
+Can coordinator make changes once RACM is sent for approval or Approved or Rejected?
 
+How to handle Control Number generation, cause RACMs privide by Mayank sir have no such field.
 
+What fields are necessary for RACM creation. Without them RACM will not be initiated.
 
-
-3. In frontend, hardcoded backend url is used. .env is created, so user url from that file.
+What limitations to impose on Units. Like two units can't have same coordinator and approver, etc.

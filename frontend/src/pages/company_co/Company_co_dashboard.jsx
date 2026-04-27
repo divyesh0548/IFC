@@ -18,6 +18,7 @@ import {
   getApprovalStatusBadgeSolidColors,
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { apiUrl, API_BASE_URL } from '../../config/api'
 
 function Company_Co_dashboard() {
   const theme = useTheme()
@@ -49,7 +50,7 @@ function Company_Co_dashboard() {
     // Fetch user role and company_identifier on component mount
     const fetchUserInfo = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/verify', {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -107,7 +108,7 @@ function Company_Co_dashboard() {
     }
 
     try {
-      const url = `http://localhost:3000/api/control-forms?company_identifier=${encodeURIComponent(companyId)}`
+      const url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyId)}`
       const response = await fetch(url, {
         method: 'GET',
         credentials: 'include',
@@ -129,7 +130,7 @@ function Company_Co_dashboard() {
     setLoading(true)
     try {
       // Company_co_dashboard can show both active and inactive forms
-      let url = `http://localhost:3000/api/control-forms?company_identifier=${encodeURIComponent(companyIdentifier)}`
+      let url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyIdentifier)}`
       
       if (filterActive === 'active') {
         url += '&active=true'

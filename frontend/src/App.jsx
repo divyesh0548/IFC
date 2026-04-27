@@ -7,8 +7,12 @@ import LinearProgress from '@mui/material/LinearProgress'
 import Company_Management from './pages/siteadmin/Company_Management'
 import CompanyCreation from './pages/siteadmin/CompanyCreation'
 import CompanyDetail from './pages/siteadmin/CompanyDetail'
+import AuditorManagement from './pages/siteadmin/AuditorManagement'
 import Siteadmin_Dashboard from './pages/siteadmin/Siteadmin_dashboard'
+import AuditorHome from './pages/auditor/Auditor_Home'
 import Auditor_dashboard from './pages/auditor/Auditor_dashboard'
+import AuditorRacmDashboard from './pages/auditor/AuditorRacmDashboard'
+import AuditorFormDetail from './pages/auditor/AuditorFormDetail'
 import User_dashboard from './pages/user/User_dashboard'
 import UserHome from './pages/user/UserHome'
 import ForgotPassword from './pages/ForgotPassword'
@@ -123,6 +127,7 @@ function App() {
           <Route path="dashboard" element={<Siteadmin_Dashboard />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="company-management" element={<Company_Management />} />
+          <Route path="auditors" element={<AuditorManagement />} />
           <Route path="create-company" element={<CompanyCreation />} />
           <Route path="company/:company_identifier" element={<CompanyDetail />} />
         </Route>
@@ -136,7 +141,13 @@ function App() {
             </RoleBasedProtectedRoute>
           }
         >
+          <Route index element={<Navigate to="home" replace />} />
+          <Route path="home" element={<AuditorHome />} />
           <Route path="dashboard" element={<Auditor_dashboard />} />
+          <Route path="companies" element={<Auditor_dashboard />} />
+          <Route path="users" element={<Auditor_dashboard />} />
+          <Route path="racms" element={<AuditorRacmDashboard />} />
+          <Route path="form/:form_id" element={<AuditorFormDetail />} />
           <Route path="profile" element={<ProfilePage />} />
         </Route>
 

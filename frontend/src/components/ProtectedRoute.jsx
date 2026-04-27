@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { apiUrl } from '../config/api'
 
 function ProtectedRoute({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(null)
@@ -15,7 +16,7 @@ function ProtectedRoute({ children }) {
     const verifyToken = async () => {
       setLoading(true)
       try {
-        const response = await fetch('http://localhost:3000/api/auth/verify', {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include', // Important: sends cookies
         })

@@ -22,6 +22,10 @@ const {
   formatBulkImportZeroInsertedMessage,
   formatBulkImportSuccessMessage,
 } = require('../utils/racm_duplicate_key');
+const {
+  getMissingRacmRequiredFields,
+  formatMissingRacmRequiredFields,
+} = require('../utils/racm_required_fields');
 
 console.log('✅ control_forms.js module loaded successfully');
 
@@ -526,14 +530,17 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
     const unitId = req.body.unit_id ? String(req.body.unit_id).trim() : '';
     const rows = req.body.rows;
 
-    if (!businessProcess || String(businessProcess).trim() === '') {
-      return res.status(400).json({ success: false, message: 'Business process is required' });
-    }
-    if (!financialYear || String(financialYear).trim() === '') {
-      return res.status(400).json({ success: false, message: 'Financial year is required' });
-    }
-    if (!unitId) {
-      return res.status(400).json({ success: false, message: 'Unit is required' });
+    const missingRequiredFields = getMissingRacmRequiredFields({
+      business_process: businessProcess,
+      financial_year: financialYear,
+      unit_id: unitId,
+    });
+    if (missingRequiredFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: formatMissingRacmRequiredFields(missingRequiredFields),
+        missingFields: missingRequiredFields,
+      });
     }
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ success: false, message: 'No data rows provided' });
@@ -1887,10 +1894,24 @@ router.post('/', verifyAuth, async (req, res) => {
     process_walkthrough, control_relies_on_ipe, audit_evidence_accuracy,
     key_control, application_name, control_performer, control_owner,
     control_type_fo, control_type_ma,
-    company_identifier, business_process, financial_year,
+    company_identifier, business_process, financial_year, unit_id,
     completeness, existence_occurrence, rights_and_obligation,
     valuation_and_allocation, presentation_and_disclosure
   } = req.body;
+
+  const unitId = unit_id != null ? String(unit_id).trim() : '';
+  const missingRequiredFields = getMissingRacmRequiredFields({
+    business_process,
+    financial_year,
+    unit_id: unitId,
+  });
+  if (missingRequiredFields.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: formatMissingRacmRequiredFields(missingRequiredFields),
+      missingFields: missingRequiredFields,
+    });
+  }
 
   const dueDateRaw = req.body.due_date != null ? String(req.body.due_date).trim() : '';
   const reminderFrequencyRaw =
@@ -1933,6 +1954,28 @@ router.post('/', verifyAuth, async (req, res) => {
       
       if (userResult.rows.length > 0 && userResult.rows[0].company_identifier) {
         userCompanyIdentifier = userResult.rows[0].company_identifier;
+      }
+    }
+
+    if (req.user.role === 'company_co') {
+      const unitResult = await client.query(
+        `
+          SELECT unit_id
+          FROM company_unit_master
+          WHERE company_identifier = $1
+            AND unit_id = $2
+            AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = LOWER(TRIM($3))
+          LIMIT 1
+        `,
+        [userCompanyIdentifier, unitId, req.user.email_id]
+      );
+
+      if (unitResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid unit selected',
+        });
       }
     }
 
@@ -1984,12 +2027,12 @@ router.post('/', verifyAuth, async (req, res) => {
         process_walkthrough, control_relies_on_ipe, audit_evidence_accuracy,
         key_control, application_name, control_performer, control_owner,
         sample_size, control_type_fo, control_type_ma,
-        form_id, company_identifier, business_process, financial_year, sample_required,
+        form_id, company_identifier, business_process, financial_year, unit_id, sample_required,
         due_date, reminder_frequency,
         completeness, existence_occurrence, rights_and_obligation,
         valuation_and_allocation, presentation_and_disclosure
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
       RETURNING *;
     `;
 
@@ -2001,7 +2044,7 @@ router.post('/', verifyAuth, async (req, res) => {
       process_walkthrough || null, control_relies_on_ipe || null, audit_evidence_accuracy || null,
       key_control || null, application_name || null, control_performer || null, control_owner || null,
       sampleSize !== null ? String(sampleSize) : null, control_type_fo || null, control_type_ma || null,
-      formId, userCompanyIdentifier, business_process, financial_year || null, sampleRequired,
+      formId, userCompanyIdentifier, business_process, financial_year || null, unitId, sampleRequired,
       hasDueDate ? dueDateRaw : null,
       hasReminderFrequency ? reminderFrequencyRaw : null,
       completeness || null, existence_occurrence || null, rights_and_obligation || null,

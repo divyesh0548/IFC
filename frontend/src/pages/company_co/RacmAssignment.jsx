@@ -26,6 +26,7 @@ import {
   TABLE_ROW_HOVER_BG,
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { apiUrl, API_BASE_URL } from '../../config/api'
 
 function RacmAssignment() {
   const theme = useTheme()
@@ -38,8 +39,10 @@ function RacmAssignment() {
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [filterSubProcess, setFilterSubProcess] = useState('all') // 'all' or specific sub_process
+  const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific unit_id
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [subProcessOptions, setSubProcessOptions] = useState([])
+  const [coordinatorUnits, setCoordinatorUnits] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
   const [loading, setLoading] = useState(true)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
@@ -60,6 +63,24 @@ function RacmAssignment() {
     const isSameCompany = !userCompany || userCompany === coordinatorCompany
     return isSameCompany && user.role === 'user'
   })
+  const getFormUnitId = (form) => String(form?.unit_id || '').trim()
+  const getFormUnitName = (form) => {
+    const unitName = String(form?.unit_name || '').trim()
+    if (unitName) return unitName
+    const unitId = getFormUnitId(form)
+    const mappedUnit = coordinatorUnits.find((unit) => String(unit.unit_id || '').trim() === unitId)
+    return mappedUnit?.unit_name || unitId || 'N/A'
+  }
+  const filterUsersByUnit = (users, unitId) => {
+    const targetUnitId = String(unitId || '').trim()
+    if (!targetUnitId) return []
+    return users.filter((user) => String(user.unit_id || '').trim() === targetUnitId)
+  }
+  const selectedFormRows = forms.filter((form) => selectedForms.has(form.form_id))
+  const selectedBulkUnitId = selectedFormRows.length > 0 ? getFormUnitId(selectedFormRows[0]) : ''
+  const selectedBulkUnitName = selectedFormRows.length > 0 ? getFormUnitName(selectedFormRows[0]) : ''
+  const selectedUnitUserOptions = filterUsersByUnit(assignableUsers, getFormUnitId(selectedForm))
+  const bulkUnitUserOptions = filterUsersByUnit(assignableUsers, selectedBulkUnitId)
 
   // Business process options (matching ExcelUpload.jsx)
   const businessProcessOptions = [
@@ -91,11 +112,18 @@ function RacmAssignment() {
     )].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
   }
 
+  const racmHasSampleDocument = (form) => {
+    if (Array.isArray(form?.sample_docs) && form.sample_docs.some((doc) => String(doc?.sample_doc || '').trim() !== '')) {
+      return true
+    }
+    return String(form?.sample_doc || '').trim() !== ''
+  }
+
   useEffect(() => {
     // Fetch user role and company_identifier on component mount
     const fetchUserInfo = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/verify', {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -117,8 +145,34 @@ function RacmAssignment() {
   useEffect(() => {
     if (companyIdentifier) {
       loadFinancialYearOptions(companyIdentifier)
+      fetchCoordinatorUnits()
     }
   }, [companyIdentifier])
+
+  const fetchCoordinatorUnits = async () => {
+    try {
+      const response = await fetch(apiUrl('/api/company-co/unit-management'), {
+        method: 'GET',
+        credentials: 'include',
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        const units = Array.isArray(data.data?.currentCoordinatorUnits)
+          ? data.data.currentCoordinatorUnits
+          : []
+        setCoordinatorUnits(units)
+        if (units.length === 1) {
+          setFilterUnit(units[0].unit_id || 'all')
+        }
+      } else {
+        setCoordinatorUnits([])
+      }
+    } catch (error) {
+      console.error('Error fetching coordinator units:', error)
+      setCoordinatorUnits([])
+    }
+  }
 
   const loadFinancialYearOptions = async (companyId) => {
     const storageKey = getFinancialYearStorageKey(companyId)
@@ -136,7 +190,7 @@ function RacmAssignment() {
     }
 
     try {
-      const url = `http://localhost:3000/api/control-forms?company_identifier=${encodeURIComponent(companyId)}`
+      const url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyId)}`
       const response = await fetch(url, {
         method: 'GET',
         credentials: 'include',
@@ -157,7 +211,7 @@ function RacmAssignment() {
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterAssignment, filterBusinessProcess, filterFinancialYear, filterSubProcess])
+  }, [companyIdentifier, filterAssignment, filterBusinessProcess, filterFinancialYear, filterSubProcess, filterUnit])
 
   useEffect(() => {
     if (!bulkAssignmentMode) {
@@ -169,7 +223,7 @@ function RacmAssignment() {
     if (bulkAssignmentMode) {
       setSelectedForms(new Set())
     }
-  }, [bulkAssignmentMode, filterAssignment, filterBusinessProcess, filterFinancialYear, filterSubProcess])
+  }, [bulkAssignmentMode, filterAssignment, filterBusinessProcess, filterFinancialYear, filterSubProcess, filterUnit])
 
   const cancelBulkAssignmentMode = () => {
     setBulkAssignmentMode(false)
@@ -204,7 +258,7 @@ function RacmAssignment() {
     
     setLoading(true)
     try {
-      let url = `http://localhost:3000/api/control-forms?company_identifier=${encodeURIComponent(companyIdentifier)}`
+      let url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyIdentifier)}`
       
       if (filterBusinessProcess !== 'all') {
         url += `&business_process=${encodeURIComponent(filterBusinessProcess)}`
@@ -216,6 +270,10 @@ function RacmAssignment() {
 
       if (filterSubProcess !== 'all') {
         url += `&sub_process=${encodeURIComponent(filterSubProcess)}`
+      }
+
+      if (filterUnit !== 'all') {
+        url += `&unit_id=${encodeURIComponent(filterUnit)}`
       }
       
       const cacheBustUrl = `${url}&_ts=${Date.now()}`
@@ -243,12 +301,8 @@ function RacmAssignment() {
             form?.reminder_frequency !== null &&
             form?.reminder_frequency !== undefined &&
             String(form.reminder_frequency).trim() !== ''
-          const hasSampleDoc =
-            form?.sample_doc !== null &&
-            form?.sample_doc !== undefined &&
-            String(form.sample_doc).trim() !== ''
 
-          return hasDueDate && hasReminderFrequency && hasSampleDoc
+          return hasDueDate && hasReminderFrequency
         })
 
         const assignmentFilteredForms = eligibleForms.filter((form) => {
@@ -294,7 +348,7 @@ function RacmAssignment() {
   const fetchCompanyUsers = async () => {
     setUsersLoading(true)
     try {
-      const response = await fetch('http://localhost:3000/api/company-co/users', {
+      const response = await fetch(apiUrl('/api/company-co/users'), {
         method: 'GET',
         credentials: 'include',
       })
@@ -375,12 +429,25 @@ function RacmAssignment() {
   }
 
   const handleSelectForm = (formId) => {
+    const targetForm = forms.find((form) => form.form_id === formId)
+    const targetUnitId = getFormUnitId(targetForm)
+
     setSelectedForms((prev) => {
       const next = new Set(prev)
       if (next.has(formId)) {
         next.delete(formId)
+        setBulkSelectedUser(null)
+        setBulkUserSearchText('')
       } else {
+        const existingForm = forms.find((form) => next.has(form.form_id))
+        const existingUnitId = getFormUnitId(existingForm)
+        if (existingUnitId && targetUnitId && existingUnitId !== targetUnitId) {
+          toast.error('RACMs from different units cannot be selected for bulk assignment')
+          return prev
+        }
         next.add(formId)
+        setBulkSelectedUser(null)
+        setBulkUserSearchText('')
       }
       return next
     })
@@ -390,9 +457,19 @@ function RacmAssignment() {
     const allVisibleSelected = forms.length > 0 && forms.every((form) => selectedForms.has(form.form_id))
     if (allVisibleSelected) {
       setSelectedForms(new Set())
+      setBulkSelectedUser(null)
+      setBulkUserSearchText('')
       return
     }
 
+    const unitIds = [...new Set(forms.map((form) => getFormUnitId(form)).filter(Boolean))]
+    if (unitIds.length > 1) {
+      toast.error('RACMs from different units cannot be selected for bulk assignment')
+      return
+    }
+
+    setBulkSelectedUser(null)
+    setBulkUserSearchText('')
     setSelectedForms(new Set(forms.map((form) => form.form_id)))
   }
 
@@ -401,7 +478,11 @@ function RacmAssignment() {
 
     setUpdatingAssignment(true)
     try {
-      const response = await fetch(`http://localhost:3000/api/control-forms/${selectedForm.form_id}`, {
+      if (!racmHasSampleDocument(selectedForm)) {
+        toast('1 RACM does not have Sample documents, Proceeding to Set Active.')
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${selectedForm.form_id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -447,6 +528,12 @@ function RacmAssignment() {
       return
     }
 
+    const unitIds = [...new Set(selectedFormRows.map((form) => getFormUnitId(form)).filter(Boolean))]
+    if (unitIds.length > 1) {
+      toast.error('RACMs from different units cannot be selected for bulk assignment')
+      return
+    }
+
     setBulkSelectedUser(null)
     setBulkUserSearchText('')
     setBulkAssignmentDialogOpen(true)
@@ -469,12 +556,20 @@ function RacmAssignment() {
     setUpdatingAssignment(true)
     try {
       const targetFormIds = Array.from(selectedForms)
+      const missingSampleDocCount = targetFormIds.filter((formId) => {
+        const form = forms.find((item) => item.form_id === formId)
+        return !racmHasSampleDocument(form)
+      }).length
       let successCount = 0
       let failCount = 0
 
+      if (missingSampleDocCount > 0) {
+        toast(`${missingSampleDocCount} RACM(s) do not have Sample documents, Proceeding to Set Active.`)
+      }
+
       for (const formId of targetFormIds) {
         try {
-          const response = await fetch(`http://localhost:3000/api/control-forms/${formId}`, {
+          const response = await fetch(`${API_BASE_URL}/api/control-forms/${formId}`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
@@ -692,6 +787,29 @@ function RacmAssignment() {
               width: { xs: '100%', sm: 'auto' },
               flexWrap: 'wrap'
             }}>
+              {coordinatorUnits.length > 1 && (
+                <FormControl
+                  variant="outlined"
+                  sx={filterFormControlSx}
+                >
+                  <InputLabel id="unit-filter-label">Unit</InputLabel>
+                  <Select
+                    labelId="unit-filter-label"
+                    id="unit-filter"
+                    value={filterUnit}
+                    label="Unit"
+                    onChange={(e) => setFilterUnit(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    {coordinatorUnits.map((unit) => (
+                      <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
+                        {unit.unit_name || unit.unit_id}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+
               {/* Sub Process Filter (unique values from loaded RACMs) */}
               <FormControl
                 variant="outlined"
@@ -870,12 +988,30 @@ function RacmAssignment() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '11%',
-                      minWidth: '132px',
-                      maxWidth: '160px',
+                      width: '10%',
+                      minWidth: '128px',
+                      maxWidth: '150px',
                     }}
                   >
                     Business Process
+                  </Box>
+                  <Box
+                    component="th"
+                    sx={{
+                      px: 2,
+                      py: 1.5,
+                      textAlign: 'left',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: theme.palette.text.secondary,
+                      width: '10%',
+                      minWidth: '128px',
+                      maxWidth: '150px',
+                    }}
+                  >
+                    Unit
                   </Box>
                   <Box
                     component="th"
@@ -888,8 +1024,8 @@ function RacmAssignment() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '28%',
-                      minWidth: '280px',
+                      width: '23%',
+                      minWidth: '250px',
                     }}
                   >
                     Standard Control Description
@@ -905,8 +1041,8 @@ function RacmAssignment() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '18%',
-                      minWidth: '200px',
+                      width: '15%',
+                      minWidth: '180px',
                     }}
                   >
                     Sub Process
@@ -922,7 +1058,7 @@ function RacmAssignment() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '9%',
+                        width: '8%',
                         minWidth: '96px',
                         maxWidth: '120px',
                       }}
@@ -961,7 +1097,7 @@ function RacmAssignment() {
                         minWidth: '160px',
                       }}
                     >
-                      Name of Control Owner
+                      Control Owner Name
                     </Box>
                   </Box>
                 </Box>
@@ -1006,9 +1142,9 @@ function RacmAssignment() {
                           sx={dataCellSx({
                             px: 2,
                             py: 2,
-                            width: '11%',
-                            minWidth: '132px',
-                            maxWidth: '160px',
+                            width: '10%',
+                            minWidth: '128px',
+                            maxWidth: '150px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                           })}
@@ -1025,12 +1161,35 @@ function RacmAssignment() {
                         </Box>
                         <Box
                           component="td"
+                          title={getFormUnitName(form)}
+                          sx={dataCellSx({
+                            px: 2,
+                            py: 2,
+                            width: '10%',
+                            minWidth: '128px',
+                            maxWidth: '150px',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          })}
+                        >
+                          <Tooltip
+                            title={getFormUnitName(form)}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {getFormUnitName(form)}
+                            </Box>
+                          </Tooltip>
+                        </Box>
+                        <Box
+                          component="td"
                           title={form.standard_control_description || 'N/A'}
                           sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            width: '28%',
-                            minWidth: '280px',
+                            width: '23%',
+                            minWidth: '250px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                           })}
@@ -1051,8 +1210,8 @@ function RacmAssignment() {
                           sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            width: '18%',
-                            minWidth: '200px',
+                            width: '15%',
+                            minWidth: '180px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                           })}
@@ -1072,7 +1231,7 @@ function RacmAssignment() {
                           sx={dataCellSx({
                             px: 2,
                             py: 2,
-                            width: '9%',
+                            width: '8%',
                             minWidth: '96px',
                             maxWidth: '120px',
                             fontSize: '0.875rem',
@@ -1172,6 +1331,10 @@ function RacmAssignment() {
                   <Typography variant="body2" component="span">{popupValue(selectedForm.financial_year)}</Typography>
                 </Box>
                 <Box sx={popupRowSx}>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>Unit:</Typography>
+                  <Typography variant="body2" component="span">{popupValue(getFormUnitName(selectedForm))}</Typography>
+                </Box>
+                <Box sx={popupRowSx}>
                   <Typography variant="body2" component="span" sx={popupLabelSx}>Current Control Owner Name:</Typography>
                   <Typography variant="body2" component="span">{popupValue(selectedForm.control_owner_name)}</Typography>
                 </Box>
@@ -1182,7 +1345,7 @@ function RacmAssignment() {
 
                 <Autocomplete
                   options={
-                    assignableUsers.filter((user) => {
+                    selectedUnitUserOptions.filter((user) => {
                       const currentOwner = (selectedForm?.control_owner || '').trim().toLowerCase()
                       const userEmail = (user.email_id || '').trim().toLowerCase()
                       // Exclude the user who is already assigned as control owner for this RACM
@@ -1219,7 +1382,7 @@ function RacmAssignment() {
                 />
 
                 <Typography variant="caption" color="text.secondary">
-                  {selectedUser?.email_id || ' '}
+                  {selectedUser?.email_id || `Users from ${getFormUnitName(selectedForm)} only`}
                 </Typography>
               </Box>
             )}
@@ -1256,12 +1419,16 @@ function RacmAssignment() {
                 <Typography variant="body2" component="span" sx={popupLabelSx}>Total selected RACMs:</Typography>
                 <Typography variant="body2" component="span">{popupValue(selectedForms.size)}</Typography>
               </Box>
+              <Box sx={popupRowSx}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Unit:</Typography>
+                <Typography variant="body2" component="span">{popupValue(selectedBulkUnitName)}</Typography>
+              </Box>
               <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
                 The selected user will overwrite the current Control Owner for all selected RACMs.
               </Typography>
 
               <Autocomplete
-                options={assignableUsers}
+                options={bulkUnitUserOptions}
                 loading={usersLoading}
                 value={bulkSelectedUser}
                 inputValue={bulkUserSearchText}
@@ -1292,7 +1459,7 @@ function RacmAssignment() {
               />
 
               <Typography variant="caption" color="text.secondary">
-                {bulkSelectedUser?.email_id || ' '}
+                {bulkSelectedUser?.email_id || (selectedBulkUnitName ? `Users from ${selectedBulkUnitName} only` : ' ')}
               </Typography>
             </Box>
           </DialogContent>

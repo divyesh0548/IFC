@@ -20,21 +20,22 @@ import {
   getApprovalStatusBadgeSolidColors,
 } from '../../uiConstants'
 import { STORAGE_KEYS } from '../../storageKeys'
-import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { apiUrl } from '../../config/api'
 
 function ApproverDashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [approver, setApprover] = useState(null)
   const [forms, setForms] = useState([])
-  const [companyOptions, setCompanyOptions] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
   useSyncGlobalLoading(loading)
   const [filterStatus, setFilterStatus] = useState('pending') // 'pending', 'all', 'approved', 'rejected'
-  const [filterCompany, setFilterCompany] = useState('all')
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all')
   const [filterFinancialYear, setFilterFinancialYear] = useState('all')
+  const [filterUnit, setFilterUnit] = useState('all')
+  const [mappedUnits, setMappedUnits] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
 
   const businessProcessOptions = [
@@ -48,34 +49,12 @@ function ApproverDashboard() {
     'Entity Level Controls',
   ]
 
-  const getDistinctCompanyNames = (rows) => {
-    return [...new Set(
-      (rows || [])
-        .map((form) => (form.company_name ?? '').toString().trim())
-        .filter(Boolean)
-    )].sort((a, b) => a.localeCompare(b))
-  }
-
   const getDistinctFinancialYears = (rows) => {
     return [...new Set(
       (rows || [])
         .map((form) => (form.financial_year ?? '').toString().trim())
         .filter(Boolean)
     )].sort((a, b) => a.localeCompare(b))
-  }
-
-  const loadCachedCompanyOptions = () => {
-    try {
-      const cached = localStorage.getItem(STORAGE_KEYS.approverCompanyNames)
-      if (!cached) return
-
-      const parsed = JSON.parse(cached)
-      if (Array.isArray(parsed)) {
-        setCompanyOptions(parsed)
-      }
-    } catch (error) {
-      console.error('Error reading approver company options from localStorage:', error)
-    }
   }
 
   const loadCachedFinancialYearOptions = () => {
@@ -96,7 +75,7 @@ function ApproverDashboard() {
     // Fetch user info on component mount
     const fetchUserInfo = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/verify', {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -105,7 +84,6 @@ function ApproverDashboard() {
 
         if (response.ok && data.success) {
           if (data.user.role !== 'approver') {
-            localStorage.removeItem(STORAGE_KEYS.approverCompanyNames)
             localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
             navigate('/login')
             return
@@ -117,40 +95,32 @@ function ApproverDashboard() {
             email_id: data.user.email_id
           })
         } else {
-          localStorage.removeItem(STORAGE_KEYS.approverCompanyNames)
           localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
           navigate('/login')
         }
       } catch (error) {
         console.error('Error fetching user info:', error)
-        localStorage.removeItem(STORAGE_KEYS.approverCompanyNames)
         localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
         navigate('/login')
       }
     }
 
-    loadCachedCompanyOptions()
     loadCachedFinancialYearOptions()
     fetchUserInfo()
   }, [navigate])
 
   useEffect(() => {
     if (approver) {
-      bootstrapFilterOptions()
+      fetchMappedUnits()
     }
   }, [approver])
 
   useEffect(() => {
     if (approver) {
+      bootstrapFilterOptions()
       fetchForms()
     }
-  }, [approver])
-
-  useEffect(() => {
-    if (filterCompany !== 'all' && !companyOptions.includes(filterCompany)) {
-      setFilterCompany('all')
-    }
-  }, [companyOptions, filterCompany])
+  }, [approver, filterUnit])
 
   useEffect(() => {
     if (filterFinancialYear !== 'all' && !financialYearOptions.includes(filterFinancialYear)) {
@@ -160,7 +130,7 @@ function ApproverDashboard() {
 
   const bootstrapFilterOptions = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/approver/control-forms', {
+      const response = await fetch(getApproverControlFormsUrl(), {
         method: 'GET',
         credentials: 'include',
       })
@@ -172,15 +142,40 @@ function ApproverDashboard() {
         return
       }
 
-      const companies = getDistinctCompanyNames(data.data)
       const years = getDistinctFinancialYears(data.data)
-      setCompanyOptions(companies)
       setFinancialYearOptions(years)
-      localStorage.setItem(STORAGE_KEYS.approverCompanyNames, JSON.stringify(companies))
       localStorage.setItem(STORAGE_KEYS.approverFinancialYears, JSON.stringify(years))
     } catch (error) {
       console.error('Error loading approver filter options:', error)
     }
+  }
+
+  const fetchMappedUnits = async () => {
+    try {
+      const response = await fetch(apiUrl('/api/approver/home-stats'), {
+        method: 'GET',
+        credentials: 'include',
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setMappedUnits(Array.isArray(data.data?.mapped_units) ? data.data.mapped_units : [])
+      } else {
+        setMappedUnits([])
+      }
+    } catch (error) {
+      console.error('Error loading approver units:', error)
+      setMappedUnits([])
+    }
+  }
+
+  const getApproverControlFormsUrl = () => {
+    const params = new URLSearchParams()
+    if (filterUnit !== 'all') {
+      params.set('unit_id', filterUnit)
+    }
+    const query = params.toString()
+    return apiUrl(`/api/approver/control-forms${query ? `?${query}` : ''}`)
   }
 
   /** Display label for approver UI ("sent for approval" => "Pending", empty => "—"). */
@@ -216,7 +211,7 @@ function ApproverDashboard() {
   const fetchForms = async () => {
     setLoading(true)
     try {
-      const url = 'http://localhost:3000/api/approver/control-forms'
+      const url = getApproverControlFormsUrl()
 
       const response = await fetch(url, {
         method: 'GET',
@@ -232,22 +227,7 @@ function ApproverDashboard() {
           return dateB - dateA // Descending order (newest first)
         })
 
-        const latestCompanyOptions = getDistinctCompanyNames(data.data)
         const latestFinancialYears = getDistinctFinancialYears(data.data)
-        if (latestCompanyOptions.length > 0) {
-          setCompanyOptions((currentOptions) => {
-            const mergedCompanyOptions = [...new Set([...(currentOptions || []), ...latestCompanyOptions])]
-              .sort((a, b) => a.localeCompare(b))
-
-            if (JSON.stringify(mergedCompanyOptions) !== JSON.stringify(currentOptions)) {
-              localStorage.setItem(STORAGE_KEYS.approverCompanyNames, JSON.stringify(mergedCompanyOptions))
-              return mergedCompanyOptions
-            }
-
-            return currentOptions
-          })
-        }
-
         if (latestFinancialYears.length > 0) {
           setFinancialYearOptions((currentOptions) => {
             const mergedFinancialYears = [...new Set([...(currentOptions || []), ...latestFinancialYears])]
@@ -278,14 +258,9 @@ function ApproverDashboard() {
   }
 
   const formsToDisplay = forms.filter((form) => {
-    const normalizedCompany = (form.company_name ?? '').toString().trim()
     const normalizedBusinessProcess = (form.business_process ?? '').toString().trim()
     const normalizedFinancialYear = (form.financial_year ?? '').toString().trim()
     const isActive = form.active && form.active !== '' && form.active !== '0'
-
-    if (filterCompany !== 'all' && normalizedCompany !== filterCompany) {
-      return false
-    }
 
     if (filterBusinessProcess !== 'all' && normalizedBusinessProcess !== filterBusinessProcess) {
       return false
@@ -342,7 +317,6 @@ function ApproverDashboard() {
     standardControl: 280,
     businessProcess: 200,
     financialYear: 140,
-    company: 220,
     processOwner: 220,
     approval: 120,
     createdAt: 180,
@@ -352,7 +326,6 @@ function ApproverDashboard() {
     APPROVER_TABLE_COL_PX.standardControl,
     APPROVER_TABLE_COL_PX.businessProcess,
     APPROVER_TABLE_COL_PX.financialYear,
-    APPROVER_TABLE_COL_PX.company,
     APPROVER_TABLE_COL_PX.processOwner,
     APPROVER_TABLE_COL_PX.approval,
     APPROVER_TABLE_COL_PX.createdAt,
@@ -439,10 +412,10 @@ function ApproverDashboard() {
                 ? 'Approved RACM'
                 : filterStatus === 'rejected'
                 ? 'Rejected RACM'
-                : 'All RACMs'}
+              : 'All RACMs'}
             </Typography>
             <Typography sx={PAGE_SUBHEADER_TEXT_SX}>
-              Review active RACMs across companies, and open a control to approve or reject.
+              Review active RACMs, and open a control to approve or reject.
             </Typography>
           </Box>
 
@@ -453,8 +426,29 @@ function ApproverDashboard() {
               gap: 2,
               alignItems: { xs: 'stretch', sm: 'center' },
               width: { xs: '100%', sm: 'auto' },
+              flexWrap: 'wrap',
             }}
           >
+            {mappedUnits.length > 1 && (
+              <FormControl variant="outlined" sx={filterControlSx}>
+                <InputLabel id="approver-unit-filter-label">Unit</InputLabel>
+                <Select
+                  labelId="approver-unit-filter-label"
+                  id="approver-unit-filter"
+                  value={filterUnit}
+                  label="Unit"
+                  onChange={(e) => setFilterUnit(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  {mappedUnits.map((unit) => (
+                    <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
+                      {unit.unit_name || unit.unit_id}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
             <FormControl variant="outlined" sx={filterControlSx}>
               <InputLabel id="approver-business-process-filter-label">Business Process</InputLabel>
               <Select
@@ -486,24 +480,6 @@ function ApproverDashboard() {
                 {financialYearOptions.map((year) => (
                   <MenuItem key={year} value={year}>
                     {year}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControl variant="outlined" sx={filterControlSx}>
-              <InputLabel id="approver-company-filter-label">Company</InputLabel>
-              <Select
-                labelId="approver-company-filter-label"
-                id="approver-company-filter"
-                value={filterCompany}
-                label="Company"
-                onChange={(e) => setFilterCompany(e.target.value)}
-              >
-                <MenuItem value="all">All</MenuItem>
-                {companyOptions.map((company) => (
-                  <MenuItem key={company} value={company}>
-                    {company}
                   </MenuItem>
                 ))}
               </Select>
@@ -673,22 +649,6 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      ...pctColSx(APPROVER_TABLE_COL_PX.company),
-                    }}
-                  >
-                    Company
-                  </Box>
-                  <Box
-                    component="th"
-                    sx={{
-                      px: 2.5,
-                      py: 1.5,
-                      textAlign: 'left',
-                      fontSize: '0.75rem',
-                      fontWeight: 500,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      color: theme.palette.text.secondary,
                       ...pctColSx(APPROVER_TABLE_COL_PX.processOwner),
                     }}
                   >
@@ -811,32 +771,6 @@ function ApproverDashboard() {
                         <Box component="span" sx={dataCellTextSx}>
                           {form.financial_year || 'N/A'}
                         </Box>
-                      </Box>
-                      <Box
-                        component="td"
-                        sx={mergeDataTdSx({
-                          px: 2.5,
-                          py: 2,
-                          ...pctColSx(APPROVER_TABLE_COL_PX.company),
-                          fontSize: '0.875rem',
-                          color: theme.palette.text.primary,
-                        })}
-                      >
-                        {cellWordWrap ? (
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.company_name || 'N/A'}
-                          </Box>
-                        ) : (
-                          <Tooltip
-                            title={form.company_name || 'N/A'}
-                            arrow
-                            slotProps={{ tooltip: { sx: tooltipSx } }}
-                          >
-                            <Box component="span" sx={dataCellTextSx}>
-                              {form.company_name || 'N/A'}
-                            </Box>
-                          </Tooltip>
-                        )}
                       </Box>
                       <Box
                         component="td"

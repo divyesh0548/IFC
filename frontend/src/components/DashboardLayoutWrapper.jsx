@@ -40,6 +40,11 @@ const getNavigationForRole = (role) => {
           path: '/siteadmin/create-company',
           title: 'Create Company',
           icon: <BusinessIcon />,
+        },
+        {
+          path: '/siteadmin/auditors',
+          title: 'Auditors',
+          icon: <PersonAddIcon />,
         }
       )
       break
@@ -92,8 +97,8 @@ const getNavigationForRole = (role) => {
     case 'auditor':
       baseNav.push(
         {
-          path: '/auditor/dashboard',
-          title: 'Dashboard',
+          path: '/auditor/home',
+          title: 'Home',
           icon: <DashboardIcon />,
         }
       )
@@ -215,7 +220,7 @@ function DashboardLayoutWrapper({ children, userRole, onLogout }) {
                             item.path !== '/user/home' &&
                             item.path !== '/user/dashboard' && 
                             item.path !== '/approver/dashboard' && 
-                            item.path !== '/auditor/dashboard' &&
+                            item.path !== '/auditor/home' &&
                             location.pathname.startsWith(item.path))
             
             return (

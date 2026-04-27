@@ -8,6 +8,7 @@ import { Alert, Select, MenuItem, FormControl, InputLabel, Box, Card, CardHeader
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
+import { apiUrl, API_BASE_URL } from '../../config/api'
 
 function Siteadmin_Dashboard() {
     const theme = useTheme()
@@ -70,7 +71,7 @@ function Siteadmin_Dashboard() {
     const fetchMonthlyData = async (year) => {
         setLoading(true);
         try {
-            const response = await fetch(`http://localhost:3000/api/stats/users/monthly-stats?year=${year}`, {
+            const response = await fetch(`${API_BASE_URL}/api/stats/users/monthly-stats?year=${year}`, {
                 credentials: 'include',
             });
             const result = await response.json();
@@ -93,7 +94,7 @@ function Siteadmin_Dashboard() {
     const fetchCompanyUserData = async () => {
         try {
             const response = await fetch(
-                'http://localhost:3000/api/stats/companies/user-distribution',
+                apiUrl('/api/stats/companies/user-distribution'),
                 {
                     credentials: 'include',
                 }
@@ -119,7 +120,7 @@ function Siteadmin_Dashboard() {
     useEffect(() => {
         const fetchYearRange = async () => {
             try {
-                const response = await fetch('http://localhost:3000/api/stats/users/year-range', {
+                const response = await fetch(apiUrl('/api/stats/users/year-range'), {
                     credentials: 'include',
                 });
                 const result = await response.json();
@@ -157,7 +158,7 @@ function Siteadmin_Dashboard() {
         setLoading(true)
         setError(null)
         try {
-            const response = await fetch('http://localhost:3000/api/siteadmin/companies', {
+            const response = await fetch(apiUrl('/api/siteadmin/companies'), {
                 method: 'GET',
                 credentials: 'include',
             })
@@ -338,7 +339,7 @@ function Siteadmin_Dashboard() {
                         mb: 3,
                     }}
                 >
-                    <Box sx={{ width: { xs: '100%', lg: '50%' }, flexShrink: 0 }}>
+                    <Box sx={{ width: { xs: '100%', lg: 'calc((100% - 40px) / 3)' }, flexShrink: 0 }}>
                         <Card
                             variant="outlined"
                             sx={{
@@ -408,7 +409,7 @@ function Siteadmin_Dashboard() {
                     </Card>
                     </Box>
 
-                    <Box sx={{ width: { xs: '100%', lg: '50%' }, flexShrink: 0 }}>
+                    <Box sx={{ width: { xs: '100%', lg: 'calc((100% - 40px) / 3)' }, flexShrink: 0 }}>
                         <Card
                             variant="outlined"
                             sx={{
@@ -473,6 +474,76 @@ function Siteadmin_Dashboard() {
                                 }}
                             >
                                 Quickly set up new organizations and start their IFC journey.
+                            </Typography>
+                        </Box>
+                    </Card>
+                    </Box>
+
+                    <Box sx={{ width: { xs: '100%', lg: 'calc((100% - 40px) / 3)' }, flexShrink: 0 }}>
+                        <Card
+                            variant="outlined"
+                            sx={{
+                                ...surfaceSx,
+                                flex: 1,
+                                px: 2,
+                                py: 2,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'space-between',
+                                cursor: 'pointer',
+                                minHeight: 142,
+                                transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
+                                '&:hover': {
+                                    transform: 'translateY(-2px)',
+                                    borderColor: theme.palette.mode === 'dark'
+                                        ? alpha(theme.palette.primary.light, 0.3)
+                                        : alpha(theme.palette.primary.main, 0.28),
+                                    boxShadow: theme.palette.mode === 'dark'
+                                        ? '0 12px 36px rgba(0,0,0,0.34)'
+                                        : '0 16px 38px rgba(18,52,88,0.12)',
+                                },
+                            }}
+                            onClick={() => navigate('/siteadmin/auditors')}
+                        >
+                        <Box>
+                            <Typography
+                                variant="subtitle2"
+                                sx={{
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.14em',
+                                    fontSize: '0.72rem',
+                                    color: theme => theme.palette.mode === 'dark'
+                                        ? 'rgba(209,250,229,0.95)'
+                                        : 'rgba(4,120,87,0.95)',
+                                    mb: 0.5,
+                                }}
+                            >
+                                Access
+                            </Typography>
+                            <Typography
+                                variant="h5"
+                                sx={{
+                                    fontWeight: 800,
+                                    color: theme => theme.palette.mode === 'dark'
+                                        ? '#ecfdf5'
+                                        : '#111827',
+                                    letterSpacing: 0.2,
+                                    fontSize: { xs: '1.18rem', sm: '1.36rem', md: '1.45rem' },
+                                }}
+                            >
+                                Auditor Management
+                            </Typography>
+                            <Typography
+                                variant="body2"
+                                sx={{
+                                    mt: 0.75,
+                                    color: theme => theme.palette.mode === 'dark'
+                                        ? 'rgba(209,250,229,0.9)'
+                                        : 'rgba(15,23,42,0.7)',
+                                    fontSize: '0.82rem',
+                                }}
+                            >
+                                Create auditors and review login email status.
                             </Typography>
                         </Box>
                     </Card>

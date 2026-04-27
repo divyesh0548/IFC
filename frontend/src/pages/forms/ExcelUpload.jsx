@@ -29,6 +29,7 @@ import dayjs from 'dayjs'
 import { parseRacmExcelFromArrayBuffer } from '../../utils/racmExcelParse'
 import { RACM_BULK_IMPORT_SESSION_KEY } from '../../racmFormDetailFields'
 import { useUnsavedChangesWarning } from '../../utils/useUnsavedChangesWarning'
+import { apiUrl } from '../../config/api'
 
 const MAX_BULK_IMPORT_ROWS = 5000
 
@@ -95,7 +96,7 @@ function ExcelUpload() {
 
     const fetchUnits = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/company-co/unit-management', {
+        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
           credentials: 'include',
         })
         const result = await response.json()
@@ -263,7 +264,7 @@ function ExcelUpload() {
         payload.column_mapping = columnMapping
       }
 
-      const response = await fetch('http://localhost:3000/api/control-forms/bulk-import-rows', {
+      const response = await fetch(apiUrl('/api/control-forms/bulk-import-rows'), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

@@ -1,216 +1,135 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
-import Typography from '@mui/material/Typography'
 import Paper from '@mui/material/Paper'
-import Button from '@mui/material/Button'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
+import Typography from '@mui/material/Typography'
+import Alert from '@mui/material/Alert'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
-import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
+import GroupRoundedIcon from '@mui/icons-material/GroupRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
-import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
-import CancelRoundedIcon from '@mui/icons-material/CancelRounded'
+import FolderCopyRoundedIcon from '@mui/icons-material/FolderCopyRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
-import { toast } from 'react-hot-toast'
+import PolicyRoundedIcon from '@mui/icons-material/PolicyRounded'
+import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { apiUrl, API_BASE_URL } from '../../config/api'
 
-function normalizeStatus(status) {
-  return String(status || '').trim().toLowerCase()
-}
-
-const COMPANY_DETAIL_LABELS = {
-  company_name: 'Company Name',
-  registered_email: 'Registered Email',
-  registered_address: 'Registered Address',
-  unique_identification_number: 'Unique Identification Number',
-  gst: 'GST',
-  pan: 'PAN',
-  number_of_corporate_offices: 'Corporate Offices',
-  number_of_factory_units: 'Factory Units',
-}
-
-function DetailRow({ label, value }) {
-  const theme = useTheme()
-  return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: '160px minmax(0, 1fr)' },
-        gap: { xs: 0.4, sm: 2 },
-        py: 1.2,
-        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
-        '&:last-of-type': {
-          borderBottom: 'none',
-        },
-      }}
-    >
-      <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: theme.palette.text.secondary }}>
-        {label}
-      </Typography>
-      <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: theme.palette.text.primary, wordBreak: 'break-word' }}>
-        {value || '-'}
-      </Typography>
-    </Box>
-  )
-}
-
-function UserHome() {
+function AuditorHome() {
   const theme = useTheme()
   const navigate = useNavigate()
+  const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [companyDialogOpen, setCompanyDialogOpen] = useState(false)
-  const [profile, setProfile] = useState(null)
-  const [forms, setForms] = useState([])
+  const [error, setError] = useState('')
+
   useSyncGlobalLoading(loading)
 
   useEffect(() => {
     let cancelled = false
 
-    const fetchHomeData = async () => {
+    const fetchStats = async () => {
       setLoading(true)
+      setError('')
       try {
-        const profileResponse = await fetch(apiUrl('/api/auth/profile'), {
+        const response = await fetch(apiUrl('/api/auditor/home-stats'), {
           method: 'GET',
           credentials: 'include',
         })
-        const profileData = await profileResponse.json()
-
-        if (profileResponse.status === 401) {
-          navigate('/login', { replace: true })
-          return
-        }
-
-        if (!profileResponse.ok || !profileData?.success) {
-          throw new Error(profileData?.message || 'Failed to fetch profile')
-        }
-
-        const nextProfile = profileData.profile || {}
+        const data = await response.json()
         if (cancelled) return
-        setProfile(nextProfile)
 
-        if (!nextProfile.email_id) {
-          setForms([])
-          return
+        if (response.ok && data.success) {
+          setStats(data.data || {})
+        } else {
+          setError(data.message || 'Failed to load auditor dashboard')
         }
-
-        const formsResponse = await fetch(
-          `${API_BASE_URL}/api/control-forms?control_owner=${encodeURIComponent(nextProfile.email_id)}&active=true`,
-          {
-            method: 'GET',
-            credentials: 'include',
-          },
-        )
-        const formsData = await formsResponse.json()
-
-        if (formsResponse.status === 401) {
-          navigate('/login', { replace: true })
-          return
-        }
-
-        if (!formsResponse.ok || !formsData?.success) {
-          throw new Error(formsData?.message || 'Failed to fetch RACM stats')
-        }
-
-        if (!cancelled) {
-          setForms(Array.isArray(formsData.data) ? formsData.data : [])
-        }
-      } catch (error) {
-        console.error('Failed to fetch user home data:', error)
-        if (!cancelled) {
-          toast.error('Failed to load user home data')
-          setForms([])
-        }
+      } catch (err) {
+        console.error('Auditor home stats error:', err)
+        if (!cancelled) setError('Network error while loading auditor dashboard')
       } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
+        if (!cancelled) setLoading(false)
       }
     }
 
-    fetchHomeData()
+    fetchStats()
 
     return () => {
       cancelled = true
     }
-  }, [navigate])
+  }, [])
 
-  const stats = useMemo(() => {
-    return forms.reduce(
-      (acc, form) => {
-        const status = normalizeStatus(form.status)
-        acc.totalRacms += 1
-        if (status === 'approved') {
-          acc.approvedRacms += 1
-        } else if (status === 'rejected') {
-          acc.rejectedRacms += 1
-        }
-        return acc
-      },
-      {
-        totalRacms: 0,
-        approvedRacms: 0,
-        rejectedRacms: 0,
-      },
-    )
-  }, [forms])
-
-  const displayName = profile?.emp_name?.trim() || profile?.email_id || 'User'
-  const unitDisplay = profile?.unit_name || profile?.unit_id || '-'
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
-  const companyDetailRows = Object.entries(profile?.company_details || {})
-    .filter(([key]) => !['id', 'company_identifier', 'created_at'].includes(key))
-    .map(([key, value]) => ({
-      label: COMPANY_DETAIL_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
-      value,
-    }))
+  const displayName = stats?.auditor_name?.trim() || 'Auditor'
 
-  const statCards = [
+  const quickStats = [
     {
-      label: 'Total RACMs',
-      value: stats.totalRacms,
-      icon: <FactCheckRoundedIcon sx={{ fontSize: 22 }} />,
+      label: 'Companies',
+      value: stats?.total_companies ?? 0,
+      accent: theme.palette.primary.main,
+    },
+    {
+      label: 'Total Users',
+      value: stats?.total_users ?? 0,
+      accent: blueTokens.accent || theme.palette.info.main,
+    },
+    {
+      label: 'RACMs',
+      value: stats?.total_racms ?? 0,
+      accent: theme.palette.success.main,
+    },
+  ]
+
+  const snapshotRows = [
+    {
+      label: 'Registered Companies',
+      value: stats?.total_companies ?? 0,
       color: theme.palette.primary.main,
     },
     {
-      label: 'Approved RACMs',
-      value: stats.approvedRacms,
-      icon: <TaskAltRoundedIcon sx={{ fontSize: 22 }} />,
-      color: theme.palette.success.main,
+      label: 'Total Users',
+      value: stats?.total_users ?? 0,
+      color: blueTokens.accent || theme.palette.info.main,
     },
     {
-      label: 'Rejected RACMs',
-      value: stats.rejectedRacms,
-      icon: <CancelRoundedIcon sx={{ fontSize: 22 }} />,
-      color: theme.palette.error.main,
+      label: 'Available RACMs',
+      value: stats?.total_racms ?? 0,
+      color: theme.palette.success.main,
     },
   ]
 
-  const tiles = [
+  const routeTiles = [
     {
-      eyebrow: 'Company',
-      title: 'Company Details',
-      description: 'View your company profile and the unit mapped to your user account.',
-      action: 'View details',
+      eyebrow: 'Registry',
+      title: 'Companies',
+      description: 'Review company master records, identifiers, and the unit structure mapped for audit visibility.',
+      action: 'Open companies',
       icon: <BusinessRoundedIcon sx={{ fontSize: 38 }} />,
       accent: theme.palette.primary.main,
-      onClick: () => setCompanyDialogOpen(true),
+      path: '/auditor/companies',
     },
     {
-      eyebrow: 'RACM',
-      title: 'Dashboard',
-      description: 'Open your RACM list to review assignments, upload evidence, and track status.',
-      action: 'Open dashboard',
-      icon: <DashboardRoundedIcon sx={{ fontSize: 38 }} />,
+      eyebrow: 'Access',
+      title: 'Users',
+      description: 'Inspect user accounts, roles, and company or unit mappings without changing production data.',
+      action: 'Open users',
+      icon: <GroupRoundedIcon sx={{ fontSize: 38 }} />,
       accent: blueTokens.accent || theme.palette.info.main,
-      onClick: () => navigate('/user/dashboard'),
+      path: '/auditor/users',
+    },
+    {
+      eyebrow: 'Controls',
+      title: 'RACMs & Evidence',
+      description: 'Browse RACMs together with linked sample files and uploaded evidence documents for review.',
+      action: 'Open RACMs',
+      icon: <FolderCopyRoundedIcon sx={{ fontSize: 38 }} />,
+      accent: theme.palette.success.main,
+      path: '/auditor/racms',
     },
   ]
+
+  if (loading) {
+    return <Box sx={{ minHeight: 'calc(100vh - 8rem)' }} />
+  }
 
   return (
     <Box
@@ -233,7 +152,7 @@ function UserHome() {
             theme.palette.mode === 'dark'
               ? alpha(theme.palette.common.white, 0.08)
               : alpha(theme.palette.primary.main, 0.12),
-          background: theme.palette.gradients?.hero,
+          background: theme.palette.gradients?.hero || `linear-gradient(135deg, ${alpha(theme.palette.primary.light, 0.22)} 0%, ${alpha(theme.palette.background.paper, 0.96)} 100%)`,
           boxShadow:
             theme.palette.mode === 'dark'
               ? '0 20px 48px rgba(0, 0, 0, 0.32)'
@@ -273,7 +192,7 @@ function UserHome() {
             alignItems: 'stretch',
           }}
         >
-          <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ minWidth: 0, maxWidth: { lg: 700 } }}>
             <Box
               sx={{
                 display: 'inline-flex',
@@ -297,7 +216,7 @@ function UserHome() {
                 }}
               />
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: theme.palette.text.secondary }}>
-                User workspace
+                Audit workspace
               </Typography>
             </Box>
 
@@ -317,38 +236,56 @@ function UserHome() {
             <Typography
               sx={{
                 mt: 1.4,
-                maxWidth: { xs: '100%', lg: 720 },
+                maxWidth: { xs: '100%', lg: 640 },
                 color: theme.palette.text.secondary,
                 fontSize: { xs: '0.98rem', sm: '1.03rem' },
                 lineHeight: 1.7,
               }}
             >
-              Track your assigned RACMs, monitor pending evidence work, and open the dashboard whenever you need the full list.
+              Review the IFC landscape with read-only access to companies, users, RACMs, and supporting evidence from one place.
             </Typography>
 
             <Box
               sx={{
-                mt: 1.6,
-                display: 'inline-flex',
+                mt: 2.4,
+                width: '100%',
+                maxWidth: { xs: '100%', lg: 640 },
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 1,
                 alignItems: 'center',
-                maxWidth: '100%',
-                px: 1.25,
-                py: 0.65,
-                borderRadius: 999,
-                border: `1px solid ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.28 : 0.18)}`,
-                backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.08),
               }}
             >
-              <Typography
-                sx={{
-                  fontSize: '0.84rem',
-                  fontWeight: 800,
-                  color: theme.palette.text.primary,
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                Unit: {unitDisplay}
-              </Typography>
+              {quickStats.map((item) => (
+                <Box
+                  key={item.label}
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'baseline',
+                    gap: 0.75,
+                    px: 1.15,
+                    py: 0.65,
+                    borderRadius: 1.5,
+                    border: `1px solid ${alpha(item.accent, theme.palette.mode === 'dark' ? 0.28 : 0.18)}`,
+                    backgroundColor: alpha(item.accent, theme.palette.mode === 'dark' ? 0.1 : 0.055),
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      fontSize: '1rem',
+                      fontWeight: 900,
+                      lineHeight: 1,
+                      color: theme.palette.text.primary,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {loading ? '-' : item.value}
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.76rem', fontWeight: 800, color: theme.palette.text.secondary }}>
+                    {item.label}
+                  </Typography>
+                </Box>
+              ))}
             </Box>
           </Box>
 
@@ -390,13 +327,13 @@ function UserHome() {
                   Snapshot
                 </Typography>
                 <Typography sx={{ fontSize: '1.05rem', fontWeight: 800, color: theme.palette.text.primary }}>
-                  RACM Overview
+                  Audit Overview
                 </Typography>
               </Box>
             </Box>
 
             <Box sx={{ display: 'grid', gap: 0.85 }}>
-              {statCards.map((item) => (
+              {snapshotRows.map((item) => (
                 <Box
                   key={item.label}
                   sx={{
@@ -432,22 +369,46 @@ function UserHome() {
                 </Box>
               ))}
             </Box>
+
+            <Box
+              sx={{
+                mt: 1,
+                p: 1.4,
+                borderRadius: 2.5,
+                display: 'flex',
+                gap: 1.2,
+                alignItems: 'flex-start',
+                border: `1px solid ${alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.24 : 0.18)}`,
+                backgroundColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.12 : 0.08),
+              }}
+            >
+              <PolicyRoundedIcon sx={{ color: theme.palette.warning.main, fontSize: 20, mt: 0.15 }} />
+              <Typography sx={{ fontSize: '0.84rem', lineHeight: 1.65, color: theme.palette.text.secondary }}>
+                Auditor access is view-only. Use these sections to inspect records and supporting evidence without changing source data.
+              </Typography>
+            </Box>
           </Paper>
         </Box>
       </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ borderRadius: 2.5 }}>
+          {error}
+        </Alert>
+      )}
 
       <Box
         sx={{
           width: '100%',
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
+          gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
           gap: 2.5,
         }}
       >
-        {tiles.map((tile) => (
+        {routeTiles.map((tile) => (
           <Paper
             key={tile.title}
-            onClick={tile.onClick}
+            onClick={() => navigate(tile.path)}
             elevation={0}
             sx={{
               p: 0,
@@ -496,7 +457,15 @@ function UserHome() {
                 background: `linear-gradient(180deg, ${alpha(tile.accent, theme.palette.mode === 'dark' ? 0.18 : 0.08)} 0%, transparent 100%)`,
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, width: '100%' }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  gap: 1.5,
+                  width: '100%',
+                }}
+              >
                 <Box
                   sx={{
                     width: 56,
@@ -521,7 +490,10 @@ function UserHome() {
                     py: 0.65,
                     borderRadius: 999,
                     backgroundColor: alpha(tile.accent, theme.palette.mode === 'dark' ? 0.14 : 0.1),
-                    color: theme.palette.mode === 'dark' ? alpha(theme.palette.common.white, 0.86) : tile.accent,
+                    color:
+                      theme.palette.mode === 'dark'
+                        ? alpha(theme.palette.common.white, 0.86)
+                        : tile.accent,
                   }}
                 >
                   <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
@@ -549,44 +521,8 @@ function UserHome() {
           </Paper>
         ))}
       </Box>
-
-      <Dialog
-        open={companyDialogOpen}
-        onClose={() => setCompanyDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
-      >
-        <DialogTitle sx={{ fontWeight: 800 }}>Company Details</DialogTitle>
-        <DialogContent>
-          <Box
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              backgroundColor: alpha(theme.palette.background.paper, 0.75),
-            }}
-          >
-            {companyDetailRows.map((row) => (
-              <DetailRow key={row.label} label={row.label} value={row.value} />
-            ))}
-            <DetailRow label="Unit" value={unitDisplay} />
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={() => setCompanyDialogOpen(false)}
-            sx={{ textTransform: 'none', fontWeight: 700 }}
-          >
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   )
 }
 
-export default UserHome
+export default AuditorHome

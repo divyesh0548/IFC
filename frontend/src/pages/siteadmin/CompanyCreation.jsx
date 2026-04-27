@@ -19,7 +19,8 @@ import Checkbox from '@mui/material/Checkbox'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { toast } from 'react-hot-toast'
-import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { apiUrl } from '../../config/api'
 
 const twoColRowSx = {
   display: 'flex',
@@ -245,7 +246,7 @@ function CompanyCreation() {
     setError('')
 
     try {
-      const response = await fetch('http://localhost:3000/api/siteadmin/companies/create', {
+      const response = await fetch(apiUrl('/api/siteadmin/companies/create'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

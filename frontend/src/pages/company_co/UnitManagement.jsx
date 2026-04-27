@@ -28,6 +28,7 @@ import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { apiUrl, API_BASE_URL } from '../../config/api'
 
 const emptyData = {
   currentCoordinatorUnits: [],
@@ -42,7 +43,7 @@ const emptyData = {
 
 const createDialogDefaults = {
   open: false,
-  type: 'coordinator',
+  type: 'company_co',
   email: '',
   unitId: '',
   submitting: false,
@@ -131,7 +132,7 @@ function UnitManagement() {
       setError('')
 
       try {
-        const response = await fetch('http://localhost:3000/api/company-co/unit-management', {
+        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
           credentials: 'include',
         })
         const result = await response.json()
@@ -201,9 +202,7 @@ function UnitManagement() {
     }
   }, [assignMode, assignmentDialog.open])
 
-  const getAvailableUnits = (type) => (
-    type === 'approver' ? data.unmappedApproverUnits : data.unmappedCoordinatorUnits
-  )
+  const getCreateUnits = () => data.units
 
   const getAssignmentOptions = (role, unit = assignmentDialog.unit) => {
     const currentEmail = role === 'approver'
@@ -220,13 +219,12 @@ function UnitManagement() {
     )
   }
 
-  const handleOpenCreateDialog = (type) => {
-    const availableUnits = getAvailableUnits(type)
+  const handleOpenCreateDialog = () => {
+    const units = getCreateUnits()
     setCreateDialog({
       ...createDialogDefaults,
       open: true,
-      type,
-      unitId: availableUnits[0]?.unit_id || '',
+      unitId: units[0]?.unit_id || '',
     })
   }
 
@@ -254,8 +252,8 @@ function UnitManagement() {
     }
 
     const endpoint = createDialog.type === 'approver'
-      ? 'http://localhost:3000/api/company-co/unit-management/approvers'
-      : 'http://localhost:3000/api/company-co/unit-management/coordinators'
+      ? apiUrl('/api/company-co/unit-management/approvers')
+      : apiUrl('/api/company-co/unit-management/coordinators')
 
     setCreateDialog((prev) => ({ ...prev, submitting: true, error: '' }))
 
@@ -315,7 +313,7 @@ function UnitManagement() {
     setUnitDialog((prev) => ({ ...prev, submitting: true, error: '' }))
 
     try {
-      const response = await fetch('http://localhost:3000/api/company-co/unit-management/units', {
+      const response = await fetch(apiUrl('/api/company-co/unit-management/units'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -389,7 +387,7 @@ function UnitManagement() {
 
     try {
       const response = await fetch(
-        `http://localhost:3000/api/company-co/unit-management/units/${encodeURIComponent(assignmentDialog.unit.unit_id)}/assignment`,
+        `${API_BASE_URL}/api/company-co/unit-management/units/${encodeURIComponent(assignmentDialog.unit.unit_id)}/assignment`,
         {
           method: 'PATCH',
           headers: {
@@ -422,11 +420,9 @@ function UnitManagement() {
     }
   }
 
-  const createDialogTitle = createDialog.type === 'approver'
-    ? 'Create Approver'
-    : 'Create Company Coordinator'
-  const createDialogUnits = getAvailableUnits(createDialog.type)
+  const createDialogUnits = getCreateUnits()
   const assignmentOptions = getAssignmentOptions(assignmentDialog.role)
+  const tableBorderColor = alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.16 : 0.2)
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, py: 1 }}>
@@ -467,18 +463,10 @@ function UnitManagement() {
           <Button
             variant="outlined"
             startIcon={<AddRoundedIcon />}
-            onClick={() => handleOpenCreateDialog('coordinator')}
-            disabled={loading || assignMode || data.unmappedCoordinatorUnits.length === 0}
+            onClick={handleOpenCreateDialog}
+            disabled={loading || assignMode}
           >
-            Company Coordinator
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<AddRoundedIcon />}
-            onClick={() => handleOpenCreateDialog('approver')}
-            disabled={loading || assignMode || data.unmappedApproverUnits.length === 0}
-          >
-            Approver
+            Coordinator / Approver
           </Button>
         </Box>
       </Box>
@@ -567,40 +555,99 @@ function UnitManagement() {
                 {assignMode && assignmentPerformed ? 'Done' : 'Assign'}
               </Button>
             </Box>
-            <TableContainer>
-              <Table>
+            <TableContainer sx={{ borderTop: `1px solid ${tableBorderColor}` }}>
+              <Table sx={{ minWidth: 720 }}>
                 <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 800 }}>Unit Name</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Coordinator</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Approver</TableCell>
+                  <TableRow
+                    sx={{
+                      backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.06 : 0.12),
+                    }}
+                  >
+                    <TableCell
+                      sx={{
+                        py: 1.6,
+                        px: 2.25,
+                        fontWeight: 800,
+                        borderBottom: `1px solid ${tableBorderColor}`,
+                        ...(assignMode && {
+                          color: 'primary.main',
+                          backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                        }),
+                      }}
+                    >
+                      Unit Name
+                    </TableCell>
+                    <TableCell sx={{ py: 1.6, px: 2.25, fontWeight: 800, borderBottom: `1px solid ${tableBorderColor}` }}>
+                      Coordinator
+                    </TableCell>
+                    <TableCell sx={{ py: 1.6, px: 2.25, fontWeight: 800, borderBottom: `1px solid ${tableBorderColor}` }}>
+                      Approver
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {data.units.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3}>
+                      <TableCell colSpan={3} sx={{ py: 3, px: 2.25, borderBottom: 0 }}>
                         <Typography color="text.secondary">No units found.</Typography>
                       </TableCell>
                     </TableRow>
                   ) : (
-                    data.units.map((unit) => (
-                      <TableRow key={unit.unit_id || unit.id} hover>
+                    data.units.map((unit, index) => (
+                      <TableRow
+                        key={unit.unit_id || unit.id}
+                        hover
+                        sx={{
+                          '&:last-of-type td': { borderBottom: 0 },
+                          '& td': {
+                            borderBottom: index === data.units.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
+                          },
+                        }}
+                      >
                         <TableCell
+                          role={assignMode ? 'button' : undefined}
+                          tabIndex={assignMode ? 0 : undefined}
                           onClick={() => handleOpenAssignmentDialog(unit, 'company_co')}
+                          onKeyDown={(event) => {
+                            if (!assignMode) return
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              handleOpenAssignmentDialog(unit, 'company_co')
+                            }
+                          }}
                           sx={{
+                            py: assignMode ? 1.25 : 1.7,
+                            px: 2.25,
+                            fontWeight: assignMode ? 850 : 650,
+                            color: assignMode ? 'primary.dark' : 'text.primary',
+                            backgroundColor: assignMode
+                              ? alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.11 : 0.18)
+                              : 'transparent',
+                            boxShadow: assignMode
+                              ? `inset 4px 0 0 ${theme.palette.primary.main}`
+                              : 'none',
                             cursor: assignMode ? 'pointer' : 'default',
+                            transition: theme.transitions.create(
+                              ['background-color', 'box-shadow', 'color'],
+                              { duration: theme.transitions.duration.shorter }
+                            ),
                             ...(assignMode && {
-                              '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.08) },
+                              textDecoration: 'underline',
+                              textUnderlineOffset: '4px',
+                              '&:hover, &:focus-visible': {
+                                backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.18 : 0.26),
+                                boxShadow: `inset 6px 0 0 ${theme.palette.primary.dark}`,
+                                outline: 'none',
+                              },
                             }),
                           }}
                         >
                           {unit.unit_name || 'N/A'}
                         </TableCell>
-                        <TableCell>
+                        <TableCell sx={{ py: 1.7, px: 2.25 }}>
                           {unit.coordinator_display_name || unit.coordinator_email_id || 'N/A'}
                         </TableCell>
-                        <TableCell>
+                        <TableCell sx={{ py: 1.7, px: 2.25 }}>
                           {unit.approver_display_name || unit.approver_email_id || 'N/A'}
                         </TableCell>
                       </TableRow>
@@ -729,14 +776,28 @@ function UnitManagement() {
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>{createDialogTitle}</DialogTitle>
+        <DialogTitle>Create Coordinator / Approver</DialogTitle>
         <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2.5 }}>
           {createDialogUnits.length === 0 ? (
             <Alert severity="info">
-              All units already have a {createDialog.type === 'approver' ? 'mapped approver' : 'mapped coordinator'}.
+              Create a company unit before adding a coordinator or approver.
             </Alert>
           ) : (
             <>
+              <FormControl fullWidth required disabled={createDialog.submitting}>
+                <InputLabel id="create-user-role-label">Role</InputLabel>
+                <Select
+                  labelId="create-user-role-label"
+                  label="Role"
+                  value={createDialog.type}
+                  onChange={(event) =>
+                    setCreateDialog((prev) => ({ ...prev, type: event.target.value, error: '' }))
+                  }
+                >
+                  <MenuItem value="company_co">Company Coordinator</MenuItem>
+                  <MenuItem value="approver">Approver</MenuItem>
+                </Select>
+              </FormControl>
               <TextField
                 label="Email ID"
                 type="email"

@@ -152,6 +152,8 @@ const REQUIRED_TABLES = {
       department: 'character varying(255) NULL',
       mobile: 'character varying(255) NULL',
       unit_id: 'character varying(255) NULL',
+      login_email_sent: 'boolean NULL DEFAULT FALSE',
+      temp_password_encrypted: 'text NULL',
     },
     primaryKey: 'id',
   },

@@ -16,6 +16,7 @@ import Autocomplete from '@mui/material/Autocomplete'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { toast } from 'react-hot-toast'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
+import { apiUrl, API_BASE_URL } from '../../config/api'
 
 const ASSIGNABLE_USER_INITIAL_LIMIT = 5
 const ASSIGNABLE_USER_SEARCH_LIMIT = 50
@@ -36,6 +37,7 @@ function CreateControlForm() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [companyIdentifier, setCompanyIdentifier] = useState('')
+  const [unitOptions, setUnitOptions] = useState([])
   const [ownerOptions, setOwnerOptions] = useState([])
   const [usersLoading, setUsersLoading] = useState(false)
   const assignableUserSearchDebounceRef = useRef(null)
@@ -54,7 +56,7 @@ function CreateControlForm() {
           params.set('q', trimmedQ)
         }
         const response = await fetch(
-          `http://localhost:3000/api/company-co/users?${params.toString()}`,
+          `${API_BASE_URL}/api/company-co/users?${params.toString()}`,
           {
             method: 'GET',
             credentials: 'include',
@@ -102,6 +104,7 @@ function CreateControlForm() {
   const [formData, setFormData] = useState({
     business_process: '',
     financial_year: '',
+    unit_id: '',
     control_number: '',
     area: '',
     risk_heat: '',
@@ -158,7 +161,7 @@ function CreateControlForm() {
     // Fetch user's company_identifier
     const fetchUserInfo = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/verify', {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -180,6 +183,42 @@ function CreateControlForm() {
     if (!companyIdentifier) return
     fetchAssignableUsers({ q: '', limit: ASSIGNABLE_USER_INITIAL_LIMIT })
   }, [companyIdentifier, fetchAssignableUsers])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchUnits = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+
+        if (!cancelled && response.ok && data.success) {
+          const units = Array.isArray(data.data?.currentCoordinatorUnits)
+            ? data.data.currentCoordinatorUnits
+            : []
+          setUnitOptions(units)
+          setFormData((prev) => ({
+            ...prev,
+            unit_id: prev.unit_id || units[0]?.unit_id || '',
+          }))
+        }
+      } catch (error) {
+        console.error('Error fetching coordinator units:', error)
+        if (!cancelled) {
+          setUnitOptions([])
+        }
+      }
+    }
+
+    fetchUnits()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -252,10 +291,15 @@ function CreateControlForm() {
       return
     }
 
+    if (!formData.unit_id) {
+      toast.error('Please select a unit')
+      return
+    }
+
     setLoading(true)
 
     try {
-      const response = await fetch('http://localhost:3000/api/control-forms', {
+      const response = await fetch(apiUrl('/api/control-forms'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -299,6 +343,7 @@ function CreateControlForm() {
   const fieldLabels = {
   business_process: 'Business Process',
   financial_year: 'Financial Year',
+  unit_id: 'Unit',
   control_number: 'Control Number',
   area: 'Area',
   risk_heat: 'Risk Heat',
@@ -330,6 +375,7 @@ function CreateControlForm() {
   const fieldOrder = [
     'business_process',
     'financial_year',
+    'unit_id',
     'control_number',
     'area',
     'sub_process',
@@ -511,22 +557,27 @@ function CreateControlForm() {
           </Box>
 
           <form onSubmit={handleSubmit}>
-            {/* Top section: Business Process & Financial Year */}
+            {/* Top section: Business Process, Financial Year & Unit */}
             <Box
               sx={{
                 mb: 4,
                 display: 'grid',
                 gridTemplateColumns: {
                   xs: '1fr',
-                  md: 'repeat(2, 1fr)',
+                  md: 'repeat(3, 1fr)',
                 },
                 gap: 3,
               }}
             >
-              {['business_process', 'financial_year'].map((field) => {
+              {['business_process', 'financial_year', 'unit_id'].map((field) => {
                 const label = fieldLabels[field]
                 const value = formData[field] || ''
-                const options = field === 'business_process' ? businessProcessOptions : financialYearOptions
+                const options =
+                  field === 'business_process'
+                    ? businessProcessOptions
+                    : field === 'financial_year'
+                      ? financialYearOptions
+                      : unitOptions
 
                 return (
                   <FormControl
@@ -543,11 +594,14 @@ function CreateControlForm() {
                       label={label}
                       onChange={handleChange}
                       variant="outlined"
-                      disabled={loading}
+                      disabled={loading || (field === 'unit_id' && unitOptions.length === 0)}
                     >
                       {options.map((option) => (
-                        <MenuItem key={option} value={option}>
-                          {option}
+                        <MenuItem
+                          key={field === 'unit_id' ? option.unit_id || option.id : option}
+                          value={field === 'unit_id' ? option.unit_id : option}
+                        >
+                          {field === 'unit_id' ? option.unit_name || option.unit_id : option}
                         </MenuItem>
                       ))}
                     </Select>
@@ -832,7 +886,7 @@ function CreateControlForm() {
             <Box sx={{ display: 'flex', gap: 2, mt: 4, flexWrap: 'wrap' }}>
               <Button
                 type="submit"
-                disabled={loading || !formData.business_process || !formData.financial_year}
+                disabled={loading || !formData.business_process || !formData.financial_year || !formData.unit_id}
                 variant="contained"
                 color="secondary"
                 sx={{

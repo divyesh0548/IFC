@@ -18,6 +18,7 @@ import { toast } from 'react-hot-toast'
 import { STORAGE_KEYS, clearCachedUserProfile } from '../storageKeys'
 import { useThemeMode } from '../contexts/ThemeContext'
 import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
+import { apiUrl, API_BASE_URL } from '../config/api'
 
 function Login() {
   const theme = useTheme()
@@ -34,7 +35,7 @@ function Login() {
   useEffect(() => {
     const checkExistingSession = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/auth/verify', {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
           method: 'GET',
           credentials: 'include',
         })
@@ -50,7 +51,7 @@ function Login() {
           const companyIdentifier = data.user?.company_identifier
           if (companyIdentifier) {
             try {
-              const companyRes = await fetch(`http://localhost:3000/api/companies/${encodeURIComponent(companyIdentifier)}`, {
+              const companyRes = await fetch(`${API_BASE_URL}/api/companies/${encodeURIComponent(companyIdentifier)}`, {
                 method: 'GET',
                 credentials: 'include',
               })
@@ -82,7 +83,7 @@ function Login() {
               company_co: '/company_co/home',
               approver: '/approver/home',
               siteadmin: '/siteadmin/dashboard',
-              auditor: '/auditor/dashboard',
+              auditor: '/auditor/home',
             }
             const defaultRedirectPath = roleRoutes[role]
             if (defaultRedirectPath) {
@@ -104,7 +105,7 @@ function Login() {
     setError('')
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/login', {
+      const response = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -128,7 +129,7 @@ function Login() {
         const companyIdentifier = data.user?.company_identifier
         if (companyIdentifier) {
           try {
-            const companyRes = await fetch(`http://localhost:3000/api/companies/${encodeURIComponent(companyIdentifier)}`, {
+            const companyRes = await fetch(`${API_BASE_URL}/api/companies/${encodeURIComponent(companyIdentifier)}`, {
               method: 'GET',
               credentials: 'include',
             })
@@ -166,7 +167,7 @@ function Login() {
             'company_co': '/company_co/home',
             'approver': '/approver/home',
             'siteadmin': '/siteadmin/dashboard',
-            'auditor': '/auditor/dashboard'
+            'auditor': '/auditor/home'
           }
 
           const defaultRedirectPath = roleRoutes[role]

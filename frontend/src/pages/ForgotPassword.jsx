@@ -7,7 +7,8 @@ import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import TextField from '@mui/material/TextField'
 import Alert from '@mui/material/Alert'
-import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
+import { apiUrl } from '../config/api'
 
 function ForgotPassword() {
   const theme = useTheme()
@@ -34,7 +35,7 @@ function ForgotPassword() {
     setSuccess('')
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/forgot-password', {
+      const response = await fetch(apiUrl('/api/auth/forgot-password'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
