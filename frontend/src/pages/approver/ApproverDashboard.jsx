@@ -37,6 +37,7 @@ function ApproverDashboard() {
   const [filterUnit, setFilterUnit] = useState('all')
   const [mappedUnits, setMappedUnits] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
+  const showUnitContext = mappedUnits.length > 1
 
   const businessProcessOptions = [
     'Purchase to Pay',
@@ -315,6 +316,7 @@ function ApproverDashboard() {
   const APPROVER_TABLE_COL_PX = {
     idx: 72,
     standardControl: 280,
+    unit: 180,
     businessProcess: 200,
     financialYear: 140,
     processOwner: 220,
@@ -324,6 +326,7 @@ function ApproverDashboard() {
   const approverTableColWidthsOrdered = [
     APPROVER_TABLE_COL_PX.idx,
     APPROVER_TABLE_COL_PX.standardControl,
+    ...(showUnitContext ? [APPROVER_TABLE_COL_PX.unit] : []),
     APPROVER_TABLE_COL_PX.businessProcess,
     APPROVER_TABLE_COL_PX.financialYear,
     APPROVER_TABLE_COL_PX.processOwner,
@@ -429,7 +432,7 @@ function ApproverDashboard() {
               flexWrap: 'wrap',
             }}
           >
-            {mappedUnits.length > 1 && (
+            {showUnitContext && (
               <FormControl variant="outlined" sx={filterControlSx}>
                 <InputLabel id="approver-unit-filter-label">Unit</InputLabel>
                 <Select
@@ -606,6 +609,24 @@ function ApproverDashboard() {
                   >
                     Standard Control Description
                   </Box>
+                  {showUnitContext && (
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 2.5,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                        ...pctColSx(APPROVER_TABLE_COL_PX.unit),
+                      }}
+                    >
+                      Unit Name
+                    </Box>
+                  )}
                   <Box
                     component="th"
                     sx={{
@@ -744,6 +765,34 @@ function ApproverDashboard() {
                           </Tooltip>
                         )}
                       </Box>
+                      {showUnitContext && (
+                        <Box
+                          component="td"
+                          sx={mergeDataTdSx({
+                            px: 2.5,
+                            py: 2,
+                            ...pctColSx(APPROVER_TABLE_COL_PX.unit),
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          })}
+                        >
+                          {cellWordWrap ? (
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.unit_name || form.unit_id || 'N/A'}
+                            </Box>
+                          ) : (
+                            <Tooltip
+                              title={form.unit_name || form.unit_id || 'N/A'}
+                              arrow
+                              slotProps={{ tooltip: { sx: tooltipSx } }}
+                            >
+                              <Box component="span" sx={dataCellTextSx}>
+                                {form.unit_name || form.unit_id || 'N/A'}
+                              </Box>
+                            </Tooltip>
+                          )}
+                        </Box>
+                      )}
                       <Box
                         component="td"
                         sx={mergeDataTdSx({

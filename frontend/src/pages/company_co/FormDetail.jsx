@@ -3469,7 +3469,8 @@ function FormDetail() {
         PaperProps={{
           sx: {
             borderRadius: 2,
-            minWidth: { xs: '94%', sm: '620px' },
+            minWidth: { xs: '96%', sm: '760px', md: '860px' },
+            maxWidth: '960px',
             boxShadow: theme.palette.mode === 'dark'
               ? '0 8px 32px rgba(0, 0, 0, 0.4)'
               : '0 8px 32px rgba(0, 0, 0, 0.12)',
@@ -3550,6 +3551,17 @@ function FormDetail() {
 
               <Typography variant="caption" color="text.secondary">
                 {selectedUser?.email_id || ' '}
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{
+                  display: 'block',
+                  mt: 0.5,
+                  color: 'text.secondary',
+                  lineHeight: 1.6,
+                }}
+              >
+                RACM will be set to Active automatically after assignment if all conditions are fulfilled.
               </Typography>
             </Box>
           )}

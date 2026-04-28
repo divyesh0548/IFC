@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -29,6 +30,7 @@ function displayValue(value) {
 
 function ProfilePage() {
   const theme = useTheme()
+  const navigate = useNavigate()
   const [profile, setProfile] = useState(() => readCachedUserProfile())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -173,9 +175,18 @@ function ProfilePage() {
         >
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: { xs: 2, sm: 3 }, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
             {!isEditing ? (
-              <Button variant="outlined" size="small" onClick={() => { setIsEditing(true) }}>
-                Update Details
-              </Button>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={() => navigate('/update-password')}
+                >
+                  Update Password
+                </Button>
+                <Button variant="outlined" size="small" onClick={() => { setIsEditing(true) }}>
+                  Update Details
+                </Button>
+              </Box>
             ) : (
               <Box sx={{ display: 'flex', gap: 1 }}>
                 <Button

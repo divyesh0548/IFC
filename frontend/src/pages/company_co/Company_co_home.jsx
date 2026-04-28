@@ -17,6 +17,7 @@ function Company_co_home() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
+  const [coordinatorUnits, setCoordinatorUnits] = useState([])
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalRacms: 0,
@@ -91,6 +92,7 @@ function Company_co_home() {
 
         const homeStats = result.data || {}
         setUsername(homeStats.coordinatorName || 'User')
+        setCoordinatorUnits(Array.isArray(homeStats.coordinatorUnits) ? homeStats.coordinatorUnits : [])
 
         setStats({
           totalUsers: Number(homeStats.totalUsers || 0),
@@ -101,6 +103,7 @@ function Company_co_home() {
       } catch (error) {
         console.error('Failed to fetch company coordinator home data:', error)
         setUsername('User')
+        setCoordinatorUnits([])
         setStats({
           totalUsers: 0,
           totalRacms: 0,
@@ -223,6 +226,51 @@ function Company_co_home() {
             >
               Manage the IFC cycle from one place with direct access to users, RACMs, assignments, uploads, and reporting.
             </Typography>
+            {coordinatorUnits.length > 0 ? (
+              <Box
+                sx={{
+                  mt: 1.5,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 0.75,
+                  alignItems: 'center',
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    color: theme.palette.text.secondary,
+                  }}
+                >
+                  Units:
+                </Typography>
+                {coordinatorUnits.map((unit) => (
+                  <Box
+                    key={unit.unit_id || unit.unit_name}
+                    sx={{
+                      px: 1.15,
+                      py: 0.45,
+                      borderRadius: 999,
+                      border: '1px solid',
+                      borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.28 : 0.16),
+                      backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.14 : 0.6),
+                    }}
+                  >
+                    <Typography
+                      sx={{
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        color: theme.palette.text.primary,
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      {unit.unit_name || unit.unit_id}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            ) : null}
           </Box>
 
           <Paper

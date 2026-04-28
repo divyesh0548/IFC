@@ -3,7 +3,6 @@ const { logAuditEvent } = require('../../utils/auditLog');
 const { sendEmail } = require('../../utils/send_email');
 const {
   attachControlFormDocuments,
-  getLatestUserDocument,
 } = require('../../utils/racm_documents');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
@@ -343,53 +342,85 @@ async function approveForm(req, res) {
       });
     }
 
-    const updateFields = ['status = $1', 'reason_by_approver = $2'];
-    const updateValues = [status, approverReason || null];
-    let paramIndex = 3;
+    const client = await pool.connect();
+    let updatedForm;
+    try {
+      await client.query('BEGIN');
 
-    updateFields.push(`control_design_procs = $${paramIndex}`);
-    updateValues.push(control_design_procs !== undefined ? control_design_procs : null);
-    paramIndex++;
+      if (status === 'Rejected') {
+        await client.query(
+          `
+            INSERT INTO control_form_history (form_id, reason_by_approver, rejection_timestamp)
+            VALUES ($1, $2, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
+          `,
+          [form_id, approverReason || null]
+        );
+      }
 
-    updateFields.push(`control_design_conclusion = $${paramIndex}`);
-    updateValues.push(control_design_conclusion !== undefined ? control_design_conclusion : null);
-    paramIndex++;
+      const updateFields = ['status = $1', 'reason_by_approver = $2'];
+      const updateValues = [status, approverReason || null];
+      let paramIndex = 3;
 
-    updateFields.push(`design_deficiency_desc = $${paramIndex}`);
-    updateValues.push(design_deficiency_desc !== undefined ? design_deficiency_desc : null);
-    paramIndex++;
+      updateFields.push(`control_design_procs = $${paramIndex}`);
+      updateValues.push(control_design_procs !== undefined ? control_design_procs : null);
+      paramIndex++;
 
-    updateFields.push(
-      'approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE \'Asia/Kolkata\')'
-    );
+      updateFields.push(`control_design_conclusion = $${paramIndex}`);
+      updateValues.push(control_design_conclusion !== undefined ? control_design_conclusion : null);
+      paramIndex++;
 
-    updateValues.push(form_id);
-    updateValues.push(approver.email_id);
+      updateFields.push(`design_deficiency_desc = $${paramIndex}`);
+      updateValues.push(design_deficiency_desc !== undefined ? design_deficiency_desc : null);
+      paramIndex++;
 
-    const updateQuery = `
-      UPDATE control_forms 
-      SET ${updateFields.join(', ')}
-      WHERE form_id = $${paramIndex}
-        AND EXISTS (
-          SELECT 1
-          FROM company_unit_master approver_units
-          WHERE approver_units.company_identifier = control_forms.company_identifier
-            AND approver_units.unit_id = control_forms.unit_id
-            AND LOWER(TRIM(COALESCE(approver_units.approver_email_id, ''))) = LOWER(TRIM($${paramIndex + 1}))
-        )
-      RETURNING *
-    `;
+      updateFields.push(
+        'approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE \'Asia/Kolkata\')'
+      );
 
-    const result = await pool.query(updateQuery, updateValues);
+      updateValues.push(form_id);
+      updateValues.push(approver.email_id);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({
+      const updateQuery = `
+        UPDATE control_forms 
+        SET ${updateFields.join(', ')}
+        WHERE form_id = $${paramIndex}
+          AND EXISTS (
+            SELECT 1
+            FROM company_unit_master approver_units
+            WHERE approver_units.company_identifier = control_forms.company_identifier
+              AND approver_units.unit_id = control_forms.unit_id
+              AND LOWER(TRIM(COALESCE(approver_units.approver_email_id, ''))) = LOWER(TRIM($${paramIndex + 1}))
+          )
+        RETURNING *
+      `;
+
+      const result = await client.query(updateQuery, updateValues);
+
+      if (result.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({
+          success: false,
+          message: 'RACM not found or not assigned to this approver',
+        });
+      }
+
+      await client.query('COMMIT');
+      updatedForm = result.rows[0];
+    } catch (dbErr) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('Approve form rollback error:', rollbackErr);
+      }
+      console.error('Approve form DB error:', dbErr);
+      return res.status(500).json({
         success: false,
-        message: 'RACM not found or not assigned to this approver',
+        message: 'Internal server error',
       });
+    } finally {
+      client.release();
     }
 
-    const updatedForm = result.rows[0];
     await attachControlFormDocuments(pool, [updatedForm]);
     const processOwnerEmail = updatedForm.control_owner;
 
@@ -506,17 +537,14 @@ async function changeApprovalDecision(req, res) {
     try {
       await client.query('BEGIN');
 
-      if (curStatus === 'Rejected' && status === 'Approved') {
-        const prevDoc = await getLatestUserDocument(client, form_id);
-        const prevReason =
-          row.reason_by_approver != null ? String(row.reason_by_approver).trim() : '';
-        if (prevDoc || prevReason) {
-          await client.query(
-            `INSERT INTO control_form_history (form_id, doc_uploaded_by_user, reason_by_approver)
-             VALUES ($1, $2, $3)`,
-            [form_id, prevDoc || null, prevReason || null]
-          );
-        }
+      if (status === 'Rejected') {
+        await client.query(
+          `
+            INSERT INTO control_form_history (form_id, reason_by_approver, rejection_timestamp)
+            VALUES ($1, $2, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
+          `,
+          [form_id, reasonFinal || null]
+        );
       }
 
       const updateResult = await client.query(
@@ -689,6 +717,57 @@ async function getControlFormById(req, res) {
   }
 }
 
+async function checkControlFormAccess(req, res) {
+  try {
+    const { form_id } = req.params;
+    const approverEmail = req.approver.email_id;
+
+    const result = await pool.query(
+      `
+        SELECT
+          cf.form_id,
+          cf.unit_id AS racm_unit_id,
+          NULLIF(TRIM(approver_units.unit_id), '') AS approver_unit_id,
+          NULLIF(TRIM(approver_units.unit_name), '') AS approver_unit_name
+        FROM control_forms cf
+        ${scopedApproverRacmJoin('cf')}
+        WHERE cf.form_id = $2
+        LIMIT 1
+      `,
+      [approverEmail, form_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to access this RACM',
+        data: {
+          allowed: false,
+        },
+      });
+    }
+
+    const row = result.rows[0];
+    return res.status(200).json({
+      success: true,
+      message: 'Approver access verified',
+      data: {
+        allowed: true,
+        form_id: row.form_id,
+        racm_unit_id: row.racm_unit_id || null,
+        approver_unit_id: row.approver_unit_id || null,
+        approver_unit_name: row.approver_unit_name || null,
+      },
+    });
+  } catch (error) {
+    console.error('Check approver RACM access error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+}
+
 async function getControlFormHistory(req, res) {
   try {
     const { form_id } = req.params;
@@ -713,10 +792,10 @@ async function getControlFormHistory(req, res) {
 
     const result = await pool.query(
       `
-        SELECT id, doc_uploaded_by_user, reason_by_approver
+        SELECT id, reason_by_approver, rejection_timestamp
         FROM control_form_history
         WHERE form_id = $1
-        ORDER BY id ASC
+        ORDER BY rejection_timestamp ASC NULLS LAST, id ASC
       `,
       [form_id]
     );
@@ -782,6 +861,7 @@ module.exports = {
   approveForm,
   changeApprovalDecision,
   getControlForms,
+  checkControlFormAccess,
   getControlFormById,
   getControlFormHistory,
   getRacmAuditLogs,

@@ -41,7 +41,7 @@ function formatBulkImportSuccessMessage(insertedCount, stats) {
   let msg = `Successfully created ${insertedCount} RACM(s).`;
   const extras = [];
   if (duplicateCount > 0) {
-    extras.push(`${duplicateCount} row(s) skipped as duplicates (same company, BP, FY, control number)`);
+    extras.push(`${duplicateCount} row(s) skipped as duplicates (same company, Business Process, Financial Year, control number)`);
   }
   if (skippedCount > 0) {
     extras.push(`${skippedCount} row(s) skipped as mostly empty`);

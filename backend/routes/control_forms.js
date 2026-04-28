@@ -13,7 +13,6 @@ const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/
 const {
   attachControlFormDocuments,
   getControlFormDocumentRows,
-  getLatestUserDocument,
   insertSampleDocument,
   insertUserDocument,
 } = require('../utils/racm_documents');
@@ -143,7 +142,7 @@ Once you submit your evidence, our tester will review it to check if the control
 
 Deadline: ${formattedDueDate}
 
-${formUrl ? `Access your RACM: ${formUrl}\n\n` : ''}Portal: ${process.env.FRONTEND_URL}
+Portal: ${process.env.VITE_FRONTEND_URL}
 
 Just shout if you hit any snags or have questions or you have any feedback on the performance of the controls or have noted any significant breaches; I'm happy to help.
 
@@ -273,6 +272,8 @@ function isDatabaseConnectionError(error) {
 }
 
 const INACTIVE_RACM_APPROVER_MESSAGE = 'Approver of this RACM is not active';
+const MISSING_UNIT_APPROVER_MESSAGE = 'No approver is assigned for current company unit';
+const MISSING_APPROVER_USER_MESSAGE = 'Approver of this RACM does not exist';
 
 async function getControlFormApproverDetails(clientOrPool, formId) {
   const result = await clientOrPool.query(
@@ -283,6 +284,7 @@ async function getControlFormApproverDetails(clientOrPool, formId) {
         cf.company_identifier,
         cf.unit_id,
         cum.approver_email_id,
+        approver.id AS approver_user_id,
         NULLIF(TRIM(approver.emp_name), '') AS approver_name,
         approver.temp_login AS approver_temp_login,
         COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(cum.approver_email_id), '')) AS approver_display_name
@@ -303,6 +305,21 @@ async function getControlFormApproverDetails(clientOrPool, formId) {
 
 function isApproverTempLogin(details) {
   return Number(details?.approver_temp_login) === 1;
+}
+
+function isApproverAssigned(details) {
+  return String(details?.approver_email_id || '').trim() !== '';
+}
+
+function doesApproverUserExist(details) {
+  return details?.approver_user_id !== null && details?.approver_user_id !== undefined;
+}
+
+function getApproverSubmissionBlockMessage(details) {
+  if (!isApproverAssigned(details)) return MISSING_UNIT_APPROVER_MESSAGE;
+  if (!doesApproverUserExist(details)) return MISSING_APPROVER_USER_MESSAGE;
+  if (isApproverTempLogin(details)) return INACTIVE_RACM_APPROVER_MESSAGE;
+  return '';
 }
 
 async function queryAuthenticatedUser(emailId) {
@@ -1040,7 +1057,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     completeness, existence_occurrence, rights_and_obligation,
     valuation_and_allocation, presentation_and_disclosure,
     due_date, reminder_frequency,
-    doc_uploaded_by_user, doc_uploaded_by_user_docs, active, status, reason_by_approver, remarks_by_user,
+    doc_uploaded_by_user, doc_uploaded_by_user_docs, replace_user_documents, active, status, reason_by_approver, remarks_by_user,
     modifiedFields, // Array of modified field names from frontend
     modifiedChanges // Array of { column_name, old_value, new_value } from frontend
   } = req.body;
@@ -1092,11 +1109,12 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
 
       const approverDetails = await getControlFormApproverDetails(client, form_id);
-      if (isApproverTempLogin(approverDetails)) {
+      const approverBlockMessage = getApproverSubmissionBlockMessage(approverDetails);
+      if (approverBlockMessage) {
         await client.query('ROLLBACK');
         return res.status(400).json({
           success: false,
-          message: INACTIVE_RACM_APPROVER_MESSAGE,
+          message: approverBlockMessage,
         });
       }
     }
@@ -1282,44 +1300,18 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     // Debug: Log the update query (before finalizing)
     console.log('Update query fields (pre-history):', updateFields);
 
-    // If user is resubmitting after rejection with a new document, archive previous doc + reason
+    // If user is resubmitting after rejection, only clear the previous live approver reason.
     const isResubmission = status === 'sent for approval'
       && currentForm
-      && currentForm.current_status === 'Rejected'
-      && hasUserDocumentUpload;
+      && currentForm.current_status === 'Rejected';
 
     if (isResubmission) {
-      const previousDoc = await getLatestUserDocument(client, form_id);
       const previousReason = currentForm.current_reason_by_approver;
 
-      if (
-        (previousDoc && String(previousDoc).trim() !== '') ||
-        (previousReason && String(previousReason).trim() !== '')
-      ) {
-        try {
-          const historyInsertQuery = `
-            INSERT INTO control_form_history (form_id, doc_uploaded_by_user, reason_by_approver)
-            VALUES ($1, $2, $3)
-          `;
-          await client.query(historyInsertQuery, [
-            form_id,
-            previousDoc || null,
-            previousReason || null
-          ]);
-
-          // Ensure old approver reason is cleared from the live form row on resubmission.
-          updateFields.push(`reason_by_approver = $${paramIndex}`);
-          updateValues.push(null);
-          paramIndex++;
-        } catch (historyError) {
-          await client.query('ROLLBACK');
-          console.error('Error inserting into control_form_history:', historyError);
-          return res.status(500).json({
-            success: false,
-            message: 'Error archiving previous RACM state',
-            error: historyError.message
-          });
-        }
+      if (previousReason && String(previousReason).trim() !== '') {
+        updateFields.push(`reason_by_approver = $${paramIndex}`);
+        updateValues.push(null);
+        paramIndex++;
       }
     }
 
@@ -1416,6 +1408,31 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
 
       if (result.rows.length > 0) {
+        if (replace_user_documents === true) {
+          const existingUserDocsResult = await client.query(
+            `
+              SELECT id, doc_uploaded_by_user
+              FROM doc_uploaded_by_user
+              WHERE form_id = $1
+              ORDER BY id ASC
+            `,
+            [form_id]
+          );
+          const replacementDocSet = new Set(uploadedUserDocumentUrls);
+          const docsToDeleteFromS3 = existingUserDocsResult.rows
+            .map((row) => row.doc_uploaded_by_user == null ? '' : String(row.doc_uploaded_by_user).trim())
+            .filter((docUrl) => docUrl && !replacementDocSet.has(docUrl));
+
+          for (const docUrl of docsToDeleteFromS3) {
+            await deleteFileFromS3(docUrl);
+          }
+
+          await client.query(
+            'DELETE FROM doc_uploaded_by_user WHERE form_id = $1',
+            [form_id]
+          );
+        }
+
         for (const userDocUrl of uploadedUserDocumentUrls) {
           await insertUserDocument(client, form_id, userDocUrl);
         }
@@ -2403,8 +2420,11 @@ router.get('/:form_id/approver-status', verifyUserAuth, async (req, res) => {
         approver_email_id: approverDetails.approver_email_id || null,
         approver_name: approverDetails.approver_name || null,
         approver_display_name: approverDetails.approver_display_name || approverDetails.approver_email_id || null,
+        approver_user_id: approverDetails.approver_user_id || null,
         approver_temp_login: approverDetails.approver_temp_login,
-        approver_active: !isApproverTempLogin(approverDetails),
+        approver_assigned: isApproverAssigned(approverDetails),
+        approver_exists: doesApproverUserExist(approverDetails),
+        approver_active: doesApproverUserExist(approverDetails) && !isApproverTempLogin(approverDetails),
       },
     });
   } catch (error) {
@@ -2461,10 +2481,11 @@ router.post(
       });
     }
 
-    if (isApproverTempLogin(approverDetails)) {
+    const approverBlockMessage = getApproverSubmissionBlockMessage(approverDetails);
+    if (approverBlockMessage) {
       return res.status(400).json({
         success: false,
-        message: INACTIVE_RACM_APPROVER_MESSAGE,
+        message: approverBlockMessage,
       });
     }
 

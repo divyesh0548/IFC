@@ -1,20 +1,4 @@
 
-On rejected do not remove resaon and old file. Maintain them in history. 
-
-Provide link of RACM link in Assignemnt email.
-
-
-
-
-
-I suggest we do not include due dae and reminder frequency in excel bulk upload. Instead provide input dropdown just like Business process and FY.
-
-
-Block the excel file upload if email_id is not valid in process owner column.
-
-
-
-
 
 
 
@@ -111,4 +95,18 @@ How to handle Control Number generation, cause RACMs privide by Mayank sir have 
 
 What fields are necessary for RACM creation. Without them RACM will not be initiated.
 
-What limitations to impose on Units. Like two units can't have same coordinator and approver, etc.
+Which users to put in CC for RACM related emails?
+
+Sapan sir said to display number of RACMs in sample required excel. 
+
+
+
+
+Active RACM - Can't be changed by coordinator
+
+
+Prompts : 
+
+Bulk User creation via excel upload.
+
+Communication Matrix for Email IDs to be kept in CC for RACM Assignment. --> Two options whether same for all cycles or Different for different cycles.

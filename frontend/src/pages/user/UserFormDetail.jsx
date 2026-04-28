@@ -40,6 +40,8 @@ function UserFormDetail() {
   const [remarksByUser, setRemarksByUser] = useState('')
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [sampleDocsDialogOpen, setSampleDocsDialogOpen] = useState(false)
+  const [userDocsDialogOpen, setUserDocsDialogOpen] = useState(false)
+  const [removedUploadedDocPaths, setRemovedUploadedDocPaths] = useState([])
 
   useSyncGlobalLoading(loading || saving)
 
@@ -100,6 +102,7 @@ function UserFormDetail() {
         setFormData(data.data)
         // Initialize remarks by user (only editable field for users)
         setRemarksByUser(data.data.remarks_by_user || '')
+        setRemovedUploadedDocPaths([])
       } else if (response.status === 403) {
         // User is authenticated but not authorized (different email)
         toast.error('You are not authorized to access this form')
@@ -146,6 +149,96 @@ function UserFormDetail() {
     )
   }
 
+  const getUserUploadedDocs = () => {
+    const docs = Array.isArray(formData?.doc_uploaded_by_user_docs)
+      ? formData.doc_uploaded_by_user_docs
+      : []
+    const normalizedDocs = docs
+      .map((doc, index) => ({
+        id: doc.id || `user-doc-${index}`,
+        doc_uploaded_by_user: doc.doc_uploaded_by_user,
+        created_at: doc.created_at,
+      }))
+      .filter((doc) => String(doc.doc_uploaded_by_user || '').trim() !== '')
+
+    if (normalizedDocs.length > 0) return normalizedDocs
+
+    const legacyDoc = String(formData?.doc_uploaded_by_user || '').trim()
+    return legacyDoc
+      ? [{ id: 'user-doc-current', doc_uploaded_by_user: legacyDoc, created_at: null }]
+      : []
+  }
+
+  const handleOpenUserDocsDialog = () => {
+    setUserDocsDialogOpen(true)
+  }
+
+  const handleCloseUserDocsDialog = () => {
+    setUserDocsDialogOpen(false)
+  }
+
+  const handleRemoveExistingUploadedDoc = (docPath) => {
+    if (!isRejected || !docPath) return
+
+    setRemovedUploadedDocPaths((currentPaths) => (
+      currentPaths.includes(docPath)
+        ? currentPaths
+        : [...currentPaths, docPath]
+    ))
+  }
+
+  const handleDownloadUserDocument = async (filePath) => {
+    if (!filePath) return
+
+    try {
+      const fileName = getFileName(filePath)
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      const status = response.status
+      const contentType = response.headers.get('content-type') || ''
+
+      if (status === 200 && contentType.includes('application/octet-stream')) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        toast.success('Document downloaded successfully')
+      } else {
+        let errorMessage = 'Failed to download document'
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.message || errorData.error || errorMessage
+        } catch {
+          if (status === 400) {
+            errorMessage = 'Bad request: File path is required'
+          } else if (status === 403) {
+            errorMessage = 'Access denied: Invalid file path'
+          } else if (status === 404) {
+            errorMessage = 'File not found'
+          } else if (status === 401) {
+            errorMessage = 'Authentication required'
+          } else if (status >= 500) {
+            errorMessage = 'Server error occurred'
+          } else {
+            errorMessage = `Download failed with status ${status}`
+          }
+        }
+        toast.error(errorMessage)
+      }
+    } catch (error) {
+      console.error('Error downloading user document:', error)
+      toast.error(`Error downloading document: ${error.message}`)
+    }
+  }
+
   const checkApproverActiveForSubmission = async () => {
     const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/approver-status`, {
       method: 'GET',
@@ -156,6 +249,16 @@ function UserFormDetail() {
 
     if (!response.ok || !data.success) {
       toast.error(data.message || 'Failed to check approver status')
+      return false
+    }
+
+    if (data.data?.approver_assigned === false) {
+      toast.error('No approver is assigned for current company unit')
+      return false
+    }
+
+    if (data.data?.approver_exists === false) {
+      toast.error('Approver of this RACM does not exist')
       return false
     }
 
@@ -179,7 +282,10 @@ function UserFormDetail() {
 
   const handleSendForApproval = async () => {
     // Validation: Check if document is uploaded (either existing or newly selected)
-    const hasExistingDocument = formData?.doc_uploaded_by_user && formData.doc_uploaded_by_user !== ''
+    const existingUploadedDocs = getUserUploadedDocs().filter(
+      (doc) => !removedUploadedDocPaths.includes(doc.doc_uploaded_by_user)
+    )
+    const hasExistingDocument = existingUploadedDocs.length > 0
     const hasNewDocument = selectedFiles.length > 0
 
     if (!hasExistingDocument && !hasNewDocument) {
@@ -196,8 +302,9 @@ function UserFormDetail() {
       }
 
       // First, upload document if one is selected
-      let documentPath = formData?.doc_uploaded_by_user || null
-      let uploadedDocumentPaths = []
+      let uploadedDocumentPaths = existingUploadedDocs
+        .map((doc) => doc.doc_uploaded_by_user)
+        .filter(Boolean)
 
       if (selectedFiles.length > 0) {
         const formDataUpload = new FormData()
@@ -214,12 +321,12 @@ function UserFormDetail() {
         const uploadData = await uploadResponse.json()
 
         if (uploadResponse.ok && uploadData.success) {
-          documentPath = uploadData.data.doc_uploaded_by_user
-          uploadedDocumentPaths = Array.isArray(uploadData.data.doc_uploaded_by_user_docs)
+          const newUploadedPaths = Array.isArray(uploadData.data.doc_uploaded_by_user_docs)
             ? uploadData.data.doc_uploaded_by_user_docs
                 .map((doc) => doc.doc_uploaded_by_user)
                 .filter(Boolean)
-            : [documentPath].filter(Boolean)
+            : [uploadData.data.doc_uploaded_by_user].filter(Boolean)
+          uploadedDocumentPaths = [...uploadedDocumentPaths, ...newUploadedPaths]
         } else {
           const errorMessage = uploadData.message || 'Failed to upload documents'
           toast.error(errorMessage)
@@ -227,6 +334,11 @@ function UserFormDetail() {
           return
         }
       }
+
+      const documentPath = uploadedDocumentPaths[uploadedDocumentPaths.length - 1] || null
+      const shouldReplaceUploadedDocuments = isRejected && (
+        removedUploadedDocPaths.length > 0 || selectedFiles.length > 0
+      )
 
       // Then update only remarks, document, and status (users cannot edit other fields)
       const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
@@ -238,6 +350,7 @@ function UserFormDetail() {
         body: JSON.stringify({
           doc_uploaded_by_user: documentPath,
           doc_uploaded_by_user_docs: uploadedDocumentPaths,
+          replace_user_documents: shouldReplaceUploadedDocuments,
           remarks_by_user: remarksByUser,
           status: 'sent for approval'
         })
@@ -251,6 +364,7 @@ function UserFormDetail() {
           : 'RACM sent for approval successfully'
         toast.success(successMessage)
         setSelectedFiles([])
+        setRemovedUploadedDocPaths([])
         // Update local state immediately with new status
         if (data.data) {
           setFormData({
@@ -571,6 +685,11 @@ function UserFormDetail() {
   })
   const sampleDocs = getSampleDocs()
   const sampleDocCount = sampleDocs.length
+  const uploadedUserDocs = getUserUploadedDocs()
+  const visibleUploadedUserDocs = uploadedUserDocs.filter(
+    (doc) => !removedUploadedDocPaths.includes(doc.doc_uploaded_by_user)
+  )
+  const uploadedUserDocCount = visibleUploadedUserDocs.length
 
   return (
     <Box
@@ -648,7 +767,12 @@ function UserFormDetail() {
                     <Typography
                       variant="body2"
                       sx={{
-                        color: 'text.primary',
+                        color:
+                          formData?.status === 'Approved'
+                            ? '#10b981'
+                            : formData?.status === 'Rejected'
+                              ? '#ef4444'
+                              : 'text.primary',
                         fontWeight: 500,
                         fontSize: '0.9375rem',
                         lineHeight: 1.5,
@@ -1518,107 +1642,111 @@ function UserFormDetail() {
                       {fieldLabels.doc_uploaded_by_user}
                     </Typography>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      {(() => {
-                        const uploadedDocs = Array.isArray(formData?.doc_uploaded_by_user_docs)
-                          ? formData.doc_uploaded_by_user_docs
-                          : []
-                        const existingDocs = uploadedDocs.length > 0
-                          ? uploadedDocs
-                          : formData?.doc_uploaded_by_user
-                            ? [{ doc_uploaded_by_user: formData.doc_uploaded_by_user }]
-                            : []
-                        const hasAnyDocument = existingDocs.length > 0 || selectedFiles.length > 0
-
-                        return (
-                          <>
-                            {existingDocs.map((doc, index) => {
-                              const docPath = doc.doc_uploaded_by_user
-                              if (!docPath) return null
-
-                              return (
-                                <Box
-                                  key={`${docPath}-${doc.id || index}`}
-                                  sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
-                                >
-                                  <InsertDriveFileRoundedIcon
-                                    fontSize="small"
-                                    sx={{ color: 'text.secondary', flexShrink: 0 }}
-                                  />
-                                  <Typography
-                                    variant="body2"
-                                    sx={{
-                                      color: 'text.secondary',
-                                      flex: 1,
-                                      wordBreak: 'break-word',
-                                      lineHeight: 1.6,
-                                      fontSize: theme.typography.customSizes.medium,
-                                    }}
-                                  >
-                                    {getFileName(docPath)}
-                                  </Typography>
-                                </Box>
-                              )
-                            })}
-                            {selectedFiles.map((file, index) => (
-                              <Box
-                                key={`${file.name}-${file.size}-${file.lastModified}`}
-                                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
-                              >
-                                <AttachFileIcon
-                                  fontSize="small"
-                                  sx={{ color: 'primary.main', flexShrink: 0 }}
-                                />
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    color: 'text.primary',
-                                    flex: 1,
-                                    wordBreak: 'break-word',
-                                    lineHeight: 1.6,
-                                    fontSize: theme.typography.customSizes.medium,
-                                    fontWeight: 500,
-                                  }}
-                                >
-                                  {file.name}
-                                </Typography>
-                                <Tooltip title="Remove selected document">
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => handleRemoveFile(index)}
-                                    disabled={!isEditable}
-                                    sx={{ color: 'error.main' }}
-                                  >
-                                    <CloseIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </Box>
-                            ))}
-                            {!hasAnyDocument && (
-                              <Typography
-                                variant="body2"
-                                sx={{
-                                  color: 'text.disabled',
-                                  lineHeight: 1.6,
-                                  fontSize: theme.typography.customSizes.medium,
-                                }}
-                              >
-                                No document selected
-                              </Typography>
-                            )}
-                            {selectedFiles.length > 0 && (
-                              <Typography
-                                variant="caption"
-                                sx={{
-                                  color: 'text.secondary',
-                                  fontSize: theme.typography.customSizes.small,
-                                }}
-                              >
-                                Document listed above will be uploaded for approval.
-                              </Typography>
-                            )}
-                          </>
-                        )
-                      })()}
+                      {uploadedUserDocCount > 0 ? (
+                        <Box
+                          component="button"
+                          type="button"
+                          onClick={handleOpenUserDocsDialog}
+                          sx={{
+                            p: 1.5,
+                            borderRadius: 2,
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            width: '100%',
+                            textAlign: 'left',
+                            backgroundColor: 'transparent',
+                            cursor: 'pointer',
+                            font: 'inherit',
+                            transition: 'all 0.2s ease-in-out',
+                            '&:hover': {
+                              borderColor: 'primary.main',
+                              backgroundColor: 'action.hover',
+                            },
+                            '&:focus-visible': {
+                              outline: `2px solid ${theme.palette.primary.main}`,
+                              outlineOffset: 2,
+                            },
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: 'text.primary',
+                              fontWeight: 600,
+                              lineHeight: 1.5,
+                              fontSize: theme.typography.customSizes.medium,
+                            }}
+                          >
+                            Uploaded Documents ({uploadedUserDocCount})
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: 'text.secondary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            Click to view and download
+                          </Typography>
+                        </Box>
+                      ) : null}
+                      {selectedFiles.map((file, index) => (
+                        <Box
+                          key={`${file.name}-${file.size}-${file.lastModified}`}
+                          sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                        >
+                          <AttachFileIcon
+                            fontSize="small"
+                            sx={{ color: 'primary.main', flexShrink: 0 }}
+                          />
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: 'text.primary',
+                              flex: 1,
+                              wordBreak: 'break-word',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
+                              fontWeight: 500,
+                            }}
+                          >
+                            {file.name}
+                          </Typography>
+                          <Tooltip title="Remove selected document">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleRemoveFile(index)}
+                              disabled={!isEditable}
+                              sx={{ color: 'error.main' }}
+                            >
+                              <CloseIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      ))}
+                      {uploadedUserDocCount === 0 && selectedFiles.length === 0 && (
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.disabled',
+                            lineHeight: 1.6,
+                            fontSize: theme.typography.customSizes.medium,
+                          }}
+                        >
+                          No document selected
+                        </Typography>
+                      )}
+                      {selectedFiles.length > 0 && (
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: 'text.secondary',
+                            fontSize: theme.typography.customSizes.small,
+                          }}
+                        >
+                          Document listed above will be uploaded for approval.
+                        </Typography>
+                      )}
 
                       {isEditable && (
                         <label>
@@ -1740,11 +1868,11 @@ function UserFormDetail() {
                   {/* Send for Approval / Resubmit — visible only when document + changes exist, or while submitting */}
                   {isEditable &&
                     (() => {
-                      const hasExistingDocument = formData?.doc_uploaded_by_user && formData.doc_uploaded_by_user !== ''
+                      const hasExistingDocument = visibleUploadedUserDocs.length > 0
                       const hasNewDocument = selectedFiles.length > 0
                       const hasDocument = hasExistingDocument || hasNewDocument
 
-                      const hasDocumentChange = hasNewDocument
+                      const hasDocumentChange = hasNewDocument || removedUploadedDocPaths.length > 0
                       const originalRemarks = (formData?.remarks_by_user || '').trim()
                       const currentRemarks = (remarksByUser || '').trim()
                       const hasRemarksChange = originalRemarks !== currentRemarks
@@ -1804,6 +1932,103 @@ function UserFormDetail() {
             </Card>
           </Box>
       </Box>
+
+      <Dialog
+        open={userDocsDialogOpen}
+        onClose={handleCloseUserDocsDialog}
+        aria-labelledby="user-documents-dialog-title"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '94%', sm: '640px' },
+            maxWidth: '720px',
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="user-documents-dialog-title"
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 700,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          Uploaded Documents ({uploadedUserDocCount})
+        </DialogTitle>
+        <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
+          {visibleUploadedUserDocs.length > 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              {visibleUploadedUserDocs.map((doc, index) => (
+                <Box
+                  key={doc.id || `${doc.doc_uploaded_by_user}-${index}`}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    p: 1.5,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                  }}
+                >
+                  <InsertDriveFileRoundedIcon color="action" />
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 600,
+                        color: 'text.primary',
+                        overflowWrap: 'anywhere',
+                      }}
+                    >
+                      {getFileName(doc.doc_uploaded_by_user)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                    </Typography>
+                  </Box>
+                  <Tooltip title="Download">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDownloadUserDocument(doc.doc_uploaded_by_user)}
+                        aria-label={`Download ${getFileName(doc.doc_uploaded_by_user)}`}
+                      >
+                        <DownloadIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                  {isRejected && (
+                    <Button
+                      size="small"
+                      color="error"
+                      onClick={() => handleRemoveExistingUploadedDoc(doc.doc_uploaded_by_user)}
+                      sx={{ textTransform: 'none', minWidth: 'auto' }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No uploaded documents available.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={handleCloseUserDocsDialog}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={sampleDocsDialogOpen}

@@ -1282,7 +1282,7 @@ function RacmManagementDashboard() {
     setFilterActive(value)
   }
 
-  const showUnitColumn = companyUnitCount > 1 && coordinatorUnits.length > 0
+  const showUnitColumn = coordinatorUnits.length > 1
   const showUnitFilter = coordinatorUnits.length > 1
 
   // Add click outside handler
@@ -3243,7 +3243,7 @@ function RacmManagementDashboard() {
                   lineHeight: 1.6,
                 }}
               >
-                Warning: all associated sample documents and user-uploaded documents will be permanently removed from S3 and deleted from the document tables.
+                Warning: All associated sample documents and user-uploaded documents will be permanently removed from database.
               </Typography>
             </Box>
             <Box sx={{ mt: 2 }}>

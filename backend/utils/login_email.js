@@ -22,7 +22,7 @@ function roleLabel(role) {
 
 function buildLoginEmail({ emailId, role, companyName, tempPassword }) {
   const displayRole = roleLabel(role);
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173/user/login';
+  const frontendUrl = process.env.VITE_FRONTEND_URL || 'http://localhost:5173/user/login';
   const companyLine = companyName ? `\nCompany: ${companyName}\n` : '';
 
   return {

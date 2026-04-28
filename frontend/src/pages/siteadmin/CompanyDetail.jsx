@@ -263,14 +263,9 @@ function CompanyDetail() {
                                 <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'text.primary' }}>
                                   {unit.unit_name || 'N/A'}
                                 </Typography>
-                                <Grid container spacing={2} sx={{ mt: 0.5 }}>
-                                  <Grid item xs={12} sm={4}>
-                                    <DetailItem label="Unit ID" value={unit.unit_id} />
-                                  </Grid>
-                                  <Grid item xs={12} sm={8}>
-                                    <DetailItem label="Unit Address" value={unit.unit_address || 'N/A'} />
-                                  </Grid>
-                                </Grid>
+                                <Box sx={{ mt: 0.5 }}>
+                                  <DetailItem label="Unit Address" value={unit.unit_address || 'N/A'} />
+                                </Box>
                               </CardContent>
                             </Card>
                           </Grid>

@@ -379,12 +379,14 @@ async function getUsers(req, res) {
 async function getHomeStats(req, res) {
   try {
     const companyIdentifier = req.user.company_identifier;
+    const coordinatorEmail = normalizeEmail(req.user.email_id);
 
     if (!companyIdentifier) {
       return res.status(200).json({
         success: true,
         data: {
           coordinatorName: req.user.emp_name || req.user.email_id || 'User',
+          coordinatorUnits: [],
           totalUsers: 0,
           totalRacms: 0,
           approvedRacms: 0,
@@ -393,7 +395,7 @@ async function getHomeStats(req, res) {
       });
     }
 
-    const [usersResult, racmResult] = await Promise.all([
+    const [usersResult, racmResult, unitsResult] = await Promise.all([
       pool.query(
         `
           SELECT COUNT(*)::int AS total_users
@@ -418,6 +420,16 @@ async function getHomeStats(req, res) {
         `,
         [companyIdentifier]
       ),
+      pool.query(
+        `
+          SELECT DISTINCT unit_id, unit_name
+          FROM company_unit_master
+          WHERE company_identifier = $1
+            AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
+          ORDER BY unit_name ASC, unit_id ASC
+        `,
+        [companyIdentifier, coordinatorEmail]
+      ),
     ]);
 
     const userRow = usersResult.rows[0] || {};
@@ -427,6 +439,7 @@ async function getHomeStats(req, res) {
       success: true,
       data: {
         coordinatorName: req.user.emp_name || req.user.email_id || 'User',
+        coordinatorUnits: unitsResult.rows,
         totalUsers: Number(userRow.total_users || 0),
         totalRacms: Number(racmRow.total_racms || 0),
         approvedRacms: Number(racmRow.approved_racms || 0),
@@ -1125,7 +1138,7 @@ async function deleteUsers(req, res) {
       await client.query('ROLLBACK');
       return res.status(403).json({
         success: false,
-        message: 'You can delete only users from units mapped to you',
+        message: "You can't delete users from other units",
         unauthorized_users: unauthorizedUsers.map((row) => row.email_id),
       });
     }

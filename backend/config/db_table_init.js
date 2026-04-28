@@ -80,8 +80,8 @@ const REQUIRED_TABLES = {
     columns: {
       id: 'serial',
       form_id: 'character varying(255) NULL',
-      doc_uploaded_by_user: 'character varying(500) NULL',
       reason_by_approver: 'text NULL',
+      rejection_timestamp: 'timestamp without time zone NULL',
     },
     primaryKey: 'id',
   },
@@ -156,6 +156,7 @@ const REQUIRED_TABLES = {
       temp_password_encrypted: 'text NULL',
     },
     primaryKey: 'id',
+    unique: ['email_id'],
   },
 };
 

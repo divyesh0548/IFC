@@ -52,6 +52,7 @@ function UserManagement() {
   const [usersLoading, setUsersLoading] = useState(true)
   const [usersError, setUsersError] = useState('')
   const [unitFilter, setUnitFilter] = useState('all')
+  const [roleFilter, setRoleFilter] = useState('all')
 
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedUserEmails, setSelectedUserEmails] = useState(new Set())
@@ -104,6 +105,17 @@ function UserManagement() {
 
   const getUserUnitIds = (user) => splitUnitValue(user.unit_id)
   const getUserUnitNames = (user) => splitUnitValue(user.unit_name)
+  const formatRoleLabel = (role) => {
+    const normalizedRole = String(role || '').trim()
+    if (!normalizedRole) return '-'
+    if (normalizedRole === 'company_co') return 'Company Coordinator'
+
+    return normalizedRole
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(' ')
+  }
 
   const unitOptions = useMemo(() => {
     const unitsById = new Map()
@@ -136,15 +148,31 @@ function UserManagement() {
     return options
   }, [users])
 
-  const filteredUsers = useMemo(() => {
-    if (unitFilter === 'all') return users
+  const roleOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        users
+          .map((user) => String(user.role || '').trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b))
+  }, [users])
 
+  const filteredUsers = useMemo(() => {
     return users.filter((user) => {
       const unitIds = getUserUnitIds(user)
-      if (unitFilter === '__unassigned__') return unitIds.length === 0
-      return unitIds.includes(unitFilter)
+      const matchesUnit =
+        unitFilter === 'all'
+          ? true
+          : unitFilter === '__unassigned__'
+            ? unitIds.length === 0
+            : unitIds.includes(unitFilter)
+      const matchesRole =
+        roleFilter === 'all' ? true : String(user.role || '').trim() === roleFilter
+
+      return matchesUnit && matchesRole
     })
-  }, [users, unitFilter])
+  }, [users, unitFilter, roleFilter])
 
   const fetchUsers = useCallback(async () => {
     setUsersLoading(true)
@@ -177,7 +205,7 @@ function UserManagement() {
 
   useEffect(() => {
     setSelectedUserEmails(new Set())
-  }, [unitFilter])
+  }, [unitFilter, roleFilter])
 
   // Reset selection when delete mode is turned off (matches RacmManagementDashboard behavior)
   useEffect(() => {
@@ -601,6 +629,24 @@ function UserManagement() {
                 ))}
               </Select>
             </FormControl>
+            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 220 } }}>
+              <InputLabel id="role-filter-label">Role</InputLabel>
+              <Select
+                labelId="role-filter-label"
+                id="role-filter"
+                value={roleFilter}
+                label="Role"
+                onChange={(e) => setRoleFilter(e.target.value)}
+                disabled={usersLoading || roleOptions.length === 0}
+              >
+                <MenuItem value="all">All Roles</MenuItem>
+                {roleOptions.map((role) => (
+                  <MenuItem key={role} value={role}>
+                    {formatRoleLabel(role)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <Button
               variant="contained"
               color="secondary"
@@ -665,6 +711,7 @@ function UserManagement() {
                 {deleteMode ? <TableCell sx={{ py: 2, px: 3, width: 54 }} /> : null}
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Employee Name</TableCell>
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Email ID</TableCell>
+                <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Role</TableCell>
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Unit</TableCell>
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Department</TableCell>
                 <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Designation</TableCell>
@@ -674,20 +721,20 @@ function UserManagement() {
             <TableBody>
               {usersLoading ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 7 : 6} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5 }}>
                     <CircularProgress size={26} />
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 7 : 6} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5 }}>
                     No users found for your company.
                   </TableCell>
                 </TableRow>
               ) : filteredUsers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 7 : 6} align="center" sx={{ py: 5 }}>
-                    No users found for the selected unit.
+                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5 }}>
+                    No users found for the selected filters.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -704,9 +751,10 @@ function UserManagement() {
                       </TableCell>
                     ) : null}
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>
-                      {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (cc)' : ''}` : ''}
+                      {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (Company Coordinator)' : ''}` : ''}
                     </TableCell>
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.email_id || '-'}</TableCell>
+                    <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{formatRoleLabel(user.role)}</TableCell>
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.unit_name || user.unit_id || '-'}</TableCell>
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.department || '-'}</TableCell>
                     <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.designation || '-'}</TableCell>
