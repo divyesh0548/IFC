@@ -17,5 +17,9 @@ router.post('/delete-users', verifyCompanyCoordinator, controller.deleteUsers);
 router.get('/check-user/:email', verifyCompanyCoordinator, controller.checkUser);
 router.get('/check-user-role/:email', verifyCompanyCoordinator, controller.checkUserRole);
 router.get('/racm-audit-logs/:form_id', verifyCompanyCoordinator, controller.getRacmAuditLogs);
+router.get('/communication-matrix', verifyCompanyCoordinator, controller.getCommunicationMatrix);
+router.post('/communication-matrix/common', verifyCompanyCoordinator, controller.addCommonCommunicationEmails);
+router.post('/communication-matrix/specific', verifyCompanyCoordinator, controller.addBusinessProcessSpecificCommunicationEmails);
+router.post('/communication-matrix/delete', verifyCompanyCoordinator, controller.deleteCommunicationMatrixEntries);
 
 module.exports = router;

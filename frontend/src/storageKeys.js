@@ -37,3 +37,15 @@ export function clearCachedUserProfile() {
   }
 }
 
+export function clearCompanyFinancialYearOptionsCache() {
+  try {
+    Object.keys(localStorage).forEach((key) => {
+      if (key.startsWith('ifc_financial_year_options_')) {
+        localStorage.removeItem(key)
+      }
+    })
+  } catch (_) {
+    /* ignore */
+  }
+}
+

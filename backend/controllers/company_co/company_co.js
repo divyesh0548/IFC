@@ -11,6 +11,17 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
 }
 
+const DEFAULT_BUSINESS_PROCESSES = [
+  'Purchase to Pay',
+  'Order to Cash',
+  'Hire to Retire',
+  'Capital Expenditure',
+  'Treasury',
+  'Financial Statement Closure Process',
+  'Information Technology General Controls',
+  'Entity Level Controls',
+];
+
 function generateUnitIdentifier(unitName) {
   const namePart = String(unitName || 'UNIT')
     .replace(/[^a-zA-Z0-9]/g, '')
@@ -169,7 +180,6 @@ async function createUnitMappedPrivilegedUser(client, coordinator, payload = {},
 
   const companyIdentifier = coordinator.company_identifier;
   const emailId = normalizeEmail(payload.email_id);
-  const unitId = payload.unit_id && String(payload.unit_id).trim() ? String(payload.unit_id).trim() : '';
 
   if (!companyIdentifier) {
     const error = new Error('Company identifier is required');
@@ -189,12 +199,6 @@ async function createUnitMappedPrivilegedUser(client, coordinator, payload = {},
     throw error;
   }
 
-  if (!unitId) {
-    const error = new Error('Unit is required');
-    error.statusCode = 400;
-    throw error;
-  }
-
   const existingUser = await client.query(
     'SELECT id FROM ifc_users WHERE LOWER(TRIM(email_id)) = $1 LIMIT 1',
     [emailId]
@@ -202,24 +206,6 @@ async function createUnitMappedPrivilegedUser(client, coordinator, payload = {},
 
   if (existingUser.rows.length > 0) {
     const error = new Error('User with this email already exists');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const unitResult = await client.query(
-    `
-      SELECT id, unit_id, unit_name
-      FROM company_unit_master
-      WHERE company_identifier = $1
-        AND unit_id = $2
-        AND COALESCE(TRIM(${config.columnName}), '') = ''
-      FOR UPDATE
-    `,
-    [companyIdentifier, unitId]
-  );
-
-  if (unitResult.rows.length === 0) {
-    const error = new Error(`${config.roleLabel} is already mapped for this unit`);
     error.statusCode = 409;
     throw error;
   }
@@ -245,18 +231,8 @@ async function createUnitMappedPrivilegedUser(client, coordinator, payload = {},
     [emailId, tempPasswordHash, config.role, companyIdentifier, 1, tempPasswordEncrypted]
   );
 
-  await client.query(
-    `
-      UPDATE company_unit_master
-      SET ${config.columnName} = $1
-      WHERE id = $2
-    `,
-    [emailId, unitResult.rows[0].id]
-  );
-
   return {
     user: userResult.rows[0],
-    unit: unitResult.rows[0],
     loginEmailQueued: true,
   };
 }
@@ -395,15 +371,48 @@ async function getHomeStats(req, res) {
       });
     }
 
-    const [usersResult, racmResult, unitsResult] = await Promise.all([
+    const unitsResult = await pool.query(
+      `
+        SELECT DISTINCT
+          NULLIF(TRIM(unit_id), '') AS unit_id,
+          NULLIF(TRIM(unit_name), '') AS unit_name
+        FROM company_unit_master
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
+          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+        ORDER BY unit_name ASC, unit_id ASC
+      `,
+      [companyIdentifier, coordinatorEmail]
+    );
+
+    const mappedUnitIds = unitsResult.rows
+      .map((row) => String(row.unit_id || '').trim())
+      .filter(Boolean);
+
+    if (mappedUnitIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          coordinatorName: req.user.emp_name || req.user.email_id || 'User',
+          coordinatorUnits: unitsResult.rows,
+          totalUsers: 0,
+          totalRacms: 0,
+          approvedRacms: 0,
+          rejectedRacms: 0,
+        },
+      });
+    }
+
+    const [usersResult, racmResult] = await Promise.all([
       pool.query(
         `
           SELECT COUNT(*)::int AS total_users
           FROM ifc_users
           WHERE company_identifier = $1
             AND role = 'user'
+            AND NULLIF(TRIM(unit_id), '') = ANY($2::text[])
         `,
-        [companyIdentifier]
+        [companyIdentifier, mappedUnitIds]
       ),
       pool.query(
         `
@@ -417,18 +426,9 @@ async function getHomeStats(req, res) {
             )::int AS rejected_racms
           FROM control_forms
           WHERE company_identifier = $1
+            AND NULLIF(TRIM(unit_id), '') = ANY($2::text[])
         `,
-        [companyIdentifier]
-      ),
-      pool.query(
-        `
-          SELECT DISTINCT unit_id, unit_name
-          FROM company_unit_master
-          WHERE company_identifier = $1
-            AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
-          ORDER BY unit_name ASC, unit_id ASC
-        `,
-        [companyIdentifier, coordinatorEmail]
+        [companyIdentifier, mappedUnitIds]
       ),
     ]);
 
@@ -467,6 +467,7 @@ async function getUnitManagement(req, res) {
           currentCoordinatorUnits: [],
           approvers: [],
           coordinators: [],
+          unmappedRoleUsers: [],
           unmappedCoordinatorUnits: [],
           unmappedApproverUnits: [],
           assignmentCoordinators: [],
@@ -505,6 +506,7 @@ async function getUnitManagement(req, res) {
       currentUnitsResult,
       approversResult,
       coordinatorsResult,
+      unmappedRoleUsersResult,
       unmappedCoordinatorUnitsResult,
       unmappedApproverUnitsResult,
       assignmentCoordinatorsResult,
@@ -523,6 +525,46 @@ async function getUnitManagement(req, res) {
       ),
       pool.query(buildDistinctPeopleQuery('approver_email_id'), [companyIdentifier]),
       pool.query(buildDistinctPeopleQuery('coordinator_email_id'), [companyIdentifier]),
+      pool.query(
+        `
+          SELECT *
+          FROM (
+            SELECT
+              LOWER(TRIM(u.email_id)) AS email_id,
+              COALESCE(NULLIF(TRIM(u.emp_name), ''), LOWER(TRIM(u.email_id))) AS display_name,
+              'company_co' AS role
+            FROM ifc_users u
+            WHERE u.company_identifier = $1
+              AND u.role = 'company_co'
+              AND COALESCE(TRIM(u.email_id), '') <> ''
+              AND NOT EXISTS (
+                SELECT 1
+                FROM company_unit_master cum
+                WHERE cum.company_identifier = u.company_identifier
+                  AND LOWER(TRIM(COALESCE(cum.coordinator_email_id, ''))) = LOWER(TRIM(u.email_id))
+              )
+
+            UNION ALL
+
+            SELECT
+              LOWER(TRIM(u.email_id)) AS email_id,
+              COALESCE(NULLIF(TRIM(u.emp_name), ''), LOWER(TRIM(u.email_id))) AS display_name,
+              'approver' AS role
+            FROM ifc_users u
+            WHERE u.company_identifier = $1
+              AND u.role = 'approver'
+              AND COALESCE(TRIM(u.email_id), '') <> ''
+              AND NOT EXISTS (
+                SELECT 1
+                FROM company_unit_master cum
+                WHERE cum.company_identifier = u.company_identifier
+                  AND LOWER(TRIM(COALESCE(cum.approver_email_id, ''))) = LOWER(TRIM(u.email_id))
+              )
+          ) unmapped_role_users
+          ORDER BY role ASC, display_name ASC, email_id ASC
+        `,
+        [companyIdentifier]
+      ),
       pool.query(buildUnmappedUnitsQuery('coordinator_email_id'), [companyIdentifier]),
       pool.query(buildUnmappedUnitsQuery('approver_email_id'), [companyIdentifier]),
       pool.query(
@@ -581,6 +623,7 @@ async function getUnitManagement(req, res) {
         currentCoordinatorUnits: currentUnitsResult.rows,
         approvers: approversResult.rows,
         coordinators: coordinatorsResult.rows,
+        unmappedRoleUsers: unmappedRoleUsersResult.rows,
         unmappedCoordinatorUnits: unmappedCoordinatorUnitsResult.rows,
         unmappedApproverUnits: unmappedApproverUnitsResult.rows,
         assignmentCoordinators: assignmentCoordinatorsResult.rows,
@@ -603,7 +646,7 @@ async function createUnitCoordinator(req, res) {
   try {
     await client.query('BEGIN');
 
-    const { user, unit, loginEmailQueued } = await createUnitMappedPrivilegedUser(
+    const { user, loginEmailQueued } = await createUnitMappedPrivilegedUser(
       client,
       req.user,
       req.body,
@@ -615,7 +658,7 @@ async function createUnitCoordinator(req, res) {
     return res.status(201).json({
       success: true,
       message: 'Company coordinator created successfully',
-      data: { user, unit, loginEmailQueued },
+      data: { user, loginEmailQueued },
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -650,7 +693,7 @@ async function createUnitApprover(req, res) {
   try {
     await client.query('BEGIN');
 
-    const { user, unit, loginEmailQueued } = await createUnitMappedPrivilegedUser(
+    const { user, loginEmailQueued } = await createUnitMappedPrivilegedUser(
       client,
       req.user,
       req.body,
@@ -662,7 +705,7 @@ async function createUnitApprover(req, res) {
     return res.status(201).json({
       success: true,
       message: 'Approver created successfully',
-      data: { user, unit, loginEmailQueued },
+      data: { user, loginEmailQueued },
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -976,18 +1019,99 @@ async function createUser(req, res) {
 
 async function createUsersBulk(req, res) {
   const coordinator = req.user;
-  const inputEmails = Array.isArray(req.body?.email_ids) ? req.body.email_ids : [];
-  const normalizedEmails = [...new Set(inputEmails.map(normalizeEmail).filter(Boolean))];
-  const invalidEmails = normalizedEmails.filter((email) => !isValidEmail(email));
-  const emailIds = normalizedEmails.filter((email) => isValidEmail(email));
+  let requestAborted = false;
+  const markRequestAborted = () => {
+    requestAborted = true;
+  };
+  req.on('aborted', markRequestAborted);
+  req.on('close', markRequestAborted);
 
-  if (emailIds.length === 0) {
+  const companyIdentifier = coordinator.company_identifier || null;
+  const inputEmails = Array.isArray(req.body?.email_ids) ? req.body.email_ids : [];
+  const usersInput = Array.isArray(req.body?.users) ? req.body.users : [];
+  const selectedUnitId = req.body?.unit_id && String(req.body.unit_id).trim()
+    ? String(req.body.unit_id).trim()
+    : null;
+
+  if (usersInput.length > 0 && !selectedUnitId) {
     return res.status(400).json({
       success: false,
-      message: invalidEmails.length > 0
-        ? 'No valid email IDs found for user creation'
-        : 'At least one email ID is required',
-      invalidEmails,
+      message: 'Unit is required for bulk user upload',
+    });
+  }
+
+  if (usersInput.length > 0 && !companyIdentifier) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company identifier is missing for coordinator',
+    });
+  }
+
+  const normalizedEmails = [...new Set(inputEmails.map(normalizeEmail).filter(Boolean))];
+  const invalidEmails = normalizedEmails.filter((email) => !isValidEmail(email));
+  const legacyEmailIds = normalizedEmails.filter((email) => isValidEmail(email));
+
+  const uploadRows = [];
+  const skippedRows = [];
+  const invalidRowEmails = [];
+
+  if (usersInput.length > 0) {
+    usersInput.forEach((row, index) => {
+      const rowNumber = index + 2;
+      const emailId = normalizeEmail(row?.email_id);
+
+      if (!emailId) {
+        skippedRows.push({
+          rowNumber,
+          reason: 'Email ID is missing',
+        });
+        return;
+      }
+
+      if (!isValidEmail(emailId)) {
+        invalidRowEmails.push(emailId);
+        skippedRows.push({
+          rowNumber,
+          email_id: emailId,
+          reason: 'Invalid email format',
+        });
+        return;
+      }
+
+      uploadRows.push({
+        rowNumber,
+        payload: {
+          email_id: emailId,
+          emp_name: row?.emp_name || null,
+          department: row?.department || null,
+          designation: row?.designation || null,
+          mobile: (() => {
+            const onlyDigits = String(row?.mobile || '').replace(/\D/g, '');
+            return onlyDigits.length === 10 ? onlyDigits : null;
+          })(),
+          unit_id: selectedUnitId,
+        },
+      });
+    });
+  }
+
+  const emailPayloadRows = legacyEmailIds.map((emailId) => ({
+    rowNumber: null,
+    payload: { email_id: emailId },
+  }));
+
+  const rowsToCreate = [...uploadRows, ...emailPayloadRows];
+
+  if (rowsToCreate.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: usersInput.length > 0
+        ? 'No valid rows found for user creation'
+        : (invalidEmails.length > 0
+          ? 'No valid email IDs found for user creation'
+          : 'At least one email ID is required'),
+      invalidEmails: [...invalidEmails, ...invalidRowEmails],
+      skippedRows,
     });
   }
 
@@ -996,21 +1120,59 @@ async function createUsersBulk(req, res) {
   try {
     await client.query('BEGIN');
 
+    if (selectedUnitId) {
+      const assignedUnitResult = await client.query(
+        `
+          SELECT unit_id
+          FROM company_unit_master
+          WHERE company_identifier = $1
+            AND unit_id = $2
+            AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $3
+          LIMIT 1
+        `,
+        [companyIdentifier, selectedUnitId, normalizeEmail(coordinator.email_id)]
+      );
+
+      if (assignedUnitResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          success: false,
+          message: 'Selected unit is not mapped with this company coordinator',
+        });
+      }
+    }
+
     const createdUsers = [];
     const skippedEmails = [];
+    const duplicateRows = [];
 
-    for (const emailId of emailIds) {
+    for (const item of rowsToCreate) {
+      if (requestAborted) {
+        const abortError = new Error('User insertion cancelled by client navigation');
+        abortError.statusCode = 499;
+        throw abortError;
+      }
+
       try {
-        const { user, loginEmailQueued } = await createCompanyUser(client, coordinator, { email_id: emailId });
+        const { user, loginEmailQueued } = await createCompanyUser(client, coordinator, item.payload);
         createdUsers.push({
           id: user.id,
           email_id: user.email_id,
           company_identifier: user.company_identifier,
+          unit_id: user.unit_id,
           loginEmailQueued,
         });
       } catch (error) {
         if (error.statusCode === 409) {
-          skippedEmails.push(emailId);
+          const duplicateEmail = normalizeEmail(item.payload?.email_id);
+          skippedEmails.push(duplicateEmail);
+          if (item.rowNumber != null) {
+            duplicateRows.push({
+              rowNumber: item.rowNumber,
+              email_id: duplicateEmail,
+              reason: 'User already exists',
+            });
+          }
           continue;
         }
         throw error;
@@ -1024,11 +1186,22 @@ async function createUsersBulk(req, res) {
       message: `Created ${createdUsers.length} user(s) successfully`,
       createdUsers,
       skippedEmails,
-      invalidEmails,
+      invalidEmails: [...invalidEmails, ...invalidRowEmails],
+      skippedRows: [...skippedRows, ...duplicateRows],
     });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error creating users in bulk:', error);
+
+    if (error.statusCode === 499) {
+      if (!res.headersSent) {
+        return res.status(499).json({
+          success: false,
+          message: 'User insertion cancelled by client navigation',
+        });
+      }
+      return;
+    }
 
     if (error.statusCode) {
       return res.status(error.statusCode).json({
@@ -1042,6 +1215,8 @@ async function createUsersBulk(req, res) {
       message: 'Internal server error',
     });
   } finally {
+    req.off('aborted', markRequestAborted);
+    req.off('close', markRequestAborted);
     client.release();
   }
 }
@@ -1360,6 +1535,477 @@ async function getRacmAuditLogs(req, res) {
   }
 }
 
+async function getCommunicationMatrix(req, res) {
+  try {
+    const companyIdentifier = req.user.company_identifier;
+    const coordinatorEmail = normalizeEmail(req.user.email_id);
+    const businessProcessFilter = req.query.business_process != null
+      ? String(req.query.business_process).trim()
+      : '';
+
+    if (!companyIdentifier) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          company_identifier: null,
+          mappedUnits: [],
+          businessProcesses: [],
+          entries: [],
+        },
+      });
+    }
+
+    const mappedUnitsResult = await pool.query(
+      `
+        SELECT DISTINCT
+          NULLIF(TRIM(unit_id), '') AS unit_id,
+          NULLIF(TRIM(unit_name), '') AS unit_name
+        FROM company_unit_master
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
+          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+        ORDER BY unit_name ASC, unit_id ASC
+      `,
+      [companyIdentifier, coordinatorEmail]
+    );
+
+    const mappedUnits = mappedUnitsResult.rows;
+    const mappedUnitIds = mappedUnits.map((row) => String(row.unit_id || '').trim()).filter(Boolean);
+
+    if (mappedUnitIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          company_identifier: companyIdentifier,
+          mappedUnits,
+          businessProcesses: [],
+          entries: [],
+        },
+      });
+    }
+
+    const businessProcessesResult = await pool.query(
+      `
+        SELECT DISTINCT TRIM(business_process) AS business_process
+        FROM control_forms
+        WHERE company_identifier = $1
+          AND unit_id = ANY($2::text[])
+          AND NULLIF(TRIM(COALESCE(business_process, '')), '') IS NOT NULL
+        ORDER BY business_process ASC
+      `,
+      [companyIdentifier, mappedUnitIds]
+    );
+    const allBusinessProcesses = Array.from(
+      new Set([
+        ...DEFAULT_BUSINESS_PROCESSES,
+        ...businessProcessesResult.rows
+          .map((row) => String(row.business_process || '').trim())
+          .filter(Boolean),
+      ])
+    ).sort((a, b) => a.localeCompare(b));
+
+    let entriesQuery = `
+      SELECT
+        r.id,
+        r.email_id,
+        r.business_process,
+        r.unit_id,
+        COALESCE(NULLIF(TRIM(cum.unit_name), ''), r.unit_id) AS unit_name,
+        r.created_at
+      FROM racm_cc_users r
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = r.company_identifier
+       AND cum.unit_id = r.unit_id
+      WHERE r.company_identifier = $1
+        AND r.unit_id = ANY($2::text[])
+    `;
+    const params = [companyIdentifier, mappedUnitIds];
+    if (businessProcessFilter) {
+      entriesQuery += ` AND TRIM(COALESCE(r.business_process, '')) = $3`;
+      params.push(businessProcessFilter);
+    }
+    entriesQuery += ' ORDER BY r.business_process ASC, r.email_id ASC, unit_name ASC';
+
+    const entriesResult = await pool.query(entriesQuery, params);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        company_identifier: companyIdentifier,
+        mappedUnits,
+        businessProcesses: allBusinessProcesses,
+        entries: entriesResult.rows,
+      },
+    });
+  } catch (error) {
+    console.error('Get communication matrix error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch communication matrix',
+    });
+  }
+}
+
+async function addCommonCommunicationEmails(req, res) {
+  const coordinator = req.user;
+  const companyIdentifier = coordinator.company_identifier;
+  const coordinatorEmail = normalizeEmail(coordinator.email_id);
+  const inputEmails = Array.isArray(req.body?.email_ids) ? req.body.email_ids : [];
+  const selectedUnitIdsInput = Array.isArray(req.body?.unit_ids) ? req.body.unit_ids : [];
+
+  if (!companyIdentifier) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company identifier is missing for coordinator',
+    });
+  }
+
+  const normalizedEmails = [...new Set(inputEmails.map(normalizeEmail).filter(Boolean))];
+  if (normalizedEmails.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'At least one email ID is required',
+    });
+  }
+
+  const invalidEmails = normalizedEmails.filter((email) => !isValidEmail(email));
+  if (invalidEmails.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid email format found',
+      invalidEmails,
+    });
+  }
+
+  const normalizedUnitIds = [...new Set(selectedUnitIdsInput.map((value) => String(value || '').trim()).filter(Boolean))];
+  if (normalizedUnitIds.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'At least one mapped unit is required',
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const mappedUnitsResult = await client.query(
+      `
+        SELECT DISTINCT NULLIF(TRIM(unit_id), '') AS unit_id
+        FROM company_unit_master
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
+          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+      `,
+      [companyIdentifier, coordinatorEmail]
+    );
+
+    const mappedSet = new Set(
+      mappedUnitsResult.rows
+        .map((row) => String(row.unit_id || '').trim())
+        .filter(Boolean)
+    );
+    const unauthorizedUnits = normalizedUnitIds.filter((unitId) => !mappedSet.has(unitId));
+    if (unauthorizedUnits.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'One or more selected units are not mapped to this company coordinator',
+        unauthorizedUnits,
+      });
+    }
+
+    const businessProcesses = [...DEFAULT_BUSINESS_PROCESSES];
+
+    if (businessProcesses.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'No business process master data found',
+      });
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+
+    for (const unitId of normalizedUnitIds) {
+      for (const businessProcess of businessProcesses) {
+        for (const emailId of normalizedEmails) {
+          const result = await client.query(
+            `
+              INSERT INTO racm_cc_users (email_id, business_process, company_identifier, unit_id)
+              SELECT $1::text, $2::text, $3::text, $4::text
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM racm_cc_users
+                WHERE LOWER(TRIM(email_id)) = $5
+                  AND company_identifier = $3
+                  AND unit_id = $4
+                  AND TRIM(COALESCE(business_process, '')) = $2::text
+              )
+            `,
+            [emailId, businessProcess, companyIdentifier, unitId, emailId]
+          );
+          if (result.rowCount > 0) inserted += 1;
+          else skipped += 1;
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    return res.status(201).json({
+      success: true,
+      message: 'Common CC email(s) added successfully',
+      inserted,
+      skipped,
+      businessProcessCount: businessProcesses.length,
+      unitCount: normalizedUnitIds.length,
+      emailCount: normalizedEmails.length,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Add common communication emails error:', error);
+    if (error.code === '23505') {
+      return res.status(409).json({
+        success: false,
+        message: 'One or more email IDs already exist with conflicting unique constraint',
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to add communication emails',
+    });
+  } finally {
+    client.release();
+  }
+}
+
+async function addBusinessProcessSpecificCommunicationEmails(req, res) {
+  const coordinator = req.user;
+  const companyIdentifier = coordinator.company_identifier;
+  const coordinatorEmail = normalizeEmail(coordinator.email_id);
+  const inputEmails = Array.isArray(req.body?.email_ids) ? req.body.email_ids : [];
+  const selectedUnitIdsInput = Array.isArray(req.body?.unit_ids) ? req.body.unit_ids : [];
+  const businessProcess = req.body?.business_process != null ? String(req.body.business_process).trim() : '';
+
+  if (!companyIdentifier) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company identifier is missing for coordinator',
+    });
+  }
+
+  if (!businessProcess) {
+    return res.status(400).json({
+      success: false,
+      message: 'Business Process is required',
+    });
+  }
+
+  const normalizedEmails = [...new Set(inputEmails.map(normalizeEmail).filter(Boolean))];
+  if (normalizedEmails.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'At least one email ID is required',
+    });
+  }
+
+  const invalidEmails = normalizedEmails.filter((email) => !isValidEmail(email));
+  if (invalidEmails.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid email format found',
+      invalidEmails,
+    });
+  }
+
+  const normalizedUnitIds = [...new Set(selectedUnitIdsInput.map((value) => String(value || '').trim()).filter(Boolean))];
+  if (normalizedUnitIds.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'At least one mapped unit is required',
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const mappedUnitsResult = await client.query(
+      `
+        SELECT DISTINCT NULLIF(TRIM(unit_id), '') AS unit_id
+        FROM company_unit_master
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
+          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+      `,
+      [companyIdentifier, coordinatorEmail]
+    );
+
+    const mappedSet = new Set(
+      mappedUnitsResult.rows
+        .map((row) => String(row.unit_id || '').trim())
+        .filter(Boolean)
+    );
+    const unauthorizedUnits = normalizedUnitIds.filter((unitId) => !mappedSet.has(unitId));
+    if (unauthorizedUnits.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'One or more selected units are not mapped to this company coordinator',
+        unauthorizedUnits,
+      });
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+    for (const unitId of normalizedUnitIds) {
+      for (const emailId of normalizedEmails) {
+        const result = await client.query(
+          `
+            INSERT INTO racm_cc_users (email_id, business_process, company_identifier, unit_id)
+            SELECT $1::text, $2::text, $3::text, $4::text
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM racm_cc_users
+              WHERE LOWER(TRIM(email_id)) = $5
+                AND company_identifier = $3
+                AND unit_id = $4
+                AND TRIM(COALESCE(business_process, '')) = $2::text
+            )
+          `,
+          [emailId, businessProcess, companyIdentifier, unitId, emailId]
+        );
+        if (result.rowCount > 0) inserted += 1;
+        else skipped += 1;
+      }
+    }
+
+    await client.query('COMMIT');
+    return res.status(201).json({
+      success: true,
+      message: 'Business Process specific email(s) added successfully',
+      inserted,
+      skipped,
+      business_process: businessProcess,
+      unitCount: normalizedUnitIds.length,
+      emailCount: normalizedEmails.length,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Add business process specific communication emails error:', error);
+    if (error.code === '23505') {
+      return res.status(409).json({
+        success: false,
+        message: 'One or more email IDs already exist with conflicting unique constraint',
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to add communication emails',
+    });
+  } finally {
+    client.release();
+  }
+}
+
+async function deleteCommunicationMatrixEntries(req, res) {
+  const coordinator = req.user;
+  const companyIdentifier = coordinator.company_identifier;
+  const coordinatorEmail = normalizeEmail(coordinator.email_id);
+  const entryIdsInput = Array.isArray(req.body?.entry_ids) ? req.body.entry_ids : [];
+  const entryIds = [...new Set(entryIdsInput.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+
+  if (!companyIdentifier) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company identifier is missing for coordinator',
+    });
+  }
+
+  if (entryIds.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'At least one communication entry is required for deletion',
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const mappedUnitsResult = await client.query(
+      `
+        SELECT DISTINCT NULLIF(TRIM(unit_id), '') AS unit_id
+        FROM company_unit_master
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
+          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+      `,
+      [companyIdentifier, coordinatorEmail]
+    );
+    const mappedUnitIds = mappedUnitsResult.rows
+      .map((row) => String(row.unit_id || '').trim())
+      .filter(Boolean);
+
+    if (mappedUnitIds.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'No mapped units found for this company coordinator',
+      });
+    }
+
+    const ownershipResult = await client.query(
+      `
+        SELECT id
+        FROM racm_cc_users
+        WHERE company_identifier = $1
+          AND unit_id = ANY($2::text[])
+          AND id = ANY($3::int[])
+      `,
+      [companyIdentifier, mappedUnitIds, entryIds]
+    );
+    const allowedIds = ownershipResult.rows.map((row) => Number(row.id));
+    const allowedIdSet = new Set(allowedIds);
+    const unauthorizedIds = entryIds.filter((id) => !allowedIdSet.has(id));
+    if (unauthorizedIds.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'One or more entries are not accessible for deletion',
+        unauthorizedIds,
+      });
+    }
+
+    const deleteResult = await client.query(
+      `
+        DELETE FROM racm_cc_users
+        WHERE company_identifier = $1
+          AND id = ANY($2::int[])
+        RETURNING id
+      `,
+      [companyIdentifier, allowedIds]
+    );
+
+    await client.query('COMMIT');
+    return res.status(200).json({
+      success: true,
+      message: `Deleted ${deleteResult.rowCount} communication entr${deleteResult.rowCount === 1 ? 'y' : 'ies'}`,
+      deletedIds: deleteResult.rows.map((row) => Number(row.id)),
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Delete communication matrix entries error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete communication entries',
+    });
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   getUsers,
   getHomeStats,
@@ -1374,4 +2020,8 @@ module.exports = {
   checkUser,
   checkUserRole,
   getRacmAuditLogs,
+  getCommunicationMatrix,
+  addCommonCommunicationEmails,
+  addBusinessProcessSpecificCommunicationEmails,
+  deleteCommunicationMatrixEntries,
 };

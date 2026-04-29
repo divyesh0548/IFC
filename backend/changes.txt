@@ -4,28 +4,6 @@
 
 
 
-
-Control Form Schema changes : 
-
-columns to be added : Control number,
-Account balance/ disclosure,
-Risk heat, 
-Process activity and walkthrough details --> process_walkthrough 
-Does the control rely on information produced by the entity? --> control_relies_on_ipe
-Will we obtain audit evidence of the accuracy and completeness of information produced by the entity by testing controls or by performing procedures directly on the information?,  --> audit_evidence_accuracy
-Key Control, 
-Application Name, 
-Control Performer, 
-Control Owner, 
-Procedures performed to evaluate design and determine implementation of the control, --> control_design_procs 
-Conclusion on design of control,   --> control_design_conclusion
-Description of the deficiency identified in control design --> design_deficiency_desc
-Sample Size
-
-
-
-
-
 Scenarios to consider:
 
 RACM assignment can't be changed once it is Approved.
@@ -93,20 +71,10 @@ Can coordinator make changes once RACM is sent for approval or Approved or Rejec
 
 How to handle Control Number generation, cause RACMs privide by Mayank sir have no such field.
 
-What fields are necessary for RACM creation. Without them RACM will not be initiated.
-
-Which users to put in CC for RACM related emails?
-
 Sapan sir said to display number of RACMs in sample required excel. 
 
 
 
-
-Active RACM - Can't be changed by coordinator
-
-
 Prompts : 
 
-Bulk User creation via excel upload.
-
-Communication Matrix for Email IDs to be kept in CC for RACM Assignment. --> Two options whether same for all cycles or Different for different cycles.
+C:\Divyesh\IFC\AmazonDB\frontend\src\pages\auditor\Auditor_dashboard.jsx --> Change the sequence of columns 1. Business Process 2. Standard Control Description 3. Financial Year 4. Process Owner 5. Unit Name. Keep rest as its current position. 

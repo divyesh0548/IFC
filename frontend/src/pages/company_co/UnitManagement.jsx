@@ -8,7 +8,9 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Checkbox from '@mui/material/Checkbox'
 import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
@@ -22,10 +24,7 @@ import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded'
-import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
-import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
@@ -34,6 +33,7 @@ const emptyData = {
   currentCoordinatorUnits: [],
   approvers: [],
   coordinators: [],
+  unmappedRoleUsers: [],
   unmappedCoordinatorUnits: [],
   unmappedApproverUnits: [],
   assignmentCoordinators: [],
@@ -45,7 +45,6 @@ const createDialogDefaults = {
   open: false,
   type: 'company_co',
   email: '',
-  unitId: '',
   submitting: false,
   error: '',
 }
@@ -63,51 +62,9 @@ const assignmentDialogDefaults = {
   unit: null,
   role: 'company_co',
   email: '',
+  confirmExternalAssignment: false,
   submitting: false,
   error: '',
-}
-
-function SummaryPanel({ title, count, icon }) {
-  const theme = useTheme()
-
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 2.5,
-        borderRadius: 2,
-        border: '1px solid',
-        borderColor: 'divider',
-        backgroundColor: alpha(theme.palette.background.paper, 0.92),
-        minHeight: 118,
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0 }}>
-          <Box
-            sx={{
-              width: 40,
-              height: 40,
-              borderRadius: 2,
-              display: 'grid',
-              placeItems: 'center',
-              color: theme.palette.primary.main,
-              backgroundColor: alpha(theme.palette.primary.main, 0.1),
-              flexShrink: 0,
-            }}
-          >
-            {icon}
-          </Box>
-          <Typography sx={{ fontWeight: 800, color: 'text.primary' }}>
-            {title}
-          </Typography>
-        </Box>
-        <Typography sx={{ fontSize: '1.65rem', fontWeight: 900, color: 'text.primary' }}>
-          {count}
-        </Typography>
-      </Box>
-    </Paper>
-  )
 }
 
 function UnitManagement() {
@@ -148,6 +105,9 @@ function UnitManagement() {
               : [],
             approvers: Array.isArray(result.data?.approvers) ? result.data.approvers : [],
             coordinators: Array.isArray(result.data?.coordinators) ? result.data.coordinators : [],
+            unmappedRoleUsers: Array.isArray(result.data?.unmappedRoleUsers)
+              ? result.data.unmappedRoleUsers
+              : [],
             unmappedCoordinatorUnits: Array.isArray(result.data?.unmappedCoordinatorUnits)
               ? result.data.unmappedCoordinatorUnits
               : [],
@@ -202,7 +162,11 @@ function UnitManagement() {
     }
   }, [assignMode, assignmentDialog.open])
 
-  const getCreateUnits = () => data.units
+  const mappedUnitIdSet = new Set(
+    data.currentCoordinatorUnits
+      .map((unit) => String(unit.unit_id || '').trim())
+      .filter(Boolean)
+  )
 
   const getAssignmentOptions = (role, unit = assignmentDialog.unit) => {
     const currentEmail = role === 'approver'
@@ -220,11 +184,9 @@ function UnitManagement() {
   }
 
   const handleOpenCreateDialog = () => {
-    const units = getCreateUnits()
     setCreateDialog({
       ...createDialogDefaults,
       open: true,
-      unitId: units[0]?.unit_id || '',
     })
   }
 
@@ -232,6 +194,7 @@ function UnitManagement() {
     if (createDialog.submitting) return
     setCreateDialog(createDialogDefaults)
   }
+
 
   const handleCreateMappedUser = async () => {
     const email = createDialog.email.trim()
@@ -243,11 +206,6 @@ function UnitManagement() {
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setCreateDialog((prev) => ({ ...prev, error: 'Enter a valid email ID' }))
-      return
-    }
-
-    if (!createDialog.unitId) {
-      setCreateDialog((prev) => ({ ...prev, error: 'Select a unit to map' }))
       return
     }
 
@@ -266,7 +224,6 @@ function UnitManagement() {
         credentials: 'include',
         body: JSON.stringify({
           email_id: email,
-          unit_id: createDialog.unitId,
         }),
       })
       const result = await response.json()
@@ -378,6 +335,17 @@ function UnitManagement() {
       return
     }
 
+    const selectedUnitId = String(assignmentDialog.unit.unit_id || '').trim()
+    const isExternalUnit = selectedUnitId !== '' && !mappedUnitIdSet.has(selectedUnitId)
+
+    if (isExternalUnit && !assignmentDialog.confirmExternalAssignment) {
+      setAssignmentDialog((prev) => ({
+        ...prev,
+        error: 'Confirm that you want to update assignment for a unit not currently mapped to you.',
+      }))
+      return
+    }
+
     if (!assignmentDialog.email) {
       setAssignmentDialog((prev) => ({ ...prev, error: 'Select an email ID to assign' }))
       return
@@ -420,9 +388,14 @@ function UnitManagement() {
     }
   }
 
-  const createDialogUnits = getCreateUnits()
   const assignmentOptions = getAssignmentOptions(assignmentDialog.role)
   const tableBorderColor = alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.16 : 0.2)
+  const mappedUnitNames = data.currentCoordinatorUnits
+    .map((unit) => String(unit.unit_name || unit.unit_id || '').trim())
+    .filter(Boolean)
+  const selectedAssignmentUnitId = String(assignmentDialog.unit?.unit_id || '').trim()
+  const isAssignmentOutsideMappedUnits =
+    selectedAssignmentUnitId !== '' && !mappedUnitIdSet.has(selectedAssignmentUnitId)
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, py: 1 }}>
@@ -492,31 +465,23 @@ function UnitManagement() {
         </Paper>
       ) : (
         <>
-          <Box
+          <Paper
+            elevation={0}
             sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
-              gap: 2,
+              p: 2.5,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: 'divider',
+              backgroundColor: alpha(theme.palette.background.paper, 0.96),
             }}
           >
-            <SummaryPanel
-              title="Current Units"
-              count={data.currentCoordinatorUnits.length}
-              icon={<ApartmentRoundedIcon />}
-            />
-
-            <SummaryPanel
-              title="Approvers"
-              count={data.approvers.length}
-              icon={<FactCheckRoundedIcon />}
-            />
-
-            <SummaryPanel
-              title="Coordinators"
-              count={data.coordinators.length}
-              icon={<GroupsRoundedIcon />}
-            />
-          </Box>
+            <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'text.secondary' }}>
+              Units Mapped To You
+            </Typography>
+            <Typography sx={{ mt: 1, fontSize: '1rem', fontWeight: 700, color: 'text.primary', lineHeight: 1.6 }}>
+              {mappedUnitNames.length > 0 ? mappedUnitNames.join(', ') : 'No units are currently mapped to your coordinator account.'}
+            </Typography>
+          </Paper>
 
           <Paper
             ref={unitMasterRef}
@@ -657,6 +622,84 @@ function UnitManagement() {
               </Table>
             </TableContainer>
           </Paper>
+
+          <Paper
+            elevation={0}
+            sx={{
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: 'divider',
+              overflow: 'hidden',
+              backgroundColor: alpha(theme.palette.background.paper, 0.96),
+            }}
+          >
+            <Box
+              sx={{
+                p: 2.5,
+                borderBottom: `1px solid ${tableBorderColor}`,
+              }}
+            >
+              <Typography sx={{ fontWeight: 850, color: 'text.primary' }}>
+                Unassigned Coordinators / Approvers
+              </Typography>
+              <Typography sx={{ mt: 0.6, color: 'text.secondary', lineHeight: 1.6 }}>
+                These users belong to this company but are not yet assigned to any company unit.
+              </Typography>
+            </Box>
+            <TableContainer>
+              <Table sx={{ minWidth: 720 }}>
+                <TableHead>
+                  <TableRow
+                    sx={{
+                      backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.06 : 0.12),
+                    }}
+                  >
+                    <TableCell sx={{ py: 1.6, px: 2.25, fontWeight: 800, borderBottom: `1px solid ${tableBorderColor}` }}>
+                      Name
+                    </TableCell>
+                    <TableCell sx={{ py: 1.6, px: 2.25, fontWeight: 800, borderBottom: `1px solid ${tableBorderColor}` }}>
+                      Email ID
+                    </TableCell>
+                    <TableCell sx={{ py: 1.6, px: 2.25, fontWeight: 800, borderBottom: `1px solid ${tableBorderColor}` }}>
+                      Role
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {data.unmappedRoleUsers.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} sx={{ py: 3, px: 2.25, borderBottom: 0 }}>
+                        <Typography color="text.secondary">No unassigned coordinators or approvers found.</Typography>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    data.unmappedRoleUsers.map((user, index) => (
+                      <TableRow
+                        key={`${user.role}-${user.email_id}`}
+                        sx={{
+                          '&:last-of-type td': { borderBottom: 0 },
+                          '& td': {
+                            borderBottom:
+                              index === data.unmappedRoleUsers.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
+                          },
+                        }}
+                      >
+                        <TableCell sx={{ py: 1.7, px: 2.25 }}>
+                          {user.display_name || 'N/A'}
+                        </TableCell>
+                        <TableCell sx={{ py: 1.7, px: 2.25 }}>
+                          {user.email_id || 'N/A'}
+                        </TableCell>
+                        <TableCell sx={{ py: 1.7, px: 2.25 }}>
+                          {user.role === 'company_co' ? 'Company Coordinator' : 'Approver'}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
         </>
       )}
 
@@ -664,7 +707,7 @@ function UnitManagement() {
         open={assignmentDialog.open}
         onClose={handleCloseAssignmentDialog}
         fullWidth
-        maxWidth="sm"
+        maxWidth="md"
       >
         <DialogTitle>
           Assign {assignmentDialog.role === 'approver' ? 'Approver' : 'Company Coordinator'}
@@ -673,6 +716,11 @@ function UnitManagement() {
           <Typography color="text.secondary">
             {assignmentDialog.unit?.unit_name || 'Selected unit'}
           </Typography>
+          {isAssignmentOutsideMappedUnits ? (
+            <Alert severity="warning">
+              This unit is not currently mapped to your coordinator account. Continue only if you intentionally want to change assignment for another unit.
+            </Alert>
+          ) : null}
           <FormControl fullWidth required disabled={assignmentDialog.submitting}>
             <InputLabel id="assignment-role-label">Assignment Type</InputLabel>
             <Select
@@ -709,6 +757,24 @@ function UnitManagement() {
               ))}
             </Select>
           </FormControl>
+          {isAssignmentOutsideMappedUnits ? (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={assignmentDialog.confirmExternalAssignment}
+                  onChange={(event) =>
+                    setAssignmentDialog((prev) => ({
+                      ...prev,
+                      confirmExternalAssignment: event.target.checked,
+                      error: '',
+                    }))
+                  }
+                  disabled={assignmentDialog.submitting}
+                />
+              }
+              label="I understand that I am updating assignment for a unit that is not under me."
+            />
+          ) : null}
           {assignmentDialog.error && <Alert severity={assignmentOptions.length === 0 ? 'info' : 'error'}>{assignmentDialog.error}</Alert>}
         </DialogContent>
         <DialogActions>
@@ -718,7 +784,11 @@ function UnitManagement() {
           <Button
             variant="contained"
             onClick={handleUpdateAssignment}
-            disabled={assignmentDialog.submitting || assignmentOptions.length === 0}
+            disabled={
+              assignmentDialog.submitting ||
+              assignmentOptions.length === 0 ||
+              (isAssignmentOutsideMappedUnits && !assignmentDialog.confirmExternalAssignment)
+            }
           >
             {assignmentDialog.submitting ? 'Assigning...' : 'Assign'}
           </Button>
@@ -778,56 +848,31 @@ function UnitManagement() {
       >
         <DialogTitle>Create Coordinator / Approver</DialogTitle>
         <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2.5 }}>
-          {createDialogUnits.length === 0 ? (
-            <Alert severity="info">
-              Create a company unit before adding a coordinator or approver.
-            </Alert>
-          ) : (
-            <>
-              <FormControl fullWidth required disabled={createDialog.submitting}>
-                <InputLabel id="create-user-role-label">Role</InputLabel>
-                <Select
-                  labelId="create-user-role-label"
-                  label="Role"
-                  value={createDialog.type}
-                  onChange={(event) =>
-                    setCreateDialog((prev) => ({ ...prev, type: event.target.value, error: '' }))
-                  }
-                >
-                  <MenuItem value="company_co">Company Coordinator</MenuItem>
-                  <MenuItem value="approver">Approver</MenuItem>
-                </Select>
-              </FormControl>
-              <TextField
-                label="Email ID"
-                type="email"
-                value={createDialog.email}
-                onChange={(event) =>
-                  setCreateDialog((prev) => ({ ...prev, email: event.target.value, error: '' }))
-                }
-                disabled={createDialog.submitting}
-                fullWidth
-                required
-              />
-              <FormControl fullWidth required disabled={createDialog.submitting}>
-                <InputLabel id="unit-mapping-select-label">Unit</InputLabel>
-                <Select
-                  labelId="unit-mapping-select-label"
-                  label="Unit"
-                  value={createDialog.unitId}
-                  onChange={(event) =>
-                    setCreateDialog((prev) => ({ ...prev, unitId: event.target.value, error: '' }))
-                  }
-                >
-                  {createDialogUnits.map((unit) => (
-                    <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
-                      {unit.unit_name || unit.unit_id}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </>
-          )}
+          <FormControl fullWidth required disabled={createDialog.submitting}>
+            <InputLabel id="create-user-role-label">Role</InputLabel>
+            <Select
+              labelId="create-user-role-label"
+              label="Role"
+              value={createDialog.type}
+              onChange={(event) =>
+                setCreateDialog((prev) => ({ ...prev, type: event.target.value, error: '' }))
+              }
+            >
+              <MenuItem value="company_co">Company Coordinator</MenuItem>
+              <MenuItem value="approver">Approver</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField
+            label="Email ID"
+            type="email"
+            value={createDialog.email}
+            onChange={(event) =>
+              setCreateDialog((prev) => ({ ...prev, email: event.target.value, error: '' }))
+            }
+            disabled={createDialog.submitting}
+            fullWidth
+            required
+          />
           {createDialog.error && <Alert severity="error">{createDialog.error}</Alert>}
         </DialogContent>
         <DialogActions>
@@ -837,7 +882,7 @@ function UnitManagement() {
           <Button
             variant="contained"
             onClick={handleCreateMappedUser}
-            disabled={createDialog.submitting || createDialogUnits.length === 0}
+            disabled={createDialog.submitting}
           >
             {createDialog.submitting ? 'Creating...' : 'Create'}
           </Button>

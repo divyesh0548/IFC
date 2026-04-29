@@ -594,7 +594,6 @@ function UserFormDetail() {
     'control_type_fo',
     'control_type_ma',
     'nature_of_control',
-    'control_owner',
     'control_frequency',
     'sample_size',
     'sample_required',

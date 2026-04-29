@@ -37,6 +37,30 @@ async function queryUserByEmailForAuth(emailId, columns = 'id, email_id, role, c
   }
 }
 
+async function hasUnitAssignmentForPrivilegedUser(user) {
+  const normalizedRole = String(user?.role || '').trim().toLowerCase();
+  const companyIdentifier = user?.company_identifier || null;
+  const emailId = normalizeEmail(user?.email_id);
+
+  if (!companyIdentifier || !emailId || !['company_co', 'approver'].includes(normalizedRole)) {
+    return true;
+  }
+
+  const columnName = normalizedRole === 'company_co' ? 'coordinator_email_id' : 'approver_email_id';
+  const result = await pool.query(
+    `
+      SELECT 1
+      FROM company_unit_master
+      WHERE company_identifier = $1
+        AND LOWER(TRIM(COALESCE(${columnName}, ''))) = $2
+      LIMIT 1
+    `,
+    [companyIdentifier, emailId]
+  );
+
+  return result.rows.length > 0;
+}
+
 // ==================== UNIFIED LOGIN ENDPOINT ====================
 // Unified Login API endpoint (checks ifc_users table for all roles)
 router.post('/login', async (req, res) => {
@@ -100,6 +124,13 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Invalid user role'
+      });
+    }
+
+    if (!(await hasUnitAssignmentForPrivilegedUser(user))) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is not yet assigned to any Company Unit'
       });
     }
 
@@ -215,6 +246,13 @@ router.get('/verify', async (req, res) => {
     }
     
     const user = userResult.rows[0];
+
+    if (!(await hasUnitAssignmentForPrivilegedUser(user))) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is not yet assigned to any Company Unit'
+      });
+    }
     
     // Token is valid - return user info including role and company_identifier
     res.status(200).json({

@@ -184,12 +184,12 @@ function buildReminderEmailBody(form) {
   const formUrl = process.env.FRONTEND_URL
     ? `${process.env.FRONTEND_URL}/user/form/${form.form_id}`
     : null;
-  return `Hi,
+  return `Hello ${form.control_owner || 'Control Owner'},
 
 This is a reminder that your RACM (Risk and Control Matrix) is pending.
 
-Control: ${form.standard_control_description || 'N/A'}
 Business Process: ${form.business_process || 'N/A'}
+Control: ${form.standard_control_description || 'N/A'}
 Due date: ${dueStr}
 
 ${formUrl ? `Access your RACM: ${formUrl}\n\n` : ''}${process.env.FRONTEND_URL ? `Portal: ${process.env.FRONTEND_URL}` : ''}

@@ -2021,7 +2021,7 @@ function FormDetail() {
                   {/* Modify */}
                   <Button
                     onClick={handleModifyClick}
-                    disabled={isEditMode}
+                    disabled={isEditMode || isActive}
                     variant="contained"
                     color="secondary"
                     sx={{
@@ -2031,10 +2031,10 @@ function FormDetail() {
                       textTransform: 'none',
                       fontSize: '0.9375rem',
                       borderRadius: 2,
-                      ...(isEditMode && {
+                      ...(isEditMode || isActive ? {
                         opacity: 0.5,
                         cursor: 'not-allowed',
-                      }),
+                      } : {}),
                     }}
                   >
                     Modify

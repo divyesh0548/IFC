@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
@@ -20,6 +20,8 @@ import TableRow from '@mui/material/TableRow'
 import Alert from '@mui/material/Alert'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import Checkbox from '@mui/material/Checkbox'
 import Dialog from '@mui/material/Dialog'
@@ -39,13 +41,28 @@ import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
-import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import * as XLSX from 'xlsx'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+
+const bulkUploadDialogDefaults = {
+  open: false,
+  unitId: '',
+  fileName: '',
+  submitting: false,
+  error: '',
+}
+
+const bulkUploadRequiredHeaders = ['Name', 'Email ID', 'Department', 'Designation', 'Mobile']
 
 function UserManagement() {
   const theme = useTheme()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
+  const bulkFileInputRef = useRef(null)
+  const bulkUploadAbortControllerRef = useRef(null)
+  const isCancellingBulkUploadRef = useRef(false)
 
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [users, setUsers] = useState([])
@@ -58,6 +75,12 @@ function UserManagement() {
   const [selectedUserEmails, setSelectedUserEmails] = useState(new Set())
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingUsers, setDeletingUsers] = useState(false)
+  const [mappedUnits, setMappedUnits] = useState([])
+  const [bulkUploadDialog, setBulkUploadDialog] = useState(bulkUploadDialogDefaults)
+  const [bulkUploadRows, setBulkUploadRows] = useState([])
+  const [bulkUploadLogs, setBulkUploadLogs] = useState([])
+  const [bulkLogsDialogOpen, setBulkLogsDialogOpen] = useState(false)
+  const [showBulkLogsButton, setShowBulkLogsButton] = useState(false)
 
   const [email, setEmail] = useState('')
   const [empCode, setEmpCode] = useState('')
@@ -71,6 +94,7 @@ function UserManagement() {
   useSyncGlobalLoading(usersLoading)
   useSyncGlobalLoading(loading)
   useSyncGlobalLoading(deletingUsers)
+  useSyncGlobalLoading(bulkUploadDialog.submitting)
 
   const validateEmail = (emailValue) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -199,13 +223,103 @@ function UserManagement() {
     }
   }, [])
 
+  const fetchMappedUnits = useCallback(async () => {
+    try {
+      const response = await fetch(apiUrl('/api/company-co/unit-management'), {
+        credentials: 'include',
+      })
+      const result = await response.json()
+      if (!response.ok || !result?.success) {
+        setMappedUnits([])
+        return
+      }
+
+      const currentUnits = Array.isArray(result.data?.currentCoordinatorUnits)
+        ? result.data.currentCoordinatorUnits
+        : []
+      setMappedUnits(currentUnits)
+    } catch (fetchError) {
+      console.error('Fetch mapped units error:', fetchError)
+      setMappedUnits([])
+    }
+  }, [])
+
   useEffect(() => {
     fetchUsers()
-  }, [fetchUsers])
+    fetchMappedUnits()
+  }, [fetchUsers, fetchMappedUnits])
+
+  useEffect(() => {
+    if (!bulkUploadDialog.submitting) return undefined
+
+    const warningMessage = 'User insertion process is running. Do you want to leave this page?'
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+      return ''
+    }
+
+    const handleDocumentClick = (event) => {
+      const anchor = event.target?.closest?.('a[href]')
+      if (!anchor) return
+      const href = anchor.getAttribute('href') || ''
+      if (!href || href.startsWith('#')) return
+      if (anchor.target === '_blank' || anchor.hasAttribute('download')) return
+      if (anchor.origin !== window.location.origin) return
+
+      const targetUrl = new URL(anchor.href, window.location.origin)
+      const currentUrl = new URL(window.location.href)
+      const sameRoute =
+        targetUrl.pathname === currentUrl.pathname &&
+        targetUrl.search === currentUrl.search &&
+        targetUrl.hash === currentUrl.hash
+
+      if (sameRoute) return
+
+      event.preventDefault()
+      const shouldLeave = window.confirm(warningMessage)
+      if (!shouldLeave) return
+
+      isCancellingBulkUploadRef.current = true
+      bulkUploadAbortControllerRef.current?.abort()
+      toast.error('User insertion stopped due to navigation')
+      navigate(`${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`)
+    }
+
+    const handlePopState = () => {
+      const shouldLeave = window.confirm(warningMessage)
+      if (!shouldLeave) {
+        window.history.go(1)
+        return
+      }
+      isCancellingBulkUploadRef.current = true
+      bulkUploadAbortControllerRef.current?.abort()
+      toast.error('User insertion stopped due to navigation')
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('popstate', handlePopState)
+    document.addEventListener('click', handleDocumentClick, true)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('popstate', handlePopState)
+      document.removeEventListener('click', handleDocumentClick, true)
+    }
+  }, [bulkUploadDialog.submitting, navigate, location.pathname, location.search, location.hash])
 
   useEffect(() => {
     setSelectedUserEmails(new Set())
   }, [unitFilter, roleFilter])
+
+  useEffect(() => {
+    if (location.pathname !== '/company_co/user-management') {
+      setBulkUploadLogs([])
+      setBulkLogsDialogOpen(false)
+      setShowBulkLogsButton(false)
+    }
+  }, [location.pathname])
 
   // Reset selection when delete mode is turned off (matches RacmManagementDashboard behavior)
   useEffect(() => {
@@ -330,6 +444,199 @@ function UserManagement() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleOpenBulkUploadDialog = () => {
+    setBulkUploadRows([])
+    setBulkUploadDialog({
+      ...bulkUploadDialogDefaults,
+      open: true,
+      unitId: mappedUnits[0]?.unit_id || '',
+    })
+  }
+
+  const handleCloseBulkUploadDialog = () => {
+    if (bulkUploadDialog.submitting) return
+    if (bulkFileInputRef.current) {
+      bulkFileInputRef.current.value = ''
+    }
+    setBulkUploadRows([])
+    setBulkUploadDialog(bulkUploadDialogDefaults)
+  }
+
+  const handleBulkFileChange = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+      const firstSheetName = workbook.SheetNames[0]
+      if (!firstSheetName) {
+        throw new Error('Excel file does not contain any sheet')
+      }
+
+      const worksheet = workbook.Sheets[firstSheetName]
+      const rows = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        defval: '',
+        blankrows: false,
+      })
+
+      const headerRow = Array.isArray(rows[0]) ? rows[0] : []
+      const normalizedHeaders = new Set(
+        headerRow
+          .map((value) => String(value || '').trim().toLowerCase())
+          .filter(Boolean)
+      )
+
+      const missingHeaders = bulkUploadRequiredHeaders.filter(
+        (header) => !normalizedHeaders.has(header.trim().toLowerCase())
+      )
+
+      if (missingHeaders.length > 0) {
+        setBulkUploadRows([])
+        setBulkUploadDialog((prev) => ({
+          ...prev,
+          fileName: file.name,
+          error: `Missing required column(s): ${missingHeaders.join(', ')}`,
+        }))
+        return
+      }
+
+      const jsonRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' })
+      const parsedRows = jsonRows.map((row) => ({
+        emp_name: String(row['Name'] || '').trim(),
+        email_id: String(row['Email ID'] || '').trim(),
+        department: String(row['Department'] || '').trim(),
+        designation: String(row['Designation'] || '').trim(),
+        mobile: String(row['Mobile'] || '')
+          .replace(/[^0-9]/g, '')
+          .trim(),
+      }))
+
+      setBulkUploadRows(parsedRows)
+      setBulkUploadDialog((prev) => ({
+        ...prev,
+        fileName: file.name,
+        error: '',
+      }))
+    } catch (parseError) {
+      console.error('Bulk user excel parse error:', parseError)
+      setBulkUploadRows([])
+      setBulkUploadDialog((prev) => ({
+        ...prev,
+        fileName: file.name || '',
+        error: parseError.message || 'Failed to read excel file',
+      }))
+    }
+  }
+
+  const handleBulkUploadUsers = async () => {
+    if (!bulkUploadDialog.unitId) {
+      setBulkUploadDialog((prev) => ({ ...prev, error: 'Select a unit to map users' }))
+      return
+    }
+
+    if (bulkUploadRows.length === 0) {
+      setBulkUploadDialog((prev) => ({ ...prev, error: 'Upload a valid excel file first' }))
+      return
+    }
+
+    setBulkUploadDialog((prev) => ({ ...prev, submitting: true, error: '' }))
+    const abortController = new AbortController()
+    bulkUploadAbortControllerRef.current = abortController
+
+    try {
+      const response = await fetch(apiUrl('/api/company-co/create-users-bulk'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        signal: abortController.signal,
+        body: JSON.stringify({
+          unit_id: bulkUploadDialog.unitId,
+          users: bulkUploadRows,
+        }),
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Failed to upload users in bulk')
+      }
+
+      const createdCount = Array.isArray(result.createdUsers) ? result.createdUsers.length : 0
+      const skippedRows = Array.isArray(result.skippedRows) ? result.skippedRows : []
+      const invalidEmails = Array.isArray(result.invalidEmails) ? result.invalidEmails : []
+      const missingEmailCount = skippedRows.filter((row) => row?.reason === 'Email ID is missing').length
+      const duplicateCount = skippedRows.filter((row) => row?.reason === 'User already exists').length
+      const invalidEmailCount = invalidEmails.length
+
+      const logs = [
+        `Users created successfully: ${createdCount}`,
+        `Rows skipped (empty Email ID): ${missingEmailCount}`,
+        `Rows skipped (user already exists): ${duplicateCount}`,
+        `Rows skipped (invalid email format): ${invalidEmailCount}`,
+      ]
+      setBulkUploadLogs(logs)
+      setShowBulkLogsButton(true)
+      toast.success('Bulk upload completed. Click "Logs !" to view details.')
+
+      handleCloseBulkUploadDialog()
+      await fetchUsers()
+    } catch (uploadError) {
+      console.error('Bulk user upload error:', uploadError)
+      if (uploadError.name === 'AbortError') {
+        setBulkUploadLogs(['User insertion process was cancelled'])
+        if (!isCancellingBulkUploadRef.current) {
+          toast.error('User insertion process was cancelled')
+        }
+        setBulkUploadDialog((prev) => ({
+          ...prev,
+          submitting: false,
+        }))
+        return
+      }
+      setBulkUploadDialog((prev) => ({
+        ...prev,
+        submitting: false,
+        error: uploadError.message || 'Network error while uploading users',
+      }))
+      setBulkUploadLogs([`Bulk upload failed: ${uploadError.message || 'Network error while uploading users'}`])
+    } finally {
+      bulkUploadAbortControllerRef.current = null
+      isCancellingBulkUploadRef.current = false
+    }
+  }
+
+  const handleExportUsers = () => {
+    if (filteredUsers.length === 0) {
+      toast.error('No users available for export with current filters')
+      return
+    }
+
+    const exportRows = filteredUsers.map((user) => ({
+      'Employee Name': user.emp_name
+        ? `${user.emp_name}${user.role === 'company_co' ? ' (Company Coordinator)' : ''}`
+        : '',
+      'Email ID': user.email_id || '-',
+      Role: formatRoleLabel(user.role),
+      Unit: user.unit_name || user.unit_id || '-',
+      Department: user.department || '-',
+      Designation: user.designation || '-',
+      Mobile: user.mobile || '-',
+    }))
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows, {
+      header: ['Employee Name', 'Email ID', 'Role', 'Unit', 'Department', 'Designation', 'Mobile'],
+    })
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Users')
+
+    const dateSuffix = new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(workbook, `users_export_${dateSuffix}.xlsx`)
+    toast.success('Users exported successfully')
   }
 
   if (showCreateForm) {
@@ -596,6 +903,56 @@ function UserManagement() {
   }
   return (
     <Box sx={{ px: 0, py: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          gap: 2,
+          flexWrap: 'wrap',
+          mb: 2,
+        }}
+      >
+        <Button
+          variant="outlined"
+          startIcon={<UploadFileRoundedIcon />}
+          onClick={handleOpenBulkUploadDialog}
+          disabled={usersLoading || mappedUnits.length === 0 || deletingUsers}
+          sx={{ textTransform: 'none', fontWeight: 600 }}
+        >
+          Bulk User Upload
+        </Button>
+        <Button
+          variant="outlined"
+          startIcon={<DownloadRoundedIcon />}
+          onClick={handleExportUsers}
+          disabled={usersLoading || filteredUsers.length === 0}
+          sx={{ textTransform: 'none', fontWeight: 600 }}
+        >
+          Export Excel
+        </Button>
+        <Button
+          variant={deleteMode ? 'contained' : 'outlined'}
+          color="error"
+          startIcon={<DeleteIcon />}
+          onClick={() => {
+            if (deleteMode) {
+              if (selectedUserEmails.size > 0) {
+                handleDeleteClick()
+              }
+            } else {
+              handleDeleteModeToggle()
+            }
+          }}
+          disabled={usersLoading || filteredUsers.length === 0 || deletingUsers || (deleteMode && selectedUserEmails.size === 0)}
+          sx={{ textTransform: 'none', fontWeight: 600 }}
+        >
+          {deleteMode
+            ? (selectedUserEmails.size > 0 ? `Delete (${selectedUserEmails.size})` : 'Delete')
+            : 'Delete'}
+        </Button>
+      </Box>
+
       <Paper sx={{ p: 3, borderRadius: 2 }} onClick={handleListContainerClick}>
         <Box
           sx={{
@@ -656,26 +1013,16 @@ function UserManagement() {
             >
               Create User
             </Button>
-            <Button
-              variant={deleteMode ? 'contained' : 'outlined'}
-              color="error"
-              startIcon={<DeleteIcon />}
-              onClick={() => {
-                if (deleteMode) {
-                  if (selectedUserEmails.size > 0) {
-                    handleDeleteClick()
-                  }
-                } else {
-                  handleDeleteModeToggle()
-                }
-              }}
-              disabled={usersLoading || filteredUsers.length === 0 || deletingUsers || (deleteMode && selectedUserEmails.size === 0)}
-              sx={{ textTransform: 'none', fontWeight: 600 }}
-            >
-              {deleteMode
-                ? (selectedUserEmails.size > 0 ? `Delete (${selectedUserEmails.size})` : 'Delete')
-                : 'Delete'}
-            </Button>
+            {showBulkLogsButton && (
+              <Button
+                variant="contained"
+                color="info"
+                onClick={() => setBulkLogsDialogOpen(true)}
+                sx={{ textTransform: 'none', fontWeight: 600 }}
+              >
+                Logs !
+              </Button>
+            )}
           </Box>
         </Box>
 
@@ -766,6 +1113,114 @@ function UserManagement() {
           </Table>
         </TableContainer>
       </Paper>
+
+      <Dialog
+        open={bulkUploadDialog.open}
+        onClose={handleCloseBulkUploadDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Bulk User Upload</DialogTitle>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2.5 }}>
+          {mappedUnits.length === 0 ? (
+            <Alert severity="info">
+              No mapped units found for this coordinator.
+            </Alert>
+          ) : (
+            <>
+              <FormControl fullWidth required disabled={bulkUploadDialog.submitting}>
+                <InputLabel id="bulk-upload-unit-label">Unit</InputLabel>
+                <Select
+                  labelId="bulk-upload-unit-label"
+                  label="Unit"
+                  value={bulkUploadDialog.unitId}
+                  onChange={(event) =>
+                    setBulkUploadDialog((prev) => ({ ...prev, unitId: event.target.value, error: '' }))
+                  }
+                >
+                  {mappedUnits.map((unit) => (
+                    <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
+                      {unit.unit_name || unit.unit_id}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={<UploadFileRoundedIcon />}
+                disabled={bulkUploadDialog.submitting}
+              >
+                Upload Excel
+                <input
+                  ref={bulkFileInputRef}
+                  type="file"
+                  hidden
+                  accept=".xlsx,.xls"
+                  onChange={handleBulkFileChange}
+                />
+              </Button>
+
+              {bulkUploadDialog.fileName && (
+                <Typography sx={{ fontSize: '0.9rem', color: 'text.secondary' }}>
+                  Selected file: {bulkUploadDialog.fileName}
+                </Typography>
+              )}
+
+              <Alert severity="info">
+                Excel header row must include: Name, Email ID, Department, Designation, Mobile. Extra columns are ignored.
+              </Alert>
+
+              {bulkUploadRows.length > 0 && (
+                <Typography sx={{ fontSize: '0.9rem', color: 'text.secondary' }}>
+                  Parsed rows: {bulkUploadRows.length}
+                </Typography>
+              )}
+            </>
+          )}
+          {bulkUploadDialog.error && <Alert severity="error">{bulkUploadDialog.error}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseBulkUploadDialog} disabled={bulkUploadDialog.submitting}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleBulkUploadUsers}
+            disabled={
+              bulkUploadDialog.submitting ||
+              mappedUnits.length === 0 ||
+              bulkUploadRows.length === 0
+            }
+          >
+            {bulkUploadDialog.submitting ? 'Uploading...' : 'Upload'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={bulkLogsDialogOpen}
+        onClose={() => setBulkLogsDialogOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Bulk Upload Logs</DialogTitle>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 1.2, pt: 2.5 }}>
+          {bulkUploadLogs.length === 0 ? (
+            <Typography color="text.secondary">No logs available.</Typography>
+          ) : (
+            bulkUploadLogs.map((message, index) => (
+              <Typography key={`${message}-${index}`} sx={{ fontSize: '0.95rem' }}>
+                {index + 1}. {message}
+              </Typography>
+            ))
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkLogsDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={deleteDialogOpen}

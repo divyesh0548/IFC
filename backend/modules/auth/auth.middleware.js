@@ -34,6 +34,30 @@ function getEmailFromAuthCookies(req) {
   return null;
 }
 
+async function ensurePrivilegedUserHasUnitAssignment(user) {
+  const normalizedRole = String(user?.role || '').trim().toLowerCase();
+  const companyIdentifier = user?.company_identifier || null;
+  const emailId = String(user?.email_id || '').trim().toLowerCase();
+
+  if (!companyIdentifier || !emailId || !['company_co', 'approver'].includes(normalizedRole)) {
+    return true;
+  }
+
+  const columnName = normalizedRole === 'company_co' ? 'coordinator_email_id' : 'approver_email_id';
+  const result = await pool.query(
+    `
+      SELECT 1
+      FROM company_unit_master
+      WHERE company_identifier = $1
+        AND LOWER(TRIM(COALESCE(${columnName}, ''))) = $2
+      LIMIT 1
+    `,
+    [companyIdentifier, emailId]
+  );
+
+  return result.rows.length > 0;
+}
+
 /** Company coordinator only (`ifc_users.role === 'company_co'`). */
 async function verifyCompanyCoordinator(req, res, next) {
   try {
@@ -65,6 +89,13 @@ async function verifyCompanyCoordinator(req, res, next) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Company coordinator role required.',
+      });
+    }
+
+    if (!(await ensurePrivilegedUserHasUnitAssignment(user))) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is not yet assigned to any Company Unit',
       });
     }
 
@@ -128,6 +159,13 @@ async function verifyApproverAuth(req, res, next) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Approver role required.',
+      });
+    }
+
+    if (!(await ensurePrivilegedUserHasUnitAssignment(user))) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is not yet assigned to any Company Unit',
       });
     }
 

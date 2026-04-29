@@ -5,9 +5,10 @@ const nodemailer = require('nodemailer');
  * @param {string} to
  * @param {string} subject
  * @param {string} text
+ * @param {{ cc?: string[] | string }} [options]
  * @returns {Promise<boolean>}
  */
-async function sendEmail(to, subject, text) {
+async function sendEmail(to, subject, text, options = {}) {
   if (!to || !String(to).trim()) {
     return false;
   }
@@ -42,6 +43,12 @@ async function sendEmail(to, subject, text) {
     subject,
     text,
   };
+  const ccList = Array.isArray(options.cc)
+    ? options.cc.map((email) => String(email || '').trim()).filter(Boolean)
+    : (options.cc ? [String(options.cc).trim()] : []);
+  if (ccList.length > 0) {
+    mailOptions.cc = ccList.join(', ');
+  }
 
   try {
     await transporter.sendMail(mailOptions);

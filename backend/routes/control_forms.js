@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
 const { sendEmail } = require('../utils/send_email');
+const { getCcEmailsForRacm } = require('../utils/racm_cc_recipients');
 const { decryptToken } = require('../utils/auth_utility');
 const { verifyUserAuth } = require('../modules/auth/auth.middleware');
 const { logAuditEvent, EXCEL_BULK_RACM_UPLOAD_ACTION } = require('../utils/auditLog');
@@ -163,6 +164,45 @@ ${coordinatorCompanyDisplayName}
         shouldSend: false
       };
   }
+}
+
+function buildSentForApprovalEmail({
+  approverName,
+  userDisplayName,
+  formId,
+  businessProcess,
+  unitName,
+  controlNumber,
+  financialYear,
+  dueDate,
+}) {
+  const reviewerName = String(approverName || '').trim() || 'Approver';
+  const submittedBy = String(userDisplayName || '').trim() || 'User';
+  const bp = String(businessProcess || '').trim() || 'N/A';
+  const unit = String(unitName || '').trim() || 'N/A';
+  const cn = String(controlNumber || '').trim() || 'N/A';
+  const fy = String(financialYear || '').trim() || 'N/A';
+  const dueDateText = formatDueDateDisplay(dueDate);
+  const portalUrl = process.env.VITE_FRONTEND_URL || process.env.FRONTEND_URL || '';
+
+  return {
+    subject: `RACM sent for approval - ${bp}`,
+    text: `Dear ${reviewerName},
+
+A RACM has been sent for approval.
+
+Submitted by: ${submittedBy}
+Financial Year: ${fy}
+Business Process: ${bp}
+Unit: ${unit}
+Control Number: ${cn}
+
+Please review the uploaded documents and Approve/Reject based on your judgement.
+${portalUrl ? `\nPortal: ${portalUrl}` : ''}
+
+Regards,
+IFC System`,
+  };
 }
 
 const router = express.Router();
@@ -1579,7 +1619,15 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
             // Small delay to ensure user creation email (if user was just created) is sent first.
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            const emailSent = await sendEmail(processOwnerEmail, emailPayload.subject, emailPayload.text);
+            const ccEmails = await getCcEmailsForRacm({
+              companyIdentifier: formCompanyIdentifier,
+              businessProcess,
+              unitId: updatedRow?.unit_id || currentForm.unit_id,
+              excludeEmail: processOwnerEmail,
+            });
+            const emailSent = await sendEmail(processOwnerEmail, emailPayload.subject, emailPayload.text, {
+              cc: ccEmails,
+            });
             if (!emailSent) {
               console.warn(`Warning: Failed to send status update email to ${processOwnerEmail}, but form was updated successfully.`);
             } else {
@@ -1587,6 +1635,66 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
             }
           }
         }
+      }
+    }
+
+    // Notify intended approver when user submits RACM for approval.
+    if (status === 'sent for approval' && req.user?.role === 'user') {
+      try {
+        const approverDetails = await getControlFormApproverDetails(client, form_id);
+        const approverEmail = String(approverDetails?.approver_email_id || '').trim();
+        if (approverEmail) {
+          const unitNameResult = await client.query(
+            `
+              SELECT NULLIF(TRIM(unit_name), '') AS unit_name
+              FROM company_unit_master
+              WHERE company_identifier = $1
+                AND unit_id = $2
+              LIMIT 1
+            `,
+            [
+              updatedRow?.company_identifier || currentForm?.company_identifier,
+              updatedRow?.unit_id || currentForm?.unit_id,
+            ]
+          );
+          const resolvedUnitName = unitNameResult.rows[0]?.unit_name || updatedRow?.unit_id || currentForm?.unit_id || '';
+
+          const userDisplayNameResult = await client.query(
+            `
+              SELECT COALESCE(NULLIF(TRIM(emp_name), ''), LOWER(TRIM(email_id))) AS display_name
+              FROM ifc_users
+              WHERE LOWER(TRIM(email_id)) = LOWER(TRIM($1))
+              LIMIT 1
+            `,
+            [req.user.email_id]
+          );
+          const userDisplayName = userDisplayNameResult.rows[0]?.display_name || req.user.email_id;
+
+          const payload = buildSentForApprovalEmail({
+            approverName: approverDetails?.approver_name,
+            userDisplayName,
+            formId: form_id,
+            businessProcess: updatedRow?.business_process || currentForm?.business_process,
+            unitName: resolvedUnitName,
+            controlNumber: updatedRow?.control_number || currentForm?.control_number,
+            financialYear: updatedRow?.financial_year || currentForm?.financial_year,
+            dueDate: updatedRow?.due_date || currentForm?.due_date,
+          });
+
+          const ccEmails = await getCcEmailsForRacm({
+            companyIdentifier: updatedRow?.company_identifier || currentForm?.company_identifier,
+            businessProcess: updatedRow?.business_process || currentForm?.business_process,
+            unitId: updatedRow?.unit_id || currentForm?.unit_id,
+            excludeEmail: approverEmail,
+          });
+
+          const emailSent = await sendEmail(approverEmail, payload.subject, payload.text, { cc: ccEmails });
+          if (!emailSent) {
+            console.warn(`Warning: failed to send sent-for-approval email to approver for form ${form_id}`);
+          }
+        }
+      } catch (notifyError) {
+        console.error('Error sending sent-for-approval approver email:', notifyError);
       }
     }
 
@@ -1668,7 +1776,7 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     
     // Get forms that will be updated (before updating) to send emails
     // Build SELECT query with same WHERE conditions but correct parameter indices
-    let getFormsQuery = 'SELECT form_id, control_owner, standard_control_description, active FROM control_forms WHERE 1=1';
+    let getFormsQuery = 'SELECT form_id, control_owner, standard_control_description, active, company_identifier, business_process, unit_id FROM control_forms WHERE 1=1';
     const getFormsParams = [];
     let getFormsParamIndex = 1;
     
@@ -1732,7 +1840,10 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
             }
             uniqueProcessOwners.get(processOwnerEmail).push({
               form_id: form.form_id,
-              description: form.standard_control_description || 'Control Form'
+              description: form.standard_control_description || 'Control Form',
+              company_identifier: form.company_identifier || userCompanyIdentifier || '',
+              business_process: form.business_process || '',
+              unit_id: form.unit_id || '',
             });
           }
         }
@@ -1760,8 +1871,19 @@ Please ensure all necessary actions are taken accordingly.
 Best regards,
 IFC System
         `;
-        
-        emailPromises.push(sendEmail(email, emailSubject, emailText));
+
+        const ccSet = new Set();
+        for (const form of forms) {
+          const ccEmailsForForm = await getCcEmailsForRacm({
+            companyIdentifier: form.company_identifier,
+            businessProcess: form.business_process,
+            unitId: form.unit_id,
+            excludeEmail: email,
+          });
+          ccEmailsForForm.forEach((ccEmail) => ccSet.add(ccEmail));
+        }
+
+        emailPromises.push(sendEmail(email, emailSubject, emailText, { cc: Array.from(ccSet) }));
       }
       
       // Send all emails (don't wait for them to complete)

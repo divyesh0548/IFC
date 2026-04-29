@@ -158,6 +158,18 @@ const REQUIRED_TABLES = {
     primaryKey: 'id',
     unique: ['email_id'],
   },
+  racm_cc_users: {
+    columns: {
+      id: 'serial',
+      email_id: 'character varying(255) NOT NULL',
+      business_process: 'character varying(255) NOT NULL',
+      company_identifier: 'character varying(255) NOT NULL',
+      unit_id: 'character varying(255) NOT NULL',
+      created_at: "timestamp without time zone NULL DEFAULT ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text)",
+    },
+    primaryKey: 'id',
+    unique: [['email_id', 'business_process', 'unit_id']],
+  },
 };
 
 function quoteIdentifier(identifier) {
@@ -231,7 +243,11 @@ async function ensurePrimaryKey(client, tableName, primaryKey) {
   console.log(`[db-init] Added PK ${finalConstraintName}`);
 }
 
-async function ensureUniqueConstraint(client, tableName, columnName) {
+async function ensureUniqueConstraint(client, tableName, columnsInput) {
+  const columns = Array.isArray(columnsInput) ? columnsInput : [columnsInput];
+  if (columns.length === 0) return;
+
+  const orderedColumnsSql = columns.map((column) => `'${String(column).replace(/'/g, "''")}'`).join(', ');
   const uniqueOnColumn = await client.query(
     `
       SELECT 1
@@ -244,34 +260,37 @@ async function ensureUniqueConstraint(client, tableName, columnName) {
         AND t.relname = $1
         AND c.contype = 'u'
       GROUP BY c.oid
-      HAVING array_agg(a.attname::text ORDER BY keys.ord) = ARRAY[$2]::text[]
+      HAVING array_agg(a.attname::text ORDER BY keys.ord) = ARRAY[${orderedColumnsSql}]::text[]
       LIMIT 1
     `,
-    [tableName, columnName]
+    [tableName]
   );
   if (uniqueOnColumn.rows.length > 0) return;
 
+  const selectColumns = columns.map((columnName) => quoteIdentifier(columnName)).join(', ');
+  const notNullCheck = columns.map((columnName) => `${quoteIdentifier(columnName)} IS NOT NULL`).join(' AND ');
   const duplicates = await client.query(
     `
-      SELECT ${quoteIdentifier(columnName)} AS value, COUNT(*) AS count
+      SELECT ${selectColumns}, COUNT(*) AS count
       FROM ${fqTable(tableName)}
-      WHERE ${quoteIdentifier(columnName)} IS NOT NULL
-      GROUP BY ${quoteIdentifier(columnName)}
+      WHERE ${notNullCheck}
+      GROUP BY ${selectColumns}
       HAVING COUNT(*) > 1
       ORDER BY COUNT(*) DESC
       LIMIT 5
     `
   );
   if (duplicates.rows.length > 0) {
-    const sampleValues = duplicates.rows
-      .map((row) => `${row.value} (${row.count})`)
-      .join(', ');
+    const sampleValues = duplicates.rows.map((row) => {
+      const keyParts = columns.map((columnName) => `${columnName}=${row[columnName]}`).join(', ');
+      return `${keyParts} (${row.count})`;
+    }).join(', ');
     throw new Error(
-      `[db-init] Cannot add unique constraint on ${tableName}.${columnName}; duplicate values found: ${sampleValues}`
+      `[db-init] Cannot add unique constraint on ${tableName}(${columns.join(', ')}); duplicate values found: ${sampleValues}`
     );
   }
 
-  const constraintName = `${tableName}_${columnName}_key`;
+  const constraintName = `${tableName}_${columns.join('_')}_key`;
   const sameNameElsewhere = await client.query(
     `
       SELECT 1
@@ -285,8 +304,9 @@ async function ensureUniqueConstraint(client, tableName, columnName) {
   const finalConstraintName =
     sameNameElsewhere.rows.length > 0 ? `${constraintName}_public` : constraintName;
 
+  const uniqueColumnsSql = columns.map((columnName) => quoteIdentifier(columnName)).join(', ');
   await client.query(
-    `ALTER TABLE ${fqTable(tableName)} ADD CONSTRAINT ${quoteIdentifier(finalConstraintName)} UNIQUE (${quoteIdentifier(columnName)})`
+    `ALTER TABLE ${fqTable(tableName)} ADD CONSTRAINT ${quoteIdentifier(finalConstraintName)} UNIQUE (${uniqueColumnsSql})`
   );
   console.log(`[db-init] Added unique constraint ${finalConstraintName}`);
 }

@@ -1336,6 +1336,20 @@ function RacmManagementDashboard() {
         }}
       >
         <Button
+          onClick={() => navigate('/company_co/communication-matrix')}
+          disabled={!companyIdentifier || deleteMode || setActiveMode || setDueDateMode || replicateMode}
+          variant="outlined"
+          color="secondary"
+          size="small"
+          sx={{
+            ...toolbarBtnBase,
+            '&:hover': { boxShadow: 'none' },
+          }}
+        >
+          Communication
+        </Button>
+
+        <Button
           onClick={() => navigate('/company_co/create-form')}
           disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
           variant="contained"

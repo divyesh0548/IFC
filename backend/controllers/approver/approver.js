@@ -1,6 +1,7 @@
 const { pool } = require('../../utils/db');
 const { logAuditEvent } = require('../../utils/auditLog');
 const { sendEmail } = require('../../utils/send_email');
+const { getCcEmailsForRacm } = require('../../utils/racm_cc_recipients');
 const {
   attachControlFormDocuments,
 } = require('../../utils/racm_documents');
@@ -104,10 +105,10 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
 
   emailBody += 'Form Details:\n';
   if (updatedForm.business_process) {
-    emailBody += `- BusinessProcess: ${updatedForm.business_process}\n`;
+    emailBody += `- Business Process: ${updatedForm.business_process}\n`;
   }
   if (updatedForm.sub_process) {
-    emailBody += `- SubProcess: ${updatedForm.sub_process}\n`;
+    emailBody += `- Sub Process: ${updatedForm.sub_process}\n`;
   }
   if (updatedForm.standard_control_description) {
     emailBody += `- Description: ${updatedForm.standard_control_description}\n`;
@@ -123,7 +124,13 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   emailBody += `Best regards,\n${companyName}`;
 
   try {
-    const emailSent = await sendEmail(ownerTrim, emailSubject, emailBody);
+    const ccEmails = await getCcEmailsForRacm({
+      companyIdentifier: updatedForm.company_identifier,
+      businessProcess: updatedForm.business_process,
+      unitId: updatedForm.unit_id,
+      excludeEmail: ownerTrim,
+    });
+    const emailSent = await sendEmail(ownerTrim, emailSubject, emailBody, { cc: ccEmails });
     if (emailSent) {
       console.log(`✓ Email sent successfully to ${ownerTrim} for form ${form_id}`);
     } else {

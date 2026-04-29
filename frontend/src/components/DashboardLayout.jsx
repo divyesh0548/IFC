@@ -25,7 +25,7 @@ import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import { useThemeMode } from '../contexts/ThemeContext'
 import { toast } from 'react-hot-toast'
-import { STORAGE_KEYS, clearCachedUserProfile } from '../storageKeys'
+import { STORAGE_KEYS, clearCachedUserProfile, clearCompanyFinancialYearOptionsCache } from '../storageKeys'
 import { MAIN_CONTENT_MAX_WIDTH } from '../uiConstants'
 import { apiUrl } from '../config/api'
 
@@ -124,18 +124,21 @@ function DashboardLayout() {
         localStorage.removeItem(STORAGE_KEYS.companyIdentifier)
         localStorage.removeItem(STORAGE_KEYS.approverCompanyNames)
         localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
+        clearCompanyFinancialYearOptionsCache()
         clearCachedUserProfile()
         toast.success('Logged out successfully')
         navigate('/login')
       } else {
         console.error('Logout failed:', data.message)
         toast.error(data.message || 'Logout failed')
+        clearCompanyFinancialYearOptionsCache()
         clearCachedUserProfile()
         navigate('/login')
       }
     } catch (error) {
       console.error('Logout error:', error)
       toast.error('Error during logout')
+      clearCompanyFinancialYearOptionsCache()
       clearCachedUserProfile()
       navigate('/login')
     }
