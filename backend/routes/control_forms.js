@@ -205,6 +205,51 @@ IFC System`,
   };
 }
 
+async function getBusinessProcessCodeForName(clientOrPool, businessProcess) {
+  const process = String(businessProcess || '').trim();
+  if (!process) return '';
+  const result = await clientOrPool.query(
+    `
+      SELECT TRIM(business_process_code) AS business_process_code
+      FROM businees_process_code
+      WHERE LOWER(TRIM(business_process)) = LOWER(TRIM($1))
+      LIMIT 1
+    `,
+    [process]
+  );
+  return String(result.rows[0]?.business_process_code || '').trim();
+}
+
+async function getNextGeneratedControlNumber(clientOrPool, companyIdentifier, prefix) {
+  const companyId = String(companyIdentifier || '').trim();
+  const codePrefix = String(prefix || '').trim();
+  if (!companyId || !codePrefix) return null;
+
+  const escapedPrefix = codePrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const result = await clientOrPool.query(
+    `
+      SELECT TRIM(control_number) AS control_number
+      FROM control_forms
+      WHERE company_identifier = $1
+        AND control_number IS NOT NULL
+        AND TRIM(control_number) <> ''
+        AND TRIM(control_number) ~ $2
+    `,
+    [companyId, `^${escapedPrefix}[0-9]+$`]
+  );
+
+  let maxNumber = 0;
+  for (const row of result.rows) {
+    const value = String(row.control_number || '').trim();
+    const numericPart = value.slice(codePrefix.length);
+    const parsed = parseInt(numericPart, 10);
+    if (!Number.isNaN(parsed) && parsed > maxNumber) {
+      maxNumber = parsed;
+    }
+  }
+  return `${codePrefix}${maxNumber + 1}`;
+}
+
 const router = express.Router();
 
 // Test route to verify routes are working (no auth required)
@@ -215,14 +260,96 @@ router.get('/test-route', (req, res) => {
   res.json({ success: true, message: 'Test route is working!', timestamp: new Date().toISOString() });
 });
 
+router.get('/control-number-preview', verifyAuth, async (req, res) => {
+  try {
+    const businessProcess = req.query.business_process != null ? String(req.query.business_process).trim() : '';
+    const inputControlNumber = req.query.control_number != null ? String(req.query.control_number).trim() : '';
+    let companyIdentifier = req.query.company_identifier != null ? String(req.query.company_identifier).trim() : '';
+
+    if (!companyIdentifier) {
+      const userResult = await pool.query(
+        'SELECT company_identifier FROM ifc_users WHERE LOWER(TRIM(email_id)) = LOWER(TRIM($1)) LIMIT 1',
+        [req.user.email_id]
+      );
+      companyIdentifier = String(userResult.rows[0]?.company_identifier || '').trim();
+    }
+
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier not found',
+      });
+    }
+
+    let generatedControlNumber = '';
+    if (businessProcess) {
+      const prefix = await getBusinessProcessCodeForName(pool, businessProcess);
+      if (prefix) {
+        generatedControlNumber = await getNextGeneratedControlNumber(pool, companyIdentifier, prefix);
+      }
+    }
+
+    let duplicate = false;
+    if (inputControlNumber) {
+      const duplicateResult = await pool.query(
+        `
+          SELECT 1
+          FROM control_forms
+          WHERE company_identifier = $1
+            AND TRIM(control_number) = TRIM($2)
+            AND (
+              $3 = ''
+              OR LOWER(TRIM(COALESCE(business_process, ''))) = LOWER(TRIM($3))
+            )
+          LIMIT 1
+        `,
+        [companyIdentifier, inputControlNumber, businessProcess]
+      );
+      duplicate = duplicateResult.rows.length > 0;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        generated_control_number: generatedControlNumber,
+        duplicate,
+        available: inputControlNumber ? !duplicate : false,
+      },
+    });
+  } catch (error) {
+    console.error('Control number preview error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to generate/check control number',
+    });
+  }
+});
+
 const { pool } = require('../utils/db');
+const { getColumnMappingConfig } = require('../utils/column_mapping');
 const {
+  prepareBulkImportRows,
   transformExcelData,
   transformExcelDataWithColumnMapping,
   insertRacmRowsFromTransformedData,
 } = require('../utils/racm_bulk_import_from_rows');
 
 const MAX_BULK_IMPORT_ROWS = 5000;
+
+router.get('/column-mapping-config', verifyAuth, async (req, res) => {
+  try {
+    return res.status(200).json({
+      success: true,
+      data: getColumnMappingConfig(),
+    });
+  } catch (error) {
+    console.error('column-mapping-config error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load column mapping config',
+    });
+  }
+});
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, '..', 'uploads', 'excel_files');
@@ -670,8 +797,42 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
         });
       }
 
-      const importStats = await insertRacmRowsFromTransformedData(client, {
+      const {
+        preparedRows,
+        duplicateControlNumbersInUpload,
+        duplicateExistingCompanyControlNumbers,
+      } = await prepareBulkImportRows(client, {
         transformedData,
+        companyIdentifier,
+        businessProcess: String(businessProcess).trim(),
+      });
+
+      if (duplicateControlNumbersInUpload.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          message: `Duplicate Control Number found in the uploaded Excel file: ${duplicateControlNumbersInUpload.join(', ')}`,
+          data: {
+            duplicateControlNumbers: duplicateControlNumbersInUpload,
+            source: 'upload',
+          },
+        });
+      }
+
+      if (duplicateExistingCompanyControlNumbers.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          message: `Duplicate Control Number already exists for this company: ${duplicateExistingCompanyControlNumbers.join(', ')}`,
+          data: {
+            duplicateControlNumbers: duplicateExistingCompanyControlNumbers,
+            source: 'database',
+          },
+        });
+      }
+
+      const importStats = await insertRacmRowsFromTransformedData(client, {
+        transformedData: preparedRows,
         companyIdentifier,
         coordinatorEmailId,
         unitId,
@@ -731,9 +892,9 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
     }
   } catch (error) {
     console.error('bulk-import-rows error:', error);
-    return res.status(500).json({
+    return res.status(Number(error.statusCode || 500)).json({
       success: false,
-      message: 'Error importing RACMs',
+      message: error.statusCode ? error.message : 'Error importing RACMs',
       error: error.message,
     });
   }
@@ -1025,6 +1186,7 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
       SELECT
         cf.*,
         cum.unit_name,
+        NULLIF(TRIM(owner.emp_name), '') AS control_owner_name,
         cum.approver_email_id,
         NULLIF(TRIM(approver.emp_name), '') AS approver_name,
         approver.temp_login AS approver_temp_login,
@@ -1033,6 +1195,8 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
       LEFT JOIN company_unit_master cum
         ON cum.unit_id = cf.unit_id
        AND cum.company_identifier = cf.company_identifier
+      LEFT JOIN ifc_users owner
+        ON LOWER(TRIM(owner.email_id)) = LOWER(TRIM(cf.control_owner))
       LEFT JOIN ifc_users approver
         ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(cum.approver_email_id, '')))
       WHERE cf.form_id = $1
@@ -1314,9 +1478,14 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
 
     if (!isRacmAssignmentOperation && control_owner !== undefined && nextAssignmentEmail !== currentAssignmentEmail) {
       fieldsToUpdate.control_owner = control_owner;
+      fieldsToUpdate.user_mail_sent = false;
     }
     if (!(isRacmAssignmentOperation && active !== undefined) && active !== undefined) {
       fieldsToUpdate.active = active;
+      const normalizedActiveForMail = active === '1' || active === 1 || active === true ? '1' : '0';
+      if (normalizedActiveForMail !== currentActiveStatus) {
+        fieldsToUpdate.user_mail_sent = false;
+      }
     }
 
     Object.keys(fieldsToUpdate).forEach(field => {
@@ -1365,24 +1534,18 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
 
     if (control_number !== undefined && currentForm) {
       const cid = currentForm.company_identifier ? String(currentForm.company_identifier).trim() : '';
-      const nextBp =
-        currentForm.business_process != null ? String(currentForm.business_process).trim() : '';
-      const nextFy =
-        currentForm.financial_year != null ? String(currentForm.financial_year).trim() : '';
       const nextCn = control_number != null ? String(control_number).trim() : '';
-      if (cid && nextBp && nextFy && nextCn) {
+      if (cid && nextCn) {
         const dupUpdate = await client.query(
           `
             SELECT 1
             FROM control_forms
             WHERE company_identifier = $1
-              AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
-              AND TRIM(financial_year) = TRIM($3)
-              AND TRIM(control_number) = TRIM($4)
-              AND TRIM(form_id) <> TRIM($5)
+              AND TRIM(control_number) = TRIM($2)
+              AND TRIM(form_id) <> TRIM($3)
             LIMIT 1
           `,
-          [cid, nextBp, nextFy, nextCn, form_id]
+          [cid, nextCn, form_id]
         );
         if (dupUpdate.rows.length > 0) {
           await client.query('ROLLBACK');
@@ -1422,7 +1585,8 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
         const assignmentResult = await client.query(
           `
             UPDATE control_forms
-            SET control_owner = $1
+            SET control_owner = $1,
+                user_mail_sent = FALSE
             WHERE form_id = $2
             RETURNING *;
           `,
@@ -1436,7 +1600,8 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
             const activeResult = await client.query(
               `
                 UPDATE control_forms
-                SET active = $1
+                SET active = $1::varchar,
+                    user_mail_sent = FALSE
                 WHERE form_id = $2
                 RETURNING *;
               `,
@@ -1567,76 +1732,9 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
     }
 
-    // Send email to control_owner if active status changed
-    if (active !== undefined && currentForm) {
-      const newActiveStatus = active === '1' || active === 1 || active === true ? '1' : '0';
-      const processOwnerEmail = updatedRow?.control_owner ? String(updatedRow.control_owner).trim() : '';
-      if (newActiveStatus !== currentActiveStatus && processOwnerEmail) {
-        const businessProcess = currentForm.business_process || '';
-        const formCompanyIdentifier = updatedRow?.company_identifier || currentForm.company_identifier || '';
-        const getProcessOwnerNameQuery = `
-          SELECT emp_name
-          FROM ifc_users
-          WHERE company_identifier = $1
-            AND role = 'user'
-            AND LOWER(TRIM(email_id)) = LOWER(TRIM($2))
-          LIMIT 1
-        `;
-        const processOwnerResult = await client.query(getProcessOwnerNameQuery, [formCompanyIdentifier, processOwnerEmail]);
-        if (processOwnerResult.rows.length === 0) {
-          console.warn(
-            `Skipping RACM status email for ${form_id}: recipient ${processOwnerEmail} does not exist as a user in company ${formCompanyIdentifier}.`
-          );
-        } else {
-          const processOwnerName = processOwnerResult.rows[0]?.emp_name?.trim() || '';
-          const coordinatorEmail = req.user?.email_id || '';
-          let coordinatorName = '';
-          let coordinatorCompanyName = '';
-          if (coordinatorEmail) {
-            const getCoordinatorDetailsQuery = 'SELECT emp_name, company_identifier FROM ifc_users WHERE email_id = $1 LIMIT 1';
-            const coordinatorResult = await client.query(getCoordinatorDetailsQuery, [coordinatorEmail]);
-            coordinatorName = coordinatorResult.rows[0]?.emp_name?.trim() || '';
-            const coordinatorCompanyIdentifier = coordinatorResult.rows[0]?.company_identifier || '';
-            if (coordinatorCompanyIdentifier) {
-              const getCompanyNameQuery = 'SELECT company_name FROM companies WHERE company_identifier = $1 LIMIT 1';
-              const companyResult = await client.query(getCompanyNameQuery, [coordinatorCompanyIdentifier]);
-              coordinatorCompanyName = companyResult.rows[0]?.company_name?.trim() || '';
-            }
-          }
-          const statusLabel = newActiveStatus === '1' ? 'Active' : 'Inactive';
-          const dueDateForEmail = updatedRow?.due_date || currentForm.due_date;
-          const emailPayload = buildControlFormStatusEmail(
-            statusLabel,
-            businessProcess,
-            processOwnerName,
-            coordinatorName,
-            coordinatorCompanyName,
-            dueDateForEmail,
-            form_id
-          );
-
-          if (emailPayload.shouldSend) {
-            // Small delay to ensure user creation email (if user was just created) is sent first.
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            const ccEmails = await getCcEmailsForRacm({
-              companyIdentifier: formCompanyIdentifier,
-              businessProcess,
-              unitId: updatedRow?.unit_id || currentForm.unit_id,
-              excludeEmail: processOwnerEmail,
-            });
-            const emailSent = await sendEmail(processOwnerEmail, emailPayload.subject, emailPayload.text, {
-              cc: ccEmails,
-            });
-            if (!emailSent) {
-              console.warn(`Warning: Failed to send status update email to ${processOwnerEmail}, but form was updated successfully.`);
-            } else {
-              console.log(`✓ Form status update email sent successfully to ${processOwnerEmail}`);
-            }
-          }
-        }
-      }
-    }
+    // User notification email is handled by background scheduler:
+    // send when active != 0 and user_mail_sent = FALSE, then flip to TRUE.
+    // (No direct trigger here.)
 
     // Notify intended approver when user submits RACM for approval.
     if (status === 'sent for approval' && req.user?.role === 'user') {
@@ -1745,7 +1843,13 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     }
     
     // Build WHERE clause based on filters
-    let query = 'UPDATE control_forms SET active = $1 WHERE 1=1';
+    let query = `UPDATE control_forms
+                 SET active = $1,
+                     user_mail_sent = CASE
+                       WHEN $1 = '1' THEN FALSE
+                       ELSE user_mail_sent
+                     END
+                 WHERE 1=1`;
     const queryParams = ['1'];
     let paramIndex = 2;
     
@@ -1822,81 +1926,8 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
       }
     }
     
-    // Send emails to process owners
-    if (formsToUpdate.rows.length > 0) {
-      const emailPromises = [];
-      const uniqueProcessOwners = new Map(); // Use Map to avoid duplicate emails
-      
-      for (const form of formsToUpdate.rows) {
-        if (form.control_owner && form.control_owner.trim()) {
-          const processOwnerEmail = form.control_owner.trim();
-          const wasActive = form.active && form.active !== '' && form.active !== '0';
-          
-          // Only send email if status is actually changing (from inactive to active)
-          if (!wasActive) {
-            // Avoid sending duplicate emails to the same process owner
-            if (!uniqueProcessOwners.has(processOwnerEmail)) {
-              uniqueProcessOwners.set(processOwnerEmail, []);
-            }
-            uniqueProcessOwners.get(processOwnerEmail).push({
-              form_id: form.form_id,
-              description: form.standard_control_description || 'Control Form',
-              company_identifier: form.company_identifier || userCompanyIdentifier || '',
-              business_process: form.business_process || '',
-              unit_id: form.unit_id || '',
-            });
-          }
-        }
-      }
-      
-      // Small delay to ensure user creation emails (if users were just created) are sent first
-      // This ensures proper sequencing: user creation emails → form status update emails
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Send emails to each unique process owner
-      for (const [email, forms] of uniqueProcessOwners.entries()) {
-        const formList = forms.map(f => `  - Form ID: ${f.form_id}\n    Description: ${f.description}`).join('\n');
-        const emailSubject = `RACM Status Update - Set to Active`;
-        const emailText = `
-Dear Control Owner,
-
-This is to inform you that the following RACM(s) have been set to Active:
-
-${formList}
-
-Total Forms: ${forms.length}
-
-Please ensure all necessary actions are taken accordingly.
-
-Best regards,
-IFC System
-        `;
-
-        const ccSet = new Set();
-        for (const form of forms) {
-          const ccEmailsForForm = await getCcEmailsForRacm({
-            companyIdentifier: form.company_identifier,
-            businessProcess: form.business_process,
-            unitId: form.unit_id,
-            excludeEmail: email,
-          });
-          ccEmailsForForm.forEach((ccEmail) => ccSet.add(ccEmail));
-        }
-
-        emailPromises.push(sendEmail(email, emailSubject, emailText, { cc: Array.from(ccSet) }));
-      }
-      
-      // Send all emails (don't wait for them to complete)
-      Promise.all(emailPromises).then(results => {
-        const successCount = results.filter(r => r === true).length;
-        const failCount = results.length - successCount;
-        if (failCount > 0) {
-          console.warn(`Warning: Failed to send ${failCount} status update email(s) out of ${results.length} total.`);
-        }
-      }).catch(error => {
-        console.error('Error sending bulk status update emails:', error);
-      });
-    }
+    // User notification email is handled by background scheduler
+    // using active != 0 and user_mail_sent = FALSE.
     
     res.status(200).json({
       success: true,
@@ -2118,23 +2149,18 @@ router.post('/', verifyAuth, async (req, res) => {
       }
     }
 
-    // Prevent duplicate RACM creation (company_identifier + business_process + financial_year + control_number)
-    // Note: apply only when all key fields are present.
-    const bpKey = business_process != null ? String(business_process).trim() : ''
-    const fyKey = financial_year != null ? String(financial_year).trim() : ''
+    // Prevent duplicate RACM creation (company_identifier + control_number)
     const cnKey = control_number != null ? String(control_number).trim() : ''
-    if (userCompanyIdentifier && bpKey && fyKey && cnKey) {
+    if (userCompanyIdentifier && cnKey) {
       const dup = await client.query(
         `
           SELECT 1
           FROM control_forms
           WHERE company_identifier = $1
-            AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
-            AND TRIM(financial_year) = TRIM($3)
-            AND TRIM(control_number) = TRIM($4)
+            AND TRIM(control_number) = TRIM($2)
           LIMIT 1
         `,
-        [userCompanyIdentifier, bpKey, fyKey, cnKey]
+        [userCompanyIdentifier, cnKey]
       )
       if (dup.rows.length > 0) {
         await client.query('ROLLBACK');
@@ -2203,6 +2229,13 @@ router.post('/', verifyAuth, async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error creating RACM:', error);
+
+    if (error.code === '23505') {
+      return res.status(409).json({
+        success: false,
+        message: DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE,
+      });
+    }
     
     res.status(500).json({
       success: false,
@@ -2297,24 +2330,20 @@ router.post('/replicate', verifyAuth, async (req, res) => {
       insertObj.form_id = await generateUniqueFormId(client);
       insertObj.financial_year = String(financial_year).trim();
 
-      // Prevent duplicate RACM creation (same company + business_process + financial_year + control_number)
+      // Prevent duplicate RACM creation (same company + control_number)
       try {
         const companyId = coordinatorCompany || insertObj.company_identifier || null
-        const bpKey = insertObj.business_process != null ? String(insertObj.business_process).trim() : ''
-        const fyKey = insertObj.financial_year != null ? String(insertObj.financial_year).trim() : ''
         const cnKey = insertObj.control_number != null ? String(insertObj.control_number).trim() : ''
-        if (companyId && bpKey && fyKey && cnKey) {
+        if (companyId && cnKey) {
           const dup = await client.query(
             `
               SELECT 1
               FROM control_forms
               WHERE company_identifier = $1
-                AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
-                AND TRIM(financial_year) = TRIM($3)
-                AND TRIM(control_number) = TRIM($4)
+                AND TRIM(control_number) = TRIM($2)
               LIMIT 1
             `,
-            [companyId, bpKey, fyKey, cnKey]
+            [companyId, cnKey]
           )
           if (dup.rows.length > 0) {
             skippedDuplicates.push(row.form_id)

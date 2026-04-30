@@ -1,0 +1,12 @@
+Things required for testing.
+
+1. Some frequency values are new for code base. And needs to be added into a category.
+
+
+
+
+
+
+
+Mayank sir told to not import the Assertion values cause importing logic is different in program then provided in excel file.
+

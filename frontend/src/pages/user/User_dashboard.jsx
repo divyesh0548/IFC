@@ -21,11 +21,11 @@ import MenuItem from '@mui/material/MenuItem'
 import Switch from '@mui/material/Switch'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
+import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
 function User_dashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const [userRole, setUserRole] = useState(null)
   const [userEmail, setUserEmail] = useState(null)
   const [forms, setForms] = useState([])
   const [loading, setLoading] = useState(true)
@@ -34,19 +34,8 @@ function User_dashboard() {
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
+  const { businessProcessOptions } = useBusinessProcesses()
   useSyncGlobalLoading(loading)
-
-  // Business process options (matching other pages)
-  const businessProcessOptions = [
-    'Purchase to Pay',
-    'Order to Cash',
-    'Hire to Retire',
-    'Capital Expenditure',
-    'Treasury',
-    'Financial Statement Closure Process',
-    'Information Technology General Controls',
-    'Entity Level Controls'
-  ]
 
   const extractUniqueFinancialYears = (rows) => {
     return [...new Set(
@@ -68,7 +57,6 @@ function User_dashboard() {
         const data = await response.json()
 
         if (response.ok && data.success) {
-          setUserRole(data.user.role)
           setUserEmail(data.user.email_id)
         }
       } catch (error) {

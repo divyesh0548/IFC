@@ -8,5 +8,6 @@ router.use('/control-forms', require('./control_forms'));
 router.use('/approver', require('./approver/index'));
 router.use('/auditor', require('./auditor/index'));
 router.use('/stats', require('./stats'));
+router.use('/business-processes', require('./business_processes'));
 
 module.exports = router;

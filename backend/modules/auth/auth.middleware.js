@@ -58,6 +58,24 @@ async function ensurePrivilegedUserHasUnitAssignment(user) {
   return result.rows.length > 0;
 }
 
+async function getAuthenticatedUserFromAnyCookie(req) {
+  const emailId = getEmailFromAuthCookies(req);
+  if (!emailId) {
+    return null;
+  }
+
+  const userResult = await pool.query(
+    'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1 LIMIT 1',
+    [emailId]
+  );
+
+  if (userResult.rows.length === 0) {
+    return null;
+  }
+
+  return userResult.rows[0];
+}
+
 /** Company coordinator only (`ifc_users.role === 'company_co'`). */
 async function verifyCompanyCoordinator(req, res, next) {
   try {
@@ -384,6 +402,38 @@ async function verifyAuditorAuth(req, res, next) {
   }
 }
 
+/** Any authenticated IFC user role. */
+async function verifyAuthenticatedUser(req, res, next) {
+  try {
+    const user = await getAuthenticatedUserFromAnyCookie(req);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    if (['company_co', 'approver'].includes(String(user.role || '').trim().toLowerCase())) {
+      if (!(await ensurePrivilegedUserHasUnitAssignment(user))) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account is not yet assigned to any Company Unit',
+        });
+      }
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('Authenticated user verification error:', error);
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication failed',
+    });
+  }
+}
+
 module.exports = {
   getEmailFromAuthCookies,
   verifyCompanyCoordinator,
@@ -391,4 +441,5 @@ module.exports = {
   verifyUserAuth,
   verifySiteadminAuth,
   verifyAuditorAuth,
+  verifyAuthenticatedUser,
 };

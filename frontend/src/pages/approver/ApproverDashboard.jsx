@@ -22,6 +22,7 @@ import {
 import { STORAGE_KEYS } from '../../storageKeys'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
 function ApproverDashboard() {
   const theme = useTheme()
@@ -38,17 +39,7 @@ function ApproverDashboard() {
   const [mappedUnits, setMappedUnits] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
   const showUnitContext = mappedUnits.length > 1
-
-  const businessProcessOptions = [
-    'Purchase to Pay',
-    'Order to Cash',
-    'Hire to Retire',
-    'Capital Expenditure',
-    'Treasury',
-    'Financial Statement Closure Process',
-    'Information Technology General Controls',
-    'Entity Level Controls',
-  ]
+  const { businessProcessOptions } = useBusinessProcesses()
 
   const getDistinctFinancialYears = (rows) => {
     return [...new Set(

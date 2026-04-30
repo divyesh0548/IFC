@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { pool } = require('../../utils/db');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
 const { encryptTempPassword } = require('../../utils/login_email');
+const { sendEmail } = require('../../utils/send_email');
 
 function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();
@@ -11,16 +12,27 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
 }
 
-const DEFAULT_BUSINESS_PROCESSES = [
-  'Purchase to Pay',
-  'Order to Cash',
-  'Hire to Retire',
-  'Capital Expenditure',
-  'Treasury',
-  'Financial Statement Closure Process',
-  'Information Technology General Controls',
-  'Entity Level Controls',
-];
+async function listBusinessProcesses(client = pool) {
+  const result = await client.query(
+    `
+      SELECT
+        id,
+        TRIM(business_process) AS business_process,
+        TRIM(business_process_code) AS business_process_code,
+        created_at
+      FROM businees_process_code
+      WHERE NULLIF(TRIM(COALESCE(business_process, '')), '') IS NOT NULL
+        AND NULLIF(TRIM(COALESCE(business_process_code, '')), '') IS NOT NULL
+      ORDER BY TRIM(business_process) ASC, TRIM(business_process_code) ASC
+    `
+  );
+
+  return result.rows.map((row) => ({
+    ...row,
+    business_process: String(row.business_process || '').trim(),
+    business_process_code: String(row.business_process_code || '').trim(),
+  }));
+}
 
 function generateUnitIdentifier(unitName) {
   const namePart = String(unitName || 'UNIT')
@@ -166,6 +178,24 @@ function getUnitMappingRoleConfig(role) {
   }
 
   return null;
+}
+
+function buildUnitAssignmentNotificationEmail({ roleLabel, unitName, companyName }) {
+  const safeRoleLabel = String(roleLabel || 'User').trim();
+  const safeUnitName = String(unitName || 'the specified').trim();
+  const safeCompanyName = String(companyName || 'your').trim();
+
+  return {
+    subject: `Unit Assignment Notification - ${safeCompanyName}`,
+    text: `Dear Sir/Madam,
+
+This is to formally inform you that you have been assigned as a ${safeRoleLabel} to the ${safeUnitName} unit for the company ${safeCompanyName}.
+
+You are requested to take note of this assignment and proceed with your responsibilities accordingly.
+
+Regards,
+IFC Admin Team`,
+  };
 }
 
 async function createUnitMappedPrivilegedUser(client, coordinator, payload = {}, role) {
@@ -886,7 +916,7 @@ async function updateUnitAssignment(req, res) {
 
     const unitResult = await client.query(
       `
-        SELECT id, ${config.columnName}
+        SELECT id, unit_name, ${config.columnName}
         FROM company_unit_master
         WHERE company_identifier = $1
           AND unit_id = $2
@@ -933,6 +963,31 @@ async function updateUnitAssignment(req, res) {
     );
 
     await client.query('COMMIT');
+
+    try {
+      const companyResult = await pool.query(
+        `
+          SELECT company_name
+          FROM companies
+          WHERE company_identifier = $1
+          LIMIT 1
+        `,
+        [companyIdentifier]
+      );
+
+      const emailPayload = buildUnitAssignmentNotificationEmail({
+        roleLabel: config.roleLabel,
+        unitName: unitResult.rows[0]?.unit_name || unitId,
+        companyName: companyResult.rows[0]?.company_name || companyIdentifier,
+      });
+
+      const emailSent = await sendEmail(emailId, emailPayload.subject, emailPayload.text);
+      if (!emailSent) {
+        console.warn(`Warning: failed to send unit assignment email to ${emailId}`);
+      }
+    } catch (emailError) {
+      console.error('Unit assignment notification email error:', emailError);
+    }
 
     return res.status(200).json({
       success: true,
@@ -1584,25 +1639,10 @@ async function getCommunicationMatrix(req, res) {
       });
     }
 
-    const businessProcessesResult = await pool.query(
-      `
-        SELECT DISTINCT TRIM(business_process) AS business_process
-        FROM control_forms
-        WHERE company_identifier = $1
-          AND unit_id = ANY($2::text[])
-          AND NULLIF(TRIM(COALESCE(business_process, '')), '') IS NOT NULL
-        ORDER BY business_process ASC
-      `,
-      [companyIdentifier, mappedUnitIds]
-    );
-    const allBusinessProcesses = Array.from(
-      new Set([
-        ...DEFAULT_BUSINESS_PROCESSES,
-        ...businessProcessesResult.rows
-          .map((row) => String(row.business_process || '').trim())
-          .filter(Boolean),
-      ])
-    ).sort((a, b) => a.localeCompare(b));
+    const businessProcesses = await listBusinessProcesses();
+    const allBusinessProcesses = businessProcesses
+      .map((row) => String(row.business_process || '').trim())
+      .filter(Boolean);
 
     let entriesQuery = `
       SELECT
@@ -1715,7 +1755,10 @@ async function addCommonCommunicationEmails(req, res) {
       });
     }
 
-    const businessProcesses = [...DEFAULT_BUSINESS_PROCESSES];
+    const businessProcessRows = await listBusinessProcesses(client);
+    const businessProcesses = businessProcessRows
+      .map((row) => String(row.business_process || '').trim())
+      .filter(Boolean);
 
     if (businessProcesses.length === 0) {
       await client.query('ROLLBACK');

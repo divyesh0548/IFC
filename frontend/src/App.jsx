@@ -1,4 +1,5 @@
 import './index.css'
+import { useEffect, useState } from 'react'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import { Navigate, Routes, Route, useLocation } from 'react-router-dom'
@@ -9,6 +10,7 @@ import CompanyCreation from './pages/siteadmin/CompanyCreation'
 import CompanyDetail from './pages/siteadmin/CompanyDetail'
 import AuditorManagement from './pages/siteadmin/AuditorManagement'
 import Siteadmin_Dashboard from './pages/siteadmin/Siteadmin_dashboard'
+import SiteadminBusinessProcessManagement from './pages/siteadmin/BusinessProcessManagement'
 import AuditorHome from './pages/auditor/Auditor_Home'
 import Auditor_dashboard from './pages/auditor/Auditor_dashboard'
 import AuditorRacmDashboard from './pages/auditor/AuditorRacmDashboard'
@@ -38,6 +40,7 @@ import CreateUser from './pages/company_co/CreateUser'
 import ProfilePage from './pages/ProfilePage'
 import { Toaster } from 'react-hot-toast'
 import { GlobalLoadingProvider, useGlobalLoading } from './contexts/GlobalLoadingContext'
+import { apiUrl } from './config/api'
 
 function GlobalLoadingStrip() {
   const theme = useTheme()
@@ -96,6 +99,60 @@ function GlobalLoadingStrip() {
   )
 }
 
+const ROLE_HOME_ROUTES = {
+  user: '/user/home',
+  company_co: '/company_co/home',
+  approver: '/approver/home',
+  auditor: '/auditor/home',
+  siteadmin: '/siteadmin/dashboard',
+}
+
+function RouteFallbackRedirect() {
+  const [redirectPath, setRedirectPath] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const resolveRedirect = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+
+        if (cancelled) return
+
+        if (response.ok && data.success) {
+          const role = String(data.user?.role || '').trim()
+          setRedirectPath(ROLE_HOME_ROUTES[role] || '/')
+          return
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error verifying auth token for route fallback:', error)
+        }
+      }
+
+      if (!cancelled) {
+        setRedirectPath('/login')
+      }
+    }
+
+    resolveRedirect()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (!redirectPath) {
+    return null
+  }
+
+  return <Navigate to={redirectPath} replace />
+}
+
 function App() {
   return (
     <GlobalLoadingProvider>
@@ -125,12 +182,15 @@ function App() {
             </RoleBasedProtectedRoute>
           }
         >
+          <Route index element={<Navigate to={ROLE_HOME_ROUTES.siteadmin} replace />} />
           <Route path="dashboard" element={<Siteadmin_Dashboard />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="company-management" element={<Company_Management />} />
           <Route path="auditors" element={<AuditorManagement />} />
           <Route path="create-company" element={<CompanyCreation />} />
+          <Route path="business-processes" element={<SiteadminBusinessProcessManagement />} />
           <Route path="company/:company_identifier" element={<CompanyDetail />} />
+          <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.siteadmin} replace />} />
         </Route>
 
 {/* Auditor Routes */}
@@ -142,7 +202,7 @@ function App() {
             </RoleBasedProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="home" replace />} />
+          <Route index element={<Navigate to={ROLE_HOME_ROUTES.auditor} replace />} />
           <Route path="home" element={<AuditorHome />} />
           <Route path="dashboard" element={<Auditor_dashboard />} />
           <Route path="companies" element={<Auditor_dashboard />} />
@@ -150,6 +210,7 @@ function App() {
           <Route path="racms" element={<AuditorRacmDashboard />} />
           <Route path="form/:form_id" element={<AuditorFormDetail />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.auditor} replace />} />
         </Route>
 
 {/* Approver Routes */}
@@ -161,10 +222,12 @@ function App() {
             </RoleBasedProtectedRoute>
           }
         >
+          <Route index element={<Navigate to={ROLE_HOME_ROUTES.approver} replace />} />
           <Route path="home" element={<ApproverHome />} />
           <Route path="dashboard" element={<ApproverDashboard />} />
           <Route path="form/:form_id" element={<ApproverFormDetail />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.approver} replace />} />
         </Route>
 
 {/* User Routes */}
@@ -176,11 +239,12 @@ function App() {
             </RoleBasedProtectedRoute>
           } 
         >
-          <Route index element={<Navigate to="home" replace />} />
+          <Route index element={<Navigate to={ROLE_HOME_ROUTES.user} replace />} />
           <Route path="home" element={<UserHome />} />
           <Route path="dashboard" element={<User_dashboard />} />
           <Route path="form/:form_id" element={<UserFormDetail />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.user} replace />} />
         </Route>
 
       {/* Company Coordinator Routes */}
@@ -192,6 +256,7 @@ function App() {
             </RoleBasedProtectedRoute>
           } 
         >
+          <Route index element={<Navigate to={ROLE_HOME_ROUTES.company_co} replace />} />
           <Route path="home" element={<Company_co_home />} />
           <Route path="dashboard" element={<Company_Co_dashboard />} />
           <Route path="racm-management" element={<RacmManagementDashboard />} />
@@ -205,8 +270,10 @@ function App() {
           <Route path="create-form" element={<CreateControlForm />} />
           <Route path="form/:form_id" element={<FormDetail />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.company_co} replace />} />
         </Route>
-        
+
+        <Route path="*" element={<RouteFallbackRedirect />} />
         </Routes>
       </div>
     </GlobalLoadingProvider>

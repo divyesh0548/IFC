@@ -1,21 +1,5 @@
 
 
-
-
-
-
-Scenarios to consider:
-
-RACM assignment can't be changed once it is Approved.
-
-Should we send emails to Approver when user sends RACM for approval.
-
-Are fields required for RACM to be created and set Active? Should we define a set of fields which are indispensable for RACM Creation?
-
-
-
-
-
 Implement a way to store user preference, like word wrap.
 
 Control number should be unique.
@@ -36,8 +20,6 @@ Those last three column, which are to be updated by approver, needs to be insert
 
 Bulk upload/update (for specific fields) in user creation. Export user list in excel format.
 Provide a template for it.
-
-Sample doc is not required. (give warning)
 
 
 
@@ -65,16 +47,19 @@ Company coordinator can create approver for comapny, user and another company co
 
 Scenarios and Doubts :
 
-What restrictions to impose for uploading the sample document as well for user to upload document?
-
-Can coordinator make changes once RACM is sent for approval or Approved or Rejected?
-
-How to handle Control Number generation, cause RACMs privide by Mayank sir have no such field.
-
 Sapan sir said to display number of RACMs in sample required excel. 
 
 
 
 Prompts : 
 
-C:\Divyesh\IFC\AmazonDB\frontend\src\pages\auditor\Auditor_dashboard.jsx --> Change the sequence of columns 1. Business Process 2. Standard Control Description 3. Financial Year 4. Process Owner 5. Unit Name. Keep rest as its current position. 
+
+
+
+
+
+
+
+Version 2:
+
+Company/Unit wise different RACM schema. Coordinator will define the schema and according to that RACMs will be uploaded and created. Coordinator will also have rights to edit the RACM.

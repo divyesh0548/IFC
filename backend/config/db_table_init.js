@@ -132,9 +132,10 @@ const REQUIRED_TABLES = {
       reminder_frequency: 'character varying(50) NULL',
       reminder_datetime: 'timestamp without time zone NULL',
       approval_status_change_timestamp: 'timestamp without time zone NULL',
+      user_mail_sent: 'boolean NULL DEFAULT FALSE',
     },
     primaryKey: 'id',
-    unique: ['form_id'],
+    unique: ['form_id', ['company_identifier', 'control_number']],
   },
   ifc_users: {
     columns: {
@@ -170,6 +171,16 @@ const REQUIRED_TABLES = {
     primaryKey: 'id',
     unique: [['email_id', 'business_process', 'unit_id']],
   },
+  businees_process_code:{
+    columns: {
+      id: 'serial',
+      business_process: 'character varying(255) NOT NULL',
+      business_process_code: 'character varying(255) NOT NULL',
+      created_at: "timestamp without time zone NULL DEFAULT ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) AT TIME ZONE 'Asia/Kolkata'::text)",
+    },
+    primaryKey: 'id',
+    unique: ['business_process_code'],
+  }
 };
 
 function quoteIdentifier(identifier) {

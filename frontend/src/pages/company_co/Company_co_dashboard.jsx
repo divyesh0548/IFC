@@ -19,11 +19,11 @@ import {
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
+import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
 function Company_Co_dashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const [userRole, setUserRole] = useState(null)
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
   const [forms, setForms] = useState([])
   const [filterActive, setFilterActive] = useState('all') // 'all', 'active', 'inactive'
@@ -32,19 +32,8 @@ function Company_Co_dashboard() {
   const [filterApprovalStatus, setFilterApprovalStatus] = useState('all') // 'all', 'Approved', 'Rejected', 'Pending'
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
+  const { businessProcessOptions } = useBusinessProcesses()
   useSyncGlobalLoading(loading)
-
-  // Business process options (matching ExcelUpload.jsx)
-  const businessProcessOptions = [
-    'Purchase to Pay',
-    'Order to Cash',
-    'Hire to Retire',
-    'Capital Expenditure',
-    'Treasury',
-    'Financial Statement Closure Process',
-    'Information Technology General Controls',
-    'Entity Level Controls'
-  ]
 
   useEffect(() => {
     // Fetch user role and company_identifier on component mount
@@ -58,7 +47,6 @@ function Company_Co_dashboard() {
         const data = await response.json()
 
         if (response.ok && data.success) {
-          setUserRole(data.user.role)
           setCompanyIdentifier(data.user.company_identifier)
         }
       } catch (error) {

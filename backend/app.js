@@ -8,6 +8,7 @@ dotenv.config();
 
 const { runReminderEmails } = require('./scripts/reminder_emails');
 const { runPendingLoginEmails } = require('./scripts/login_email_sender');
+const { runPendingRacmActiveUserEmails } = require('./scripts/racm_active_user_email_sender');
 const { runBootstrap } = require('./config/bootstrap');
 require('./utils/db'); // Load shared pool (timezone set there)
 
@@ -26,6 +27,7 @@ function buildAllowedOrigins() {
   return new Set([
     ...configuredOrigins,
     'http://localhost:5173',
+    'http://localhost:3000',
   ]);
 }
 
@@ -91,6 +93,16 @@ app.use((req, res, next) => {
 
 
 app.use('/api', require('./routes'));
+
+const path = require('path');
+
+// Then static files
+app.use(express.static(path.join(__dirname, "../frontend/dist")));
+
+// Then catch-all for React
+app.get(/.*/, (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
+});
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
@@ -117,6 +129,16 @@ setInterval(async () => {
   }
 }, 60 * 1000);
 
+// Active RACM assignment emails for process owners (runs every 1 minute)
+console.log('Starting active RACM user email scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await runPendingRacmActiveUserEmails();
+  } catch (error) {
+    console.error('Error in active RACM user email job:', error);
+  }
+}, 60 * 1000);
+
 // Run bootstrap tasks, then start server
 (async () => {
   try {
@@ -126,6 +148,11 @@ setInterval(async () => {
       setTimeout(() => {
         runPendingLoginEmails().catch((error) => {
           console.error('Error in initial login email job:', error);
+        });
+      }, 0);
+      setTimeout(() => {
+        runPendingRacmActiveUserEmails().catch((error) => {
+          console.error('Error in initial active RACM user email job:', error);
         });
       }, 0);
     });

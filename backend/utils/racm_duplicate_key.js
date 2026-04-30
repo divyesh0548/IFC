@@ -1,10 +1,10 @@
 /**
- * RACM uniqueness is scoped to company_identifier + business_process + financial_year + control_number.
- * Different companies may use the same BP / FY / Control Number combination.
+ * RACM uniqueness is scoped to company_identifier + control_number.
+ * Different companies may reuse the same control number.
  */
 
 const DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE =
-  'Your company already has a RACM with the same Business Process, Financial Year, and Control Number. Duplication is not allowed.';
+  'Your company already has a RACM with the same Control Number. Duplication is not allowed.';
 
 /**
  * @param {{ skippedCount: number, duplicateCount: number, errorCount: number, duplicateControlNumberSamples?: string[] }} stats
@@ -15,7 +15,7 @@ function formatBulkImportZeroInsertedMessage(stats) {
 
   if (duplicateCount > 0) {
     parts.push(
-      `${duplicateCount} row(s) were not imported because your company already has a RACM with the same Business Process, Financial Year, and Control Number.`
+      `${duplicateCount} row(s) were not imported because your company already has a RACM with the same Control Number.`
     );
   }
   if (skippedCount > 0) {
@@ -41,7 +41,7 @@ function formatBulkImportSuccessMessage(insertedCount, stats) {
   let msg = `Successfully created ${insertedCount} RACM(s).`;
   const extras = [];
   if (duplicateCount > 0) {
-    extras.push(`${duplicateCount} row(s) skipped as duplicates (same company, Business Process, Financial Year, control number)`);
+    extras.push(`${duplicateCount} row(s) skipped as duplicates (same company, Control Number)`);
   }
   if (skippedCount > 0) {
     extras.push(`${skippedCount} row(s) skipped as mostly empty`);

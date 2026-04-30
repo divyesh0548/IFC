@@ -4,6 +4,7 @@ import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
+import Alert from '@mui/material/Alert'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -27,6 +28,9 @@ import { apiUrl } from '../../config/api'
 const AUTO = '__auto__'
 const SKIP = '__skip__'
 const MAPPABLE_SET = new Set(RACM_BULK_IMPORT_MAPPABLE_FIELDS)
+const DUPLICATE_CONTROL_NUMBER_MESSAGE = 'Duplicate Control Number already exists for this company'
+const DUPLICATE_CONTROL_NUMBER_NOTICE =
+  'Change the control number and re-upload the excel or do not import control number'
 
 function normalizeHeader(value) {
   return String(value || '')
@@ -35,47 +39,6 @@ function normalizeHeader(value) {
     .trim()
 }
 
-const SIMPLE_COLUMN_MAPPING = {
-  'control number': 'control_number',
-  'sub process': 'sub_process',
-  'sub-process': 'sub_process',
-  risk: 'risk_description',
-  'risk heat': 'risk_heat',
-  'whether fraud risk': 'whether_fraud_risks_exist',
-  'whether fraud risks': 'whether_fraud_risks_exist',
-  'whether fraud risks exist': 'whether_fraud_risks_exist',
-  completeness: 'completeness',
-  'existence occurrence': 'existence_occurrence',
-  'valuation allocation': 'valuation_and_allocation',
-  'control objective': 'control_objective',
-  'ipe reference': 'ipe_reference',
-  'application name': 'application_name',
-  'control performer': 'control_performer',
-  'control owner': 'control_owner',
-}
-
-const COLUMN_PATTERNS = [
-  { keywords: ['account', 'balance', 'disclosure'], dbColumn: 'area', priority: 1 },
-  { keywords: ['business', 'cycle', 'process'], dbColumn: 'business_process', priority: 1 },
-  { keywords: ['risk', 'heat'], dbColumn: 'risk_heat', priority: 2, requireAllKeywords: true },
-  { keywords: ['rights', 'obligations'], dbColumn: 'rights_and_obligation', priority: 1 },
-  { keywords: ['presentation', 'disclosure'], dbColumn: 'presentation_and_disclosure', priority: 1 },
-  {
-    keywords: ['standard', 'control', 'description'],
-    dbColumn: 'standard_control_description',
-    priority: 1,
-    requireAllKeywords: true,
-  },
-  { keywords: ['process', 'activity', 'walkthrough', 'details'], dbColumn: 'process_walkthrough', priority: 1 },
-  { keywords: ['type', 'operational', 'financial'], dbColumn: 'control_type_fo', priority: 1 },
-  { keywords: ['rely', 'information', 'produced', 'entity'], dbColumn: 'control_relies_on_ipe', priority: 1 },
-  { keywords: ['audit', 'evidence', 'accuracy', 'completeness'], dbColumn: 'audit_evidence_accuracy', priority: 1 },
-  { keywords: ['nature', 'preventive', 'detective'], dbColumn: 'nature_of_control', priority: 1 },
-  { keywords: ['type', 'manual', 'automated'], dbColumn: 'control_type_ma', priority: 1 },
-  { keywords: ['key', 'control', 'yes', 'no'], dbColumn: 'key_control', priority: 1 },
-  { keywords: ['fraud', 'risk', 'whether'], dbColumn: 'whether_fraud_risks_exist', priority: 1 },
-]
-
 function hasKeywordMatch(normalizedHeader, keyword) {
   const tokens = normalizedHeader.split(' ').filter(Boolean)
   const k = keyword.toLowerCase()
@@ -83,8 +46,20 @@ function hasKeywordMatch(normalizedHeader, keyword) {
   return tokens.some((t) => t === k || t.startsWith(k))
 }
 
-function detectDbColumnFromHeader(excelHeader) {
+function getHeaderWords(normalizedHeader) {
+  return new Set(
+    String(normalizedHeader || '')
+      .split(' ')
+      .map((word) => word.trim().toLowerCase())
+      .filter(Boolean)
+  )
+}
+
+function detectDbColumnFromHeader(excelHeader, mappingConfig) {
   if (!excelHeader) return null
+  if (!mappingConfig?.simpleColumnMapping || !Array.isArray(mappingConfig?.columnPatterns)) return null
+  const simpleColumnMapping = mappingConfig.simpleColumnMapping
+  const columnPatterns = mappingConfig.columnPatterns
   const normalized = String(excelHeader)
     .trim()
     .toLowerCase()
@@ -97,25 +72,45 @@ function detectDbColumnFromHeader(excelHeader) {
     return 'control_frequency'
   }
 
-  if (SIMPLE_COLUMN_MAPPING[normalized]) return SIMPLE_COLUMN_MAPPING[normalized]
+  if (simpleColumnMapping[normalized]) return simpleColumnMapping[normalized]
 
   const withUnderscores = normalized.replace(/\s+/g, '_')
-  if (SIMPLE_COLUMN_MAPPING[withUnderscores]) return SIMPLE_COLUMN_MAPPING[withUnderscores]
+  if (simpleColumnMapping[withUnderscores]) return simpleColumnMapping[withUnderscores]
 
   let bestMatch = null
   let bestScore = 0
-  for (const pattern of COLUMN_PATTERNS) {
-    let matchCount = 0
-    for (const keyword of pattern.keywords) {
-      if (hasKeywordMatch(normalized, keyword)) matchCount++
-    }
-    if (matchCount > 0) {
-      if (pattern.requireAllKeywords && matchCount !== pattern.keywords.length) continue
-      const score = (matchCount / pattern.keywords.length) * pattern.priority
-      if (score > bestScore) {
-        bestScore = score
-        bestMatch = pattern.dbColumn
+  const headerWords = getHeaderWords(normalized)
+  for (const pattern of columnPatterns) {
+    const keywordSets = Array.isArray(pattern.keywordGroups) && pattern.keywordGroups.length > 0
+      ? pattern.keywordGroups
+      : [pattern.keywords || []]
+
+    let patternBestScore = 0
+    for (const keywords of keywordSets) {
+      if (!Array.isArray(keywords) || keywords.length === 0) continue
+
+      if (Array.isArray(pattern.keywordGroups) && pattern.keywordGroups.length > 0) {
+        const hasAllGroupWords = keywords.every((keyword) => headerWords.has(String(keyword).toLowerCase()))
+        if (!hasAllGroupWords) continue
+        patternBestScore = Math.max(patternBestScore, pattern.priority || 1)
+        continue
       }
+
+      let matchCount = 0
+      for (const keyword of keywords) {
+        if (hasKeywordMatch(normalized, keyword)) matchCount++
+      }
+      if (matchCount > 0) {
+        if (pattern.requireAllKeywords && matchCount !== keywords.length) continue
+        const score = (matchCount / keywords.length) * pattern.priority
+        if (score > patternBestScore) {
+          patternBestScore = score
+        }
+      }
+    }
+    if (patternBestScore > bestScore) {
+      bestScore = patternBestScore
+      bestMatch = pattern.dbColumn
     }
   }
   if (bestMatch && bestScore >= 0.5) return bestMatch
@@ -135,11 +130,11 @@ function collectHeaders(rows) {
   return [...set]
 }
 
-function buildUniqueAutoDetectedByHeader(headers) {
+function buildUniqueAutoDetectedByHeader(headers, mappingConfig) {
   const usedFields = new Set()
   const out = {}
   headers.forEach((header) => {
-    const detected = detectDbColumnFromHeader(header)
+    const detected = detectDbColumnFromHeader(header, mappingConfig)
     const resolved = detected && MAPPABLE_SET.has(detected) ? detected : null
     if (resolved && !usedFields.has(resolved)) {
       out[header] = resolved
@@ -155,7 +150,7 @@ function buildUniqueAutoDetectedByHeader(headers) {
  * Effective RACM DB field for an Excel header after submit (skip / explicit / auto-detect).
  * Aligns with how bulk-import applies column_mapping + auto rules.
  */
-function getEffectiveMappedField(excelHeader, selections, autoDetectedByHeader) {
+function getEffectiveMappedField(excelHeader, selections, autoDetectedByHeader, mappingConfig) {
   const v = selections[excelHeader]
   if (v === SKIP) return null
   if (v && v !== AUTO) {
@@ -163,17 +158,17 @@ function getEffectiveMappedField(excelHeader, selections, autoDetectedByHeader) 
   }
   const detected = autoDetectedByHeader[excelHeader]
   if (detected && MAPPABLE_SET.has(detected)) return detected
-  const fallback = detectDbColumnFromHeader(excelHeader)
+  const fallback = detectDbColumnFromHeader(excelHeader, mappingConfig)
   return fallback && MAPPABLE_SET.has(fallback) ? fallback : null
 }
 
 /**
  * @returns {{ ok: true } | { ok: false, fieldLabel: string, excelHeaders: string[] }}
  */
-function findDuplicateFieldMappings(headers, selections, autoDetectedByHeader) {
+function findDuplicateFieldMappings(headers, selections, autoDetectedByHeader, mappingConfig) {
   const byField = new Map()
   for (const h of headers) {
-    const field = getEffectiveMappedField(h, selections, autoDetectedByHeader)
+    const field = getEffectiveMappedField(h, selections, autoDetectedByHeader, mappingConfig)
     if (!field) continue
     if (!byField.has(field)) byField.set(field, [])
     byField.get(field).push(h)
@@ -240,6 +235,8 @@ function ExcelColumnMap() {
   const [initializing, setInitializing] = useState(true)
   const [payload, setPayload] = useState(null)
   const [selections, setSelections] = useState(null)
+  const [mappingConfig, setMappingConfig] = useState(null)
+  const [duplicateControlNumberNotice, setDuplicateControlNumberNotice] = useState('')
   const initialSelectionsRef = useRef(null)
   useSyncGlobalLoading(initializing || loading)
   const headers = useMemo(() => (payload ? collectHeaders(payload.rows) : []), [payload])
@@ -257,7 +254,36 @@ function ExcelColumnMap() {
   )
 
   useEffect(() => {
+    const loadMappingConfig = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/control-forms/column-mapping-config'), {
+          credentials: 'include',
+        })
+        const data = await response.json()
+        if (!response.ok || !data?.success || !data?.data) {
+          throw new Error('Failed to load mapping config')
+        }
+        if (!data.data.simpleColumnMapping || !Array.isArray(data.data.columnPatterns)) {
+          throw new Error('Invalid mapping config response')
+        }
+        setMappingConfig({
+          simpleColumnMapping: data.data.simpleColumnMapping,
+          columnPatterns: data.data.columnPatterns,
+        })
+      } catch (error) {
+        console.error(error)
+        toast.error('Could not load column mapping config. Please try again.')
+        navigate('/company_co/upload-excel', { replace: true })
+        setInitializing(false)
+      }
+    }
+    loadMappingConfig()
+  }, [navigate])
+
+  useEffect(() => {
     try {
+      if (selections) return
+      if (!mappingConfig) return
       const raw = sessionStorage.getItem(RACM_BULK_IMPORT_SESSION_KEY)
       if (!raw) {
         toast.error('No import data found. Start again from the upload page.')
@@ -273,7 +299,7 @@ function ExcelColumnMap() {
       }
       setPayload(data)
       const hdrs = collectHeaders(data.rows)
-      const uniqueAutoDetected = buildUniqueAutoDetectedByHeader(hdrs)
+      const uniqueAutoDetected = buildUniqueAutoDetectedByHeader(hdrs, mappingConfig)
       const init = {}
       hdrs.forEach((h) => {
         init[h] = uniqueAutoDetected[h] ? AUTO : SKIP
@@ -287,7 +313,7 @@ function ExcelColumnMap() {
     } finally {
       setInitializing(false)
     }
-  }, [navigate])
+  }, [navigate, mappingConfig, selections])
 
   const rowCountLabel = useMemo(
     () => (payload?.rows?.length ? payload.rows.length.toLocaleString() : '0'),
@@ -307,16 +333,16 @@ function ExcelColumnMap() {
     [fieldOptions]
   )
   const autoDetectedByHeader = useMemo(() => {
-    return buildUniqueAutoDetectedByHeader(headers)
-  }, [headers])
+    return buildUniqueAutoDetectedByHeader(headers, mappingConfig)
+  }, [headers, mappingConfig])
   const mappedFieldByHeader = useMemo(() => {
     if (!selections) return {}
     const out = {}
     headers.forEach((header) => {
-      out[header] = getEffectiveMappedField(header, selections, autoDetectedByHeader)
+      out[header] = getEffectiveMappedField(header, selections, autoDetectedByHeader, mappingConfig)
     })
     return out
-  }, [headers, selections, autoDetectedByHeader])
+  }, [headers, selections, autoDetectedByHeader, mappingConfig])
   const isFieldUsedByAnotherHeader = (field, currentHeader) =>
     headers.some((header) => header !== currentHeader && mappedFieldByHeader[header] === field)
 
@@ -328,7 +354,7 @@ function ExcelColumnMap() {
   const handleSubmit = async () => {
     if (!payload || !selections) return
 
-    const dup = findDuplicateFieldMappings(headers, selections, autoDetectedByHeader)
+    const dup = findDuplicateFieldMappings(headers, selections, autoDetectedByHeader, mappingConfig)
     if (!dup.ok) {
       const cols = dup.excelHeaders.map((c) => `"${c}"`).join(', ')
       toast.error(`${dup.fieldLabel} cannot map to more than one Excel column (${cols}).`)
@@ -359,6 +385,7 @@ function ExcelColumnMap() {
     }
 
     setLoading(true)
+    setDuplicateControlNumberNotice('')
     try {
       const response = await fetch(apiUrl('/api/control-forms/bulk-import-rows'), {
         method: 'POST',
@@ -385,6 +412,9 @@ function ExcelColumnMap() {
         sessionStorage.removeItem(RACM_BULK_IMPORT_SESSION_KEY)
         navigate('/company_co/upload-excel', { replace: true })
       } else {
+        if (String(data?.message || '').includes(DUPLICATE_CONTROL_NUMBER_MESSAGE)) {
+          setDuplicateControlNumberNotice(DUPLICATE_CONTROL_NUMBER_NOTICE)
+        }
         toast.error(data.message || 'Failed to import RACMs')
       }
     } catch (err) {
@@ -432,6 +462,12 @@ function ExcelColumnMap() {
           <strong>Skip — do not import</strong>. Financial year is taken from the upload step, not from the
           sheet.
         </Typography>
+
+        {duplicateControlNumberNotice ? (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            {duplicateControlNumberNotice}
+          </Alert>
+        ) : null}
 
         <Box
           sx={{

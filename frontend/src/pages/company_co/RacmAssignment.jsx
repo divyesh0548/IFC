@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useTheme, alpha } from '@mui/material/styles'
+import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -27,10 +27,11 @@ import {
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
+import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
 function RacmAssignment() {
+  const UNIT_MISMATCH_TOAST_ID = 'racm-assignment-unit-mismatch'
   const theme = useTheme()
-  const [userRole, setUserRole] = useState(null)
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
   const [forms, setForms] = useState([])
   const [companyUsers, setCompanyUsers] = useState([])
@@ -56,6 +57,7 @@ function RacmAssignment() {
   const [updatingAssignment, setUpdatingAssignment] = useState(false)
   const [selectedForms, setSelectedForms] = useState(new Set())
   const bulkAssignmentContainerRef = useRef(null)
+  const { businessProcessOptions } = useBusinessProcesses()
   useSyncGlobalLoading(loading || usersLoading || updatingAssignment)
   const assignableUsers = companyUsers.filter((user) => {
     const coordinatorCompany = (companyIdentifier || '').trim()
@@ -81,18 +83,6 @@ function RacmAssignment() {
   const selectedBulkUnitName = selectedFormRows.length > 0 ? getFormUnitName(selectedFormRows[0]) : ''
   const selectedUnitUserOptions = filterUsersByUnit(assignableUsers, getFormUnitId(selectedForm))
   const bulkUnitUserOptions = filterUsersByUnit(assignableUsers, selectedBulkUnitId)
-
-  // Business process options (matching ExcelUpload.jsx)
-  const businessProcessOptions = [
-    'Purchase to Pay',
-    'Order to Cash',
-    'Hire to Retire',
-    'Capital Expenditure',
-    'Treasury',
-    'Financial Statement Closure Process',
-    'Information Technology General Controls',
-    'Entity Level Controls'
-  ]
 
   const getFinancialYearStorageKey = (companyId) => `ifc_financial_year_options_${companyId}`
 
@@ -131,7 +121,6 @@ function RacmAssignment() {
         const data = await response.json()
 
         if (response.ok && data.success) {
-          setUserRole(data.user.role)
           setCompanyIdentifier(data.user.company_identifier)
         }
       } catch (error) {
@@ -235,6 +224,8 @@ function RacmAssignment() {
 
   const handleClickOutsideBulkAssignment = (e) => {
     if (!bulkAssignmentMode) return
+    if (bulkAssignmentDialogOpen) return
+    if (e.target instanceof Element && e.target.closest('[data-bulk-assignment-action="true"]')) return
     const el = bulkAssignmentContainerRef.current
     if (!el) return
     if (el.contains(e.target)) return
@@ -251,7 +242,7 @@ function RacmAssignment() {
       clearTimeout(timeoutId)
       document.removeEventListener('click', handleClickOutsideBulkAssignment, true)
     }
-  }, [bulkAssignmentMode])
+  }, [bulkAssignmentMode, bulkAssignmentDialogOpen])
 
   const fetchForms = async () => {
     if (!companyIdentifier) return
@@ -436,16 +427,20 @@ function RacmAssignment() {
       const next = new Set(prev)
       if (next.has(formId)) {
         next.delete(formId)
+        toast.dismiss(UNIT_MISMATCH_TOAST_ID)
         setBulkSelectedUser(null)
         setBulkUserSearchText('')
       } else {
         const existingForm = forms.find((form) => next.has(form.form_id))
         const existingUnitId = getFormUnitId(existingForm)
         if (existingUnitId && targetUnitId && existingUnitId !== targetUnitId) {
-          toast.error('RACMs from different units cannot be selected for bulk assignment')
+          toast.error('RACMs from different units cannot be selected for bulk assignment', {
+            id: UNIT_MISMATCH_TOAST_ID,
+          })
           return prev
         }
         next.add(formId)
+        toast.dismiss(UNIT_MISMATCH_TOAST_ID)
         setBulkSelectedUser(null)
         setBulkUserSearchText('')
       }
@@ -457,6 +452,7 @@ function RacmAssignment() {
     const allVisibleSelected = forms.length > 0 && forms.every((form) => selectedForms.has(form.form_id))
     if (allVisibleSelected) {
       setSelectedForms(new Set())
+      toast.dismiss(UNIT_MISMATCH_TOAST_ID)
       setBulkSelectedUser(null)
       setBulkUserSearchText('')
       return
@@ -464,10 +460,13 @@ function RacmAssignment() {
 
     const unitIds = [...new Set(forms.map((form) => getFormUnitId(form)).filter(Boolean))]
     if (unitIds.length > 1) {
-      toast.error('RACMs from different units cannot be selected for bulk assignment')
+      toast.error('RACMs from different units cannot be selected for bulk assignment', {
+        id: UNIT_MISMATCH_TOAST_ID,
+      })
       return
     }
 
+    toast.dismiss(UNIT_MISMATCH_TOAST_ID)
     setBulkSelectedUser(null)
     setBulkUserSearchText('')
     setSelectedForms(new Set(forms.map((form) => form.form_id)))
@@ -714,6 +713,7 @@ function RacmAssignment() {
       >
         {bulkAssignmentMode && (
           <Button
+            data-bulk-assignment-action="true"
             variant="contained"
             color={theme.palette.mode === 'dark' ? 'primary' : 'secondary'}
             onClick={handleOpenBulkAssignmentDialog}
@@ -729,6 +729,7 @@ function RacmAssignment() {
         )}
         {!bulkAssignmentMode && (
           <Button
+            data-bulk-assignment-action="true"
             variant="contained"
             color="secondary"
             onClick={handleBulkAssignmentModeToggle}

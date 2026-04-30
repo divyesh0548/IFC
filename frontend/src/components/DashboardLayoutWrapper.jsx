@@ -20,7 +20,7 @@ import LogoutIcon from '@mui/icons-material/Logout'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
-import BusinessIcon from '@mui/icons-material/Business'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'
 
 const DRAWER_WIDTH = 240
 
@@ -37,9 +37,9 @@ const getNavigationForRole = (role) => {
           icon: <DashboardIcon />,
         },
         {
-          path: '/siteadmin/create-company',
-          title: 'Create Company',
-          icon: <BusinessIcon />,
+          path: '/siteadmin/business-processes',
+          title: 'Business Process',
+          icon: <AccountTreeIcon />,
         },
         {
           path: '/siteadmin/auditors',

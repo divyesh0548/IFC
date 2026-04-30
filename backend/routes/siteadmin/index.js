@@ -5,6 +5,7 @@ const { verifySiteadminAuth } = require('../../modules/auth/auth.middleware');
 const router = express.Router();
 
 router.get('/companies', verifySiteadminAuth, controller.getCompanies);
+router.post('/business-processes', verifySiteadminAuth, controller.createBusinessProcessManagementEntry);
 router.get('/auditors', verifySiteadminAuth, controller.getAuditors);
 router.post('/auditors', verifySiteadminAuth, controller.createAuditor);
 router.get('/companies/:company_identifier', verifySiteadminAuth, controller.getCompanyByIdentifier);

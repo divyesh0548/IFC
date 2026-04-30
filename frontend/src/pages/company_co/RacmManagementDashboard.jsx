@@ -22,6 +22,7 @@ import TextField from '@mui/material/TextField'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
+import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { 
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
@@ -50,7 +51,6 @@ function sortSetActiveSingleNoticeLines(lines) {
 function RacmManagementDashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const [userRole, setUserRole] = useState(null)
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
   const [forms, setForms] = useState([])
   const [filterActive, setFilterActive] = useState('all') // 'all', 'active', 'inactive'
@@ -59,7 +59,6 @@ function RacmManagementDashboard() {
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific assigned unit
   const [coordinatorUnits, setCoordinatorUnits] = useState([])
-  const [companyUnitCount, setCompanyUnitCount] = useState(0)
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
   const [cellWordWrap, setCellWordWrap] = useState(false)
@@ -92,7 +91,6 @@ function RacmManagementDashboard() {
   const [missingUsersCount, setMissingUsersCount] = useState(0)
   const [missingUserEmailsForDialog, setMissingUserEmailsForDialog] = useState([])
   const [missingReminderCount, setMissingReminderCount] = useState(0)
-  const [missingSampleDocCount, setMissingSampleDocCount] = useState(0)
   const [eligibleSetActiveFormIds, setEligibleSetActiveFormIds] = useState([])
   const [isSingleSetActiveSelectionNotice, setIsSingleSetActiveSelectionNotice] = useState(false)
   const [singleSelectionProblemLines, setSingleSelectionProblemLines] = useState([])
@@ -102,6 +100,7 @@ function RacmManagementDashboard() {
   const [creatingMissingUsers, setCreatingMissingUsers] = useState(false)
   const [setActiveClassifying, setSetActiveClassifying] = useState(false)
   const userRoleChecksRef = useRef({})
+  const { businessProcessOptions } = useBusinessProcesses()
 
   useSyncGlobalLoading(loading)
   useSyncGlobalLoading(bulkUpdating)
@@ -110,18 +109,6 @@ function RacmManagementDashboard() {
   useSyncGlobalLoading(deleting)
   useSyncGlobalLoading(replicating)
   useSyncGlobalLoading(setActiveClassifying)
-
-  // Business process options (matching ExcelUpload.jsx)
-  const businessProcessOptions = [
-    'Purchase to Pay',
-    'Order to Cash',
-    'Hire to Retire',
-    'Capital Expenditure',
-    'Treasury',
-    'Financial Statement Closure Process',
-    'Information Technology General Controls',
-    'Entity Level Controls'
-  ]
 
   useEffect(() => {
     // Fetch user role and company_identifier on component mount
@@ -135,7 +122,6 @@ function RacmManagementDashboard() {
         const data = await response.json()
 
         if (response.ok && data.success) {
-          setUserRole(data.user.role)
           setCompanyIdentifier(data.user.company_identifier)
         }
       } catch (error) {
@@ -168,9 +154,7 @@ function RacmManagementDashboard() {
           const assignedUnits = Array.isArray(data.data?.currentCoordinatorUnits)
             ? data.data.currentCoordinatorUnits
             : []
-          const companyUnits = Array.isArray(data.data?.units) ? data.data.units : []
           setCoordinatorUnits(assignedUnits)
-          setCompanyUnitCount(companyUnits.length)
 
           setFilterUnit((current) => {
             if (current === 'all') return current
@@ -178,12 +162,10 @@ function RacmManagementDashboard() {
           })
         } else {
           setCoordinatorUnits([])
-          setCompanyUnitCount(0)
         }
       } catch (error) {
         console.error('Error fetching coordinator units:', error)
         setCoordinatorUnits([])
-        setCompanyUnitCount(0)
       }
     }
 
@@ -577,13 +559,6 @@ function RacmManagementDashboard() {
     }
   }
 
-  const showNonUserRoleDialog = (nonUserRoleForms) => {
-    const uniqueEmails = [...new Set(nonUserRoleForms.map((item) => item.email).filter(Boolean))]
-    setNonUserRoleEmails(uniqueEmails)
-    setNonUserRoleCount(nonUserRoleForms.length)
-    setNonUserRoleDialogOpen(true)
-  }
-
   const showSetActiveSelectionInfoDialog = ({
     emptyOwnerCount = 0,
     nonUserRoleForms = [],
@@ -605,7 +580,6 @@ function RacmManagementDashboard() {
     // Keep in sync with selection notice so "Create User" works from any path (confirm vs checkbox / select-all).
     setMissingProcessOwners(uniqueMissingUserEmails)
     setMissingReminderCount(reminderMissingCount)
-    setMissingSampleDocCount(sampleDocMissingCount)
     setEligibleSetActiveFormIds(Array.isArray(eligibleFormIds) ? eligibleFormIds : [])
     setIsSingleSetActiveSelectionNotice(Boolean(isSingle))
     setSingleSelectionProblemLines(Array.isArray(singleProblemLines) ? singleProblemLines : [])
@@ -620,7 +594,6 @@ function RacmManagementDashboard() {
     setMissingUsersCount(0)
     setMissingUserEmailsForDialog([])
     setMissingReminderCount(0)
-    setMissingSampleDocCount(0)
     setEligibleSetActiveFormIds([])
     setIsSingleSetActiveSelectionNotice(false)
     setSingleSelectionProblemLines([])

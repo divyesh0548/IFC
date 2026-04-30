@@ -43,7 +43,7 @@ export const RACM_FIELD_LABELS = {
   whether_fraud_risks_exist: 'Whether Fraud Risks Exist',
   control_objective: 'Control Objective',
   process_walkthrough: 'Process Activity and Walkthrough Details',
-  control_relies_on_ipe: 'Does the Control Rely on IPE?',
+  control_relies_on_ipe: 'Does the Control Rely on  IPE?',
   audit_evidence_accuracy: 'Will we obtain audit evidence of the accuracy and completeness of information produced by the entity by testing controls or by performing procedures directly on the information?  ',
   ipe_reference: 'IPE Reference',
   key_control: 'Key Control',

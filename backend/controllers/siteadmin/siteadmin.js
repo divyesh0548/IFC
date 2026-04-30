@@ -65,6 +65,74 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
 }
 
+function normalizeBusinessProcessValue(value) {
+  return String(value || '').trim();
+}
+
+async function createBusinessProcess(client, payload = {}) {
+  const businessProcess = normalizeBusinessProcessValue(payload.business_process);
+  const businessProcessCode = normalizeBusinessProcessValue(payload.business_process_code);
+
+  if (!businessProcess) {
+    const error = new Error('Business Process is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!businessProcessCode) {
+    const error = new Error('Business Process code is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const duplicateResult = await client.query(
+    `
+      SELECT
+        id,
+        TRIM(business_process) AS business_process,
+        TRIM(business_process_code) AS business_process_code
+      FROM businees_process_code
+      WHERE LOWER(TRIM(business_process)) = LOWER(TRIM($1))
+         OR LOWER(TRIM(business_process_code)) = LOWER(TRIM($2))
+      LIMIT 1
+    `,
+    [businessProcess, businessProcessCode]
+  );
+
+  if (duplicateResult.rows.length > 0) {
+    const existing = duplicateResult.rows[0];
+    const sameProcess =
+      normalizeBusinessProcessValue(existing.business_process).toLowerCase() === businessProcess.toLowerCase();
+    const sameCode =
+      normalizeBusinessProcessValue(existing.business_process_code).toLowerCase() === businessProcessCode.toLowerCase();
+
+    const error = new Error(
+      sameProcess
+        ? 'Business Process already exists'
+        : sameCode
+          ? 'Business Process code already exists'
+          : 'Business Process already exists'
+    );
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const insertResult = await client.query(
+    `
+      INSERT INTO businees_process_code (business_process, business_process_code)
+      VALUES ($1, $2)
+      RETURNING
+        id,
+        TRIM(business_process) AS business_process,
+        TRIM(business_process_code) AS business_process_code,
+        created_at
+    `,
+    [businessProcess, businessProcessCode]
+  );
+
+  return insertResult.rows[0];
+}
+
 // Get all companies API endpoint
 async function getCompanies(req, res) {
   try {
@@ -607,6 +675,29 @@ async function createAuditor(req, res) {
   }
 }
 
+async function createBusinessProcessManagementEntry(req, res) {
+  const client = await pool.connect();
+  try {
+    const created = await createBusinessProcess(client, req.body || {});
+    return res.status(201).json({
+      success: true,
+      message: 'Business Process created successfully',
+      data: created,
+    });
+  } catch (error) {
+    const statusCode = Number(error.statusCode || 500);
+    if (statusCode >= 500) {
+      console.error('Create siteadmin business process error:', error);
+    }
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Failed to create business process',
+    });
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   getCompanies,
   getCompanyByIdentifier,
@@ -614,4 +705,5 @@ module.exports = {
   deleteCompany,
   getAuditors,
   createAuditor,
+  createBusinessProcessManagementEntry,
 };

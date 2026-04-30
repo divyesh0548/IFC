@@ -5,6 +5,7 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
+import Alert from '@mui/material/Alert'
 import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
 import FormControl from '@mui/material/FormControl'
@@ -30,8 +31,12 @@ import { parseRacmExcelFromArrayBuffer } from '../../utils/racmExcelParse'
 import { RACM_BULK_IMPORT_SESSION_KEY } from '../../racmFormDetailFields'
 import { useUnsavedChangesWarning } from '../../utils/useUnsavedChangesWarning'
 import { apiUrl } from '../../config/api'
+import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
 const MAX_BULK_IMPORT_ROWS = 5000
+const DUPLICATE_CONTROL_NUMBER_MESSAGE = 'Duplicate Control Number already exists for this company'
+const DUPLICATE_CONTROL_NUMBER_NOTICE =
+  'Change the control number and re-upload the excel or do not import control number'
 
 function ExcelUpload() {
   const theme = useTheme()
@@ -51,6 +56,8 @@ function ExcelUpload() {
   const [headerRowNumber, setHeaderRowNumber] = useState('')
   const [mappingDialogOpen, setMappingDialogOpen] = useState(false)
   const [pendingImport, setPendingImport] = useState(null)
+  const [duplicateControlNumberNotice, setDuplicateControlNumberNotice] = useState('')
+  const { businessProcessOptions, loading: businessProcessesLoading } = useBusinessProcesses()
   const accentColor = theme.palette.primary.main
   const accentSoft = alpha(accentColor, theme.palette.mode === 'dark' ? 0.18 : 0.12)
   const accentBorder = alpha(accentColor, theme.palette.mode === 'dark' ? 0.22 : 0.14)
@@ -72,16 +79,6 @@ function ExcelUpload() {
     hasAnyProgress,
     'Your progress will be lost on this upload page. Do you want to continue?'
   )
-  const businessProcessOptions = [
-    'Purchase to Pay',
-    'Order to Cash',
-    'Hire to Retire',
-    'Capital Expenditure',
-    'Treasury',
-    'Financial Statement Closure Process',
-    'Information Technology General Controls',
-    'Entity Level Controls',
-  ]
   // Show 2 FY ranges based on current year (e.g. 2026 -> 2025-26, 2026-27)
   const currentYear = new Date().getFullYear()
   const baseFYStart = currentYear - 1
@@ -222,6 +219,7 @@ function ExcelUpload() {
   }
 
   const clearFormAfterSuccess = (formEvent) => {
+    setDuplicateControlNumberNotice('')
     setFile(null)
     setPreview(null)
     setBusinessProcess('')
@@ -249,6 +247,7 @@ function ExcelUpload() {
     } = ctx
 
     setLoading(true)
+    setDuplicateControlNumberNotice('')
     try {
       const payload = {
         businessProcess: bp,
@@ -289,6 +288,9 @@ function ExcelUpload() {
         )
         clearFormAfterSuccess(formEvent)
       } else {
+        if (String(data?.message || '').includes(DUPLICATE_CONTROL_NUMBER_MESSAGE)) {
+          setDuplicateControlNumberNotice(DUPLICATE_CONTROL_NUMBER_NOTICE)
+        }
         toast.error(data.message || 'Failed to import RACMs')
       }
     } catch (err) {
@@ -603,6 +605,12 @@ function ExcelUpload() {
           </Box>
 
           <form onSubmit={handleSubmit}>
+              {duplicateControlNumberNotice ? (
+                <Alert severity="warning" sx={{ mb: 2.5 }}>
+                  {duplicateControlNumberNotice}
+                </Alert>
+              ) : null}
+
               {/* Hidden File Input */}
               <input
                 type="file"
@@ -737,7 +745,7 @@ function ExcelUpload() {
                   mb: 2.5,
                 }}
               >
-                <FormControl fullWidth required disabled={loading} variant="outlined">
+                <FormControl fullWidth required disabled={loading || businessProcessesLoading} variant="outlined">
                   <InputLabel id="business-process-label">Business Process</InputLabel>
                   <Select
                     labelId="business-process-label"
@@ -945,7 +953,15 @@ function ExcelUpload() {
               >
                 <Button
                   type="submit"
-                  disabled={loading || mappingDialogOpen || !file || !businessProcess || !unitId || !financialYear}
+                  disabled={
+                    loading ||
+                    businessProcessesLoading ||
+                    mappingDialogOpen ||
+                    !file ||
+                    !businessProcess ||
+                    !unitId ||
+                    !financialYear
+                  }
                   variant="contained"
                   color="secondary"
                   sx={{

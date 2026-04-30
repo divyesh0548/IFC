@@ -22,17 +22,7 @@ import {
 } from '../../uiConstants'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-
-const BUSINESS_PROCESS_OPTIONS = [
-  'Purchase to Pay',
-  'Order to Cash',
-  'Hire to Retire',
-  'Capital Expenditure',
-  'Treasury',
-  'Financial Statement Closure Process',
-  'Information Technology General Controls',
-  'Entity Level Controls',
-]
+import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
 function getIsActive(value) {
   return value != null && String(value).trim() !== '' && String(value).trim() !== '0'
@@ -73,6 +63,7 @@ function AuditorRacmDashboard() {
   const [filterCompany, setFilterCompany] = useState('all')
   const [filterUnit, setFilterUnit] = useState('all')
   const [cellWordWrap, setCellWordWrap] = useState(false)
+  const { businessProcessOptions } = useBusinessProcesses()
 
   useSyncGlobalLoading(loading)
 
@@ -376,7 +367,7 @@ function AuditorRacmDashboard() {
                   onChange={(event) => setFilterBusinessProcess(event.target.value)}
                 >
                   <MenuItem value="all">All</MenuItem>
-                  {BUSINESS_PROCESS_OPTIONS.map((option) => (
+                  {businessProcessOptions.map((option) => (
                     <MenuItem key={option} value={option}>
                       {option}
                     </MenuItem>
@@ -472,7 +463,7 @@ function AuditorRacmDashboard() {
               >
                 <Box component="thead" sx={{ backgroundColor: TABLE_HEADER_BG }}>
                   <Box component="tr">
-                    {['#', 'Company', 'Unit', 'Business Process', 'Sub Process', 'Description', 'Status', 'Active', 'Financial Year', 'Due Date'].map((label) => (
+                    {['#', 'Business Process', 'Standard Control Description', 'Financial Year', 'Process Owner', 'Unit Name', 'Company', 'Sub Process', 'Status', 'Active', 'Due Date'].map((label) => (
                       <Box
                         key={label}
                         component="th"
@@ -516,7 +507,22 @@ function AuditorRacmDashboard() {
                         </Box>
                         <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary })}>
                           <Box component="span" sx={dataCellTextSx}>
-                            {form.company_name || 'N/A'}
+                            {form.business_process || 'N/A'}
+                          </Box>
+                        </Box>
+                        <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, maxWidth: 340 })}>
+                          <Box component="span" sx={dataCellTextSx}>
+                            {form.standard_control_description || 'N/A'}
+                          </Box>
+                        </Box>
+                        <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary })}>
+                          <Box component="span" sx={dataCellTextSx}>
+                            {form.financial_year || 'N/A'}
+                          </Box>
+                        </Box>
+                        <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary })}>
+                          <Box component="span" sx={dataCellTextSx}>
+                            {form.control_owner_name || form.control_owner || 'N/A'}
                           </Box>
                         </Box>
                         <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary })}>
@@ -526,17 +532,12 @@ function AuditorRacmDashboard() {
                         </Box>
                         <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary })}>
                           <Box component="span" sx={dataCellTextSx}>
-                            {form.business_process || 'N/A'}
+                            {form.company_name || 'N/A'}
                           </Box>
                         </Box>
                         <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary })}>
                           <Box component="span" sx={dataCellTextSx}>
                             {form.sub_process || 'N/A'}
-                          </Box>
-                        </Box>
-                        <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, maxWidth: 340 })}>
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.standard_control_description || 'N/A'}
                           </Box>
                         </Box>
                         <Box component="td" sx={{ px: 3, py: 2, whiteSpace: 'nowrap' }}>
@@ -568,11 +569,6 @@ function AuditorRacmDashboard() {
                               '& .MuiChip-label': { px: 1 },
                             }}
                           />
-                        </Box>
-                        <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary })}>
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.financial_year || 'N/A'}
-                          </Box>
                         </Box>
                         <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary })}>
                           <Box component="span" sx={dataCellTextSx}>

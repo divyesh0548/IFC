@@ -1,6 +1,7 @@
 // Simple column mapping for most columns (exact/simple matching)
 const simpleColumnMapping = {
   'control number': 'control_number',
+  'control name': 'standard_control_description',
   'sub process': 'sub_process',
   'sub-process': 'sub_process',
   'risk': 'risk_description',
@@ -54,7 +55,21 @@ function hasKeywordMatch(normalizedHeader, keyword) {
   return tokens.some((token) => token === keywordLower || token.startsWith(keywordLower));
 }
 
+function getHeaderWords(normalizedHeader) {
+  return new Set(
+    String(normalizedHeader || '')
+      .split(' ')
+      .map((word) => word.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
 const columnPatterns = [
+  {
+    keywords: ['other', 'affected'],
+    dbColumn: 'sub_process',
+    priority: 1
+  },
   {
     keywords: ['account', 'balance', 'disclosure'],
     dbColumn: 'area',
@@ -90,7 +105,7 @@ const columnPatterns = [
     requireAllKeywords: true
   },
   {
-    keywords: ['process', 'activity', 'walkthrough', 'details'],
+    keywords: ['walkthrough'],
     dbColumn: 'process_walkthrough',
     priority: 1
   },
@@ -125,11 +140,45 @@ const columnPatterns = [
     priority: 1
   },
   {
+    keywords: ['ipe'],
+    dbColumn: 'ipe_reference',
+    priority: 1
+  },
+  {
+    keywords: ['frequency'],
+    dbColumn: 'control_frequency',
+    priority: 1
+  },
+  {
+    keywords: ['application'],
+    dbColumn: 'application_name',
+    priority: 1
+  },
+  {
+    keywords: ['control', 'owner'],
+    dbColumn: 'control_owner',
+    priority: 1,
+    requireAllKeywords: true
+  },
+  {
     keywords: ['fraud', 'risk', 'whether'],
     dbColumn: 'whether_fraud_risks_exist',
     priority: 1
   }
 ]
+
+function getColumnMappingConfig() {
+  return {
+    simpleColumnMapping: { ...simpleColumnMapping },
+    columnPatterns: columnPatterns.map((pattern) => ({
+      ...pattern,
+      keywords: Array.isArray(pattern.keywords) ? [...pattern.keywords] : undefined,
+      keywordGroups: Array.isArray(pattern.keywordGroups)
+        ? pattern.keywordGroups.map((group) => (Array.isArray(group) ? [...group] : group))
+        : undefined,
+    })),
+  };
+}
 
 
 // Function to normalize column names
@@ -141,14 +190,6 @@ function normalizeColumnName(excelColumnName) {
     .replace(/[\/\(\)&-]/g, ' ') // Replace special chars with spaces
     .replace(/\s+/g, ' ') // Normalize multiple spaces
     .trim();
-
-  // Strict detection for control_frequency:
-  // map only when ALL 3 words are present in the header.
-  const requiredFrequencyWords = ['frequency', 'control', 'of'];
-  const hasAllFrequencyWords = requiredFrequencyWords.every((word) => hasKeywordMatch(normalized, word));
-  if (hasAllFrequencyWords) {
-    return 'control_frequency';
-  }
   
   // First, try simple exact/normalized matching
   if (simpleColumnMapping[normalized]) {
@@ -166,26 +207,49 @@ function normalizeColumnName(excelColumnName) {
   // For complex columns, try pattern matching
   let bestMatch = null;
   let bestScore = 0;
+  const headerWords = getHeaderWords(normalized);
   
   for (const pattern of columnPatterns) {
-    // Count how many keywords match
-    let matchCount = 0;
-    for (const keyword of pattern.keywords) {
-      if (hasKeywordMatch(normalized, keyword)) {
-        matchCount++;
-      }
-    }
-    
-    // Calculate score: match count / total keywords * priority
-    if (matchCount > 0) {
-      if (pattern.requireAllKeywords && matchCount !== pattern.keywords.length) {
+    const keywordSets = Array.isArray(pattern.keywordGroups) && pattern.keywordGroups.length > 0
+      ? pattern.keywordGroups
+      : [pattern.keywords || []]
+
+    let patternBestScore = 0
+
+    for (const keywords of keywordSets) {
+      if (!Array.isArray(keywords) || keywords.length === 0) continue
+
+      if (Array.isArray(pattern.keywordGroups) && pattern.keywordGroups.length > 0) {
+        // For keyword groups, map only when all listed words exist individually in the header.
+        const hasAllGroupWords = keywords.every((keyword) => headerWords.has(String(keyword).toLowerCase()))
+        if (!hasAllGroupWords) continue
+        patternBestScore = Math.max(patternBestScore, pattern.priority || 1)
         continue
       }
-      const score = (matchCount / pattern.keywords.length) * pattern.priority;
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatch = pattern.dbColumn;
+
+    // Count how many keywords match
+      let matchCount = 0;
+      for (const keyword of keywords) {
+        if (hasKeywordMatch(normalized, keyword)) {
+          matchCount++;
+        }
       }
+
+      // Calculate score: match count / total keywords * priority
+      if (matchCount > 0) {
+        if (pattern.requireAllKeywords && matchCount !== keywords.length) {
+          continue
+        }
+        const score = (matchCount / keywords.length) * pattern.priority;
+        if (score > patternBestScore) {
+          patternBestScore = score;
+        }
+      }
+    }
+
+    if (patternBestScore > bestScore) {
+      bestScore = patternBestScore
+      bestMatch = pattern.dbColumn
     }
   }
   
@@ -204,6 +268,7 @@ function normalizeColumnName(excelColumnName) {
 }
 
 module.exports = {
-  normalizeColumnName
+  normalizeColumnName,
+  getColumnMappingConfig,
 };
 

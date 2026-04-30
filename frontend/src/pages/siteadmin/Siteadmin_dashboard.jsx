@@ -433,7 +433,7 @@ function Siteadmin_Dashboard() {
                                         : '0 16px 38px rgba(18,52,88,0.12)',
                                 },
                             }}
-                            onClick={() => navigate('/siteadmin/create-company')}
+                            onClick={() => navigate('/siteadmin/business-processes')}
                         >
                         <Box>
                             <Typography
@@ -461,7 +461,7 @@ function Siteadmin_Dashboard() {
                                     fontSize: { xs: '1.18rem', sm: '1.36rem', md: '1.45rem' },
                                 }}
                             >
-                                Company Creation
+                                Business Process Management
                             </Typography>
                             <Typography
                                 variant="body2"
@@ -473,7 +473,7 @@ function Siteadmin_Dashboard() {
                                     fontSize: '0.82rem',
                                 }}
                             >
-                                Quickly set up new organizations and start their IFC journey.
+                                Maintain the master business-process list used across the platform.
                             </Typography>
                         </Box>
                     </Card>

@@ -73,38 +73,161 @@ function normalizeExcelTruthyToBoolean(value, columnName) {
   return true;
 }
 
-/** True if same company already has a row with this business_process + financial_year + control_number. */
-async function checkDuplicateForm(client, row, companyIdentifier, businessProcess, financialYear) {
-  try {
-    const bpKey = businessProcess != null ? String(businessProcess).trim() : '';
-    const fyKey = financialYear != null ? String(financialYear).trim() : '';
-    const cnKey =
-      row.control_number !== null && row.control_number !== undefined && row.control_number !== ''
-        ? String(row.control_number).trim()
-        : '';
+function normalizeBusinessProcessValue(value) {
+  return String(value || '').trim();
+}
 
-    if (!companyIdentifier || !bpKey || !fyKey || !cnKey) {
-      return false;
+function parseControlNumberSuffix(controlNumber, prefix) {
+  const raw = String(controlNumber || '').trim();
+  const normalizedPrefix = String(prefix || '').trim();
+  if (!raw || !normalizedPrefix) return null;
+  if (!raw.toUpperCase().startsWith(normalizedPrefix.toUpperCase())) return null;
+
+  const suffix = raw.slice(normalizedPrefix.length).trim();
+  if (!/^\d+$/.test(suffix)) return null;
+  return Number.parseInt(suffix, 10);
+}
+
+async function getBusinessProcessCode(client, businessProcess) {
+  const bp = normalizeBusinessProcessValue(businessProcess);
+  if (!bp) return '';
+
+  const result = await client.query(
+    `
+      SELECT TRIM(business_process_code) AS business_process_code
+      FROM businees_process_code
+      WHERE LOWER(TRIM(business_process)) = LOWER(TRIM($1))
+      LIMIT 1
+    `,
+    [bp]
+  );
+
+  return String(result.rows[0]?.business_process_code || '').trim();
+}
+
+async function getNextGeneratedControlNumberStart(client, companyIdentifier, prefix, transformedData) {
+  const companyId = String(companyIdentifier || '').trim();
+  const normalizedPrefix = String(prefix || '').trim();
+  if (!companyId || !normalizedPrefix) return 1;
+
+  const result = await client.query(
+    `
+      SELECT control_number
+      FROM control_forms
+      WHERE company_identifier = $1
+        AND NULLIF(TRIM(COALESCE(control_number, '')), '') IS NOT NULL
+        AND UPPER(TRIM(control_number)) LIKE UPPER($2)
+    `,
+    [companyId, `${normalizedPrefix}%`]
+  );
+
+  let maxSuffix = 0;
+  for (const row of result.rows) {
+    const suffix = parseControlNumberSuffix(row.control_number, normalizedPrefix);
+    if (suffix !== null && suffix > maxSuffix) {
+      maxSuffix = suffix;
+    }
+  }
+
+  for (const row of transformedData || []) {
+    const suffix = parseControlNumberSuffix(row?.control_number, normalizedPrefix);
+    if (suffix !== null && suffix > maxSuffix) {
+      maxSuffix = suffix;
+    }
+  }
+
+  return maxSuffix + 1;
+}
+
+async function findExistingCompanyControlNumberDuplicates(client, companyIdentifier, transformedData) {
+  const companyId = String(companyIdentifier || '').trim();
+  if (!companyId) return [];
+
+  const controlNumbers = Array.from(
+    new Set(
+      (transformedData || [])
+        .map((row) => (row?.control_number != null ? String(row.control_number).trim() : ''))
+        .filter(Boolean)
+    )
+  );
+
+  if (controlNumbers.length === 0) return [];
+
+  const result = await client.query(
+    `
+      SELECT DISTINCT TRIM(control_number) AS control_number
+      FROM control_forms
+      WHERE company_identifier = $1
+        AND TRIM(control_number) = ANY($2::text[])
+      ORDER BY TRIM(control_number) ASC
+    `,
+    [companyId, controlNumbers]
+  );
+
+  return result.rows
+    .map((row) => String(row.control_number || '').trim())
+    .filter(Boolean);
+}
+
+function findDuplicateControlNumbersWithinUpload(transformedData) {
+  const counts = new Map();
+  for (const row of transformedData || []) {
+    const controlNumber = row?.control_number != null ? String(row.control_number).trim() : '';
+    if (!controlNumber) continue;
+    counts.set(controlNumber, (counts.get(controlNumber) || 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([controlNumber]) => controlNumber)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+async function prepareBulkImportRows(client, options) {
+  const { transformedData, companyIdentifier, businessProcess } = options;
+  const preparedRows = (transformedData || []).map((row) => ({ ...row }));
+
+  const rowsMissingControlNumber = preparedRows.filter((row) => {
+    const cn = row?.control_number != null ? String(row.control_number).trim() : '';
+    return cn === '';
+  });
+
+  if (rowsMissingControlNumber.length > 0) {
+    const generatedControlNumberPrefix = await getBusinessProcessCode(client, businessProcess);
+    if (!generatedControlNumberPrefix) {
+      const error = new Error('No Business Process code found for the selected Business Process');
+      error.statusCode = 400;
+      throw error;
     }
 
-    const result = await client.query(
-      `
-        SELECT 1
-        FROM control_forms
-        WHERE company_identifier = $1
-          AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
-          AND TRIM(financial_year) = TRIM($3)
-          AND TRIM(control_number) = TRIM($4)
-        LIMIT 1;
-      `,
-      [companyIdentifier, bpKey, fyKey, cnKey]
+    let nextGeneratedControlNumber = await getNextGeneratedControlNumberStart(
+      client,
+      companyIdentifier,
+      generatedControlNumberPrefix,
+      preparedRows
     );
 
-    return result.rows.length > 0;
-  } catch (error) {
-    console.error('Error checking for duplicate form:', error);
-    return false;
+    for (const row of preparedRows) {
+      const currentControlNumber =
+        row.control_number !== null && row.control_number !== undefined
+          ? String(row.control_number).trim()
+          : '';
+      if (!currentControlNumber) {
+        row.control_number = `${generatedControlNumberPrefix}${nextGeneratedControlNumber}`;
+        nextGeneratedControlNumber += 1;
+      }
+    }
   }
+
+  return {
+    preparedRows,
+    duplicateControlNumbersInUpload: findDuplicateControlNumbersWithinUpload(preparedRows),
+    duplicateExistingCompanyControlNumbers: await findExistingCompanyControlNumberDuplicates(
+      client,
+      companyIdentifier,
+      preparedRows
+    ),
+  };
 }
 
 /** DB columns users may assign via custom header mapping (bulk import UI). financial_year comes from the upload form, not Excel. */
@@ -288,7 +411,6 @@ async function insertRacmRowsFromTransformedData(client, options) {
   let errorCount = 0;
   let duplicateCount = 0;
   const duplicateControlNumberSamples = [];
-  const seenDuplicateCn = new Set();
 
   for (let i = 0; i < transformedData.length; i++) {
     const row = transformedData[i];
@@ -299,20 +421,6 @@ async function insertRacmRowsFromTransformedData(client, options) {
     }
 
     try {
-      const isDuplicate = await checkDuplicateForm(client, row, companyIdentifier, businessProcess, financialYear);
-      if (isDuplicate) {
-        duplicateCount++;
-        const cn =
-          row.control_number !== null && row.control_number !== undefined && row.control_number !== ''
-            ? String(row.control_number).trim()
-            : '';
-        if (cn && duplicateControlNumberSamples.length < 8 && !seenDuplicateCn.has(cn)) {
-          seenDuplicateCn.add(cn);
-          duplicateControlNumberSamples.push(cn);
-        }
-        continue;
-      }
-
       const formId = await generateUniqueFormId(client);
       const currentTimestamp = new Date();
       const controlFrequencyRaw = row.control_frequency || null;
@@ -351,6 +459,17 @@ async function insertRacmRowsFromTransformedData(client, options) {
         await logAuditEvent('RACM created', coordinatorEmailId, formId);
       }
     } catch (rowError) {
+      if (rowError?.code === '23505') {
+        const controlNumber = row.control_number != null ? String(row.control_number).trim() : '';
+        const error = new Error(
+          controlNumber
+            ? `Duplicate Control Number already exists for this company: ${controlNumber}`
+            : 'Duplicate Control Number already exists for this company'
+        );
+        error.statusCode = 409;
+        error.duplicateControlNumbers = controlNumber ? [controlNumber] : [];
+        throw error;
+      }
       errorCount++;
       console.error(`  ✗ Error inserting bulk-import row ${i + 1}: ${rowError.message}`);
     }
@@ -366,6 +485,7 @@ async function insertRacmRowsFromTransformedData(client, options) {
 }
 
 module.exports = {
+  prepareBulkImportRows,
   transformExcelData,
   transformExcelDataWithColumnMapping,
   insertRacmRowsFromTransformedData,
