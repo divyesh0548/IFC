@@ -1,0 +1,51 @@
+IFC changes. 
+
+Single RACM will have multiple process owner based on location. (client-location mapping) 
+
+Some company may have unique business processes, which will not be applicable in other companies.
+
+Add another column existing process. This is required to assess the uplaoded data.
+
+
+
+
+Base Logic of the IFC.
+
+1. Company Coordinator will create users/process_owners.
+
+2. Manager(S&TA) will create auditors.
+
+3. Manager(S&TA) will create/upload RACMs.
+
+4. Company Coordinator will assign RACMs to respective process owners. One RACM can be assigned to multiple process owners based on different locations.
+
+5. process_owners and auditors will coordinate for data requirements and if some data is not available in soft copy then process_owners will confirm it on records (In website).
+
+6. auditor will check uploaded data with existing process and mark the RACM as effective or not effective.
+
+7. If Effective, the Manager(S&TA)/Parter will final approve.
+
+8. If not effective the Company Coordinator / CFO will provide action plan along with a date (expected time to implement actions). After successful implementation the RACM will be updated as Effective.
+
+
+Add mitigation plan, due date and concerned person in RACM for ineffective RACMs.  
+This will be filled by either user or coordinate.
+
+Add third option accepted under deviation, along with effective
+
+Two options : Compensatory RACM/doc or Mitigation plan
+
+Compensatory RACM/doc --> A textarea for explaination and document upload.
+
+Mitigation Plan --> Textarea for action plan, due date, converned person/process owner
+
+User can request Coordinator to change existing process, if change is found.
+
+
+
+AI integration in the dashboard.
+preventive ratio
+manual semi automated
+cycle wise key control
+AI Summary
+

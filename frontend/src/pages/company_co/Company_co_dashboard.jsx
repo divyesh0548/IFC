@@ -30,7 +30,9 @@ function Company_Co_dashboard() {
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [filterApprovalStatus, setFilterApprovalStatus] = useState('all') // 'all', 'Approved', 'Rejected', 'Pending'
+  const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific mapped unit
   const [financialYearOptions, setFinancialYearOptions] = useState([])
+  const [mappedUnits, setMappedUnits] = useState([])
   const [loading, setLoading] = useState(true)
   const { businessProcessOptions } = useBusinessProcesses()
   useSyncGlobalLoading(loading)
@@ -55,6 +57,40 @@ function Company_Co_dashboard() {
     }
 
     fetchUserInfo()
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchMappedUnits = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+
+        if (!cancelled && response.ok && data.success) {
+          const units = Array.isArray(data.data?.currentCoordinatorUnits)
+            ? data.data.currentCoordinatorUnits
+            : []
+          setMappedUnits(units)
+          return
+        }
+      } catch (error) {
+        console.error('Error fetching mapped units:', error)
+      }
+
+      if (!cancelled) {
+        setMappedUnits([])
+      }
+    }
+
+    fetchMappedUnits()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -189,6 +225,34 @@ function Company_Co_dashboard() {
   const handleFormClick = (formId) => {
     navigate(`/company_co/form/${formId}`)
   }
+
+  const shouldShowUnitMapping = mappedUnits.length > 1
+
+  const normalizedMappedUnits = mappedUnits
+    .map((unit) => ({
+      unitId: String(unit?.unit_id || '').trim(),
+      unitName: String(unit?.unit_name || unit?.unit_id || '').trim(),
+    }))
+    .filter((unit) => unit.unitId)
+
+  useEffect(() => {
+    if (!shouldShowUnitMapping && filterUnit !== 'all') {
+      setFilterUnit('all')
+      return
+    }
+
+    if (
+      shouldShowUnitMapping &&
+      filterUnit !== 'all' &&
+      !normalizedMappedUnits.some((unit) => unit.unitId === filterUnit)
+    ) {
+      setFilterUnit('all')
+    }
+  }, [filterUnit, normalizedMappedUnits, shouldShowUnitMapping])
+
+  const filteredForms = shouldShowUnitMapping && filterUnit !== 'all'
+    ? forms.filter((form) => String(form?.unit_id || '').trim() === filterUnit)
+    : forms
 
   const getProcessOwnerDisplay = (form) => {
     const name = (form?.control_owner_name ?? form?.emp_name ?? '')
@@ -362,6 +426,31 @@ function Company_Co_dashboard() {
                   <MenuItem value="Pending">Pending</MenuItem>
                 </Select>
               </FormControl>
+
+              {shouldShowUnitMapping ? (
+                <FormControl
+                  variant="outlined"
+                  sx={{
+                    minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
+                  }}
+                >
+                  <InputLabel id="unit-filter-label">Unit</InputLabel>
+                  <Select
+                    labelId="unit-filter-label"
+                    id="unit-filter"
+                    value={filterUnit}
+                    label="Unit"
+                    onChange={(e) => setFilterUnit(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    {normalizedMappedUnits.map((unit) => (
+                      <MenuItem key={unit.unitId} value={unit.unitId}>
+                        {unit.unitName || unit.unitId}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : null}
             </Box>
           </Box>
 
@@ -369,7 +458,7 @@ function Company_Co_dashboard() {
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography color="text.secondary">Loading forms...</Typography>
             </Box>
-          ) : forms.length === 0 ? (
+          ) : filteredForms.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography color="text.secondary">No forms found.</Typography>
             </Box>
@@ -464,6 +553,26 @@ function Company_Co_dashboard() {
                     >
                       Financial Year
                     </Box>
+                    {shouldShowUnitMapping ? (
+                      <Box
+                        component="th"
+                        sx={{
+                          px: 3,
+                          py: 1.5,
+                          textAlign: 'left',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          color: theme.palette.text.secondary,
+                          width: '180px',
+                          minWidth: '160px',
+                          maxWidth: '220px',
+                        }}
+                      >
+                        Unit
+                      </Box>
+                    ) : null}
                     <Box
                       component="th"
                       sx={{
@@ -539,7 +648,7 @@ function Company_Co_dashboard() {
                   </Box>
                 </Box>
                 <Box component="tbody">
-                  {forms.map((form) => {
+                  {filteredForms.map((form) => {
                     const isActive = form.active && form.active !== '' && form.active !== '0'
                     const approvalLabel = formatApprovalStatus(form.status)
                     const ownerDisplay = getProcessOwnerDisplay(form)
@@ -640,6 +749,33 @@ function Company_Co_dashboard() {
                             {form.financial_year || 'N/A'}
                           </Box>
                         </Box>
+                        {shouldShowUnitMapping ? (
+                          <Box
+                            component="td"
+                            sx={{
+                              px: 3,
+                              py: 2,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              width: '180px',
+                              minWidth: '160px',
+                              maxWidth: '220px',
+                              fontSize: '0.875rem',
+                              color: theme.palette.text.primary,
+                            }}
+                          >
+                            <Tooltip
+                              title={(form.unit_name || form.unit_id || '').toString().trim() || 'N/A'}
+                              arrow
+                              slotProps={{ tooltip: { sx: tooltipSx } }}
+                            >
+                              <Box component="span" sx={truncatedTextSx}>
+                                {(form.unit_name || form.unit_id || '').toString().trim() || 'N/A'}
+                              </Box>
+                            </Tooltip>
+                          </Box>
+                        ) : null}
                         <Box
                           component="td"
                           sx={{
