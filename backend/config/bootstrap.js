@@ -1,8 +1,9 @@
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { prisma } = require('../lib/prisma');
 const { ensureDatabaseExists } = require('./ensureDatabase');
 const { hashPassword, getPasswordPepper } = require('../utils/password');
+const { prisma } = require('../lib/prisma');
+const { seedDefaultBusinessProcesses } = require('../utils/business_process_master');
 let bootstrapPromise = null;
 
 const backendRoot = path.join(__dirname, '..');
@@ -85,29 +86,13 @@ async function ensureAdminUserFromEnv() {
 }
 
 async function ensureDefaultBusinessProcesses() {
-  const existing = await prisma.busineesProcessCode.findMany({
-    where: {
-      businessProcessCode: {
-        in: DEFAULT_BUSINESS_PROCESSES.map((item) => item.businessProcessCode),
-      },
-    },
-    select: { businessProcessCode: true },
-  });
-
-  const existingCodes = new Set(existing.map((item) => String(item.businessProcessCode || '').trim().toUpperCase()));
-  const missingRows = DEFAULT_BUSINESS_PROCESSES.filter(
-    (item) => !existingCodes.has(String(item.businessProcessCode).trim().toUpperCase())
-  );
-
-  if (missingRows.length === 0) {
+  const result = await seedDefaultBusinessProcesses(DEFAULT_BUSINESS_PROCESSES);
+  if (result.inserted === 0 && result.updated === 0) {
     console.log('[bootstrap] Default business processes already present. Skipping seed.');
     return;
   }
 
-  await prisma.busineesProcessCode.createMany({
-    data: missingRows,
-  });
-  console.log(`[bootstrap] Seeded ${missingRows.length} default business process row(s).`);
+  console.log(`[bootstrap] Default business processes synced. Inserted: ${result.inserted}, Updated: ${result.updated}.`);
 }
 
 async function runBootstrap() {

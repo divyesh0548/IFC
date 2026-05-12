@@ -4,6 +4,10 @@ const { prisma } = require('../../lib/prisma');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
 const { encryptTempPassword, sendUserCreationEmail } = require('../../utils/login_email');
 const { sendEmail } = require('../../utils/send_email');
+const {
+  createBusinessProcessMasterEntry,
+  listBusinessProcessesForCompany,
+} = require('../../utils/business_process_master');
 
 function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();
@@ -11,28 +15,6 @@ function normalizeEmail(email) {
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
-}
-
-async function listBusinessProcesses(client = pool) {
-  const result = await client.query(
-    `
-      SELECT
-        id,
-        TRIM(business_process) AS business_process,
-        TRIM(business_process_code) AS business_process_code,
-        created_at
-      FROM businees_process_code
-      WHERE NULLIF(TRIM(COALESCE(business_process, '')), '') IS NOT NULL
-        AND NULLIF(TRIM(COALESCE(business_process_code, '')), '') IS NOT NULL
-      ORDER BY TRIM(business_process) ASC, TRIM(business_process_code) ASC
-    `
-  );
-
-  return result.rows.map((row) => ({
-    ...row,
-    business_process: String(row.business_process || '').trim(),
-    business_process_code: String(row.business_process_code || '').trim(),
-  }));
 }
 
 function generateUnitIdentifier(unitName) {
@@ -1863,7 +1845,7 @@ async function getCommunicationMatrix(req, res) {
       });
     }
 
-    const businessProcesses = await listBusinessProcesses();
+    const businessProcesses = await listBusinessProcessesForCompany(pool, companyIdentifier);
     const allBusinessProcesses = businessProcesses
       .map((row) => String(row.business_process || '').trim())
       .filter(Boolean);
@@ -1979,7 +1961,7 @@ async function addCommonCommunicationEmails(req, res) {
       });
     }
 
-    const businessProcessRows = await listBusinessProcesses(client);
+    const businessProcessRows = await listBusinessProcessesForCompany(client, companyIdentifier);
     const businessProcesses = businessProcessRows
       .map((row) => String(row.business_process || '').trim())
       .filter(Boolean);
@@ -2044,6 +2026,39 @@ async function addCommonCommunicationEmails(req, res) {
     });
   } finally {
     client.release();
+  }
+}
+
+async function createCompanyBusinessProcess(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is missing for coordinator',
+      });
+    }
+
+    const created = await createBusinessProcessMasterEntry({
+      ...(req.body || {}),
+      company_identifier: companyIdentifier,
+      created_by_email: req.user?.email_id || null,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Company specific business process created successfully',
+      data: created,
+    });
+  } catch (error) {
+    const statusCode = Number(error.statusCode || 500);
+    if (statusCode >= 500) {
+      console.error('Create company coordinator business process error:', error);
+    }
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Failed to create company specific business process',
+    });
   }
 }
 
@@ -2291,4 +2306,5 @@ module.exports = {
   addCommonCommunicationEmails,
   addBusinessProcessSpecificCommunicationEmails,
   deleteCommunicationMatrixEntries,
+  createCompanyBusinessProcess,
 };

@@ -4,6 +4,7 @@ const { prisma } = require('../../lib/prisma');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
 const { encryptTempPassword } = require('../../utils/login_email');
 const { deleteFileFromS3 } = require('../../utils/s3Upload');
+const { createBusinessProcessMasterEntry } = require('../../utils/business_process_master');
 
 // Helper function to generate company identifier
 function generateCompanyIdentifier(companyName) {
@@ -63,88 +64,6 @@ function normalizeEmail(email) {
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
-}
-
-function normalizeBusinessProcessValue(value) {
-  return String(value || '').trim();
-}
-
-async function createBusinessProcess(payload = {}) {
-  const businessProcess = normalizeBusinessProcessValue(payload.business_process);
-  const businessProcessCode = normalizeBusinessProcessValue(payload.business_process_code);
-
-  if (!businessProcess) {
-    const error = new Error('Business Process is required');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (!businessProcessCode) {
-    const error = new Error('Business Process code is required');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const existing = await prisma.busineesProcessCode.findFirst({
-    where: {
-      OR: [
-        {
-          businessProcess: {
-            equals: businessProcess,
-            mode: 'insensitive',
-          },
-        },
-        {
-          businessProcessCode: {
-            equals: businessProcessCode,
-            mode: 'insensitive',
-          },
-        },
-      ],
-    },
-    select: {
-      id: true,
-      businessProcess: true,
-      businessProcessCode: true,
-    },
-  });
-
-  if (existing) {
-    const sameProcess =
-      normalizeBusinessProcessValue(existing.businessProcess).toLowerCase() === businessProcess.toLowerCase();
-    const sameCode =
-      normalizeBusinessProcessValue(existing.businessProcessCode).toLowerCase() === businessProcessCode.toLowerCase();
-
-    const error = new Error(
-      sameProcess
-        ? 'Business Process already exists'
-        : sameCode
-          ? 'Business Process code already exists'
-          : 'Business Process already exists'
-    );
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const created = await prisma.busineesProcessCode.create({
-    data: {
-      businessProcess,
-      businessProcessCode,
-    },
-    select: {
-      id: true,
-      businessProcess: true,
-      businessProcessCode: true,
-      createdAt: true,
-    },
-  });
-
-  return {
-    id: created.id,
-    business_process: created.businessProcess,
-    business_process_code: created.businessProcessCode,
-    created_at: created.createdAt,
-  };
 }
 
 // Get all companies API endpoint
@@ -707,7 +626,11 @@ async function createAuditor(req, res) {
 
 async function createBusinessProcessManagementEntry(req, res) {
   try {
-    const created = await createBusinessProcess(req.body || {});
+    const created = await createBusinessProcessMasterEntry({
+      ...(req.body || {}),
+      company_identifier: null,
+      created_by_email: req.user?.email_id || null,
+    });
     return res.status(201).json({
       success: true,
       message: 'Business Process created successfully',

@@ -15,6 +15,7 @@ const {
   createOrResubmitDeficiencyResponse,
   getDeficiencyResponseByFormId,
 } = require('../utils/deficiency_response');
+const { getBusinessProcessCodeForCompany } = require('../utils/business_process_master');
 const {
   notifyDeficiencyResponseSubmitted,
 } = require('../utils/deficiency_response_notifications');
@@ -238,19 +239,8 @@ ${companyDisplayName}`,
   };
 }
 
-async function getBusinessProcessCodeForName(clientOrPool, businessProcess) {
-  const process = String(businessProcess || '').trim();
-  if (!process) return '';
-  const result = await clientOrPool.query(
-    `
-      SELECT TRIM(business_process_code) AS business_process_code
-      FROM businees_process_code
-      WHERE LOWER(TRIM(business_process)) = LOWER(TRIM($1))
-      LIMIT 1
-    `,
-    [process]
-  );
-  return String(result.rows[0]?.business_process_code || '').trim();
+async function getBusinessProcessCodeForName(clientOrPool, companyIdentifier, businessProcess) {
+  return getBusinessProcessCodeForCompany(clientOrPool, companyIdentifier, businessProcess);
 }
 
 async function getNextGeneratedControlNumber(clientOrPool, companyIdentifier, prefix) {
@@ -316,7 +306,7 @@ router.get('/control-number-preview', verifyAuth, async (req, res) => {
 
     let generatedControlNumber = '';
     if (businessProcess) {
-      const prefix = await getBusinessProcessCodeForName(pool, businessProcess);
+      const prefix = await getBusinessProcessCodeForName(pool, companyIdentifier, businessProcess);
       if (prefix) {
         generatedControlNumber = await getNextGeneratedControlNumber(pool, companyIdentifier, prefix);
       }
@@ -3368,7 +3358,7 @@ router.post('/replicate', verifyAuth, async (req, res) => {
           ? String(insertObj.business_process).trim()
           : '';
         if (companyId && businessProcessName) {
-          const generatedPrefix = await getBusinessProcessCodeForName(client, businessProcessName);
+          const generatedPrefix = await getBusinessProcessCodeForName(client, companyId, businessProcessName);
           const nextControlNumber = await getNextGeneratedControlNumber(client, companyId, generatedPrefix);
           if (nextControlNumber) {
             insertObj.control_number = nextControlNumber;

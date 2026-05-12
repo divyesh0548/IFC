@@ -10,6 +10,7 @@ import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
+import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { apiUrl } from '../../config/api'
 
@@ -84,6 +85,14 @@ function Company_co_home() {
       description: 'Assign RACMs to process owners and manage assignment status.',
       path: '/company_co/racm-assignment',
       icon: <AssignmentTurnedInRoundedIcon sx={{ fontSize: 38 }} />,
+      accent: sharedTileAccent,
+    },
+    {
+      eyebrow: 'Process Master',
+      title: 'Business Process Management',
+      description: 'View common business processes and add company specific process names and codes.',
+      path: '/company_co/business-processes',
+      icon: <AccountTreeRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },
     {

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { normalizeColumnName } = require('./column_mapping');
 const { logAuditEvent } = require('./auditLog');
 const { calculateSampleRequired, getSampleSizeByFrequency } = require('./sample_required');
+const { getBusinessProcessCodeForCompany } = require('./business_process_master');
 
 function generateFormId() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -86,23 +87,6 @@ function parseControlNumberSuffix(controlNumber, prefix) {
   const suffix = raw.slice(normalizedPrefix.length).trim();
   if (!/^\d+$/.test(suffix)) return null;
   return Number.parseInt(suffix, 10);
-}
-
-async function getBusinessProcessCode(client, businessProcess) {
-  const bp = normalizeBusinessProcessValue(businessProcess);
-  if (!bp) return '';
-
-  const result = await client.query(
-    `
-      SELECT TRIM(business_process_code) AS business_process_code
-      FROM businees_process_code
-      WHERE LOWER(TRIM(business_process)) = LOWER(TRIM($1))
-      LIMIT 1
-    `,
-    [bp]
-  );
-
-  return String(result.rows[0]?.business_process_code || '').trim();
 }
 
 async function getNextGeneratedControlNumberStart(client, companyIdentifier, prefix, transformedData) {
@@ -193,7 +177,7 @@ async function prepareBulkImportRows(client, options) {
   });
 
   if (rowsMissingControlNumber.length > 0) {
-    const generatedControlNumberPrefix = await getBusinessProcessCode(client, businessProcess);
+    const generatedControlNumberPrefix = await getBusinessProcessCodeForCompany(client, companyIdentifier, businessProcess);
     if (!generatedControlNumberPrefix) {
       const error = new Error('No Business Process code found for the selected Business Process');
       error.statusCode = 400;

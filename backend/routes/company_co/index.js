@@ -21,5 +21,6 @@ router.get('/communication-matrix', verifyCompanyCoordinator, controller.getComm
 router.post('/communication-matrix/common', verifyCompanyCoordinator, controller.addCommonCommunicationEmails);
 router.post('/communication-matrix/specific', verifyCompanyCoordinator, controller.addBusinessProcessSpecificCommunicationEmails);
 router.post('/communication-matrix/delete', verifyCompanyCoordinator, controller.deleteCommunicationMatrixEntries);
+router.post('/business-processes', verifyCompanyCoordinator, controller.createCompanyBusinessProcess);
 
 module.exports = router;

@@ -1,28 +1,5 @@
 
 
-Implement a way to store user preference, like word wrap.
-
-Control number should be unique.
-
-First sample document will be uploaded, then It will be set active. After these conditions display that RACM on assignment page.  
-
-Prevent duplicate RACM creation with the combination of FY, Business Process and Control Number.
-
-Apply sequence in form fields of create RACM manually page.
-
-Those last three column, which are to be updated by approver, needs to be inserted in bulk excel file upload?
-
-
-
-
-
-
-
-Bulk upload/update (for specific fields) in user creation. Export user list in excel format.
-Provide a template for it.
-
-
-
 AI insights
 RAMC : 
 preventive ratio
@@ -31,18 +8,7 @@ cycle wise key control
 AI Summary
 
 
-There can be multiple sample document in a RACM and also document uploaded by user.
-
 make user : yugma and mayank sir 
-
-
-Create a user role with view only rights. (Auditor) 
-
-Generate sample documents dates/intervals from past date of the date of RACM creation. (Do not include any future date)
-
-A company can have multiple units for easy management. Units will be created by company coordinator. By defaul a company will have a main unit.
-
-Company coordinator can create approver for comapny, user and another company coordinator.
 
 
 Scenarios and Doubts :
