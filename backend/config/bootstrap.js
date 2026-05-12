@@ -1,61 +1,48 @@
-const { Client } = require('pg');
+const path = require('path');
+const { spawnSync } = require('child_process');
+const { prisma } = require('../lib/prisma');
+const { ensureDatabaseExists } = require('./ensureDatabase');
 const { hashPassword, getPasswordPepper } = require('../utils/password');
 let bootstrapPromise = null;
 
-function getDbSslConfig() {
-  const dbHost = process.env.DB_HOST || 'localhost';
-  const isLocalhost = dbHost === 'localhost' || dbHost === '127.0.0.1';
-  return isLocalhost ? false : { rejectUnauthorized: false };
-}
+const backendRoot = path.join(__dirname, '..');
+const DEFAULT_BUSINESS_PROCESSES = [
+  { businessProcess: 'Purchase to Pay', businessProcessCode: 'P2P' },
+  { businessProcess: 'Order to Cash', businessProcessCode: 'O2C' },
+  { businessProcess: 'Hire to Retire', businessProcessCode: 'H2R' },
+  { businessProcess: 'Capital Expenditure', businessProcessCode: 'CAPEX' },
+  { businessProcess: 'Treasury', businessProcessCode: 'TRSY' },
+  { businessProcess: 'Financial Statement Closure Process', businessProcessCode: 'FSCP' },
+  { businessProcess: 'Information Technology General Controls', businessProcessCode: 'ITGC' },
+  { businessProcess: 'Entity Level Controls', businessProcessCode: 'ELC' },
+];
 
-function assertSafeDbName(dbName) {
-  const name = String(dbName || '').trim();
-  if (!name) {
-    throw new Error('[bootstrap] DB_NAME is missing.');
-  }
-  // Identifiers cannot be parameterized in CREATE DATABASE. Keep it strict.
-  if (!/^[a-zA-Z0-9_]+$/.test(name)) {
-    throw new Error(
-      `[bootstrap] Unsafe DB_NAME "${name}". Use only letters, numbers, underscore.`
-    );
-  }
-  return name;
-}
-
-async function ensureDatabaseExists() {
-  const dbName = assertSafeDbName(process.env.DB_NAME || 'ifc_dev');
-  const maintenanceDb =
-    String(process.env.DB_MAINTENANCE_DB || '').trim() || 'postgres';
-
-  const client = new Client({
-    user: process.env.DB_USER || 'divyesh',
-    host: process.env.DB_HOST || 'localhost',
-    database: maintenanceDb,
-    password: String(process.env.DB_PASSWORD || '0548'),
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    ssl: getDbSslConfig(),
+function runNpxPrisma(args) {
+  const result = spawnSync('npx', ['prisma', ...args], {
+    cwd: backendRoot,
+    stdio: 'inherit',
+    env: process.env,
+    shell: true,
   });
-
-  await client.connect();
-  try {
-    const exists = await client.query(
-      'SELECT 1 FROM pg_database WHERE datname = $1 LIMIT 1',
-      [dbName]
-    );
-    if (exists.rows.length > 0) {
-      return;
-    }
-
-    console.log(`[bootstrap] Database "${dbName}" not found. Creating...`);
-    await client.query(`CREATE DATABASE "${dbName}"`);
-    console.log(`[bootstrap] Database "${dbName}" created.`);
-  } finally {
-    await client.end();
+  if (result.error) {
+    throw result.error;
   }
+  if (result.status !== 0) {
+    throw new Error(`\`npx prisma ${args.join(' ')}\` exited with code ${result.status}`);
+  }
+}
+
+function runPrismaGenerate() {
+  // In dev, running `prisma generate` on each boot causes nodemon restart loops
+  // because the generated client files are written every time.
+  if (process.env.RUN_PRISMA_GENERATE_ON_BOOT !== '1') { 
+    console.log('[bootstrap] Skipping prisma generate on boot (set RUN_PRISMA_GENERATE_ON_BOOT=1 to enable).');
+    return;
+  }
+  runNpxPrisma(['generate']);
 }
 
 async function ensureAdminUserFromEnv() {
-  const { pool } = require('../utils/db');
   const adminEmail = String(process.env.ADMIN_EMAIL_ID || '').trim();
   const adminPassword = String(process.env.ADMIN_PASSWORD || '').trim();
   const adminRole = String(process.env.ADMIN_ROLE || 'siteadmin').trim() || 'siteadmin';
@@ -67,32 +54,60 @@ async function ensureAdminUserFromEnv() {
 
   getPasswordPepper();
 
-  const existing = await pool.query(
-    `
-      SELECT id
-      FROM ifc_users
-      WHERE LOWER(TRIM(email_id)) = LOWER(TRIM($1))
-      LIMIT 1
-    `,
-    [adminEmail]
-  );
+  const existing = await prisma.ifcUser.findFirst({
+    where: {
+      emailId: {
+        equals: adminEmail,
+        mode: 'insensitive',
+      },
+    },
+    select: { id: true },
+  });
 
-  if (existing.rows.length > 0) {
+  if (existing) {
     console.log(`[bootstrap] Admin user already exists for ${adminEmail}. Skipping.`);
     return;
   }
 
   const adminPasswordHash = await hashPassword(adminPassword);
 
-  await pool.query(
-    `
-      INSERT INTO ifc_users (email_id, password, role, company_identifier, temp_login)
-      VALUES ($1, $2, $3, NULL, 0)
-    `,
-    [adminEmail, adminPasswordHash, adminRole]
-  );
+  await prisma.ifcUser.create({
+    data: {
+      emailId: adminEmail,
+      password: adminPasswordHash,
+      role: adminRole,
+      companyIdentifier: null,
+      tempLogin: false,
+    },
+  });
 
   console.log(`[bootstrap] Admin user created for ${adminEmail}.`);
+}
+
+async function ensureDefaultBusinessProcesses() {
+  const existing = await prisma.busineesProcessCode.findMany({
+    where: {
+      businessProcessCode: {
+        in: DEFAULT_BUSINESS_PROCESSES.map((item) => item.businessProcessCode),
+      },
+    },
+    select: { businessProcessCode: true },
+  });
+
+  const existingCodes = new Set(existing.map((item) => String(item.businessProcessCode || '').trim().toUpperCase()));
+  const missingRows = DEFAULT_BUSINESS_PROCESSES.filter(
+    (item) => !existingCodes.has(String(item.businessProcessCode).trim().toUpperCase())
+  );
+
+  if (missingRows.length === 0) {
+    console.log('[bootstrap] Default business processes already present. Skipping seed.');
+    return;
+  }
+
+  await prisma.busineesProcessCode.createMany({
+    data: missingRows,
+  });
+  console.log(`[bootstrap] Seeded ${missingRows.length} default business process row(s).`);
 }
 
 async function runBootstrap() {
@@ -103,8 +118,8 @@ async function runBootstrap() {
   bootstrapPromise = (async () => {
     try {
       await ensureDatabaseExists();
-      const { ensureRequiredTablesAndColumns } = require('./db_table_init');
-      await ensureRequiredTablesAndColumns();
+      runPrismaGenerate();
+      await ensureDefaultBusinessProcesses();
       await ensureAdminUserFromEnv();
     } catch (error) {
       console.error('[bootstrap] Startup bootstrap failed:', error);

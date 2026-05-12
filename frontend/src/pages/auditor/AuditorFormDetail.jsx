@@ -55,7 +55,6 @@ function formatDate(dateString) {
 function formatStatus(status) {
   const value = String(status || '').trim()
   if (!value || value.toLowerCase() === 'null') return '-'
-  if (value === 'sent for approval') return 'Pending'
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 

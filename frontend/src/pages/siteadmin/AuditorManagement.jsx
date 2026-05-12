@@ -225,8 +225,8 @@ function AuditorManagement() {
                     <TableCell>
                       <Chip
                         size="small"
-                        label={Number(auditor.temp_login) === 1 ? 'Yes' : 'No'}
-                        color={Number(auditor.temp_login) === 1 ? 'warning' : 'success'}
+                        label={auditor.temp_login ? 'Yes' : 'No'}
+                        color={auditor.temp_login ? 'warning' : 'success'}
                         variant="outlined"
                       />
                     </TableCell>

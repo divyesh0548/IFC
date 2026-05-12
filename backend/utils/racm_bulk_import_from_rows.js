@@ -411,6 +411,7 @@ async function insertRacmRowsFromTransformedData(client, options) {
   let errorCount = 0;
   let duplicateCount = 0;
   const duplicateControlNumberSamples = [];
+  const createdAuditEvents = [];
 
   for (let i = 0; i < transformedData.length; i++) {
     const row = transformedData[i];
@@ -456,7 +457,8 @@ async function insertRacmRowsFromTransformedData(client, options) {
       insertedCount++;
 
       if (coordinatorEmailId) {
-        await logAuditEvent('RACM created', coordinatorEmailId, formId);
+        // Log after COMMIT (caller), otherwise FK on audit_logs_racm.form_id may not see uncommitted row.
+        createdAuditEvents.push({ action: 'RACM created', userEmailId: coordinatorEmailId, formId });
       }
     } catch (rowError) {
       if (rowError?.code === '23505') {
@@ -481,6 +483,7 @@ async function insertRacmRowsFromTransformedData(client, options) {
     duplicateCount,
     errorCount,
     duplicateControlNumberSamples,
+    createdAuditEvents,
   };
 }
 

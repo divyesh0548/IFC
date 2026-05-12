@@ -31,6 +31,7 @@ function Company_Co_dashboard() {
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [filterApprovalStatus, setFilterApprovalStatus] = useState('all') // 'all', 'Approved', 'Rejected', 'Pending'
   const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific mapped unit
+  const [filterConclusion, setFilterConclusion] = useState('all')
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [mappedUnits, setMappedUnits] = useState([])
   const [loading, setLoading] = useState(true)
@@ -254,6 +255,24 @@ function Company_Co_dashboard() {
     ? forms.filter((form) => String(form?.unit_id || '').trim() === filterUnit)
     : forms
 
+  const formatConclusion = (value) => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return 'None'
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }
+
+  const conclusionOptions = [...new Set(
+    (forms || []).map((form) => formatConclusion(form.control_design_conclusion))
+  )].sort((a, b) => {
+    if (a === 'None') return 1
+    if (b === 'None') return -1
+    return a.localeCompare(b)
+  })
+
+  const displayedForms = filteredForms.filter((form) => {
+    if (filterConclusion === 'all') return true
+    return formatConclusion(form.control_design_conclusion) === filterConclusion
+  })
   const getProcessOwnerDisplay = (form) => {
     const name = (form?.control_owner_name ?? form?.emp_name ?? '')
       .toString()
@@ -266,7 +285,6 @@ function Company_Co_dashboard() {
 
   const formatApprovalStatus = (status) => {
     if (!status || status === '' || status === null) return 'Pending'
-    if (String(status).toLowerCase() === 'sent for approval') return 'Pending'
     const s = String(status)
     return s.charAt(0).toUpperCase() + s.slice(1)
   }
@@ -427,6 +445,29 @@ function Company_Co_dashboard() {
                 </Select>
               </FormControl>
 
+              <FormControl
+                variant="outlined"
+                sx={{
+                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
+                }}
+              >
+                <InputLabel id="conclusion-filter-label">Conclusion</InputLabel>
+                <Select
+                  labelId="conclusion-filter-label"
+                  id="conclusion-filter"
+                  value={filterConclusion}
+                  label="Conclusion"
+                  onChange={(e) => setFilterConclusion(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  {conclusionOptions.map((option) => (
+                    <MenuItem key={option} value={option}>
+                      {option}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
               {shouldShowUnitMapping ? (
                 <FormControl
                   variant="outlined"
@@ -458,7 +499,7 @@ function Company_Co_dashboard() {
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography color="text.secondary">Loading forms...</Typography>
             </Box>
-          ) : filteredForms.length === 0 ? (
+          ) : displayedForms.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography color="text.secondary">No forms found.</Typography>
             </Box>
@@ -620,6 +661,24 @@ function Company_Co_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '140px',
+                        minWidth: '130px',
+                        maxWidth: '160px',
+                      }}
+                    >
+                      Conclusion
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
                         width: '120px',
                         minWidth: '110px',
                         maxWidth: '130px',
@@ -648,7 +707,7 @@ function Company_Co_dashboard() {
                   </Box>
                 </Box>
                 <Box component="tbody">
-                  {filteredForms.map((form) => {
+                  {displayedForms.map((form) => {
                     const isActive = form.active && form.active !== '' && form.active !== '0'
                     const approvalLabel = formatApprovalStatus(form.status)
                     const ownerDisplay = getProcessOwnerDisplay(form)
@@ -816,6 +875,25 @@ function Company_Co_dashboard() {
                             }}
                           >
                             {approvalLabel}
+                          </Box>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            px: 3,
+                            py: 2,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            width: '140px',
+                            minWidth: '130px',
+                            maxWidth: '160px',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          }}
+                        >
+                          <Box component="span" sx={truncatedTextSx}>
+                            {formatConclusion(form.control_design_conclusion)}
                           </Box>
                         </Box>
                         <Box

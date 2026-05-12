@@ -6,6 +6,7 @@ import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import Tooltip from '@mui/material/Tooltip'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import {
@@ -32,6 +33,7 @@ function User_dashboard() {
   const [filter, setFilter] = useState('all') // 'all', 'pending', 'sent for approval', 'approved', 'rejected'
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
+  const [filterConclusion, setFilterConclusion] = useState('all')
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
   const { businessProcessOptions } = useBusinessProcesses()
@@ -166,6 +168,28 @@ function User_dashboard() {
     })
   }
 
+  const formatConclusion = (value) => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return 'None'
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }
+
+  const conclusionOptions = [...new Set(
+    (forms || []).map((form) => formatConclusion(form.control_design_conclusion))
+  )].sort((a, b) => {
+    if (a === 'None') return 1
+    if (b === 'None') return -1
+    return a.localeCompare(b)
+  })
+
+  const displayedForms = forms.filter((form) => {
+    if (filterConclusion === 'all') return true
+    return formatConclusion(form.control_design_conclusion) === filterConclusion
+  })
+  const actionRequiredCount = (forms || []).filter((form) =>
+    Boolean(form?.deficiency_action_status)
+  ).length
+
   const truncatedTextSx = {
     display: 'inline-block',
     maxWidth: '100%',
@@ -181,6 +205,17 @@ function User_dashboard() {
     overflow: 'visible',
   }
   const dataCellTextSx = cellWordWrap ? wrappedTextSx : truncatedTextSx
+  const tooltipSx = {
+    bgcolor: theme.palette.mode === 'dark' ? 'rgba(17, 24, 39, 0.96)' : 'rgba(17, 24, 39, 0.92)',
+    color: '#ffffff',
+    fontSize: '0.75rem',
+    lineHeight: 1.4,
+    borderRadius: '8px',
+    px: 1.25,
+    py: 0.75,
+    maxWidth: 420,
+    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.25)',
+  }
   const dataCellSx = (base) => ({
     ...base,
     ...(cellWordWrap
@@ -199,6 +234,28 @@ function User_dashboard() {
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
+        {actionRequiredCount > 0 ? (
+          <Box
+            sx={{
+              mb: 2,
+              px: 2,
+              py: 1.25,
+              borderRadius: 2,
+              backgroundColor: '#fef3c7',
+              border: '1px solid #f59e0b',
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{
+                color: '#92400e',
+                fontWeight: 700,
+              }}
+            >
+              Action Required - {actionRequiredCount} RACMs are found ineffective
+            </Typography>
+          </Box>
+        ) : null}
         {/* Forms Section */}
         <Paper 
           elevation={3}
@@ -316,6 +373,30 @@ function User_dashboard() {
                   </Select>
                 </FormControl>
               </Box>
+
+              <Box sx={{ minWidth: FILTER_BOX_MIN_WIDTH }}>
+                <FormControl
+                  variant="outlined"
+                  fullWidth
+                  size="small"
+                >
+                  <InputLabel id="conclusion-filter-label">Conclusion</InputLabel>
+                  <Select
+                    labelId="conclusion-filter-label"
+                    id="conclusion-filter"
+                    value={filterConclusion}
+                    label="Conclusion"
+                    onChange={(e) => setFilterConclusion(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    {conclusionOptions.map((option) => (
+                      <MenuItem key={option} value={option}>
+                        {option}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
             </Box>
           </Box>
 
@@ -323,7 +404,7 @@ function User_dashboard() {
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography color="text.secondary">Loading forms...</Typography>
             </Box>
-          ) : forms.length === 0 ? (
+          ) : displayedForms.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography color="text.secondary">
                 {filter === 'all' 
@@ -413,6 +494,9 @@ function User_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '260px',
+                        minWidth: '220px',
+                        maxWidth: '300px',
                       }}
                     >
                       Business Process
@@ -428,6 +512,9 @@ function User_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '280px',
+                        minWidth: '240px',
+                        maxWidth: '340px',
                       }}
                     >
                       Sub Process
@@ -443,6 +530,9 @@ function User_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '500px',
+                        minWidth: '500px',
+                        maxWidth: '600px',
                       }}
                     >
                       Description
@@ -490,12 +580,27 @@ function User_dashboard() {
                         color: theme.palette.text.secondary,
                       }}
                     >
+                      Conclusion
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
                       Due Date
                     </Box>
                   </Box>
                 </Box>
                 <Box component="tbody">
-                  {forms.map((form, index) => {
+                  {displayedForms.map((form, index) => {
                     return (
                       <Box
                         component="tr"
@@ -529,11 +634,16 @@ function User_dashboard() {
                             py: 2,
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
+                            width: '260px',
+                            minWidth: '220px',
+                            maxWidth: '300px',
                           })}
                         >
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.business_process || 'N/A'}
-                          </Box>
+                          <Tooltip title={form.business_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.business_process || 'N/A'}
+                            </Box>
+                          </Tooltip>
                         </Box>
                         <Box
                           component="td"
@@ -542,11 +652,16 @@ function User_dashboard() {
                             py: 2,
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
+                            width: '280px',
+                            minWidth: '240px',
+                            maxWidth: '340px',
                           })}
                         >
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.sub_process || 'N/A'}
-                          </Box>
+                          <Tooltip title={form.sub_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.sub_process || 'N/A'}
+                            </Box>
+                          </Tooltip>
                         </Box>
                         <Box
                           component="td"
@@ -555,11 +670,20 @@ function User_dashboard() {
                             py: 2,
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
+                            width: '500px',
+                            minWidth: '400px',
+                            maxWidth: '600px',
                           })}
                         >
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.standard_control_description || 'N/A'}
-                          </Box>
+                          <Tooltip
+                            title={form.standard_control_description || 'N/A'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.standard_control_description || 'N/A'}
+                            </Box>
+                          </Tooltip>
                         </Box>
                         <Box
                           component="td"
@@ -594,6 +718,19 @@ function User_dashboard() {
                         >
                           <Box component="span" sx={dataCellTextSx}>
                             {form.financial_year || 'N/A'}
+                          </Box>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={dataCellSx({
+                            px: 3,
+                            py: 2,
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          })}
+                        >
+                          <Box component="span" sx={dataCellTextSx}>
+                            {formatConclusion(form.control_design_conclusion)}
                           </Box>
                         </Box>
                         <Box

@@ -13,6 +13,24 @@ import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { apiUrl } from '../../config/api'
 
+function formatCoordinatorName(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return 'User'
+
+  if (!raw.includes('@')) {
+    return raw
+  }
+
+  const localPart = raw.split('@')[0] || ''
+  const words = localPart
+    .split('.')
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+
+  return words.length > 0 ? words.join(' ') : 'User'
+}
+
 function Company_co_home() {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -91,7 +109,7 @@ function Company_co_home() {
         }
 
         const homeStats = result.data || {}
-        setUsername(homeStats.coordinatorName || 'User')
+        setUsername(formatCoordinatorName(homeStats.coordinatorName || 'User'))
         setCoordinatorUnits(Array.isArray(homeStats.coordinatorUnits) ? homeStats.coordinatorUnits : [])
 
         setStats({
@@ -102,7 +120,7 @@ function Company_co_home() {
         })
       } catch (error) {
         console.error('Failed to fetch company coordinator home data:', error)
-        setUsername('User')
+        setUsername(formatCoordinatorName('User'))
         setCoordinatorUnits([])
         setStats({
           totalUsers: 0,

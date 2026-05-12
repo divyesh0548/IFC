@@ -5,6 +5,7 @@ const { getCcEmailsForRacm } = require('../../utils/racm_cc_recipients');
 const {
   attachControlFormDocuments,
 } = require('../../utils/racm_documents');
+const { getDeficiencyResponseByFormId } = require('../../utils/deficiency_response');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -202,22 +203,22 @@ async function getHomeStats(req, res) {
         `
         SELECT
           COUNT(DISTINCT cf.id) FILTER (
-            WHERE cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'
+            WHERE cf.active = TRUE
           )::int AS active_racms,
           COUNT(DISTINCT cf.id) FILTER (
-            WHERE cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'
+            WHERE cf.active = TRUE
               AND cf.status = 'Approved'
           )::int AS approved_racms,
           COUNT(DISTINCT cf.id) FILTER (
-            WHERE cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'
+            WHERE cf.active = TRUE
               AND cf.status = 'Rejected'
           )::int AS rejected_racms,
           COUNT(DISTINCT cf.id) FILTER (
-            WHERE cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'
+            WHERE cf.active = TRUE
               AND cf.status = 'sent for approval'
           )::int AS pending_racms,
           COUNT(DISTINCT cf.id) FILTER (
-            WHERE cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'
+            WHERE cf.active = TRUE
               AND cf.status IN ('Approved', 'Rejected', 'sent for approval')
           )::int AS total_racms
         FROM control_forms cf
@@ -342,10 +343,34 @@ async function approveForm(req, res) {
     }
 
     const approverReason = reason_by_approver != null ? String(reason_by_approver).trim() : '';
+    const designProcedures = control_design_procs != null ? String(control_design_procs).trim() : '';
+    const designConclusion = control_design_conclusion != null ? String(control_design_conclusion).trim() : '';
+    const deficiencyDescription = design_deficiency_desc != null ? String(design_deficiency_desc).trim() : '';
     if (status === 'Rejected' && !approverReason) {
       return res.status(400).json({
         success: false,
         message: 'Reason is required when rejecting.',
+      });
+    }
+
+    if (status === 'Approved' && !designProcedures) {
+      return res.status(400).json({
+        success: false,
+        message: 'Procedures to Evaluate Design and Implementation is required for approval.',
+      });
+    }
+
+    if (status === 'Approved' && !designConclusion) {
+      return res.status(400).json({
+        success: false,
+        message: 'Conclusion on Design of Control is required for approval.',
+      });
+    }
+
+    if (status === 'Approved' && designConclusion === 'Not Effective' && !deficiencyDescription) {
+      return res.status(400).json({
+        success: false,
+        message: 'Description of Deficiency in Control Design is required when conclusion is Not Effective.',
       });
     }
 
@@ -358,7 +383,7 @@ async function approveForm(req, res) {
         await client.query(
           `
             INSERT INTO control_form_history (form_id, reason_by_approver, rejection_timestamp)
-            VALUES ($1, $2, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
+            VALUES ($1, $2, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
           `,
           [form_id, approverReason || null]
         );
@@ -369,19 +394,36 @@ async function approveForm(req, res) {
       let paramIndex = 3;
 
       updateFields.push(`control_design_procs = $${paramIndex}`);
-      updateValues.push(control_design_procs !== undefined ? control_design_procs : null);
+      updateValues.push(control_design_procs !== undefined ? designProcedures || null : null);
       paramIndex++;
 
       updateFields.push(`control_design_conclusion = $${paramIndex}`);
-      updateValues.push(control_design_conclusion !== undefined ? control_design_conclusion : null);
+      updateValues.push(control_design_conclusion !== undefined ? designConclusion || null : null);
       paramIndex++;
 
       updateFields.push(`design_deficiency_desc = $${paramIndex}`);
-      updateValues.push(design_deficiency_desc !== undefined ? design_deficiency_desc : null);
+      updateValues.push(design_deficiency_desc !== undefined ? deficiencyDescription || null : null);
       paramIndex++;
 
+      if (status === 'Approved' && designConclusion === 'Not Effective') {
+        updateFields.push(`deficiency_action_status = $${paramIndex}`);
+        updateValues.push(true);
+        paramIndex++;
+        updateFields.push(`deficiency_response_status = $${paramIndex}`);
+        updateValues.push('awaiting_owner_action');
+        paramIndex++;
+      } else {
+        updateFields.push(`deficiency_action_status = $${paramIndex}`);
+        updateValues.push(false);
+        paramIndex++;
+        updateFields.push(`deficiency_response_status = $${paramIndex}`);
+        updateValues.push(null);
+        paramIndex++;
+      }
+
       updateFields.push(
-        'approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE \'Asia/Kolkata\')'
+        'approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\')',
+        'updated_at = CURRENT_TIMESTAMP'
       );
 
       updateValues.push(form_id);
@@ -548,7 +590,7 @@ async function changeApprovalDecision(req, res) {
         await client.query(
           `
             INSERT INTO control_form_history (form_id, reason_by_approver, rejection_timestamp)
-            VALUES ($1, $2, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
+            VALUES ($1, $2, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
           `,
           [form_id, reasonFinal || null]
         );
@@ -558,7 +600,8 @@ async function changeApprovalDecision(req, res) {
         `UPDATE control_forms
          SET status = $1,
              reason_by_approver = $2,
-             approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
+             approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+             updated_at = CURRENT_TIMESTAMP
          WHERE form_id = $3
            AND EXISTS (
              SELECT 1
@@ -650,9 +693,9 @@ async function getControlForms(req, res) {
 
     if (active !== undefined) {
       if (active === 'true' || active === '1') {
-        query += ` AND cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'`;
+        query += ` AND cf.active = TRUE`;
       } else if (active === 'false' || active === '0') {
-        query += ` AND (cf.active IS NULL OR cf.active = '' OR cf.active = '0')`;
+        query += ` AND COALESCE(cf.active, FALSE) = FALSE`;
       }
     }
 
@@ -709,6 +752,7 @@ async function getControlFormById(req, res) {
     }
 
     await attachControlFormDocuments(pool, [result.rows[0]]);
+    result.rows[0].deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
 
     res.status(200).json({
       success: true,
@@ -820,6 +864,195 @@ async function getControlFormHistory(req, res) {
   }
 }
 
+async function reviewDeficiencyResponse(req, res) {
+  try {
+    const { form_id } = req.params;
+    const approverEmail = req.approver.email_id;
+    const reviewDecision = String(req.body?.review_decision || '').trim();
+    const reviewComment = req.body?.review_comment != null ? String(req.body.review_comment).trim() : '';
+    const normalizedReviewDecision = reviewDecision.toLowerCase();
+
+    if (!['effective', 'accepted under deviation', 'reject'].includes(normalizedReviewDecision)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please select Effective, Accepted under deviation, or Reject',
+      });
+    }
+
+    if (normalizedReviewDecision === 'reject' && !reviewComment) {
+      return res.status(400).json({
+        success: false,
+        message: 'Review comment is required when rejecting deficiency response',
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const scopedFormResult = await client.query(
+        `
+          SELECT cf.*
+          FROM control_forms cf
+          ${scopedApproverRacmJoin('cf')}
+          WHERE cf.form_id = $2
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [approverEmail, form_id]
+      );
+
+      if (scopedFormResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({
+          success: false,
+          message: 'RACM not found or not assigned to this approver',
+        });
+      }
+
+      const currentDeficiencyResponse = await getDeficiencyResponseByFormId(client, form_id);
+      if (!currentDeficiencyResponse) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({
+          success: false,
+          message: 'No deficiency response found for this RACM',
+        });
+      }
+
+      if (currentDeficiencyResponse.status !== 'submitted') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Only submitted deficiency responses can be reviewed',
+        });
+      }
+
+      const isApprovalDecision = normalizedReviewDecision === 'effective' || normalizedReviewDecision === 'accepted under deviation';
+      const responseStatus = isApprovalDecision ? 'approved' : 'rejected';
+      const reviewDecisionValue = normalizedReviewDecision === 'reject' ? 'rejected' : reviewDecision;
+
+      await client.query(
+        `
+          UPDATE deficiency_response
+          SET status = $2,
+              reviewed_by_email = $3,
+              reviewed_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+              review_decision = $4,
+              review_comment = $5,
+              updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+          WHERE id = $1
+        `,
+        [
+          currentDeficiencyResponse.id,
+          responseStatus,
+          approverEmail,
+          reviewDecisionValue,
+          reviewComment || null,
+        ]
+      );
+
+      if (currentDeficiencyResponse.current_submission?.id) {
+        await client.query(
+          `
+            UPDATE deficiency_response_submission
+            SET status = $2,
+                reviewed_by_email = $3,
+                reviewed_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+                review_decision = $4,
+                review_comment = $5
+            WHERE id = $1
+          `,
+          [
+            currentDeficiencyResponse.current_submission.id,
+            responseStatus,
+            approverEmail,
+            reviewDecisionValue,
+            reviewComment || null,
+          ]
+        );
+      }
+
+      if (isApprovalDecision) {
+        await client.query(
+          `
+            UPDATE control_forms
+            SET control_design_conclusion = $2,
+                deficiency_action_status = FALSE,
+                deficiency_response_status = 'not_required',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE form_id = $1
+          `,
+          [form_id, reviewDecision]
+        );
+      } else {
+        await client.query(
+          `
+            UPDATE control_forms
+            SET deficiency_action_status = TRUE,
+                deficiency_response_status = 'resubmission_required',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE form_id = $1
+          `,
+          [form_id]
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (dbError) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Deficiency response review rollback error:', rollbackError);
+      }
+      throw dbError;
+    } finally {
+      client.release();
+    }
+
+    const updatedResult = await pool.query(
+      `
+        SELECT
+          cf.*,
+          c.company_name,
+          NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
+          NULLIF(TRIM(approver_units.unit_name), '') AS unit_name
+        FROM control_forms cf
+        ${scopedApproverRacmJoin('cf')}
+        LEFT JOIN companies c ON cf.company_identifier = c.company_identifier
+        LEFT JOIN ifc_users u
+          ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
+        WHERE cf.form_id = $2
+      `,
+      [approverEmail, form_id]
+    );
+
+    const updatedForm = updatedResult.rows[0];
+    await attachControlFormDocuments(pool, [updatedForm]);
+    updatedForm.deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
+
+    await logAuditEvent(
+      normalizedReviewDecision === 'reject' ? 'Deficiency Response Rejected' : 'Deficiency Response Approved',
+      approverEmail,
+      form_id,
+      updatedForm?.deficiency_case_id || updatedForm?.deficiency_response?.response_id || null
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: normalizedReviewDecision === 'reject'
+        ? 'Deficiency response rejected successfully'
+        : 'Deficiency response approved successfully',
+      data: updatedForm,
+    });
+  } catch (error) {
+    console.error('Review deficiency response error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+}
+
 async function getRacmAuditLogs(req, res) {
   try {
     const { form_id } = req.params;
@@ -842,7 +1075,17 @@ async function getRacmAuditLogs(req, res) {
     }
 
     const query = `
-      SELECT id, timestamp, action, user_email_id, form_id, ref_data
+      SELECT
+        id,
+        timestamp,
+        TO_CHAR(
+          timezone('Asia/Kolkata', timestamp AT TIME ZONE 'UTC'),
+          'DD/MM/YYYY HH24:MI:SS'
+        ) AS timestamp_ist,
+        action,
+        user_email_id,
+        form_id,
+        ref_data
       FROM audit_logs_racm
       WHERE form_id = $1
       ORDER BY timestamp ASC NULLS LAST, id ASC
@@ -871,5 +1114,6 @@ module.exports = {
   checkControlFormAccess,
   getControlFormById,
   getControlFormHistory,
+  reviewDeficiencyResponse,
   getRacmAuditLogs,
 };

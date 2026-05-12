@@ -58,6 +58,7 @@ function RacmManagementDashboard() {
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific assigned unit
+  const [filterConclusion, setFilterConclusion] = useState('all')
   const [coordinatorUnits, setCoordinatorUnits] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -137,7 +138,7 @@ function RacmManagementDashboard() {
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterActive, filterStatus, filterBusinessProcess, filterFinancialYear, filterUnit])
+  }, [companyIdentifier, filterActive, filterStatus, filterBusinessProcess, filterFinancialYear, filterUnit, filterConclusion])
 
   useEffect(() => {
     const fetchCoordinatorUnits = async () => {
@@ -235,10 +236,13 @@ function RacmManagementDashboard() {
     if (!status || status === '' || status === null) {
       return 'Pending'
     }
-    if (status === 'sent for approval') {
-      return 'Pending'
-    }
     return status.charAt(0).toUpperCase() + status.slice(1)
+  }
+
+  const formatConclusion = (value) => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return 'None'
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
   }
 
   const fetchForms = async () => {
@@ -286,6 +290,9 @@ function RacmManagementDashboard() {
             const status = form.status || ''
             return !status || status === '' || status.toLowerCase() === 'sent for approval'
           })
+        }
+        if (filterConclusion !== 'all') {
+          filteredData = filteredData.filter((form) => formatConclusion(form.control_design_conclusion) === filterConclusion)
         }
         
         // Sort forms by created_at timestamp (newest first)
@@ -1255,6 +1262,18 @@ function RacmManagementDashboard() {
     setFilterActive(value)
   }
 
+  const conclusionOptions = [...new Set(
+    (forms || []).map((form) => formatConclusion(form.control_design_conclusion))
+  )].sort((a, b) => {
+    if (a === 'None') return 1
+    if (b === 'None') return -1
+    return a.localeCompare(b)
+  })
+
+  const actionRequiredCount = (forms || []).filter((form) =>
+    Boolean(form?.deficiency_action_status)
+  ).length
+
   const showUnitColumn = coordinatorUnits.length > 1
   const showUnitFilter = coordinatorUnits.length > 1
 
@@ -1483,6 +1502,29 @@ function RacmManagementDashboard() {
             : 'Delete'}
         </Button>
       </Box>
+
+      {actionRequiredCount > 0 ? (
+        <Box
+          sx={{
+            mb: 2,
+            px: 2,
+            py: 1.25,
+            borderRadius: 2,
+            backgroundColor: '#fef3c7',
+            border: '1px solid #f59e0b',
+          }}
+          >
+            <Typography
+              variant="body2"
+            sx={{
+              color: '#92400e',
+              fontWeight: 700,
+            }}
+            >
+            Action Required - {actionRequiredCount} RACMs are found ineffective
+          </Typography>
+        </Box>
+      ) : null}
 
       <Paper
         elevation={3}
@@ -1736,6 +1778,47 @@ function RacmManagementDashboard() {
                   <MenuItem value="Pending">Pending</MenuItem>
                 </Select>
               </FormControl>
+              <FormControl
+                variant="outlined"
+                disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
+                sx={{
+                  minWidth: '200px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: 'transparent',
+                    '& fieldset': {
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : '#d1d5db',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.3)' : '#9ca3af',
+                    },
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: theme.palette.text.primary,
+                  },
+                  '& .MuiSelect-root': {
+                    color: theme.palette.text.primary,
+                  },
+                }}
+              >
+                <InputLabel id="conclusion-filter-label">Conclusion</InputLabel>
+                <Select
+                  labelId="conclusion-filter-label"
+                  id="conclusion-filter"
+                  value={filterConclusion}
+                  label="Conclusion"
+                  onChange={(e) => setFilterConclusion(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  {conclusionOptions.map((option) => (
+                    <MenuItem key={option} value={option}>
+                      {option}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
           </Box>
         </Box>
 
@@ -1966,6 +2049,24 @@ function RacmManagementDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '160px',
+                        minWidth: '140px',
+                        maxWidth: '180px',
+                      }}
+                    >
+                      Conclusion
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 3,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
                         width: '140px',
                         minWidth: '140px',
                         maxWidth: '140px',
@@ -2167,6 +2268,22 @@ function RacmManagementDashboard() {
                             }}
                           >
                             {status}
+                          </Box>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={dataCellSx({
+                            px: 3,
+                            py: 2,
+                            width: '160px',
+                            minWidth: '140px',
+                            maxWidth: '180px',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          })}
+                        >
+                          <Box component="span" sx={dataCellTextSx}>
+                            {formatConclusion(form.control_design_conclusion)}
                           </Box>
                         </Box>
                         <Box

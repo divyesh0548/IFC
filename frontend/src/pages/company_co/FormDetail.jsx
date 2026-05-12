@@ -19,8 +19,12 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Autocomplete from '@mui/material/Autocomplete';
 import Checkbox from '@mui/material/Checkbox';
+import Radio from '@mui/material/Radio';
+import RadioGroup from '@mui/material/RadioGroup';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
+import Divider from '@mui/material/Divider';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
@@ -34,6 +38,7 @@ import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
+import { formatIndianDateTime } from '../../lib/dateTime'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 
 const ASSIGNABLE_USER_INITIAL_LIMIT = 5
@@ -47,6 +52,20 @@ function mergeAssignableUserIntoOptions(options, selectedEmail) {
     return options
   }
   return [...options, { email_id: email, emp_name: '' }]
+}
+
+function formatNameFromEmail(email) {
+  const raw = String(email || '').trim().toLowerCase()
+  if (!raw) return ''
+  const localPart = raw.split('@')[0] || ''
+  const parts = localPart
+    .split('.')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (parts.length === 0) return ''
+  return parts
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 function FormDetail() {
@@ -97,6 +116,24 @@ function FormDetail() {
   const [auditLogLoading, setAuditLogLoading] = useState(false)
   const [auditLogError, setAuditLogError] = useState(null)
   const [auditLogRows, setAuditLogRows] = useState([])
+  const [activeChangeRequest, setActiveChangeRequest] = useState(null)
+  const [activeChangeRequestLoading, setActiveChangeRequestLoading] = useState(false)
+  const [suggestedChangesDialogOpen, setSuggestedChangesDialogOpen] = useState(false)
+  const [reviewDecisions, setReviewDecisions] = useState({})
+  const [reviewSaving, setReviewSaving] = useState(false)
+  const [changeRequestHistory, setChangeRequestHistory] = useState([])
+  const [changeRequestHistoryCount, setChangeRequestHistoryCount] = useState(0)
+  const [changeRequestHistoryLoading, setChangeRequestHistoryLoading] = useState(false)
+  const [changeRequestHistoryDialogOpen, setChangeRequestHistoryDialogOpen] = useState(false)
+  const [expandedHistoryRequestIds, setExpandedHistoryRequestIds] = useState({})
+  const [deficiencyResponseForm, setDeficiencyResponseForm] = useState({
+    response_type: 'mitigation_plan',
+    explaination: '',
+    concerned_person: '',
+    due_date: '',
+  })
+  const [deficiencyResponseFiles, setDeficiencyResponseFiles] = useState([])
+  const [deficiencyResponseSubmitting, setDeficiencyResponseSubmitting] = useState(false)
   const assertionFields = ['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure']
 
   useSyncGlobalLoading(
@@ -109,7 +146,11 @@ function FormDetail() {
     replicating ||
     creatingUser ||
     savingSchedule ||
-    usersLoading
+    usersLoading ||
+    activeChangeRequestLoading ||
+    reviewSaving ||
+    changeRequestHistoryLoading ||
+    deficiencyResponseSubmitting
   )
 
   useEffect(() => {
@@ -124,6 +165,20 @@ function FormDetail() {
 
   useEffect(() => {
     fetchFormData()
+  }, [form_id])
+
+  useEffect(() => {
+    if (!formData?.pending_changes) {
+      setActiveChangeRequest(null)
+      setReviewDecisions({})
+      return
+    }
+
+    fetchActiveChangeRequest()
+  }, [formData?.pending_changes, form_id])
+
+  useEffect(() => {
+    fetchChangeRequestHistory()
   }, [form_id])
 
   const fetchFormData = async () => {
@@ -142,6 +197,18 @@ function FormDetail() {
         // Check if sampling document exists
         const samplingCheck = await checkSamplingExists()
         setSamplingExists(samplingCheck)
+        const currentDeficiencySubmission = data.data?.deficiency_response?.current_submission
+        setDeficiencyResponseForm({
+          response_type: currentDeficiencySubmission?.submission_type || data.data?.deficiency_response?.response_type || 'mitigation_plan',
+          explaination: currentDeficiencySubmission?.explaination || data.data?.deficiency_response?.explaination || '',
+          concerned_person: currentDeficiencySubmission?.concerned_person || data.data?.deficiency_response?.concerned_person || '',
+          due_date: currentDeficiencySubmission?.due_date
+            ? String(currentDeficiencySubmission.due_date).slice(0, 10)
+            : data.data?.deficiency_response?.due_date
+              ? String(data.data.deficiency_response.due_date).slice(0, 10)
+              : '',
+        })
+        setDeficiencyResponseFiles([])
       } else {
         setError(data.message || 'Failed to fetch form data')
       }
@@ -150,6 +217,73 @@ function FormDetail() {
       setError('Error fetching form data')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchActiveChangeRequest = async () => {
+    if (!form_id) return null
+    setActiveChangeRequestLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/change-request/active`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setActiveChangeRequest(data.data)
+        const nextDecisions = {}
+        const items = Array.isArray(data.data?.items) ? data.data.items : []
+        items.forEach((item) => {
+          nextDecisions[item.id] = {
+            status: '',
+            rejection_reason: '',
+          }
+        })
+        setReviewDecisions(nextDecisions)
+        return data.data
+      }
+
+      setActiveChangeRequest(null)
+      setReviewDecisions({})
+      return null
+    } catch (error) {
+      console.error('Error fetching active change request:', error)
+      setActiveChangeRequest(null)
+      setReviewDecisions({})
+      return null
+    } finally {
+      setActiveChangeRequestLoading(false)
+    }
+  }
+
+  const fetchChangeRequestHistory = async () => {
+    if (!form_id) return []
+    setChangeRequestHistoryLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/change-request/history`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        const requests = Array.isArray(data.data?.requests) ? data.data.requests : []
+        setChangeRequestHistory(requests)
+        setChangeRequestHistoryCount(Number(data.data?.count || requests.length || 0))
+        return requests
+      }
+
+      setChangeRequestHistory([])
+      setChangeRequestHistoryCount(0)
+      return []
+    } catch (error) {
+      console.error('Error fetching change request history:', error)
+      setChangeRequestHistory([])
+      setChangeRequestHistoryCount(0)
+      return []
+    } finally {
+      setChangeRequestHistoryLoading(false)
     }
   }
 
@@ -178,7 +312,7 @@ function FormDetail() {
     if (!formData) return
 
     // Determine new active status
-    const isCurrentlyActive = formData.active && formData.active !== '' && formData.active !== '0'
+    const isCurrentlyActive = Boolean(formData?.active)
     const newActiveStatus = isCurrentlyActive ? '0' : '1'
 
     await validateAndToggleActive(newActiveStatus)
@@ -256,10 +390,11 @@ function FormDetail() {
       const data = await response.json()
 
       if (response.ok && data.success) {
+        const normalizedActive = newActiveStatus === '1'
         // Update local state
         setFormData({
           ...formData,
-          active: newActiveStatus
+          active: normalizedActive
         })
         const statusMessage = newActiveStatus === '1'
           ? 'RACM set to Active successfully'
@@ -432,6 +567,11 @@ function FormDetail() {
   }
 
   const handleSaveSchedule = async () => {
+    if (Boolean(formData?.active)) {
+      toast.error('Reminder settings cannot be changed once RACM is Active')
+      return
+    }
+
     const dueDateValue = scheduleFields.due_date ? scheduleFields.due_date.trim() : ''
     const frequencySelection = scheduleFields.reminder_frequency
     const tomorrow = getTomorrowDateString()
@@ -552,6 +692,11 @@ function FormDetail() {
   })
 
   const handleOpenAssignmentDialog = async () => {
+    if (Boolean(formData?.active)) {
+      toast.error('RACM assignment cannot be changed once RACM is Active')
+      return
+    }
+
     setSelectedUser(null)
     setUserSearchText('')
     setAssignmentDialogOpen(true)
@@ -569,6 +714,11 @@ function FormDetail() {
   }
 
   const handleUpdateAssignment = async () => {
+    if (Boolean(formData?.active)) {
+      toast.error('RACM assignment cannot be changed once RACM is Active')
+      return
+    }
+
     if (!form_id || !selectedUser?.email_id) return
 
     const hasDueDate = Boolean((formData?.due_date || '').toString().trim())
@@ -738,19 +888,7 @@ function FormDetail() {
     }
   }
 
-  const formatDateTime = (dateString) => {
-    if (!dateString) return 'N/A'
-    const date = new Date(dateString)
-    return date.toLocaleString('en-IN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      timeZone: 'Asia/Kolkata'
-    })
-  }
+  const formatDateTime = (dateString) => formatIndianDateTime(dateString, 'N/A')
 
   const handleOpenAuditLogs = async () => {
     setAuditLogOpen(true)
@@ -776,6 +914,110 @@ function FormDetail() {
     }
   }
 
+  const handleOpenSuggestedChangesDialog = async () => {
+    if (!activeChangeRequest) {
+      const request = await fetchActiveChangeRequest()
+      if (!request) {
+        toast.error('No active suggested changes found')
+        return
+      }
+    }
+    setSuggestedChangesDialogOpen(true)
+  }
+
+  const handleCloseSuggestedChangesDialog = () => {
+    if (reviewSaving) return
+    setSuggestedChangesDialogOpen(false)
+  }
+
+  const handleReviewDecisionChange = (itemId, field, value) => {
+    setReviewDecisions((prev) => ({
+      ...prev,
+      [itemId]: {
+        ...(prev[itemId] || {}),
+        [field]: value,
+      },
+    }))
+  }
+
+  const handleSubmitSuggestedChangesReview = async () => {
+    const items = Array.isArray(activeChangeRequest?.items) ? activeChangeRequest.items : []
+    if (!activeChangeRequest?.request_id || items.length === 0) {
+      toast.error('No active suggested changes found')
+      return
+    }
+
+    const payloadItems = []
+    for (const item of items) {
+      const decision = reviewDecisions[item.id] || {}
+      const status = String(decision.status || '').trim()
+      if (status !== 'Approved' && status !== 'Rejected') {
+        toast.error('Approve or reject every field before submitting')
+        return
+      }
+
+      payloadItems.push({
+        id: item.id,
+        status,
+        rejection_reason:
+          status === 'Rejected'
+            ? String(decision.rejection_reason || '').trim()
+            : '',
+      })
+    }
+
+    setReviewSaving(true)
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/control-forms/${form_id}/change-request/${encodeURIComponent(activeChangeRequest.request_id)}/review`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            items: payloadItems,
+          }),
+        }
+      )
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast.success('Suggested changes reviewed successfully')
+        setSuggestedChangesDialogOpen(false)
+        setActiveChangeRequest(null)
+        setReviewDecisions({})
+        fetchFormData()
+      } else {
+        toast.error(data.message || 'Failed to review suggested changes')
+      }
+    } catch (error) {
+      console.error('Error reviewing suggested changes:', error)
+      toast.error('Failed to review suggested changes')
+    } finally {
+      setReviewSaving(false)
+    }
+  }
+
+  const handleOpenChangeRequestHistoryDialog = async () => {
+    if (changeRequestHistory.length === 0) {
+      await fetchChangeRequestHistory()
+    }
+    setChangeRequestHistoryDialogOpen(true)
+  }
+
+  const handleCloseChangeRequestHistoryDialog = () => {
+    setChangeRequestHistoryDialogOpen(false)
+  }
+
+  const handleToggleHistoryRequest = (requestId) => {
+    setExpandedHistoryRequestIds((prev) => ({
+      ...prev,
+      [requestId]: !prev[requestId],
+    }))
+  }
+
   const formatStatus = (status) => {
     if (!status || status === '' || status === null) {
       return '-'
@@ -789,18 +1031,140 @@ function FormDetail() {
       return 'Rejected'
     }
 
-    if (status === 'sent for approval') {
-      return 'Pending for Approval'
-    }
-
-    // For any other status, capitalize first letter
     return status.charAt(0).toUpperCase() + status.slice(1)
+  }
+
+  const formatDateOnly = (dateString) => {
+    if (!dateString) return '-'
+    const date = new Date(dateString)
+    if (Number.isNaN(date.getTime())) return '-'
+    return date.toLocaleDateString('en-IN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'Asia/Kolkata',
+    })
   }
 
   const getFileName = (filePath) => {
     if (!filePath) return ''
     const parts = String(filePath).split(/[/\\]/)
     return parts[parts.length - 1] || String(filePath)
+  }
+
+  const handleDeficiencyResponseFieldChange = (field, value) => {
+    setDeficiencyResponseForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
+
+  const handleDeficiencyResponseFileSelect = (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    setDeficiencyResponseFiles((currentFiles) => [...currentFiles, ...files])
+    e.target.value = ''
+  }
+
+  const handleRemoveDeficiencyResponseFile = (indexToRemove) => {
+    setDeficiencyResponseFiles((currentFiles) =>
+      currentFiles.filter((_, index) => index !== indexToRemove)
+    )
+  }
+
+  const handleSubmitDeficiencyResponse = async () => {
+    const responseType = String(deficiencyResponseForm.response_type || '').trim()
+    const explaination = String(deficiencyResponseForm.explaination || '').trim()
+    const concernedPerson = String(deficiencyResponseForm.concerned_person || '').trim()
+    const dueDate = String(deficiencyResponseForm.due_date || '').trim()
+
+    if (!explaination) {
+      toast.error('Explaination is required')
+      return
+    }
+
+    if (responseType === 'mitigation_plan') {
+      if (!concernedPerson) {
+        toast.error('Concerned Person is required for mitigation plan')
+        return
+      }
+      if (!dueDate) {
+        toast.error('Due date is required for mitigation plan')
+        return
+      }
+    }
+
+    if (responseType === 'compensatory_racm' && deficiencyResponseFiles.length === 0) {
+      toast.error('Please upload at least one document for compensatory RACM')
+      return
+    }
+
+    setDeficiencyResponseSubmitting(true)
+    try {
+      let attachments = []
+
+      if (deficiencyResponseFiles.length > 0) {
+        const uploadFormData = new FormData()
+        deficiencyResponseFiles.forEach((file) => {
+          uploadFormData.append('documents', file)
+        })
+
+        const uploadResponse = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/deficiency-response/upload-attachments`, {
+          method: 'POST',
+          credentials: 'include',
+          body: uploadFormData,
+        })
+        const uploadData = await uploadResponse.json()
+        if (!uploadResponse.ok || !uploadData.success) {
+          toast.error(uploadData.message || 'Failed to upload deficiency response documents')
+          return
+        }
+        attachments = Array.isArray(uploadData.data?.attachments) ? uploadData.data.attachments : []
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/deficiency-response`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          response_type: responseType,
+          explaination,
+          concerned_person: responseType === 'mitigation_plan' ? concernedPerson : '',
+          due_date: responseType === 'mitigation_plan' ? dueDate : '',
+          attachments,
+        }),
+      })
+
+      const data = await response.json()
+      if (response.ok && data.success) {
+        toast.success('Deficiency response submitted successfully')
+        setFormData((currentFormData) => ({
+          ...(currentFormData || {}),
+          ...(data.data || {}),
+          deficiency_action_status: false,
+          deficiency_response_status: 'submitted_for_review',
+        }))
+        setDeficiencyResponseFiles([])
+        const currentDeficiencySubmission = data.data?.deficiency_response?.current_submission
+        setDeficiencyResponseForm({
+          response_type: currentDeficiencySubmission?.submission_type || data.data?.deficiency_response?.response_type || responseType,
+          explaination: currentDeficiencySubmission?.explaination || data.data?.deficiency_response?.explaination || explaination,
+          concerned_person: currentDeficiencySubmission?.concerned_person || data.data?.deficiency_response?.concerned_person || '',
+          due_date: currentDeficiencySubmission?.due_date
+            ? String(currentDeficiencySubmission.due_date).slice(0, 10)
+            : '',
+        })
+      } else {
+        toast.error(data.message || 'Failed to submit deficiency response')
+      }
+    } catch (error) {
+      console.error('Error submitting deficiency response:', error)
+      toast.error('Error submitting deficiency response')
+    } finally {
+      setDeficiencyResponseSubmitting(false)
+    }
   }
 
   const getSampleDocs = () => {
@@ -1357,6 +1721,15 @@ function FormDetail() {
     const value = formData[key]
     return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
   }) : false
+  const deficiencyResponse = formData?.deficiency_response || null
+  const deficiencyCurrentSubmission = deficiencyResponse?.current_submission || null
+  const deficiencyAttachments = Array.isArray(deficiencyCurrentSubmission?.attachments)
+    ? deficiencyCurrentSubmission.attachments
+    : []
+  const deficiencyResponseStatus = String(formData?.deficiency_response_status || '').trim()
+  const needsDeficiencyResponse = Boolean(formData?.deficiency_action_status)
+  const showDeficiencyActionNotice = needsDeficiencyResponse
+  const canSubmitDeficiencyResponse = needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review'
 
   // Initialize editable fields when formData is loaded and not in edit mode
   useEffect(() => {
@@ -1410,7 +1783,15 @@ function FormDetail() {
     )
   }
 
-  const isActive = formData?.active && formData.active !== '' && formData.active !== '0'
+  const isActive = Boolean(formData?.active)
+  const hasActiveSuggestedChanges = String(activeChangeRequest?.status || '').trim() === 'Review Pending'
+  const areAllSuggestedChangesDecided =
+    Array.isArray(activeChangeRequest?.items) &&
+    activeChangeRequest.items.length > 0 &&
+    activeChangeRequest.items.every((item) => {
+      const status = String(reviewDecisions[item.id]?.status || '').trim()
+      return status === 'Approved' || status === 'Rejected'
+    })
   const sampleDocs = getSampleDocs()
   const sampleDocCount = sampleDocs.length
   const userDocs = getUserDocs()
@@ -1444,6 +1825,41 @@ function FormDetail() {
       }}
     >
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+        {changeRequestHistoryCount > 0 ? (
+          <Button
+            onClick={handleOpenChangeRequestHistoryDialog}
+            disabled={changeRequestHistoryLoading}
+            variant="outlined"
+            sx={{
+              mr: 1.5,
+              py: 1,
+              fontWeight: 600,
+              textTransform: 'none',
+              fontSize: '0.9375rem',
+              borderRadius: 2,
+            }}
+          >
+            Change Requests ({changeRequestHistoryCount})
+          </Button>
+        ) : null}
+        {!isEditMode && hasActiveSuggestedChanges && (
+          <Button
+            onClick={handleOpenSuggestedChangesDialog}
+            disabled={activeChangeRequestLoading}
+            variant="contained"
+            color="warning"
+            sx={{
+              mr: 1.5,
+              py: 1,
+              fontWeight: 600,
+              textTransform: 'none',
+              fontSize: '0.9375rem',
+              borderRadius: 2,
+            }}
+          >
+            Suggested Changes
+          </Button>
+        )}
         {/* When in edit mode: Cancel & Save Changes at top-right */}
         {isEditMode && (
           <Box
@@ -1798,7 +2214,7 @@ function FormDetail() {
                         size="small"
                         InputLabelProps={{ shrink: true }}
                         inputProps={{ min: getTomorrowDateString() }}
-                        disabled={savingSchedule || isEditMode}
+                        disabled={savingSchedule || isEditMode || isActive}
                         sx={{
                           '& .MuiInputBase-root': {
                             minHeight: 38,
@@ -1809,7 +2225,7 @@ function FormDetail() {
                       <FormControl
                         fullWidth
                         size="small"
-                        disabled={savingSchedule || isEditMode}
+                        disabled={savingSchedule || isEditMode || isActive}
                         sx={{
                           '& .MuiInputBase-root': {
                             minHeight: 38,
@@ -1835,7 +2251,7 @@ function FormDetail() {
                       ) && (
                         <Button
                           onClick={handleSaveSchedule}
-                          disabled={savingSchedule || isEditMode}
+                          disabled={savingSchedule || isEditMode || isActive}
                           variant="outlined"
                           size="small"
                           sx={{
@@ -1859,18 +2275,19 @@ function FormDetail() {
                       flexDirection: 'column',
                       gap: 1.5,
                       height: '100%',
+                      minWidth: 0,
                     }}
                   >
                     <Box
                       onClick={() => {
-                        if (!isEditMode && !updating) {
+                        if (!isEditMode && !updating && !isActive) {
                           handleOpenAssignmentDialog()
                         }
                       }}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
-                        if ((e.key === 'Enter' || e.key === ' ') && !isEditMode && !updating) {
+                        if ((e.key === 'Enter' || e.key === ' ') && !isEditMode && !updating && !isActive) {
                           e.preventDefault()
                           handleOpenAssignmentDialog()
                         }
@@ -1886,11 +2303,11 @@ function FormDetail() {
                         alignItems: 'flex-start',
                         justifyContent: 'center',
                         gap: 1,
-                        cursor: isEditMode || updating ? 'not-allowed' : 'pointer',
-                        opacity: isEditMode || updating ? 0.65 : 1,
+                        cursor: isEditMode || updating || isActive ? 'not-allowed' : 'pointer',
+                        opacity: isEditMode || updating || isActive ? 0.65 : 1,
                         transition: 'all 0.2s ease',
                         minHeight: '100%',
-                        '&:hover': isEditMode || updating ? {} : {
+                        '&:hover': isEditMode || updating || isActive ? {} : {
                           backgroundColor: theme.palette.mode === 'dark'
                             ? 'rgba(255, 255, 255, 0.03)'
                             : 'rgba(0, 0, 0, 0.02)',
@@ -1908,27 +2325,31 @@ function FormDetail() {
                       >
                         RACM Assignment
                       </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: 'text.primary',
-                          fontWeight: 500,
-                          width: '100%',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          lineHeight: 1.6,
-                        }}
+                      <Tooltip
                         title={
                           (processOwnerName && processOwnerName !== '-')
                             ? processOwnerName
                             : ((formData?.control_owner || '').trim() || '-')
                         }
+                        arrow
                       >
-                        {(processOwnerName && processOwnerName !== '-')
-                          ? processOwnerName
-                          : ((formData?.control_owner || '').trim() || '-')}
-                      </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.primary',
+                            fontWeight: 500,
+                            width: '100%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          {(processOwnerName && processOwnerName !== '-')
+                            ? processOwnerName
+                            : ((formData?.control_owner || '').trim() || '-')}
+                        </Typography>
+                      </Tooltip>
                     </Box>
                   </Box>
 
@@ -2822,110 +3243,234 @@ function FormDetail() {
             </CardContent>
           </Card>
 
-          {/* Grouped Approver Fields - Display only if at least one has a value */}
-          {hasGroupedFieldValue && (
-            <Card
-              sx={{
-                borderRadius: 3,
-                boxShadow: theme.palette.mode === 'dark'
-                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
-                border: '1px solid',
-                borderColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.12)' 
-                  : 'rgba(0, 0, 0, 0.08)',
-                overflow: 'hidden',
-              }}
-            >
-              <CardContent sx={{ p: 4 }}>
-                <Typography
-                  variant="h6"
-                  component="h3"
-                  sx={{
-                    fontWeight: 700,
-                    mb: 3,
-                    color: 'text.primary',
-                    fontSize: '1.25rem',
-                    pb: 2,
-                    borderBottom: '2px solid',
-                    borderColor: 'divider',
-                  }}
-                >
-                  Design and Implementation
-                </Typography>
+          <Card
+            sx={{
+              borderRadius: 3,
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                : '0 2px 12px rgba(0, 0, 0, 0.08)',
+              border: '1px solid',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.12)'
+                : 'rgba(0, 0, 0, 0.08)',
+              overflow: 'hidden',
+            }}
+          >
+            <CardContent sx={{ p: 4 }}>
+              <Typography
+                variant="h6"
+                component="h3"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: 'text.primary',
+                  fontSize: '1.25rem',
+                  pb: 2,
+                  borderBottom: '2px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                Documents
+              </Typography>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+                  gap: 3,
+                  mt: 2,
+                }}
+              >
                 <Box
                   sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3,
-                    mt: 2,
+                    p: 2.5,
+                    borderRadius: 2,
+                    backgroundColor: theme.palette.mode === 'dark'
+                      ? 'rgba(255, 255, 255, 0.03)'
+                      : 'rgba(0, 0, 0, 0.02)',
+                    border: '1px solid',
+                    borderColor: theme.palette.mode === 'dark'
+                      ? 'rgba(255, 255, 255, 0.08)'
+                      : 'rgba(0, 0, 0, 0.06)',
+                    width: '100%',
                   }}
                 >
-                  {groupedApproverFields.map((key) => {
-                    const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-                    const value = formData[key]
-                    const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
-                    const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
-
-                    return (
-                      <Box
-                        key={key}
+                  <Typography
+                    variant="caption"
+                    component="dt"
+                    sx={{
+                      display: 'block',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      mb: 1.5,
+                      color: 'text.primary',
+                      fontSize: theme.typography.customSizes.small,
+                    }}
+                  >
+                    Sample Documents
+                  </Typography>
+                  {sampleDocCount > 0 ? (
+                    <Box
+                      component="button"
+                      type="button"
+                      onClick={handleOpenSampleDocsDialog}
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        width: '100%',
+                        textAlign: 'left',
+                        backgroundColor: 'transparent',
+                        cursor: 'pointer',
+                        font: 'inherit',
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': {
+                          borderColor: 'primary.main',
+                          backgroundColor: 'action.hover',
+                        },
+                        '&:focus-visible': {
+                          outline: `2px solid ${theme.palette.primary.main}`,
+                          outlineOffset: 2,
+                        },
+                      }}
+                    >
+                      <Typography
+                        variant="body2"
+                        component="dd"
                         sx={{
-                          p: 2.5,
-                          borderRadius: 2,
-                          backgroundColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.03)'
-                            : 'rgba(0, 0, 0, 0.02)',
-                          border: '1px solid',
-                          borderColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.08)'
-                            : 'rgba(0, 0, 0, 0.06)',
-                          transition: 'all 0.2s ease-in-out',
-                          '&:hover': {
-                            backgroundColor: theme.palette.mode === 'dark'
-                              ? 'rgba(255, 255, 255, 0.05)'
-                              : 'rgba(0, 0, 0, 0.04)',
-                          },
+                          color: 'text.primary',
+                          lineHeight: 1.6,
+                          fontSize: theme.typography.customSizes.medium,
+                          fontWeight: 600,
                         }}
                       >
-                        <Typography
-                          variant="caption"
-                          component="dt"
-                          sx={{
-                            display: 'block',
-                            fontWeight: 700,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            mb: 1.5,
-                            color: 'text.primary',
-                            fontSize: theme.typography.customSizes.small,
-                          }}
-                        >
-                          {label}
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          component="dd"
-                          sx={{
-                            color: isEmpty ? 'text.disabled' : 'text.secondary',
-                            wordBreak: 'break-word',
-                            lineHeight: 1.6,
-                            fontSize: theme.typography.customSizes.medium,
-                            whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
-                          }}
-                        >
-                          {isEmpty ? '-' : String(value)}
-                        </Typography>
-                      </Box>
-                    )
-                  })}
+                        Sample Documents ({sampleDocCount})
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: 'text.secondary',
+                          fontSize: theme.typography.customSizes.small,
+                        }}
+                      >
+                        Click to view and download
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <Typography
+                      variant="body2"
+                      component="dd"
+                      sx={{
+                        color: 'text.disabled',
+                        lineHeight: 1.6,
+                        fontSize: theme.typography.customSizes.medium,
+                      }}
+                    >
+                      No sample uploaded
+                    </Typography>
+                  )}
                 </Box>
-              </CardContent>
-            </Card>
-          )}
 
-          {/* Approval section – doc/remarks/reason */}
-          {(userDocCount > 0 || formData.remarks_by_user || formData.reason_by_approver) && (
+                {userDocCount > 0 ? (
+                  <Box
+                    component="button"
+                    type="button"
+                    onClick={handleOpenUserDocsDialog}
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.03)'
+                        : 'rgba(0, 0, 0, 0.02)',
+                      border: '1px solid',
+                      borderColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.06)',
+                      width: '100%',
+                      minWidth: 0,
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      font: 'inherit',
+                      transition: 'all 0.2s ease-in-out',
+                      '&:hover': {
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.05)'
+                          : 'rgba(0, 0, 0, 0.04)',
+                      },
+                      '&:focus-visible': {
+                        outline: `2px solid ${theme.palette.primary.main}`,
+                        outlineOffset: 2,
+                      },
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="dt"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        mb: 1.5,
+                        color: 'text.primary',
+                        fontSize: theme.typography.customSizes.small,
+                      }}
+                    >
+                      {fieldLabels.doc_uploaded_by_user}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      component="dd"
+                      sx={{
+                        color: 'text.primary',
+                        lineHeight: 1.6,
+                        fontSize: theme.typography.customSizes.medium,
+                        fontWeight: 600,
+                      }}
+                    >
+                      User Uploaded Documents ({userDocCount})
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Box
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.03)'
+                        : 'rgba(0, 0, 0, 0.02)',
+                      border: '1px solid',
+                      borderColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.06)',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="dt"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        mb: 1.5,
+                        color: 'text.primary',
+                        fontSize: theme.typography.customSizes.small,
+                      }}
+                    >
+                      {fieldLabels.doc_uploaded_by_user}
+                    </Typography>
+                    <Typography variant="body2" component="dd" sx={{ color: 'text.disabled' }}>
+                      No user document uploaded
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </CardContent>
+          </Card>
+
+          {(hasGroupedFieldValue || String(formData?.remarks_by_user || '').trim() !== '' || formData.reason_by_approver) && (
             <Card
               sx={{
                 borderRadius: 3,
@@ -2963,137 +3508,115 @@ function FormDetail() {
                     mt: 2,
                   }}
                 >
-                  {(userDocCount > 0 || typeof formData.remarks_by_user !== 'undefined') && (
+                  {hasGroupedFieldValue ? (
+                    <Box>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 3,
+                        }}
+                      >
+                        {groupedApproverFields.map((key) => {
+                          const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                          const value = formData[key]
+                          const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
+                          const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+
+                          return (
+                            <Box
+                              key={key}
+                              sx={{
+                                p: 2.5,
+                                borderRadius: 2,
+                                backgroundColor: theme.palette.mode === 'dark'
+                                  ? 'rgba(255, 255, 255, 0.03)'
+                                  : 'rgba(0, 0, 0, 0.02)',
+                                border: '1px solid',
+                                borderColor: theme.palette.mode === 'dark'
+                                  ? 'rgba(255, 255, 255, 0.08)'
+                                  : 'rgba(0, 0, 0, 0.06)',
+                              }}
+                            >
+                              <Typography
+                                variant="caption"
+                                component="dt"
+                                sx={{
+                                  display: 'block',
+                                  fontWeight: 700,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.5px',
+                                  mb: 1.5,
+                                  color: 'text.primary',
+                                  fontSize: theme.typography.customSizes.small,
+                                }}
+                              >
+                                {label}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                component="dd"
+                                sx={{
+                                  color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                  wordBreak: 'break-word',
+                                  lineHeight: 1.6,
+                                  fontSize: theme.typography.customSizes.medium,
+                                  whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                                }}
+                              >
+                                {isEmpty ? '-' : String(value)}
+                              </Typography>
+                            </Box>
+                          )
+                        })}
+                      </Box>
+                    </Box>
+                  ) : null}
+
+                  {String(formData?.remarks_by_user || '').trim() !== '' && (
                     <Box
                       sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
-                        gap: 3,
+                        p: 2.5,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.03)'
+                          : 'rgba(0, 0, 0, 0.02)',
+                        border: '1px solid',
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
                       }}
                     >
-                      {/* Doc Uploaded By User */}
-                      {userDocCount > 0 && (
-                        <Box
-                          component="button"
-                          type="button"
-                          onClick={handleOpenUserDocsDialog}
-                          sx={{
-                            p: 2.5,
-                            borderRadius: 2,
-                            backgroundColor: theme.palette.mode === 'dark'
-                              ? 'rgba(255, 255, 255, 0.03)'
-                              : 'rgba(0, 0, 0, 0.02)',
-                            border: '1px solid',
-                            borderColor: theme.palette.mode === 'dark'
-                              ? 'rgba(255, 255, 255, 0.08)'
-                              : 'rgba(0, 0, 0, 0.06)',
-                            width: '100%',
-                            minWidth: 0,
-                            textAlign: 'left',
-                            cursor: 'pointer',
-                            font: 'inherit',
-                            transition: 'all 0.2s ease-in-out',
-                            '&:hover': {
-                              backgroundColor: theme.palette.mode === 'dark'
-                                ? 'rgba(255, 255, 255, 0.05)'
-                                : 'rgba(0, 0, 0, 0.04)',
-                            },
-                            '&:focus-visible': {
-                              outline: `2px solid ${theme.palette.primary.main}`,
-                              outlineOffset: 2,
-                            },
-                          }}
-                        >
-                          <Typography
-                            variant="caption"
-                            component="dt"
-                            sx={{
-                              display: 'block',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.5px',
-                              mb: 1.5,
-                              color: 'text.primary',
-                              fontSize: theme.typography.customSizes.small,
-                            }}
-                          >
-                            {fieldLabels.doc_uploaded_by_user}
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            component="dd"
-                            sx={{
-                              color: 'text.primary',
-                              lineHeight: 1.6,
-                              fontSize: theme.typography.customSizes.medium,
-                              fontWeight: 600,
-                            }}
-                          >
-                            User Uploaded Documents ({userDocCount})
-                          </Typography>
-                        </Box>
-                      )}
-
-                      {/* Remarks By User if present on payload */}
-                      {typeof formData.remarks_by_user !== 'undefined' && (
-                        <Box
-                          sx={{
-                            p: 2.5,
-                            borderRadius: 2,
-                            backgroundColor: theme.palette.mode === 'dark'
-                              ? 'rgba(255, 255, 255, 0.03)'
-                              : 'rgba(0, 0, 0, 0.02)',
-                            border: '1px solid',
-                            borderColor: theme.palette.mode === 'dark'
-                              ? 'rgba(255, 255, 255, 0.08)'
-                              : 'rgba(0, 0, 0, 0.06)',
-                            minWidth: 0,
-                            transition: 'all 0.2s ease-in-out',
-                            '&:hover': {
-                              backgroundColor: theme.palette.mode === 'dark'
-                                ? 'rgba(255, 255, 255, 0.05)'
-                                : 'rgba(0, 0, 0, 0.04)',
-                            },
-                          }}
-                        >
-                          <Typography
-                            variant="caption"
-                            component="dt"
-                            sx={{
-                              display: 'block',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.5px',
-                              mb: 1.5,
-                              color: 'text.primary',
-                              fontSize: theme.typography.customSizes.small,
-                            }}
-                          >
-                            Remarks By User
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            component="dd"
-                            sx={{
-                              color:
-                                !formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
-                                  ? 'text.disabled'
-                                  : 'text.secondary',
-                              wordBreak: 'break-word',
-                              lineHeight: 1.6,
-                              fontSize: theme.typography.customSizes.medium,
-                            }}
-                          >
-                            {!formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
-                              ? '-'
-                              : String(formData.remarks_by_user)}
-                          </Typography>
-                        </Box>
-                      )}
+                      <Typography
+                        variant="caption"
+                        component="dt"
+                        sx={{
+                          display: 'block',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          mb: 1.5,
+                          color: 'text.primary',
+                          fontSize: theme.typography.customSizes.small,
+                        }}
+                      >
+                        Remarks By User
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        component="dd"
+                        sx={{
+                          color: 'text.secondary',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.6,
+                          fontSize: theme.typography.customSizes.medium,
+                        }}
+                      >
+                        {String(formData.remarks_by_user)}
+                      </Typography>
                     </Box>
                   )}
 
-                  {/* Reason by Approver - show only when non-empty */}
                   {(() => {
                     const reason = formData?.reason_by_approver
                     const hasReason = typeof reason === 'string' && reason.trim() !== ''
@@ -3111,49 +3634,198 @@ function FormDetail() {
                           borderColor: theme.palette.mode === 'dark'
                             ? 'rgba(255, 255, 255, 0.08)'
                             : 'rgba(0, 0, 0, 0.06)',
-                          transition: 'all 0.2s ease-in-out',
-                          '&:hover': {
-                            backgroundColor: theme.palette.mode === 'dark'
-                              ? 'rgba(255, 255, 255, 0.05)'
-                              : 'rgba(0, 0, 0, 0.04)',
-                          },
                         }}
                       >
-                        <Typography
-                          variant="caption"
-                          component="dt"
-                          sx={{
-                            display: 'block',
-                            fontWeight: 700,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            mb: 1.5,
-                            color: 'text.primary',
-                            fontSize: theme.typography.customSizes.small,
-                          }}
-                        >
-                          Reason by Approver
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          component="dd"
-                          sx={{
-                            color: 'text.primary',
-                            fontWeight: 500,
-                            fontSize: '0.875rem',
-                            lineHeight: 1.6,
-                            wordBreak: 'break-word',
-                          }}
-                        >
-                          {reason}
-                        </Typography>
-                      </Box>
+                          <Typography
+                            variant="caption"
+                            component="dt"
+                            sx={{
+                              display: 'block',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              mb: 1.5,
+                              color: 'text.primary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            Reason by Approver
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            component="dd"
+                            sx={{
+                              color: 'text.primary',
+                              fontWeight: 500,
+                              fontSize: '0.875rem',
+                              lineHeight: 1.6,
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {reason}
+                          </Typography>
+                        </Box>
                     )
                   })()}
                 </Box>
               </CardContent>
             </Card>
           )}
+
+          {(needsDeficiencyResponse || deficiencyResponse) ? (
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.12)'
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Deficiency Response
+                </Typography>
+
+                {showDeficiencyActionNotice ? (
+                  <Box sx={{ mb: 3, p: 2, borderRadius: 2, border: '1px solid', borderColor: 'warning.main', backgroundColor: 'warning.light', color: 'warning.contrastText' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      Action required: approver marked this RACM as Not Effective.
+                    </Typography>
+                  </Box>
+                ) : null}
+
+                {deficiencyResponse ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, mb: canSubmitDeficiencyResponse ? 4 : 0 }}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>Response Type</Typography>
+                        <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                          {String(deficiencyResponse.response_type || '').trim() === 'compensatory_racm' ? 'Compensatory RACM' : 'Mitigation Plan'}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>Status</Typography>
+                        <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                          {String(deficiencyResponse.status || '').trim() || '-'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>Explaination</Typography>
+                      <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                        {String(deficiencyCurrentSubmission?.explaination || deficiencyResponse.explaination || '').trim() || '-'}
+                      </Typography>
+                    </Box>
+                    {(
+                      String(deficiencyCurrentSubmission?.concerned_person || deficiencyResponse.concerned_person || '').trim()
+                      || deficiencyCurrentSubmission?.due_date
+                      || deficiencyResponse.due_date
+                    ) ? (
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
+                        <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>Concerned Person</Typography>
+                          <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                            {String(deficiencyCurrentSubmission?.concerned_person || deficiencyResponse.concerned_person || '').trim() || '-'}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>Due Date</Typography>
+                          <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                            {(deficiencyCurrentSubmission?.due_date || deficiencyResponse.due_date)
+                              ? formatDateOnly(deficiencyCurrentSubmission?.due_date || deficiencyResponse.due_date)
+                              : '-'}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    ) : null}
+                    {deficiencyAttachments.length > 0 ? (
+                      <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1.5, color: 'text.secondary' }}>Documents</Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          {deficiencyAttachments.map((attachment) => (
+                            <Box key={attachment.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                              <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                {attachment.original_name || getFileName(attachment.file_url)}
+                              </Typography>
+                              <Button size="small" startIcon={<DownloadRoundedIcon />} onClick={() => handleDownloadUserDocument(attachment.file_url)} sx={{ textTransform: 'none' }}>
+                                Download
+                              </Button>
+                            </Box>
+                          ))}
+                        </Box>
+                      </Box>
+                    ) : null}
+                    {String(deficiencyResponse.review_comment || '').trim() ? (
+                      <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>Approver Comment</Typography>
+                        <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                          {String(deficiencyResponse.review_comment)}
+                        </Typography>
+                      </Box>
+                    ) : null}
+                  </Box>
+                ) : null}
+
+                {canSubmitDeficiencyResponse ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                    <TextField select label="Response Type" value={deficiencyResponseForm.response_type} onChange={(e) => handleDeficiencyResponseFieldChange('response_type', e.target.value)} fullWidth>
+                      <MenuItem value="mitigation_plan">Mitigation Plan</MenuItem>
+                      <MenuItem value="compensatory_racm">Compensatory RACM</MenuItem>
+                    </TextField>
+                    <TextField label="Explaination" value={deficiencyResponseForm.explaination} onChange={(e) => handleDeficiencyResponseFieldChange('explaination', e.target.value)} fullWidth multiline rows={4} />
+                    {deficiencyResponseForm.response_type === 'mitigation_plan' ? (
+                      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 2 }}>
+                        <TextField label="Concerned Person (email or name)" value={deficiencyResponseForm.concerned_person} onChange={(e) => handleDeficiencyResponseFieldChange('concerned_person', e.target.value)} fullWidth />
+                        <TextField type="date" label="Due Date" value={deficiencyResponseForm.due_date} onChange={(e) => handleDeficiencyResponseFieldChange('due_date', e.target.value)} InputLabelProps={{ shrink: true }} fullWidth />
+                      </Box>
+                    ) : (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+                        <Button component="label" variant="outlined" startIcon={<CloudUploadIcon />} sx={{ alignSelf: 'flex-start', textTransform: 'none' }}>
+                          Upload Documents
+                          <input hidden type="file" multiple onChange={handleDeficiencyResponseFileSelect} />
+                        </Button>
+                        {deficiencyResponseFiles.map((file, index) => (
+                          <Box key={`${file.name}-${file.size}-${file.lastModified}`} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <InsertDriveFileRoundedIcon fontSize="small" sx={{ color: 'primary.main', flexShrink: 0 }} />
+                            <Typography variant="body2" sx={{ color: 'text.primary', flex: 1, overflowWrap: 'anywhere' }}>
+                              {file.name}
+                            </Typography>
+                            <Tooltip title="Remove">
+                              <IconButton size="small" onClick={() => handleRemoveDeficiencyResponseFile(index)}>
+                                <DeleteRoundedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        ))}
+                      </Box>
+                    )}
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <Button onClick={handleSubmitDeficiencyResponse} variant="contained" disabled={deficiencyResponseSubmitting} sx={{ textTransform: 'none', fontWeight: 700 }}>
+                        {deficiencyResponseSubmitting ? 'Submitting...' : (deficiencyResponse ? 'Resubmit Response' : 'Submit Response')}
+                      </Button>
+                    </Box>
+                  </Box>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
         </Box>
       </Box>
 
@@ -3494,10 +4166,6 @@ function FormDetail() {
           {formData && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
               <Box sx={popupRowSx}>
-                <Typography variant="body2" component="span" sx={popupLabelSx}>Standard Control Description:</Typography>
-                <Typography variant="body2" component="span">{popupValue(formData.standard_control_description)}</Typography>
-              </Box>
-              <Box sx={popupRowSx}>
                 <Typography variant="body2" component="span" sx={popupLabelSx}>Business Process:</Typography>
                 <Typography variant="body2" component="span">{popupValue(formData.business_process)}</Typography>
               </Box>
@@ -3511,7 +4179,9 @@ function FormDetail() {
               </Box>
               <Box sx={{ ...popupRowSx, mb: 2 }}>
                 <Typography variant="body2" component="span" sx={popupLabelSx}>Current Control Owner Name:</Typography>
-                <Typography variant="body2" component="span">{popupValue(formData.control_owner_name)}</Typography>
+                <Typography variant="body2" component="span">
+                  {popupValue(formData.control_owner_name || formatNameFromEmail(formData.control_owner))}
+                </Typography>
               </Box>
 
               <Autocomplete
@@ -3519,9 +4189,16 @@ function FormDetail() {
                 loading={usersLoading}
                 value={selectedUser}
                 inputValue={userSearchText}
-                onInputChange={(_, newInputValue) => setUserSearchText(newInputValue)}
-                onChange={(_, newValue) => setSelectedUser(newValue)}
-                getOptionLabel={(option) => option?.emp_name || option?.email_id || ''}
+                onInputChange={(_, newInputValue) => {
+                  if (!isActive) setUserSearchText(newInputValue)
+                }}
+                onChange={(_, newValue) => {
+                  if (!isActive) setSelectedUser(newValue)
+                }}
+                disabled={isActive}
+                getOptionLabel={(option) =>
+                  option?.emp_name?.trim() || formatNameFromEmail(option?.email_id) || option?.email_id || ''
+                }
                 isOptionEqualToValue={(option, value) => option.email_id === value.email_id}
                 filterOptions={(options, state) => {
                   const input = state.inputValue.trim().toLowerCase()
@@ -3533,7 +4210,9 @@ function FormDetail() {
                 renderOption={(props, option) => (
                   <Box component="li" {...props}>
                     <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                      <Typography variant="body2">{option.emp_name || '-'}</Typography>
+                      <Typography variant="body2">
+                        {option?.emp_name?.trim() || formatNameFromEmail(option?.email_id) || '-'}
+                      </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {option.email_id || '-'}
                       </Typography>
@@ -3575,11 +4254,262 @@ function FormDetail() {
               variant="contained"
               color="secondary"
               onClick={handleUpdateAssignment}
-              disabled={updating}
+              disabled={updating || isActive}
             >
               {updating ? 'Updating...' : 'Update Assignment'}
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={suggestedChangesDialogOpen}
+        onClose={handleCloseSuggestedChangesDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          Suggested Changes
+        </DialogTitle>
+        <DialogContent dividers>
+          {String(activeChangeRequest?.requested_by_display || '').trim() ? (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                Requested by: {activeChangeRequest.requested_by_display}
+              </Typography>
+            </Box>
+          ) : null}
+          {String(activeChangeRequest?.request_reason || '').trim() ? (
+            <Box sx={{ mb: 2.5 }}>
+              <Typography sx={{ fontWeight: 700, color: 'text.primary', mb: 0.75 }}>
+                Reason for Change
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', whiteSpace: 'pre-wrap' }}>
+                {activeChangeRequest.request_reason}
+              </Typography>
+              <Divider sx={{ mt: 2.5 }} />
+            </Box>
+          ) : null}
+          {Array.isArray(activeChangeRequest?.items) && activeChangeRequest.items.length > 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {activeChangeRequest.items.map((item) => {
+                const decision = reviewDecisions[item.id] || { status: '', rejection_reason: '' }
+                return (
+                  <Box
+                    key={item.id}
+                    sx={{
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      p: 2,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1.5,
+                    }}
+                    >
+                      <Typography sx={{ fontWeight: 700, color: 'text.primary' }}>
+                        {item.field_label || item.field_db_name}
+                      </Typography>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                        gap: 2,
+                      }}
+                    >
+                      <Box>
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                          Current Value
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
+                          {String(item.old_value_text || '').trim() || '-'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                          Suggested Value
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
+                          {String(item.new_value_text || '').trim() || '-'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <RadioGroup
+                      row
+                      value={decision.status || ''}
+                      onChange={(e) => handleReviewDecisionChange(item.id, 'status', e.target.value)}
+                    >
+                      <FormControlLabel value="Approved" control={<Radio />} label="Approve" />
+                      <FormControlLabel value="Rejected" control={<Radio />} label="Reject" />
+                    </RadioGroup>
+                    {decision.status === 'Rejected' ? (
+                      <TextField
+                        label="Rejection Reason"
+                        value={decision.rejection_reason || ''}
+                        onChange={(e) => handleReviewDecisionChange(item.id, 'rejection_reason', e.target.value)}
+                        fullWidth
+                        multiline
+                        rows={3}
+                      />
+                    ) : null}
+                  </Box>
+                )
+              })}
+            </Box>
+          ) : (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              No active suggested changes found.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={handleCloseSuggestedChangesDialog} disabled={reviewSaving}>
+            Close
+          </Button>
+          <Button
+            onClick={handleSubmitSuggestedChangesReview}
+            variant="contained"
+            color="warning"
+            disabled={reviewSaving || !activeChangeRequest?.request_id || !areAllSuggestedChangesDecided}
+          >
+            {reviewSaving ? 'Submitting...' : 'Submit'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={changeRequestHistoryDialogOpen}
+        onClose={handleCloseChangeRequestHistoryDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          Change Requests
+        </DialogTitle>
+        <DialogContent dividers>
+          {changeRequestHistory.length > 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {changeRequestHistory.map((request) => {
+                const isExpanded = Boolean(expandedHistoryRequestIds[request.request_id])
+                return (
+                  <Box
+                    key={request.request_id}
+                    sx={{
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <Button
+                      fullWidth
+                      onClick={() => handleToggleHistoryRequest(request.request_id)}
+                      sx={{
+                        justifyContent: 'space-between',
+                        textTransform: 'none',
+                        px: 2,
+                        py: 1.5,
+                        color: 'text.primary',
+                        fontWeight: 700,
+                      }}
+                    >
+                      <Box sx={{ textAlign: 'left' }}>
+                        <Typography sx={{ fontWeight: 700 }}>
+                          {request.request_id}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          {String(request.status || '').trim() || '-'}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                          Requested on: {request.requested_at ? formatDateTime(request.requested_at) : '-'}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                          Requested by: {String(request.requested_by_display || request.requested_by_email || '').trim() || '-'}
+                        </Typography>
+                      </Box>
+                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                        {isExpanded ? 'Hide' : 'View'}
+                      </Typography>
+                    </Button>
+                    {isExpanded ? (
+                      <Box sx={{ px: 2, pb: 2 }}>
+                        {String(request.request_reason || '').trim() ? (
+                          <Box sx={{ mb: 2 }}>
+                            <Typography sx={{ fontWeight: 700, color: 'text.primary', mb: 0.75 }}>
+                              Reason for Change
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'text.secondary', whiteSpace: 'pre-wrap' }}>
+                              {request.request_reason}
+                            </Typography>
+                          </Box>
+                        ) : null}
+                        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+                          Requested by: {String(request.requested_by_display || request.requested_by_email || '').trim() || '-'}
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {(Array.isArray(request.items) ? request.items : []).map((item) => (
+                            <Box
+                              key={item.id}
+                              sx={{
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                borderRadius: 2,
+                                p: 2,
+                              }}
+                            >
+                              <Typography sx={{ fontWeight: 700, color: 'text.primary', mb: 1 }}>
+                                {item.field_label || item.field_db_name}
+                              </Typography>
+                              <Box
+                                sx={{
+                                  display: 'grid',
+                                  gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                                  gap: 2,
+                                  mb: 1.5,
+                                }}
+                              >
+                                <Box>
+                                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                                    Old Value
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
+                                    {String(item.old_value_text || '').trim() || '-'}
+                                  </Typography>
+                                </Box>
+                                <Box>
+                                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                                    New Value
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
+                                    {String(item.new_value_text || '').trim() || '-'}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                                Status: {String(item.status || '').trim() || '-'}
+                              </Typography>
+                              {String(item.rejection_reason || '').trim() ? (
+                                <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.75, whiteSpace: 'pre-wrap' }}>
+                                  Reason: {item.rejection_reason}
+                                </Typography>
+                              ) : null}
+                            </Box>
+                          ))}
+                        </Box>
+                      </Box>
+                    ) : null}
+                  </Box>
+                )
+              })}
+            </Box>
+          ) : (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              No change request history found.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={handleCloseChangeRequestHistoryDialog}>Close</Button>
         </DialogActions>
       </Dialog>
 

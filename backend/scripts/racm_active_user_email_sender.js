@@ -94,9 +94,7 @@ async function runPendingRacmActiveUserEmails() {
         ON c.company_identifier = cf.company_identifier
       WHERE COALESCE(TRIM(cf.control_owner), '') <> ''
         AND COALESCE(cf.user_mail_sent, FALSE) = FALSE
-        AND cf.active IS NOT NULL
-        AND TRIM(cf.active) <> ''
-        AND TRIM(cf.active) <> '0'
+        AND cf.active = TRUE
       ORDER BY cf.created_at ASC NULLS LAST, cf.id ASC
     `
   );
@@ -134,7 +132,8 @@ async function runPendingRacmActiveUserEmails() {
       await pool.query(
         `
           UPDATE control_forms
-          SET user_mail_sent = TRUE
+          SET user_mail_sent = TRUE,
+              updated_at = CURRENT_TIMESTAMP
           WHERE form_id = $1
         `,
         [row.form_id]

@@ -64,7 +64,7 @@ export const RACM_FIELD_LABELS = {
   presentation_and_disclosure: 'Presentation and Disclosure',
   control_design_conclusion: 'Conclusion on Design of Control',
   design_deficiency_desc: 'Description of Deficiency in Control Design',
-  doc_uploaded_by_user: 'Doc Uploaded by User',
+  doc_uploaded_by_user: 'Documents Uploaded by User',
   remarks_by_user: 'Remarks by User',
   active: 'Active',
   approved_rejected: 'Approved/Rejected',

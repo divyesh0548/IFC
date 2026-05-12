@@ -16,54 +16,7 @@ import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import CircularProgress from '@mui/material/CircularProgress'
-
-/** True if string is an ISO instant (JSON often adds Z = UTC while DB stored IST wall clock). */
-function isUtcOrOffsetIsoString(str) {
-  const s = str.trim()
-  return /Z$/i.test(s) || /[+-]\d{2}:\d{2}$/.test(s) || /[+-]\d{4}$/.test(s)
-}
-
-/** Audit DB timestamps are Indian time; API may send UTC (…Z). Always show Asia/Kolkata. */
-export function formatRacmAuditDateDisplay(value) {
-  if (value == null || value === '') return '—'
-
-  const formatInstantInKolkata = (d) => {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(d)
-    const get = (t) => parts.find((p) => p.type === t)?.value ?? ''
-    return `${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')}`
-  }
-
-  if (typeof value === 'string') {
-    const str = value.trim()
-    if (str) {
-      if (isUtcOrOffsetIsoString(str)) {
-        const d = new Date(str)
-        if (!Number.isNaN(d.getTime())) return formatInstantInKolkata(d)
-        return '—'
-      }
-      const withTime = str.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/)
-      if (withTime) {
-        return `${withTime[3]}/${withTime[2]}/${withTime[1]} ${withTime[4]}:${withTime[5]}`
-      }
-      const dateOnly = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-      if (dateOnly) {
-        return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]} 00:00`
-      }
-    }
-  }
-
-  const d = value instanceof Date ? value : new Date(value)
-  if (!Number.isNaN(d.getTime())) return formatInstantInKolkata(d)
-  return '—'
-}
+import { formatIndianDateTimeCompact } from '../../lib/dateTime'
 
 const RACM_MODIFICATION_ACTION = 'RACM Modification'
 
@@ -308,7 +261,7 @@ export function RacmAuditLogsDialog({ open, onClose, loading, error, rows }) {
                 {rows.map((row) => (
                   <TableRow key={row.id ?? `${row.timestamp}-${row.action}`}>
                     <TableCell sx={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
-                      {formatRacmAuditDateDisplay(row.timestamp)}
+                      {(row.timestamp_ist || formatIndianDateTimeCompact(row.timestamp, '—')).replace(' ', ' - ')}
                     </TableCell>
                     <TableCell sx={{ verticalAlign: 'top', wordBreak: 'break-word' }}>
                       {row.user_email_id || '—'}

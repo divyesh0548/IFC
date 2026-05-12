@@ -6,7 +6,6 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import ButtonBase from '@mui/material/ButtonBase';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -29,10 +28,9 @@ import Tooltip from '@mui/material/Tooltip';
 import DownloadIcon from '@mui/icons-material/Download';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import ListAltRoundedIcon from '@mui/icons-material/ListAltRounded';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -41,6 +39,7 @@ import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailF
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext';
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 import { apiUrl } from '../../config/api';
+import { formatIndianDateTime } from '../../lib/dateTime';
 
 function ApproverFormDetail() {
   const theme = useTheme()
@@ -51,6 +50,7 @@ function ApproverFormDetail() {
   const [error, setError] = useState(null)
   const [approving, setApproving] = useState(false)
   const [reasonByApprover, setReasonByApprover] = useState('')
+  const [approvalDecision, setApprovalDecision] = useState('')
   
   // Editable fields for approver (only editable when status is pending)
   const [editableFields, setEditableFields] = useState({
@@ -70,12 +70,17 @@ function ApproverFormDetail() {
   const [sampleDocsDialogOpen, setSampleDocsDialogOpen] = useState(false)
   const [userDocsDialogOpen, setUserDocsDialogOpen] = useState(false)
   const [showScrollTop, setShowScrollTop] = useState(false)
+  const [deficiencyReviewDecision, setDeficiencyReviewDecision] = useState('')
+  const [deficiencyReviewComment, setDeficiencyReviewComment] = useState('')
+  const [deficiencyReviewing, setDeficiencyReviewing] = useState(false)
+  const [expandedDeficiencyVersions, setExpandedDeficiencyVersions] = useState({})
 
   useSyncGlobalLoading(
     loading ||
     approving ||
     changeDecisionSubmitting ||
-    auditLogLoading
+    auditLogLoading ||
+    deficiencyReviewing
   )
 
   const toastId = useRef(null)
@@ -193,6 +198,8 @@ function ApproverFormDetail() {
           control_design_conclusion: data.data.control_design_conclusion || '',
           design_deficiency_desc: data.data.design_deficiency_desc || ''
         })
+        setDeficiencyReviewDecision('')
+        setDeficiencyReviewComment('')
       } else {
         setError(data.message || 'Failed to fetch form data')
       }
@@ -211,8 +218,58 @@ function ApproverFormDetail() {
     }))
   }
 
-  const handleApprove = async () => {
+  const handleApprovalDecisionChange = (value) => {
+    setApprovalDecision(value)
+    setReasonByApprover('')
+
+    if (value === 'Rejected') {
+      setEditableFields((prev) => ({
+        ...prev,
+        control_design_conclusion: '',
+        design_deficiency_desc: '',
+      }))
+    }
+  }
+
+  const getApprovalFieldValidationMessage = (nextStatus) => {
+    const designProcedures = String(editableFields.control_design_procs || '').trim()
+    const designConclusion = String(editableFields.control_design_conclusion || '').trim()
+    const deficiencyDescription = String(editableFields.design_deficiency_desc || '').trim()
+
+    if (!nextStatus) {
+      return 'Please select a decision.'
+    }
+
+    if (nextStatus === 'Approved') {
+      if (!designProcedures || !designConclusion) {
+        return 'Design and Implementation fields are required for approval of RACM.'
+      }
+    }
+
+    if (designConclusion === 'Not Effective' && !deficiencyDescription) {
+      return 'Description of Deficiency in Control Design is required when conclusion is Not Effective.'
+    }
+
+    return ''
+  }
+
+  const handleSubmitDecision = async () => {
     if (!formData) return
+
+    const validationMessage = getApprovalFieldValidationMessage(approvalDecision)
+    if (validationMessage) {
+      toast.error(validationMessage)
+      return
+    }
+
+    const isApproveAction = approvalDecision === 'Approved'
+    const payload = {
+      status: approvalDecision,
+      reason_by_approver: reasonByApprover || '',
+      control_design_procs: editableFields.control_design_procs,
+      control_design_conclusion: isApproveAction ? editableFields.control_design_conclusion : '',
+      design_deficiency_desc: isApproveAction ? editableFields.design_deficiency_desc : '',
+    }
 
     setApproving(true)
     try {
@@ -222,39 +279,82 @@ function ApproverFormDetail() {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({
-          status: 'Approved',
-          reason_by_approver: reasonByApprover || '',
-          control_design_procs: editableFields.control_design_procs,
-          control_design_conclusion: editableFields.control_design_conclusion,
-          design_deficiency_desc: editableFields.design_deficiency_desc
-        }),
+        body: JSON.stringify(payload),
       })
 
       const data = await response.json()
 
       if (response.ok && data.success) {
-        toastId.current = toast.success('Form approved successfully')
+        toastId.current = toast.success(isApproveAction ? 'Form approved successfully' : 'Form rejected successfully')
+        setApprovalDecision('')
         setReasonByApprover('')
-        // Clear editable fields
         setEditableFields({
           control_design_procs: '',
           control_design_conclusion: '',
           design_deficiency_desc: ''
         })
-        // Update form data immediately to hide approval action card
         setFormData(data.data)
         setTimeout(() => {
-          fetchFormData() // Refresh form data to ensure consistency
+          fetchFormData()
         }, 2000)
       } else {
-        toast.error(data.message || 'Failed to approve form', { id: toastId.current })
+        toast.error(data.message || `Failed to ${isApproveAction ? 'approve' : 'reject'} form`, { id: toastId.current })
       }
     } catch (error) {
-      console.error('Error approving form:', error)
-      toast.error('Error approving form', { id: toastId.current })
+      console.error('Error submitting approval decision:', error)
+      toast.error(`Error ${isApproveAction ? 'approving' : 'rejecting'} form`, { id: toastId.current })
     } finally {
       setApproving(false)
+    }
+  }
+
+  const handleSubmitDeficiencyReview = async () => {
+    if (!formData?.deficiency_response) return
+
+    const selectedDecision = String(deficiencyReviewDecision || '').trim()
+
+    if (!selectedDecision) {
+      toast.error('Please select Effective, Accepted under deviation, or Reject')
+      return
+    }
+
+    if (selectedDecision === 'Reject' && !String(deficiencyReviewComment || '').trim()) {
+      toast.error('Reason is required when rejecting deficiency response')
+      return
+    }
+
+    setDeficiencyReviewing(true)
+    try {
+      const response = await fetch(apiUrl(`/api/approver/deficiency-response/${form_id}/review`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          review_decision: selectedDecision,
+          review_comment: deficiencyReviewComment,
+        }),
+      })
+
+      const data = await response.json()
+      if (response.ok && data.success) {
+        toast.success(
+          selectedDecision === 'Reject'
+            ? 'Deficiency response rejected successfully'
+            : 'Deficiency response approved successfully'
+        )
+        setFormData(data.data)
+        setDeficiencyReviewDecision('')
+        setDeficiencyReviewComment('')
+      } else {
+        toast.error(data.message || 'Failed to review deficiency response')
+      }
+    } catch (error) {
+      console.error('Error reviewing deficiency response:', error)
+      toast.error('Error reviewing deficiency response')
+    } finally {
+      setDeficiencyReviewing(false)
     }
   }
 
@@ -308,55 +408,6 @@ function ApproverFormDetail() {
     }
   }
 
-  const handleReject = async () => {
-    if (!formData) {
-      return
-    }
-
-    setApproving(true)
-    try {
-      const response = await fetch(apiUrl(`/api/approver/approve-form/${form_id}`), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          status: 'Rejected',
-          reason_by_approver: reasonByApprover || '',
-          control_design_procs: editableFields.control_design_procs,
-          control_design_conclusion: editableFields.control_design_conclusion,
-          design_deficiency_desc: editableFields.design_deficiency_desc
-        }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        toast.success('Form rejected successfully', { id: toastId.current })
-        setReasonByApprover('')
-        // Clear editable fields
-        setEditableFields({
-          control_design_procs: '',
-          control_design_conclusion: '',
-          design_deficiency_desc: ''
-        })
-        // Update form data immediately to hide approval action card
-        setFormData(data.data)
-        setTimeout(() => {
-          fetchFormData() // Refresh form data to ensure consistency
-        }, 2000)
-      } else {
-        toast.error(data.message || 'Failed to reject form', { id: toastId.current })
-      }
-    } catch (error) {
-      console.error('Error rejecting form:', error)
-      toast.error('Error rejecting form', { id: toastId.current })
-    } finally {
-      setApproving(false)
-    }
-  }
-
   const hasRejectionHistory = rejectionHistoryRows.length > 0
 
   const handleOpenRejectionHistory = () => {
@@ -404,16 +455,18 @@ function ApproverFormDetail() {
   }
 
   const formatDateTime = (dateString) => {
-    if (!dateString) return 'N/A'
+    return formatIndianDateTime(dateString, 'N/A')
+  }
+
+  const formatDateOnly = (dateString) => {
+    if (!dateString) return '-'
     const date = new Date(dateString)
-    return date.toLocaleString('en-IN', {
+    if (Number.isNaN(date.getTime())) return '-'
+    return date.toLocaleDateString('en-IN', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      timeZone: 'Asia/Kolkata'
+      timeZone: 'Asia/Kolkata',
     })
   }
 
@@ -460,7 +513,7 @@ function ApproverFormDetail() {
           if (errorData.debug) {
             console.error('Download error debug info:', errorData.debug)
           }
-        } catch (e) {
+        } catch {
           // If response is not JSON, use status-based message
           if (status === 400) {
             errorMessage = 'Bad request: File path is required'
@@ -637,7 +690,6 @@ function ApproverFormDetail() {
     )
   }
 
-  const isActive = formData?.active && formData.active !== '' && formData.active !== '0'
   const isPending = !formData?.status || formData.status === '' || formData.status === 'sent for approval'
   const isApproved = formData?.status === 'Approved'
   const isRejected = formData?.status === 'Rejected'
@@ -647,20 +699,50 @@ function ApproverFormDetail() {
   const uploadedDocs = Array.isArray(formData?.doc_uploaded_by_user_docs)
     ? formData.doc_uploaded_by_user_docs.filter((doc) => String(doc.doc_uploaded_by_user || '').trim() !== '')
     : []
+  const selectedDesignConclusion = isPending
+    ? String(editableFields.control_design_conclusion || '').trim()
+    : String(formData?.control_design_conclusion || '').trim()
+  const showDesignDeficiencyField = selectedDesignConclusion === 'Not Effective' || (!isPending && String(formData?.design_deficiency_desc || '').trim() !== '')
+  const showApproveFlowFields = isPending && approvalDecision === 'Approved'
+  const showRejectFlowFields = isPending && approvalDecision === 'Rejected'
+  const deficiencyResponse = formData?.deficiency_response || null
+  const deficiencyCurrentSubmission = deficiencyResponse?.current_submission || null
+  const deficiencySubmissions = Array.isArray(deficiencyResponse?.submissions)
+    ? deficiencyResponse.submissions
+    : []
+  const deficiencyHistorySubmissions = deficiencySubmissions.filter((submission) => {
+    const isCurrentSubmission = Number(submission?.id) === Number(deficiencyCurrentSubmission?.id)
+    if (!isCurrentSubmission) return true
+    const normalizedStatus = String(submission?.status || '').trim().toLowerCase()
+    return normalizedStatus === 'approved' || normalizedStatus === 'rejected'
+  })
+  const deficiencyAttachments = Array.isArray(deficiencyCurrentSubmission?.attachments)
+    ? deficiencyCurrentSubmission.attachments
+    : []
+  const canReviewDeficiencyResponse = Boolean(
+    deficiencyResponse
+    && String(deficiencyResponse.status || '').trim() === 'submitted'
+    && String(formData?.deficiency_response_status || '').trim().toLowerCase() === 'submitted_for_review'
+  )
+  const showActiveDeficiencyResponseSection = Boolean(
+    deficiencyResponse && String(deficiencyResponse.status || '').trim().toLowerCase() === 'submitted'
+  )
 
-  const APPROVAL_CHANGE_WINDOW_MS = 15 * 24 * 60 * 60 * 1000
-  const showApprovalStatusLockUi = isApproved || isRejected
-  let approvalChangeWithin15Days = false
-  if (showApprovalStatusLockUi && formData?.approval_status_change_timestamp) {
-    const changedAt = new Date(formData.approval_status_change_timestamp)
-    if (!Number.isNaN(changedAt.getTime())) {
-      approvalChangeWithin15Days = Date.now() - changedAt.getTime() <= APPROVAL_CHANGE_WINDOW_MS
-    }
+  const formatDeficiencyStatus = (value) => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return '-'
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }
+
+  const toggleDeficiencySubmissionExpansion = (submissionId) => {
+    setExpandedDeficiencyVersions((current) => ({
+      ...current,
+      [submissionId]: !current[submissionId],
+    }))
   }
 
   const approvalStatusLabelText = (() => {
     const status = formData?.status || ''
-    if (status === 'sent for approval') return 'Pending'
     if (!status || status === '') return '-'
     return status.charAt(0).toUpperCase() + status.slice(1)
   })()
@@ -801,43 +883,6 @@ function ApproverFormDetail() {
                     gap: 2,
                   }}
                 >
-                  {/* RACM Status (active / inactive) */}
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      component="label"
-                      sx={{
-                        display: 'block',
-                        fontWeight: 600,
-                        mb: 1,
-                        color: 'text.secondary',
-                        fontSize: '0.75rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                      }}
-                    >
-                      RACM Status
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: 'text.primary',
-                        fontWeight: 500,
-                        fontSize: '0.9375rem',
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {isActive ? 'Active' : 'Inactive'}
-                    </Typography>
-                  </Box>
-
                   {/* Approval Status */}
                   <Box
                     sx={{
@@ -862,119 +907,19 @@ function ApproverFormDetail() {
                     >
                       Approval Status
                     </Typography>
-                    {showApprovalStatusLockUi && approvalChangeWithin15Days ? (
-                      <ButtonBase
-                        focusRipple
-                        onClick={() => {
-                          setChangeDecisionReason('')
-                          setChangeDecisionOpen(true)
-                        }}
-                        sx={{
-                          display: 'block',
-                          width: '100%',
-                          borderRadius: 1.5,
-                          textAlign: 'left',
-                          transition: 'background-color 0.15s ease',
-                          border: '1px solid transparent',
-                          '&:hover': {
-                            backgroundColor: 'action.hover',
-                            borderColor: 'divider',
-                          },
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 1,
-                            minWidth: 0,
-                            py: 0.5,
-                            px: 0.75,
-                          }}
-                        >
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color: approvalStatusValueColor,
-                              fontWeight: 500,
-                              fontSize: '0.9375rem',
-                              lineHeight: 1.5,
-                              flex: 1,
-                              minWidth: 0,
-                              textAlign: 'left',
-                            }}
-                          >
-                            {approvalStatusLabelText}
-                          </Typography>
-                          <Tooltip
-                            title="Click to change decision within the 15-day window."
-                            placement="top"
-                            arrow
-                          >
-                            <Box
-                              component="span"
-                              role="img"
-                              sx={{
-                                display: 'inline-flex',
-                                color: 'text.secondary',
-                                flexShrink: 0,
-                                pointerEvents: 'none',
-                                '& .MuiSvgIcon-root': { fontSize: 22 },
-                              }}
-                              aria-label="Unlocked: click to change decision"
-                            >
-                              <LockOpenOutlinedIcon />
-                            </Box>
-                          </Tooltip>
-                        </Box>
-                      </ButtonBase>
-                    ) : (
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 1,
-                          minWidth: 0,
-                        }}
-                      >
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            color: approvalStatusValueColor,
-                            fontWeight: 500,
-                            fontSize: '0.9375rem',
-                            lineHeight: 1.5,
-                            flex: 1,
-                            minWidth: 0,
-                          }}
-                        >
-                          {approvalStatusLabelText}
-                        </Typography>
-                        {showApprovalStatusLockUi && (
-                          <Tooltip
-                            title="Approval status is locked — more than 15 days since the last decision."
-                            placement="top"
-                            arrow
-                          >
-                            <Box
-                              component="span"
-                              role="img"
-                              sx={{
-                                display: 'inline-flex',
-                                color: 'text.secondary',
-                                flexShrink: 0,
-                                '& .MuiSvgIcon-root': { fontSize: 22 },
-                              }}
-                              aria-label="Locked: outside 15-day change window"
-                            >
-                              <LockOutlinedIcon />
-                            </Box>
-                          </Tooltip>
-                        )}
-                      </Box>
-                    )}
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: approvalStatusValueColor,
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
+                      {approvalStatusLabelText}
+                    </Typography>
                   </Box>
 
                   {/* Business Process */}
@@ -1162,51 +1107,80 @@ function ApproverFormDetail() {
                     </Typography>
                   </Box>
 
-                  {/* Reason by Approver (only when present) */}
-                  {(() => {
-                    const reason = formData?.reason_by_approver
-                    const hasReason = typeof reason === 'string' && reason.trim() !== ''
-                    if (!hasReason) return null
+                  {/* Due Date */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Due Date
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formatDateOnly(formData?.due_date)}
+                    </Typography>
+                  </Box>
 
-                    return (
-                      <Box
-                        sx={{
-                          p: 2,
-                          borderRadius: 2,
-                          border: '1px solid',
-                          borderColor: 'divider',
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
-                          component="label"
-                          sx={{
-                            display: 'block',
-                            fontWeight: 600,
-                            mb: 1,
-                            color: 'text.secondary',
-                            fontSize: '0.75rem',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                          }}
-                        >
-                          Reason by Approver
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            color: 'text.primary',
-                            fontWeight: 500,
-                            fontSize: '0.875rem',
-                            lineHeight: 1.6,
-                            wordBreak: 'break-word',
-                          }}
-                        >
-                          {reason}
-                        </Typography>
-                      </Box>
-                    )
-                  })()}
+                  {/* Sent for Approval / Rejected On */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      {isRejected ? 'Rejected on' : 'Sent for Approval'}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formatDateOnly(isRejected ? formData?.approval_status_change_timestamp : formData?.sent_for_approval_timestamp)}
+                    </Typography>
+                  </Box>
+
                 </Box>
               </CardContent>
             </Card>
@@ -1668,7 +1642,7 @@ function ApproverFormDetail() {
               </CardContent>
             </Card>
 
-            {/* Design and Implementation section */}
+            {/* Documents */}
             <Card
               sx={{
                 borderRadius: 3,
@@ -1696,163 +1670,7 @@ function ApproverFormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  Design and Implementation
-                </Typography>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3,
-                    mt: 2,
-                  }}
-                >
-                  {groupedApproverFields.map((key) => {
-                    const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-                    const value = formData[key]
-                    const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
-                    const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
-                    const isEditable = isPending
-                    
-                    return (
-                      <Box
-                        key={key}
-                        sx={{
-                          p: 2.5,
-                          borderRadius: 2,
-                          backgroundColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.03)'
-                            : 'rgba(0, 0, 0, 0.02)',
-                          border: '1px solid',
-                          borderColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.08)'
-                            : 'rgba(0, 0, 0, 0.06)',
-                          transition: 'all 0.2s ease-in-out',
-                          '&:hover': {
-                            backgroundColor: theme.palette.mode === 'dark'
-                              ? 'rgba(255, 255, 255, 0.05)'
-                              : 'rgba(0, 0, 0, 0.04)',
-                          },
-                        }}
-                      >
-                        {isEditable ? (
-                          // Editable field for approver
-                          key === 'control_design_conclusion' ? (
-                            // Dropdown for control_design_conclusion
-                            <FormControl fullWidth>
-                              <InputLabel id={`${key}-label`}>{label}</InputLabel>
-                              <Select
-                                labelId={`${key}-label`}
-                                value={editableFields[key] || ''}
-                                label={label}
-                                onChange={(e) => handleFieldChange(key, e.target.value)}
-                                sx={{
-                                  '& .MuiOutlinedInput-root': {
-                                    backgroundColor: 'transparent',
-                                    '&:hover': {
-                                      backgroundColor: 'transparent',
-                                    },
-                                    '&.Mui-focused': {
-                                      backgroundColor: 'transparent',
-                                    },
-                                  },
-                                }}
-                              >
-                                <MenuItem value="Effective">Effective</MenuItem>
-                                <MenuItem value="Not Effective">Not Effective</MenuItem>
-                              </Select>
-                            </FormControl>
-                          ) : (
-                            // TextField for control_design_procs and design_deficiency_desc
-                            <TextField
-                              label={label}
-                              variant="outlined"
-                              value={editableFields[key] || ''}
-                              onChange={(e) => handleFieldChange(key, e.target.value)}
-                              fullWidth
-                              multiline={isTextArea}
-                              rows={isTextArea ? 4 : 1}
-                              sx={{
-                                '& .MuiOutlinedInput-root': {
-                                  backgroundColor: 'transparent',
-                                  '&:hover': {
-                                    backgroundColor: 'transparent',
-                                  },
-                                  '&.Mui-focused': {
-                                    backgroundColor: 'transparent',
-                                  },
-                                },
-                              }}
-                            />
-                          )
-                        ) : (
-                          // Read-only display
-                          <>
-                            <Typography
-                              variant="caption"
-                              component="dt"
-                              sx={{
-                                display: 'block',
-                                fontWeight: 700,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px',
-                                mb: 1.5,
-                                color: 'text.primary',
-                                fontSize: theme.typography.customSizes.small,
-                              }}
-                            >
-                              {label}
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              component="dd"
-                              sx={{
-                                color: isEmpty ? 'text.disabled' : 'text.secondary',
-                                wordBreak: 'break-word',
-                                lineHeight: 1.6,
-                                fontSize: theme.typography.customSizes.medium,
-                                whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
-                              }}
-                            >
-                              {isEmpty ? '-' : String(value)}
-                            </Typography>
-                          </>
-                        )}
-                      </Box>
-                    )
-                  })}
-                </Box>
-              </CardContent>
-            </Card>
-
-            {/* Approval section – Doc Uploaded By User & Remarks By User */}
-            <Card
-              sx={{
-                borderRadius: 3,
-                boxShadow: theme.palette.mode === 'dark'
-                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
-                border: '1px solid',
-                borderColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.12)' 
-                  : 'rgba(0, 0, 0, 0.08)',
-                overflow: 'hidden',
-              }}
-            >
-              <CardContent sx={{ p: 4 }}>
-                <Typography
-                  variant="h6"
-                  component="h3"
-                  sx={{
-                    fontWeight: 700,
-                    mb: 3,
-                    color: 'text.primary',
-                    fontSize: '1.25rem',
-                    pb: 2,
-                    borderBottom: '2px solid',
-                    borderColor: 'divider',
-                  }}
-                >
-                  Approval
+                  Documents
                 </Typography>
                 <Box
                   sx={{
@@ -2035,97 +1853,226 @@ function ApproverFormDetail() {
                     </Box>
                   </Box>
 
-                  {/* Remarks By User */}
-                  <Box
-                    sx={{
-                      p: 2.5,
-                      borderRadius: 2,
-                      backgroundColor: theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.03)'
-                        : 'rgba(0, 0, 0, 0.02)',
-                      border: '1px solid',
-                      borderColor: theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(0, 0, 0, 0.06)',
-                      transition: 'all 0.2s ease-in-out',
-                      '&:hover': {
+                  {String(formData?.remarks_by_user || '').trim() !== '' ? (
+                    <Box
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 2,
                         backgroundColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.05)'
-                          : 'rgba(0, 0, 0, 0.04)',
-                      },
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      component="dt"
-                      sx={{
-                        display: 'block',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        mb: 1.5,
-                        color: 'text.primary',
-                        fontSize: theme.typography.customSizes.small,
+                          ? 'rgba(255, 255, 255, 0.03)'
+                          : 'rgba(0, 0, 0, 0.02)',
+                        border: '1px solid',
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
                       }}
                     >
-                      {fieldLabels.remarks_by_user}
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      component="dd"
-                      sx={{
-                        color:
-                          !formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
-                            ? 'text.disabled'
-                            : 'text.secondary',
-                        wordBreak: 'break-word',
-                        lineHeight: 1.6,
-                        fontSize: theme.typography.customSizes.medium,
-                      }}
-                    >
-                      {!formData.remarks_by_user || String(formData.remarks_by_user).trim() === ''
-                        ? '-'
-                        : String(formData.remarks_by_user)}
-                    </Typography>
-                  </Box>
-
-                  {/* Reason by Approver and Actions (shown only when pending) */}
-                  {isPending && !isApproved && !isRejected && (
-                    <>
-                      <Box
+                      <Typography
+                        variant="caption"
+                        component="dt"
                         sx={{
-                          gridColumn: {
-                            xs: '1',
-                            md: '1 / -1',
-                          },
-                          mt: 1,
+                          display: 'block',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          mb: 1.5,
+                          color: 'text.primary',
+                          fontSize: theme.typography.customSizes.small,
                         }}
                       >
+                        Remarks by User
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        component="dd"
+                        sx={{
+                          color: 'text.secondary',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.6,
+                          fontSize: theme.typography.customSizes.medium,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {String(formData.remarks_by_user)}
+                      </Typography>
+                    </Box>
+                  ) : null}
+
+                </Box>
+              </CardContent>
+            </Card>
+
+            {/* Approval */}
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.12)' 
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  Approval
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                    mt: 2,
+                  }}
+                >
+                  {isPending && !isApproved && !isRejected && (
+                    <>
+                      <FormControl fullWidth>
+                        <InputLabel id="approval-decision-label">Decision</InputLabel>
+                        <Select
+                          labelId="approval-decision-label"
+                          value={approvalDecision}
+                          label="Decision"
+                          onChange={(e) => handleApprovalDecisionChange(e.target.value)}
+                        >
+                          <MenuItem value="Approved">Approve</MenuItem>
+                          <MenuItem value="Rejected">Reject</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      {showApproveFlowFields ? (
+                        <Box
+                          sx={{
+                            p: 2.5,
+                            borderRadius: 2,
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.02)'
+                              : 'rgba(0, 0, 0, 0.015)',
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 3,
+                            }}
+                          >
+                            {groupedApproverFields
+                              .filter((key) => key !== 'design_deficiency_desc' || showDesignDeficiencyField)
+                              .map((key) => {
+                                const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                                const value = formData[key]
+                                const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
+                                const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+                                const isRequired = key === 'control_design_procs'
+                                  || key === 'control_design_conclusion'
+                                  || (key === 'design_deficiency_desc' && selectedDesignConclusion === 'Not Effective')
+
+                                return (
+                                  <Box
+                                    key={key}
+                                    sx={{ p: 0, border: 'none', borderRadius: 0 }}
+                                  >
+                                    {key === 'control_design_conclusion' ? (
+                                      <FormControl fullWidth required={isRequired}>
+                                        <InputLabel id={`${key}-label`}>{label}</InputLabel>
+                                        <Select
+                                          labelId={`${key}-label`}
+                                          value={editableFields[key] || ''}
+                                          label={label}
+                                          onChange={(e) => handleFieldChange(key, e.target.value)}
+                                        >
+                                          <MenuItem value="Effective">Effective</MenuItem>
+                                          <MenuItem value="Not Effective">Not Effective</MenuItem>
+                                          <MenuItem value="Accepted under deviation">Accepted under deviation</MenuItem>
+                                        </Select>
+                                      </FormControl>
+                                    ) : (
+                                      <TextField
+                                        label={label}
+                                        variant="outlined"
+                                        value={editableFields[key] || ''}
+                                        onChange={(e) => handleFieldChange(key, e.target.value)}
+                                        fullWidth
+                                        required={isRequired}
+                                        multiline={isTextArea}
+                                        rows={isTextArea ? 4 : 1}
+                                      />
+                                    )}
+                                    {!isPending ? (
+                                      <Typography
+                                        variant="body2"
+                                        component="dd"
+                                        sx={{
+                                          color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                          wordBreak: 'break-word',
+                                          lineHeight: 1.6,
+                                          fontSize: theme.typography.customSizes.medium,
+                                          whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                                        }}
+                                      >
+                                        {isEmpty ? '-' : String(value)}
+                                      </Typography>
+                                    ) : null}
+                                  </Box>
+                                )
+                              })}
+                          </Box>
+                        </Box>
+                      ) : null}
+
+                      {showRejectFlowFields ? (
+                        <TextField
+                          label={fieldLabels.control_design_procs}
+                          variant="outlined"
+                          value={editableFields.control_design_procs || ''}
+                          onChange={(e) => handleFieldChange('control_design_procs', e.target.value)}
+                          fullWidth
+                          multiline
+                          rows={4}
+                        />
+                      ) : null}
+
+                      {(showApproveFlowFields || showRejectFlowFields) ? (
                         <TextField
                           label="Reason by Approver"
-                          placeholder="Enter reason for approval or rejection (optional)"
+                          placeholder={
+                            approvalDecision === 'Rejected'
+                              ? 'Enter reason for rejection'
+                              : 'Enter reason for approval or rejection (optional)'
+                          }
                           fullWidth
                           multiline
                           rows={4}
                           value={reasonByApprover}
                           onChange={(e) => setReasonByApprover(e.target.value)}
                           variant="outlined"
-                          sx={{
-                            '& .MuiOutlinedInput-root': {
-                              '&:hover fieldset': {
-                                borderColor: 'primary.main',
-                              },
-                            },
-                          }}
+                          required={approvalDecision === 'Rejected'}
                         />
-                      </Box>
+                      ) : null}
 
+                      {(showApproveFlowFields || showRejectFlowFields) ? (
                       <Box
                         sx={{
-                          gridColumn: {
-                            xs: '1',
-                            md: '1 / -1',
-                          },
                           display: 'flex',
                           gap: 2,
                           justifyContent: 'flex-end',
@@ -2133,17 +2080,21 @@ function ApproverFormDetail() {
                         }}
                       >
                         <Button
-                          onClick={handleApprove}
+                          onClick={handleSubmitDecision}
                           disabled={approving}
                           variant="contained"
-                          color="success"
+                          color={approvalDecision === 'Rejected' ? 'error' : 'success'}
                           sx={{
                             minWidth: '120px',
                             py: 1.2,
                             fontWeight: 700,
                             fontSize: '0.95rem',
                             textTransform: 'none',
-                            color: theme.palette.getContrastText(theme.palette.success.main),
+                            color: theme.palette.getContrastText(
+                              approvalDecision === 'Rejected'
+                                ? theme.palette.error.main
+                                : theme.palette.success.main
+                            ),
                             '&:hover': {
                               boxShadow: 'none',
                             },
@@ -2153,37 +2104,524 @@ function ApproverFormDetail() {
                             },
                           }}
                         >
-                          {approving ? 'Processing...' : 'Approve'}
-                        </Button>
-                        <Button
-                          onClick={handleReject}
-                          disabled={approving}
-                          variant="contained"
-                          color="error"
-                          sx={{
-                            minWidth: '120px',
-                            py: 1.2,
-                            fontWeight: 700,
-                            fontSize: '0.95rem',
-                            textTransform: 'none',
-                            color: theme.palette.getContrastText(theme.palette.error.main),
-                            '&:hover': {
-                              boxShadow: 'none',
-                            },
-                            '&:disabled': {
-                              backgroundColor: 'action.disabledBackground',
-                              color: 'text.disabled',
-                            },
-                          }}
-                        >
-                          {approving ? 'Processing...' : 'Reject'}
+                          {approving
+                            ? 'Processing...'
+                            : approvalDecision === 'Rejected'
+                              ? 'Reject'
+                              : 'Approve'}
                         </Button>
                       </Box>
+                      ) : null}
                     </>
                   )}
+
+                  {!isPending ? (
+                    <Box
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.02)'
+                          : 'rgba(0, 0, 0, 0.015)',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 3,
+                        }}
+                      >
+                        {groupedApproverFields
+                          .filter((key) => {
+                            if (key === 'design_deficiency_desc' && !showDesignDeficiencyField) {
+                              return false
+                            }
+                            return String(formData?.[key] || '').trim() !== ''
+                          })
+                          .map((key) => {
+                            const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                            const value = formData[key]
+                            const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
+                            const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+
+                            return (
+                              <Box
+                                key={key}
+                                sx={{
+                                  p: 2.5,
+                                  borderRadius: 2,
+                                  backgroundColor: theme.palette.mode === 'dark'
+                                    ? 'rgba(255, 255, 255, 0.03)'
+                                    : 'rgba(0, 0, 0, 0.02)',
+                                  border: '1px solid',
+                                  borderColor: theme.palette.mode === 'dark'
+                                    ? 'rgba(255, 255, 255, 0.08)'
+                                    : 'rgba(0, 0, 0, 0.06)',
+                                }}
+                              >
+                                <Typography
+                                  variant="caption"
+                                  component="dt"
+                                  sx={{
+                                    display: 'block',
+                                    fontWeight: 700,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                    mb: 1.5,
+                                    color: 'text.primary',
+                                    fontSize: theme.typography.customSizes.small,
+                                  }}
+                                >
+                                  {label}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  component="dd"
+                                  sx={{
+                                    color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.6,
+                                    fontSize: theme.typography.customSizes.medium,
+                                    whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                                  }}
+                                >
+                                  {isEmpty ? '-' : String(value)}
+                                </Typography>
+                              </Box>
+                            )
+                          })}
+                      </Box>
+
+                      {String(formData?.reason_by_approver || '').trim() !== '' ? (
+                        <Box
+                          sx={{
+                            mt: 3,
+                            p: 2.5,
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            component="dt"
+                            sx={{
+                              display: 'block',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              mb: 1.5,
+                              color: 'text.primary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            Reason by Approver
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            component="dd"
+                            sx={{
+                              color: 'text.secondary',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
+                            {String(formData.reason_by_approver)}
+                          </Typography>
+                        </Box>
+                      ) : null}
+                    </Box>
+                  ) : null}
                 </Box>
               </CardContent>
             </Card>
+
+            {deficiencyHistorySubmissions.length > 0 ? (
+              <Card
+                sx={{
+                  borderRadius: 3,
+                  boxShadow: theme.palette.mode === 'dark'
+                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                    : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid',
+                  borderColor: theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.12)'
+                    : 'rgba(0, 0, 0, 0.08)',
+                  overflow: 'hidden',
+                }}
+              >
+                <CardContent sx={{ p: 4 }}>
+                  <Typography
+                    variant="h6"
+                    component="h3"
+                    sx={{
+                      fontWeight: 700,
+                      mb: 3,
+                      color: 'text.primary',
+                      fontSize: '1.25rem',
+                      pb: 2,
+                      borderBottom: '2px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    Deficiency Response History
+                  </Typography>
+
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    {deficiencyHistorySubmissions.map((submission) => {
+                      const isExpanded = Boolean(expandedDeficiencyVersions[submission.id])
+                      const submissionAttachments = Array.isArray(submission.attachments) ? submission.attachments : []
+                      const submissionTypeLabel = String(submission.submission_type || '').trim() === 'compensatory_racm'
+                        ? 'Compensatory RACM'
+                        : 'Mitigation Plan'
+                      const normalizedSubmissionStatus = String(submission.status || '').trim().toLowerCase()
+                      const tileTimestampLabel = normalizedSubmissionStatus === 'approved'
+                        ? 'Approved on'
+                        : normalizedSubmissionStatus === 'rejected'
+                          ? 'Rejected on'
+                          : 'Updated on'
+                      const tileTimestampValue = submission.reviewed_at || submission.submitted_at
+                      return (
+                        <Box
+                          key={submission.id}
+                          sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}
+                        >
+                          <Box
+                            sx={{
+                              px: 2,
+                              py: 1.5,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 2,
+                              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(15,23,42,0.02)',
+                            }}
+                          >
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                                Version {submission.version_no} • {submissionTypeLabel}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                Status: {formatDeficiencyStatus(submission.status)}
+                                {tileTimestampValue ? ` • ${tileTimestampLabel} ${formatIndianDateTime(tileTimestampValue)}` : ''}
+                              </Typography>
+                            </Box>
+                            <Button
+                              size="small"
+                              onClick={() => toggleDeficiencySubmissionExpansion(submission.id)}
+                              endIcon={isExpanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+                              sx={{ textTransform: 'none', flexShrink: 0 }}
+                            >
+                              {isExpanded ? 'Hide details' : 'View details'}
+                            </Button>
+                          </Box>
+                          {isExpanded ? (
+                            <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                              <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                  Explaination
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                                  {String(submission.explaination || '').trim() || '-'}
+                                </Typography>
+                              </Box>
+                              {(String(submission.concerned_person || '').trim() || submission.due_date) ? (
+                                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.5 }}>
+                                  <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                      Concerned Person
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                      {String(submission.concerned_person || '').trim() || '-'}
+                                    </Typography>
+                                  </Box>
+                                  <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                      Due Date
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                      {submission.due_date ? formatDateOnly(submission.due_date) : '-'}
+                                    </Typography>
+                                  </Box>
+                                </Box>
+                              ) : null}
+                              {submissionAttachments.length > 0 ? (
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Documents
+                                  </Typography>
+                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                    {submissionAttachments.map((attachment) => (
+                                      <Box key={attachment.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                                        <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                          {attachment.original_name || getFileName(attachment.file_url)}
+                                        </Typography>
+                                        <Button
+                                          size="small"
+                                          startIcon={<DownloadRoundedIcon />}
+                                          onClick={() => handleDownloadFile(attachment.file_url)}
+                                          sx={{ textTransform: 'none' }}
+                                        >
+                                          Download
+                                        </Button>
+                                      </Box>
+                                    ))}
+                                  </Box>
+                                </Box>
+                              ) : null}
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.5 }}>
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Submitted By
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                    {String(submission.submitted_by_email || '').trim() || '-'}
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Submitted On
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                    {submission.submitted_at ? formatIndianDateTime(submission.submitted_at) : '-'}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.5 }}>
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Reviewed By
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                    {String(submission.reviewed_by_email || '').trim() || '-'}
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Reviewed On
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                    {submission.reviewed_at ? formatIndianDateTime(submission.reviewed_at) : '-'}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                              <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                  Review Decision
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                  {formatDeficiencyStatus(submission.review_decision)}
+                                </Typography>
+                              </Box>
+                              {String(submission.review_comment || '').trim() ? (
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Review Comment
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                                    {String(submission.review_comment)}
+                                  </Typography>
+                                </Box>
+                              ) : null}
+                            </Box>
+                          ) : null}
+                        </Box>
+                      )
+                    })}
+                  </Box>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {showActiveDeficiencyResponseSection ? (
+              <Card
+                sx={{
+                  borderRadius: 3,
+                  boxShadow: theme.palette.mode === 'dark'
+                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                    : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid',
+                  borderColor: theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.12)'
+                    : 'rgba(0, 0, 0, 0.08)',
+                  overflow: 'hidden',
+                }}
+              >
+                <CardContent sx={{ p: 4 }}>
+                  <Typography
+                    variant="h6"
+                    component="h3"
+                    sx={{
+                      fontWeight: 700,
+                      mb: 3,
+                      color: 'text.primary',
+                      fontSize: '1.25rem',
+                      pb: 2,
+                      borderBottom: '2px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    Deficiency Response
+                  </Typography>
+
+                  {deficiencyResponse ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
+                        <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                            Response Type
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                            {String(deficiencyResponse.response_type || '').trim() === 'compensatory_racm' ? 'Compensatory RACM' : 'Mitigation Plan'}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                            Status
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                            {formatDeficiencyStatus(deficiencyResponse.status)}
+                          </Typography>
+                        </Box>
+                      </Box>
+
+                      <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                          Explaination
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                          {String(deficiencyCurrentSubmission?.explaination || deficiencyResponse.explaination || '').trim() || '-'}
+                        </Typography>
+                      </Box>
+
+                      {(
+                        String(deficiencyCurrentSubmission?.concerned_person || deficiencyResponse.concerned_person || '').trim()
+                        || deficiencyCurrentSubmission?.due_date
+                        || deficiencyResponse.due_date
+                      ) ? (
+                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
+                          <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                            <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                              Concerned Person
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                              {String(deficiencyCurrentSubmission?.concerned_person || deficiencyResponse.concerned_person || '').trim() || '-'}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                            <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                              Due Date
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                              {(deficiencyCurrentSubmission?.due_date || deficiencyResponse.due_date)
+                                ? formatDateOnly(deficiencyCurrentSubmission?.due_date || deficiencyResponse.due_date)
+                                : '-'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      ) : null}
+
+                      {deficiencyAttachments.length > 0 ? (
+                        <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1.5, color: 'text.secondary' }}>
+                            Documents
+                          </Typography>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            {deficiencyAttachments.map((attachment) => (
+                              <Box key={attachment.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                                <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                  {attachment.original_name || getFileName(attachment.file_url)}
+                                </Typography>
+                                <Button
+                                  size="small"
+                                  startIcon={<DownloadRoundedIcon />}
+                                  onClick={() => handleDownloadFile(attachment.file_url)}
+                                  sx={{ textTransform: 'none' }}
+                                >
+                                  Download
+                                </Button>
+                              </Box>
+                            ))}
+                          </Box>
+                        </Box>
+                      ) : null}
+
+                      {String(deficiencyResponse.review_comment || '').trim() ? (
+                        <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                            Review Comment
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                            {String(deficiencyResponse.review_comment)}
+                          </Typography>
+                        </Box>
+                      ) : null}
+
+                      {canReviewDeficiencyResponse ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+                          <TextField
+                            select
+                            label="Decision"
+                            value={deficiencyReviewDecision}
+                            onChange={(e) => setDeficiencyReviewDecision(e.target.value)}
+                            fullWidth
+                          >
+                            <MenuItem value="">Select</MenuItem>
+                            <MenuItem value="Effective">Effective</MenuItem>
+                            <MenuItem value="Accepted under deviation">Accepted under deviation</MenuItem>
+                            <MenuItem value="Reject">Reject</MenuItem>
+                          </TextField>
+
+                          {deficiencyReviewDecision ? (
+                            <TextField
+                              label="Comment"
+                              value={deficiencyReviewComment}
+                              onChange={(e) => setDeficiencyReviewComment(e.target.value)}
+                              fullWidth
+                              multiline
+                              rows={4}
+                              required={deficiencyReviewDecision === 'Reject'}
+                            />
+                          ) : null}
+
+                          {deficiencyReviewDecision ? (
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                              <Button
+                                onClick={handleSubmitDeficiencyReview}
+                                variant="contained"
+                                color={deficiencyReviewDecision === 'Reject' ? 'error' : 'success'}
+                                disabled={deficiencyReviewing}
+                                sx={{ textTransform: 'none', fontWeight: 700 }}
+                              >
+                                {deficiencyReviewing
+                                  ? 'Submitting...'
+                                  : 'Submit'}
+                              </Button>
+                            </Box>
+                          ) : null}
+                        </Box>
+                      ) : null}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                      No deficiency response submitted yet.
+                    </Typography>
+                  )}
+                </CardContent>
+              </Card>
+            ) : null}
           </Box>
         </Box>
 

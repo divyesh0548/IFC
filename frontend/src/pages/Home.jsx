@@ -288,6 +288,30 @@ function Home() {
     },
   }
 
+  const heroHighlightCardSx = {
+    width: '100%',
+    minHeight: 116,
+    p: 2,
+    borderRadius: 4,
+    border: '1px solid',
+    borderColor: alpha(theme.palette.text.primary, 0.1),
+    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.55),
+    boxSizing: 'border-box',
+    display: 'flex',
+    alignItems: 'stretch',
+  }
+
+  const subsectionCardSx = {
+    width: '100%',
+    height: '100%',
+    p: 2.5,
+    borderRadius: 4,
+    border: '1px solid',
+    borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.1 : 0.07),
+    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.58),
+    boxSizing: 'border-box',
+  }
+
   return (
     <Box sx={pageShellSx}>
       <Box
@@ -445,9 +469,10 @@ function Home() {
                       display: 'flex',
                       flexDirection: 'column',
                       borderRadius: 5,
-                      p: { xs: 2.5, md: 3 },
+                      p: { xs: 3, md: 3.5 },
                       position: 'relative',
                       overflow: 'hidden',
+                      boxSizing: 'border-box',
                       background:
                         theme.palette.mode === 'dark'
                           ? 'linear-gradient(160deg, rgba(10,25,47,0.94) 0%, rgba(13,35,63,0.9) 52%, rgba(8,20,36,0.96) 100%)'
@@ -480,8 +505,15 @@ function Home() {
                         filter: 'blur(10px)',
                       }}
                     />
-
-                    <Stack spacing={2.2} sx={{ position: 'relative', zIndex: 1 }}>
+                    <Stack
+                      spacing={2.2}
+                      sx={{
+                        position: 'relative',
+                        zIndex: 1,
+                        height: '100%',
+                        justifyContent: 'space-between',
+                      }}
+                    >
                       <Box>
                         <Typography sx={{ color: 'text.secondary', fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                           What this portal improves
@@ -491,20 +523,11 @@ function Home() {
                         </Typography>
                       </Box>
 
-                      <Stack spacing={1.5}>
+                      <Stack spacing={1.5} sx={{ width: '100%' }}>
                         {portalContent.highlights.map((item) => {
                           const Icon = item.icon
                           return (
-                            <Box
-                              key={item.label}
-                              sx={{
-                                p: 2,
-                                borderRadius: 4,
-                                border: '1px solid',
-                                borderColor: alpha(theme.palette.text.primary, 0.1),
-                                backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.55),
-                              }}
-                            >
+                            <Box key={item.label} sx={heroHighlightCardSx}>
                               <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
                                 <Box
                                   sx={{
@@ -560,20 +583,8 @@ function Home() {
                     <Grid item xs={12} lg={8}>
                       <Grid container spacing={2.25}>
                         {section.subsections.map((sub) => (
-                          <Grid item xs={12} md={6} key={sub.title}>
-                            <Box
-                              sx={{
-                                height: '100%',
-                                p: 2.5,
-                                borderRadius: 4,
-                                border: '1px solid',
-                                borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.1 : 0.07),
-                                backgroundColor: alpha(
-                                  theme.palette.background.paper,
-                                  theme.palette.mode === 'dark' ? 0.08 : 0.58
-                                ),
-                              }}
-                            >
+                          <Grid item xs={12} md={6} key={sub.title} sx={{ display: 'flex' }}>
+                            <Box sx={subsectionCardSx}>
                               <Stack spacing={1.25}>
                                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                                   <CheckCircleOutlineRoundedIcon sx={{ fontSize: 18, color: theme.palette.primary.main }} />

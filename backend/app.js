@@ -6,7 +6,11 @@ const cookieParser = require('cookie-parser');
 // Load environment variables first
 dotenv.config();
 
+const { runReminderEmails } = require('./scripts/reminder_emails');
+const { runPendingLoginEmails } = require('./scripts/login_email_sender');
+const { runPendingRacmActiveUserEmails } = require('./scripts/racm_active_user_email_sender');
 const { runBootstrap } = require('./config/bootstrap');
+require('./utils/db'); // Load shared pool (timezone set there)
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -88,76 +92,59 @@ app.use((req, res, next) => {
 });
 
 
+app.use('/api', require('./routes'));
+
 const path = require('path');
 
+// Then static files
+app.use(express.static(path.join(__dirname, "../frontend/dist")));
+
+// Then catch-all for React
+// app.get(/.*/, (req, res) => {
+//   res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
+// });
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
 });
 
+
+// Reminder emails for control_forms (runs every 1 minute)
+// console.log('Starting reminder emails scheduler (runs every 1 minute)...');
+// setInterval(async () => {
+//   try {
+//     await runReminderEmails();
+//   } catch (error) {
+//     console.error('Error in reminder emails job:', error);
+//   }
+// }, 60 * 1000);
+
+// Login emails for newly created temp-login users (runs every 1 minute)
+console.log('Starting login email scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await runPendingLoginEmails();
+  } catch (error) {
+    console.error('Error in login email job:', error);
+  }
+}, 60 * 1000);
+
+// Active RACM assignment emails for process owners (runs every 1 minute)
+console.log('Starting active RACM user email scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await runPendingRacmActiveUserEmails();
+  } catch (error) {
+    console.error('Error in active RACM user email job:', error);
+  }
+}, 60 * 1000);
+
 // Run bootstrap tasks, then start server
 (async () => {
   try {
     await runBootstrap();
-
-    // Load routes only after DB bootstrap succeeds (routes import db pool).
-    app.use('/api', require('./routes'));
-
-    // Static frontend files
-    app.use(express.static(path.join(__dirname, '../frontend/dist')));
-
-    // React catch-all (must be after /api routes)
-    app.get(/.*/, (req, res) => {
-      res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
-    });
-
-    // Load schedulers only after DB bootstrap succeeds (jobs import db pool).
-    const { runReminderEmails } = require('./scripts/reminder_emails');
-    const { runPendingLoginEmails } = require('./scripts/login_email_sender');
-    const { runPendingRacmActiveUserEmails } = require('./scripts/racm_active_user_email_sender');
-
-    // Reminder emails for control_forms (runs every 1 minute)
-    console.log('Starting reminder emails scheduler (runs every 1 minute)...');
-    setInterval(async () => {
-      try {
-        await runReminderEmails();
-      } catch (error) {
-        console.error('Error in reminder emails job:', error);
-      }
-    }, 60 * 1000);
-
-    // Login emails for newly created temp-login users (runs every 1 minute)
-    console.log('Starting login email scheduler (runs every 1 minute)...');
-    setInterval(async () => {
-      try {
-        await runPendingLoginEmails();
-      } catch (error) {
-        console.error('Error in login email job:', error);
-      }
-    }, 60 * 1000);
-
-    // Active RACM assignment emails for process owners (runs every 1 minute)
-    console.log('Starting active RACM user email scheduler (runs every 1 minute)...');
-    setInterval(async () => {
-      try {
-        await runPendingRacmActiveUserEmails();
-      } catch (error) {
-        console.error('Error in active RACM user email job:', error);
-      }
-    }, 60 * 1000);
-
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
-      setTimeout(() => {
-        runPendingLoginEmails().catch((error) => {
-          console.error('Error in initial login email job:', error);
-        });
-      }, 0);
-      setTimeout(() => {
-        runPendingRacmActiveUserEmails().catch((error) => {
-          console.error('Error in initial active RACM user email job:', error);
-        });
-      }, 0);
     });
   } catch (error) {
     console.error('Server bootstrap failed. Exiting process.', error);

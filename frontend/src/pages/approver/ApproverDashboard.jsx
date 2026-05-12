@@ -20,7 +20,7 @@ import {
   getApprovalStatusBadgeSolidColors,
 } from '../../uiConstants'
 import { STORAGE_KEYS } from '../../storageKeys'
-import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
@@ -36,6 +36,7 @@ function ApproverDashboard() {
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all')
   const [filterFinancialYear, setFilterFinancialYear] = useState('all')
   const [filterUnit, setFilterUnit] = useState('all')
+  const [filterConclusion, setFilterConclusion] = useState('all')
   const [mappedUnits, setMappedUnits] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
   const showUnitContext = mappedUnits.length > 1
@@ -170,7 +171,7 @@ function ApproverDashboard() {
     return apiUrl(`/api/approver/control-forms${query ? `?${query}` : ''}`)
   }
 
-  /** Display label for approver UI ("sent for approval" => "Pending", empty => "—"). */
+  /** Display label for approver UI; keep actual statuses and only use "—" for empty values. */
   const formatStatus = (status) => {
     if (status === null || status === undefined) {
       return '—'
@@ -178,9 +179,6 @@ function ApproverDashboard() {
     const s = String(status).trim()
     if (s === '') {
       return '—'
-    }
-    if (s === 'sent for approval') {
-      return 'Pending'
     }
     return s.charAt(0).toUpperCase() + s.slice(1)
   }
@@ -200,6 +198,12 @@ function ApproverDashboard() {
     return true
   }
 
+  const formatConclusion = (value) => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return 'None'
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }
+
   const fetchForms = async () => {
     setLoading(true)
     try {
@@ -214,8 +218,8 @@ function ApproverDashboard() {
 
       if (response.ok && data.success) {
         const sortedForms = [...data.data].sort((a, b) => {
-          const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
-          const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
+          const dateA = a.sent_for_approval_timestamp ? new Date(a.sent_for_approval_timestamp).getTime() : 0
+          const dateB = b.sent_for_approval_timestamp ? new Date(b.sent_for_approval_timestamp).getTime() : 0
           return dateB - dateA // Descending order (newest first)
         })
 
@@ -266,12 +270,26 @@ function ApproverDashboard() {
       return false
     }
 
+    if (filterConclusion !== 'all' && formatConclusion(form.control_design_conclusion) !== filterConclusion) {
+      return false
+    }
+
     if (!isActive) {
       return false
     }
 
     return true
   })
+  const conclusionOptions = [...new Set(
+    (forms || []).map((form) => formatConclusion(form.control_design_conclusion))
+  )].sort((a, b) => {
+    if (a === 'None') return 1
+    if (b === 'None') return -1
+    return a.localeCompare(b)
+  })
+  const approverActionRequiredCount = (forms || []).filter((form) =>
+    String(form?.deficiency_response_status || '').trim().toLowerCase() === 'submitted_for_review'
+  ).length
   const truncatedTextSx = {
     display: 'inline-block',
     maxWidth: '100%',
@@ -306,23 +324,27 @@ function ApproverDashboard() {
 
   const APPROVER_TABLE_COL_PX = {
     idx: 72,
+    businessProcess: 200,
+    subProcess: 200,
     standardControl: 280,
     unit: 180,
-    businessProcess: 200,
     financialYear: 140,
     processOwner: 220,
+    conclusion: 160,
     approval: 120,
-    createdAt: 180,
+    sentForApprovalAt: 180,
   }
   const approverTableColWidthsOrdered = [
     APPROVER_TABLE_COL_PX.idx,
+    APPROVER_TABLE_COL_PX.businessProcess,
+    APPROVER_TABLE_COL_PX.subProcess,
     APPROVER_TABLE_COL_PX.standardControl,
     ...(showUnitContext ? [APPROVER_TABLE_COL_PX.unit] : []),
-    APPROVER_TABLE_COL_PX.businessProcess,
     APPROVER_TABLE_COL_PX.financialYear,
     APPROVER_TABLE_COL_PX.processOwner,
+    APPROVER_TABLE_COL_PX.conclusion,
     APPROVER_TABLE_COL_PX.approval,
-    APPROVER_TABLE_COL_PX.createdAt,
+    APPROVER_TABLE_COL_PX.sentForApprovalAt,
   ]
   const approverTableTotalWidthPx = approverTableColWidthsOrdered.reduce((a, b) => a + b, 0)
   /** Percentage of table width — keeps columns stable when word wrap toggles while table is width:100%. */
@@ -374,6 +396,28 @@ function ApproverDashboard() {
         pb: 4,
       }}
     >
+      {approverActionRequiredCount > 0 ? (
+        <Box
+          sx={{
+            mb: 2,
+            px: 2,
+            py: 1.25,
+            borderRadius: 2,
+            backgroundColor: '#fef3c7',
+            border: '1px solid #f59e0b',
+          }}
+        >
+          <Typography
+            variant="body2"
+            sx={{
+              color: '#92400e',
+              fontWeight: 700,
+            }}
+          >
+            Action Required - {approverActionRequiredCount} RACMs are awaiting deficiency response review
+          </Typography>
+        </Box>
+      ) : null}
       <Paper
         elevation={3}
         sx={{
@@ -494,6 +538,24 @@ function ApproverDashboard() {
                 <MenuItem value="rejected">Rejected</MenuItem>
               </Select>
             </FormControl>
+
+            <FormControl variant="outlined" sx={filterControlSx}>
+              <InputLabel id="approver-conclusion-filter-label">Conclusion</InputLabel>
+              <Select
+                labelId="approver-conclusion-filter-label"
+                id="approver-conclusion-filter"
+                value={filterConclusion}
+                label="Conclusion"
+                onChange={(e) => setFilterConclusion(e.target.value)}
+              >
+                <MenuItem value="all">All</MenuItem>
+                {conclusionOptions.map((option) => (
+                  <MenuItem key={option} value={option}>
+                    {option}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Box>
         </Box>
 
@@ -595,10 +657,42 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
+                      ...pctColSx(APPROVER_TABLE_COL_PX.businessProcess),
+                    }}
+                  >
+                    Business Process
+                  </Box>
+                  <Box
+                    component="th"
+                    sx={{
+                      px: 2.5,
+                      py: 1.5,
+                      textAlign: 'left',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: theme.palette.text.secondary,
+                      ...pctColSx(APPROVER_TABLE_COL_PX.subProcess),
+                    }}
+                  >
+                    Sub Process
+                  </Box>
+                  <Box
+                    component="th"
+                    sx={{
+                      px: 2.5,
+                      py: 1.5,
+                      textAlign: 'left',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: theme.palette.text.secondary,
                       ...pctColSx(APPROVER_TABLE_COL_PX.standardControl),
                     }}
                   >
-                    Standard Control Description
+                    Description
                   </Box>
                   {showUnitContext && (
                     <Box
@@ -618,22 +712,6 @@ function ApproverDashboard() {
                       Unit Name
                     </Box>
                   )}
-                  <Box
-                    component="th"
-                    sx={{
-                      px: 2.5,
-                      py: 1.5,
-                      textAlign: 'left',
-                      fontSize: '0.75rem',
-                      fontWeight: 500,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      color: theme.palette.text.secondary,
-                      ...pctColSx(APPROVER_TABLE_COL_PX.businessProcess),
-                    }}
-                  >
-                    Business Process
-                  </Box>
                   <Box
                     component="th"
                     sx={{
@@ -669,6 +747,22 @@ function ApproverDashboard() {
                   <Box
                     component="th"
                     sx={{
+                      px: 2.5,
+                      py: 1.5,
+                      textAlign: 'left',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: theme.palette.text.secondary,
+                      ...pctColSx(APPROVER_TABLE_COL_PX.conclusion),
+                    }}
+                  >
+                    Conclusion
+                  </Box>
+                  <Box
+                    component="th"
+                    sx={{
                       px: 3,
                       py: 1.5,
                       textAlign: 'left',
@@ -693,10 +787,10 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      ...pctColSx(APPROVER_TABLE_COL_PX.createdAt),
+                      ...pctColSx(APPROVER_TABLE_COL_PX.sentForApprovalAt),
                     }}
                   >
-                    Created At
+                    Sent for Approval on
                   </Box>
                 </Box>
               </Box>
@@ -729,6 +823,34 @@ function ApproverDashboard() {
                         }}
                       >
                         {index + 1}
+                      </Box>
+                      <Box
+                        component="td"
+                        sx={mergeDataTdSx({
+                          px: 2.5,
+                          py: 2,
+                          ...pctColSx(APPROVER_TABLE_COL_PX.businessProcess),
+                          fontSize: '0.875rem',
+                          color: theme.palette.text.primary,
+                        })}
+                      >
+                        <Box component="span" sx={dataCellTextSx}>
+                          {form.business_process || 'N/A'}
+                        </Box>
+                      </Box>
+                      <Box
+                        component="td"
+                        sx={mergeDataTdSx({
+                          px: 2.5,
+                          py: 2,
+                          ...pctColSx(APPROVER_TABLE_COL_PX.subProcess),
+                          fontSize: '0.875rem',
+                          color: theme.palette.text.primary,
+                        })}
+                      >
+                        <Box component="span" sx={dataCellTextSx}>
+                          {form.sub_process || 'N/A'}
+                        </Box>
                       </Box>
                       <Box
                         component="td"
@@ -789,20 +911,6 @@ function ApproverDashboard() {
                         sx={mergeDataTdSx({
                           px: 2.5,
                           py: 2,
-                          ...pctColSx(APPROVER_TABLE_COL_PX.businessProcess),
-                          fontSize: '0.875rem',
-                          color: theme.palette.text.primary,
-                        })}
-                      >
-                        <Box component="span" sx={dataCellTextSx}>
-                          {form.business_process || 'N/A'}
-                        </Box>
-                      </Box>
-                      <Box
-                        component="td"
-                        sx={mergeDataTdSx({
-                          px: 2.5,
-                          py: 2,
                           ...pctColSx(APPROVER_TABLE_COL_PX.financialYear),
                           fontSize: '0.875rem',
                           color: theme.palette.text.primary,
@@ -840,6 +948,20 @@ function ApproverDashboard() {
                       </Box>
                       <Box
                         component="td"
+                        sx={mergeDataTdSx({
+                          px: 2.5,
+                          py: 2,
+                          ...pctColSx(APPROVER_TABLE_COL_PX.conclusion),
+                          fontSize: '0.875rem',
+                          color: theme.palette.text.primary,
+                        })}
+                      >
+                        <Box component="span" sx={dataCellTextSx}>
+                          {formatConclusion(form.control_design_conclusion)}
+                        </Box>
+                      </Box>
+                      <Box
+                        component="td"
                         sx={{
                           px: 3,
                           py: 2,
@@ -863,14 +985,14 @@ function ApproverDashboard() {
                         sx={mergeDataTdSx({
                           px: 3,
                           py: 2,
-                          ...pctColSx(APPROVER_TABLE_COL_PX.createdAt),
+                          ...pctColSx(APPROVER_TABLE_COL_PX.sentForApprovalAt),
                           fontSize: '0.875rem',
                           color: theme.palette.text.primary,
                         })}
                       >
                         <Box component="span" sx={dataCellTextSx}>
-                          {form.created_at
-                            ? new Date(form.created_at).toLocaleDateString('en-IN', {
+                          {form.sent_for_approval_timestamp
+                            ? new Date(form.sent_for_approval_timestamp).toLocaleDateString('en-IN', {
                                 year: 'numeric',
                                 month: 'short',
                                 day: 'numeric',

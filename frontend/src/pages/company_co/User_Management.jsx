@@ -532,6 +532,14 @@ function UserManagement() {
     }
   }
 
+  const handleDownloadBulkTemplate = () => {
+    const worksheet = XLSX.utils.aoa_to_sheet([bulkUploadRequiredHeaders])
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Bulk Users Template')
+    XLSX.writeFile(workbook, 'bulk_user_upload_template.xlsx')
+    toast.success('Bulk upload template downloaded')
+  }
+
   const handleBulkUploadUsers = async () => {
     if (!bulkUploadDialog.unitId) {
       setBulkUploadDialog((prev) => ({ ...prev, error: 'Select a unit to map users' }))
@@ -1160,6 +1168,14 @@ function UserManagement() {
                   accept=".xlsx,.xls"
                   onChange={handleBulkFileChange}
                 />
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<DownloadRoundedIcon />}
+                onClick={handleDownloadBulkTemplate}
+                disabled={bulkUploadDialog.submitting}
+              >
+                Download Template
               </Button>
 
               {bulkUploadDialog.fileName && (

@@ -4,6 +4,7 @@ const { sendPendingLoginEmail } = require('../utils/login_email');
 let running = false;
 
 async function fetchPendingLoginEmailUsers(client, limit = 25) {
+  const safeLimit = Number(limit) > 0 ? Number(limit) : 25;
   const result = await client.query(
     `
       SELECT
@@ -13,14 +14,15 @@ async function fetchPendingLoginEmailUsers(client, limit = 25) {
         u.temp_password_encrypted,
         c.company_name
       FROM ifc_users u
-      LEFT JOIN companies c ON c.company_identifier = u.company_identifier
-      WHERE COALESCE(u.login_email_sent, FALSE) = FALSE
-        AND u.temp_login = 1
+      LEFT JOIN companies c
+        ON c.company_identifier = u.company_identifier
+      WHERE u.temp_login = TRUE
+        AND COALESCE(u.login_email_sent, FALSE) = FALSE
         AND NULLIF(TRIM(COALESCE(u.temp_password_encrypted, '')), '') IS NOT NULL
-      ORDER BY u.created_at ASC NULLS LAST, u.id ASC
+      ORDER BY u.created_at ASC, u.id ASC
       LIMIT $1
     `,
-    [limit]
+    [safeLimit]
   );
 
   return result.rows;

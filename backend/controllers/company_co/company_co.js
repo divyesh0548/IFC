@@ -1,7 +1,8 @@
 const crypto = require('crypto');
 const { pool } = require('../../utils/db');
+const { prisma } = require('../../lib/prisma');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
-const { encryptTempPassword } = require('../../utils/login_email');
+const { encryptTempPassword, sendUserCreationEmail } = require('../../utils/login_email');
 const { sendEmail } = require('../../utils/send_email');
 
 function normalizeEmail(email) {
@@ -44,6 +45,15 @@ function generateUnitIdentifier(unitName) {
   const randomPart = crypto.randomBytes(2).toString('hex').toUpperCase().substring(0, 4);
 
   return (namePart + randomPart).substring(0, 10);
+}
+
+async function getCompanyName(companyIdentifier) {
+  if (!companyIdentifier) return null;
+  const company = await prisma.company.findUnique({
+    where: { companyIdentifier },
+    select: { companyName: true },
+  });
+  return company?.companyName || null;
 }
 
 async function createCompanyUser(client, coordinator, payload = {}) {
@@ -143,7 +153,7 @@ async function createCompanyUser(client, coordinator, payload = {}) {
       tempPasswordHash,
       'user',
       companyIdentifier,
-      1,
+      true,
       empCode,
       empName,
       designation,
@@ -194,7 +204,7 @@ This is to formally inform you that you have been assigned as a ${safeRoleLabel}
 You are requested to take note of this assignment and proceed with your responsibilities accordingly.
 
 Regards,
-IFC Admin Team`,
+${safeCompanyName}`,
   };
 }
 
@@ -244,25 +254,31 @@ async function createUnitMappedPrivilegedUser(client, coordinator, payload = {},
   const tempPasswordHash = await hashPassword(tempPassword);
   const tempPasswordEncrypted = encryptTempPassword(tempPassword);
 
-  const userResult = await client.query(
-    `
-      INSERT INTO ifc_users (
-        email_id,
-        password,
-        role,
-        company_identifier,
-        temp_login,
-        login_email_sent,
-        temp_password_encrypted
-      )
-      VALUES ($1, $2, $3, $4, $5, FALSE, $6)
-      RETURNING id, email_id, role, company_identifier
-    `,
-    [emailId, tempPasswordHash, config.role, companyIdentifier, 1, tempPasswordEncrypted]
-  );
+  const createdUser = await prisma.ifcUser.create({
+    data: {
+      emailId,
+      password: tempPasswordHash,
+      role: config.role,
+      companyIdentifier,
+      tempLogin: true,
+      loginEmailSent: false,
+      tempPasswordEncrypted,
+    },
+    select: {
+      id: true,
+      emailId: true,
+      role: true,
+      companyIdentifier: true,
+    },
+  });
 
   return {
-    user: userResult.rows[0],
+    user: {
+      id: createdUser.id,
+      email_id: createdUser.emailId,
+      role: createdUser.role,
+      company_identifier: createdUser.companyIdentifier,
+    },
     loginEmailQueued: true,
   };
 }
@@ -533,17 +549,17 @@ async function getUnitManagement(req, res) {
     `;
 
     const [
-      currentUnitsResult,
-      approversResult,
-      coordinatorsResult,
-      unmappedRoleUsersResult,
-      unmappedCoordinatorUnitsResult,
-      unmappedApproverUnitsResult,
-      assignmentCoordinatorsResult,
-      assignmentApproversResult,
-      unitsResult,
+      currentUnitsRows,
+      approversRows,
+      coordinatorsRows,
+      unmappedRoleUsersRows,
+      unmappedCoordinatorUnitsRows,
+      unmappedApproverUnitsRows,
+      assignmentCoordinatorsRows,
+      assignmentApproversRows,
+      unitsRows,
     ] = await Promise.all([
-      pool.query(
+      prisma.$queryRawUnsafe(
         `
           SELECT id, unit_id, unit_name, unit_address
           FROM company_unit_master
@@ -551,11 +567,12 @@ async function getUnitManagement(req, res) {
             AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
           ORDER BY unit_name ASC, id ASC
         `,
-        [companyIdentifier, coordinatorEmail]
+        companyIdentifier,
+        coordinatorEmail
       ),
-      pool.query(buildDistinctPeopleQuery('approver_email_id'), [companyIdentifier]),
-      pool.query(buildDistinctPeopleQuery('coordinator_email_id'), [companyIdentifier]),
-      pool.query(
+      prisma.$queryRawUnsafe(buildDistinctPeopleQuery('approver_email_id'), companyIdentifier),
+      prisma.$queryRawUnsafe(buildDistinctPeopleQuery('coordinator_email_id'), companyIdentifier),
+      prisma.$queryRawUnsafe(
         `
           SELECT *
           FROM (
@@ -593,11 +610,11 @@ async function getUnitManagement(req, res) {
           ) unmapped_role_users
           ORDER BY role ASC, display_name ASC, email_id ASC
         `,
-        [companyIdentifier]
+        companyIdentifier
       ),
-      pool.query(buildUnmappedUnitsQuery('coordinator_email_id'), [companyIdentifier]),
-      pool.query(buildUnmappedUnitsQuery('approver_email_id'), [companyIdentifier]),
-      pool.query(
+      prisma.$queryRawUnsafe(buildUnmappedUnitsQuery('coordinator_email_id'), companyIdentifier),
+      prisma.$queryRawUnsafe(buildUnmappedUnitsQuery('approver_email_id'), companyIdentifier),
+      prisma.$queryRawUnsafe(
         `
           SELECT
             LOWER(TRIM(email_id)) AS email_id,
@@ -608,9 +625,9 @@ async function getUnitManagement(req, res) {
             AND COALESCE(TRIM(email_id), '') <> ''
           ORDER BY display_name ASC, email_id ASC
         `,
-        [companyIdentifier]
+        companyIdentifier
       ),
-      pool.query(
+      prisma.$queryRawUnsafe(
         `
           SELECT
             LOWER(TRIM(email_id)) AS email_id,
@@ -621,9 +638,9 @@ async function getUnitManagement(req, res) {
             AND COALESCE(TRIM(email_id), '') <> ''
           ORDER BY display_name ASC, email_id ASC
         `,
-        [companyIdentifier]
+        companyIdentifier
       ),
-      pool.query(
+      prisma.$queryRawUnsafe(
         `
           SELECT
             cum.id,
@@ -643,22 +660,22 @@ async function getUnitManagement(req, res) {
           WHERE cum.company_identifier = $1
           ORDER BY cum.unit_name ASC, cum.id ASC
         `,
-        [companyIdentifier]
+        companyIdentifier
       ),
     ]);
 
     return res.status(200).json({
       success: true,
       data: {
-        currentCoordinatorUnits: currentUnitsResult.rows,
-        approvers: approversResult.rows,
-        coordinators: coordinatorsResult.rows,
-        unmappedRoleUsers: unmappedRoleUsersResult.rows,
-        unmappedCoordinatorUnits: unmappedCoordinatorUnitsResult.rows,
-        unmappedApproverUnits: unmappedApproverUnitsResult.rows,
-        assignmentCoordinators: assignmentCoordinatorsResult.rows,
-        assignmentApprovers: assignmentApproversResult.rows,
-        units: unitsResult.rows,
+        currentCoordinatorUnits: currentUnitsRows,
+        approvers: approversRows,
+        coordinators: coordinatorsRows,
+        unmappedRoleUsers: unmappedRoleUsersRows,
+        unmappedCoordinatorUnits: unmappedCoordinatorUnitsRows,
+        unmappedApproverUnits: unmappedApproverUnitsRows,
+        assignmentCoordinators: assignmentCoordinatorsRows,
+        assignmentApprovers: assignmentApproversRows,
+        units: unitsRows,
       },
     });
   } catch (error) {
@@ -1017,21 +1034,143 @@ async function createUser(req, res) {
   } = req.body;
   const coordinator = req.user;
 
-  const client = await pool.connect();
-
   try {
-    await client.query('BEGIN');
-    const { user: newUser, loginEmailQueued } = await createCompanyUser(client, coordinator, {
-      email_id,
-      emp_code,
-      emp_name,
-      designation,
-      department,
-      mobile,
-      unit_id,
+    const emailId = normalizeEmail(email_id);
+    const empCode = String(emp_code || '').trim() || null;
+    const empName = String(emp_name || '').trim() || null;
+    const userDesignation = String(designation || '').trim() || null;
+    const userDepartment = String(department || '').trim() || null;
+    const userMobile = String(mobile || '').trim() || null;
+    const unitId = String(unit_id || '').trim() || null;
+    const companyIdentifier = coordinator.company_identifier || null;
+
+    if (!emailId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email ID is required',
+      });
+    }
+
+    if (!isValidEmail(emailId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format',
+      });
+    }
+
+    if (userMobile && !/^[0-9]{10}$/.test(userMobile)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mobile number must be 10 digits',
+      });
+    }
+
+    if (unitId && !companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is required',
+      });
+    }
+
+    getPasswordPepper();
+    const companyName = await getCompanyName(companyIdentifier);
+    const coordinatorName = String(coordinator.emp_name || '').trim() || 'Company Coordinator';
+
+    const { user: newUser, loginEmailQueued, tempPassword, empName: createdEmpName } = await prisma.$transaction(async (tx) => {
+      if (unitId) {
+        const assignedUnit = await tx.companyUnitMaster.findFirst({
+          where: {
+            companyIdentifier,
+            unitId,
+            coordinatorEmailId: {
+              equals: normalizeEmail(coordinator.email_id),
+              mode: 'insensitive',
+            },
+          },
+          select: { unitId: true },
+        });
+
+        if (!assignedUnit) {
+          const error = new Error('Selected unit is not mapped with this company coordinator');
+          error.statusCode = 403;
+          throw error;
+        }
+      }
+
+      const existingUser = await tx.ifcUser.findFirst({
+        where: {
+          emailId: {
+            equals: emailId,
+            mode: 'insensitive',
+          },
+        },
+        select: { id: true },
+      });
+
+      if (existingUser) {
+        const error = new Error('User with this email already exists');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const tempPassword = crypto.randomBytes(8).toString('hex');
+      const tempPasswordHash = await hashPassword(tempPassword);
+      const tempPasswordEncrypted = encryptTempPassword(tempPassword);
+
+      const createdUser = await tx.ifcUser.create({
+        data: {
+          emailId,
+          password: tempPasswordHash,
+          role: 'user',
+          companyIdentifier,
+          tempLogin: true,
+          empCode,
+          empName,
+          designation: userDesignation,
+          department: userDepartment,
+          mobile: userMobile,
+          unitId,
+          loginEmailSent: false,
+          tempPasswordEncrypted,
+        },
+        select: {
+          id: true,
+          emailId: true,
+          companyIdentifier: true,
+          unitId: true,
+        },
+      });
+
+      return {
+        user: {
+          id: createdUser.id,
+          email_id: createdUser.emailId,
+          company_identifier: createdUser.companyIdentifier,
+          unit_id: createdUser.unitId,
+        },
+        loginEmailQueued: true,
+        tempPassword,
+        empName,
+      };
     });
 
-    await client.query('COMMIT');
+    try {
+      const emailSent = await sendUserCreationEmail(pool, {
+        userId: newUser.id,
+        emailId: newUser.email_id,
+        userName: createdEmpName,
+        coordinatorName,
+        coordinatorEmail: coordinator.email_id,
+        companyName,
+        tempPassword,
+      });
+      if (!emailSent) {
+        console.warn(`Warning: failed to send user creation email to ${newUser.email_id}`);
+      }
+    } catch (emailError) {
+      console.error('User creation email error:', emailError);
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     return res.status(201).json({
@@ -1046,7 +1185,6 @@ async function createUser(req, res) {
       loginEmailQueued,
     });
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Error creating user:', error);
 
     if (error.statusCode) {
@@ -1056,7 +1194,7 @@ async function createUser(req, res) {
       });
     }
 
-    if (error.code === '23505') {
+    if (error.code === '23505' || error.code === 'P2002') {
       return res.status(409).json({
         success: false,
         message: 'User with this email already exists',
@@ -1067,8 +1205,6 @@ async function createUser(req, res) {
       success: false,
       message: 'Internal server error',
     });
-  } finally {
-    client.release();
   }
 }
 
@@ -1170,36 +1306,48 @@ async function createUsersBulk(req, res) {
     });
   }
 
-  const client = await pool.connect();
-
   try {
-    await client.query('BEGIN');
-
-    if (selectedUnitId) {
-      const assignedUnitResult = await client.query(
-        `
-          SELECT unit_id
-          FROM company_unit_master
-          WHERE company_identifier = $1
-            AND unit_id = $2
-            AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $3
-          LIMIT 1
-        `,
-        [companyIdentifier, selectedUnitId, normalizeEmail(coordinator.email_id)]
-      );
-
-      if (assignedUnitResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({
-          success: false,
-          message: 'Selected unit is not mapped with this company coordinator',
-        });
-      }
-    }
-
     const createdUsers = [];
     const skippedEmails = [];
     const duplicateRows = [];
+    getPasswordPepper();
+    const companyName = await getCompanyName(companyIdentifier);
+    const coordinatorName = String(coordinator.emp_name || '').trim() || 'Company Coordinator';
+
+    const coordinatorEmail = normalizeEmail(coordinator.email_id);
+    if (selectedUnitId) {
+      const assignedUnit = await prisma.companyUnitMaster.findFirst({
+        where: {
+          companyIdentifier,
+          unitId: selectedUnitId,
+          coordinatorEmailId: {
+            equals: coordinatorEmail,
+            mode: 'insensitive',
+          },
+        },
+        select: { unitId: true },
+      });
+
+      if (!assignedUnit) {
+        const error = new Error('Selected unit is not mapped with this company coordinator');
+        error.statusCode = 403;
+        throw error;
+      }
+    }
+
+    const targetEmails = [...new Set(rowsToCreate.map((item) => normalizeEmail(item.payload?.email_id)).filter(Boolean))];
+    const existingUsers = await prisma.ifcUser.findMany({
+      where: {
+        OR: targetEmails.map((emailId) => ({
+          emailId: {
+            equals: emailId,
+            mode: 'insensitive',
+          },
+        })),
+      },
+      select: { emailId: true },
+    });
+    const existingEmailSet = new Set(existingUsers.map((u) => normalizeEmail(u.emailId)));
 
     for (const item of rowsToCreate) {
       if (requestAborted) {
@@ -1208,17 +1356,69 @@ async function createUsersBulk(req, res) {
         throw abortError;
       }
 
+      const emailId = normalizeEmail(item.payload?.email_id);
+      const mobileValue = String(item.payload?.mobile || '').trim() || null;
+
+      if (mobileValue && !/^[0-9]{10}$/.test(mobileValue)) {
+        const error = new Error('Mobile number must be 10 digits');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (existingEmailSet.has(emailId)) {
+        const duplicateEmail = normalizeEmail(item.payload?.email_id);
+        skippedEmails.push(duplicateEmail);
+        if (item.rowNumber != null) {
+          duplicateRows.push({
+            rowNumber: item.rowNumber,
+            email_id: duplicateEmail,
+            reason: 'User already exists',
+          });
+        }
+        continue;
+      }
+
+      const tempPassword = crypto.randomBytes(8).toString('hex');
+      const tempPasswordHash = await hashPassword(tempPassword);
+      const tempPasswordEncrypted = encryptTempPassword(tempPassword);
+
       try {
-        const { user, loginEmailQueued } = await createCompanyUser(client, coordinator, item.payload);
-        createdUsers.push({
-          id: user.id,
-          email_id: user.email_id,
-          company_identifier: user.company_identifier,
-          unit_id: user.unit_id,
-          loginEmailQueued,
+        const createdUser = await prisma.ifcUser.create({
+          data: {
+            emailId,
+            password: tempPasswordHash,
+            role: 'user',
+            companyIdentifier,
+            tempLogin: true,
+            empCode: null,
+            empName: item.payload?.emp_name || null,
+            designation: item.payload?.designation || null,
+            department: item.payload?.department || null,
+            mobile: mobileValue,
+            unitId: item.payload?.unit_id || null,
+            loginEmailSent: false,
+            tempPasswordEncrypted,
+          },
+          select: {
+            id: true,
+            emailId: true,
+            companyIdentifier: true,
+            unitId: true,
+          },
         });
-      } catch (error) {
-        if (error.statusCode === 409) {
+
+        existingEmailSet.add(emailId);
+        createdUsers.push({
+          id: createdUser.id,
+          email_id: createdUser.emailId,
+          company_identifier: createdUser.companyIdentifier,
+          unit_id: createdUser.unitId,
+          loginEmailQueued: true,
+          tempPassword,
+          emp_name: item.payload?.emp_name || null,
+        });
+      } catch (createError) {
+        if (createError.code === 'P2002') {
           const duplicateEmail = normalizeEmail(item.payload?.email_id);
           skippedEmails.push(duplicateEmail);
           if (item.rowNumber != null) {
@@ -1228,24 +1428,41 @@ async function createUsersBulk(req, res) {
               reason: 'User already exists',
             });
           }
+          existingEmailSet.add(emailId);
           continue;
         }
-        throw error;
+        throw createError;
       }
     }
 
-    await client.query('COMMIT');
+    for (const createdUser of createdUsers) {
+      try {
+        const emailSent = await sendUserCreationEmail(pool, {
+          userId: createdUser.id,
+          emailId: createdUser.email_id,
+          userName: createdUser.emp_name,
+          coordinatorName,
+          coordinatorEmail: coordinator.email_id,
+          companyName,
+          tempPassword: createdUser.tempPassword,
+        });
+        if (!emailSent) {
+          console.warn(`Warning: failed to send user creation email to ${createdUser.email_id}`);
+        }
+      } catch (emailError) {
+        console.error(`User creation email error for ${createdUser.email_id}:`, emailError);
+      }
+    }
 
     return res.status(201).json({
       success: true,
       message: `Created ${createdUsers.length} user(s) successfully`,
-      createdUsers,
+      createdUsers: createdUsers.map(({ tempPassword: _tempPassword, emp_name: _empName, ...rest }) => rest),
       skippedEmails,
       invalidEmails: [...invalidEmails, ...invalidRowEmails],
       skippedRows: [...skippedRows, ...duplicateRows],
     });
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Error creating users in bulk:', error);
 
     if (error.statusCode === 499) {
@@ -1272,7 +1489,6 @@ async function createUsersBulk(req, res) {
   } finally {
     req.off('aborted', markRequestAborted);
     req.off('close', markRequestAborted);
-    client.release();
   }
 }
 
@@ -1306,51 +1522,53 @@ async function deleteUsers(req, res) {
     });
   }
 
-  const client = await pool.connect();
-
   try {
-    await client.query('BEGIN');
+    const coordinatorUnits = await prisma.companyUnitMaster.findMany({
+      where: {
+        companyIdentifier,
+        coordinatorEmailId: {
+          equals: normalizeEmail(coordinator.email_id),
+          mode: 'insensitive',
+        },
+      },
+      select: { unitId: true },
+    });
 
-    const coordinatorUnitsResult = await client.query(
-      `
-        SELECT unit_id
-        FROM company_unit_master
-        WHERE company_identifier = $1
-          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
-      `,
-      [companyIdentifier, normalizeEmail(coordinator.email_id)]
-    );
-
-    const mappedUnitIds = coordinatorUnitsResult.rows
-      .map((row) => (row.unit_id == null ? '' : String(row.unit_id).trim()))
+    const mappedUnitIds = coordinatorUnits
+      .map((row) => (row.unitId == null ? '' : String(row.unitId).trim()))
       .filter(Boolean);
 
     if (mappedUnitIds.length === 0) {
-      await client.query('ROLLBACK');
       return res.status(403).json({
         success: false,
         message: 'You are not mapped to any unit, so you cannot delete users',
       });
     }
 
-    const usersToDeleteResult = await client.query(
-      `
-        SELECT
-          LOWER(TRIM(email_id)) AS email_id,
-          unit_id
-        FROM ifc_users
-        WHERE company_identifier = $1
-          AND role = 'user'
-          AND LOWER(TRIM(email_id)) = ANY($2::text[])
-        FOR UPDATE
-      `,
-      [companyIdentifier, normalizedEmails]
-    );
+    const candidateUsers = await prisma.ifcUser.findMany({
+      where: {
+        companyIdentifier,
+        role: 'user',
+      },
+      select: {
+        id: true,
+        emailId: true,
+        unitId: true,
+      },
+    });
 
-    const foundEmails = new Set(usersToDeleteResult.rows.map((row) => row.email_id));
+    const emailSet = new Set(normalizedEmails);
+    const usersToDelete = candidateUsers
+      .map((row) => ({
+        id: row.id,
+        email_id: normalizeEmail(row.emailId),
+        unit_id: row.unitId,
+      }))
+      .filter((row) => emailSet.has(row.email_id));
+
+    const foundEmails = new Set(usersToDelete.map((row) => row.email_id));
     const missingEmails = normalizedEmails.filter((emailId) => !foundEmails.has(emailId));
     if (missingEmails.length > 0) {
-      await client.query('ROLLBACK');
       return res.status(404).json({
         success: false,
         message: 'One or more selected users were not found for this company',
@@ -1359,13 +1577,12 @@ async function deleteUsers(req, res) {
     }
 
     const mappedUnitSet = new Set(mappedUnitIds);
-    const unauthorizedUsers = usersToDeleteResult.rows.filter((row) => {
+    const unauthorizedUsers = usersToDelete.filter((row) => {
       const userUnitId = row.unit_id == null ? '' : String(row.unit_id).trim();
       return !userUnitId || !mappedUnitSet.has(userUnitId);
     });
 
     if (unauthorizedUsers.length > 0) {
-      await client.query('ROLLBACK');
       return res.status(403).json({
         success: false,
         message: "You can't delete users from other units",
@@ -1373,51 +1590,48 @@ async function deleteUsers(req, res) {
       });
     }
 
-    const deactivatedRacmsQuery = `
-      UPDATE control_forms
-      SET control_owner = NULL,
-          active = '0'
-      WHERE company_identifier = $1
-        AND LOWER(TRIM(control_owner)) = ANY($2::text[])
-        AND unit_id = ANY($3::text[])
-    `;
+    const authorizedUserIds = usersToDelete.map((row) => row.id);
+    const authorizedEmails = usersToDelete.map((row) => row.email_id);
 
-    const deactivatedRacmsResult = await client.query(
-      deactivatedRacmsQuery,
-      [companyIdentifier, normalizedEmails, mappedUnitIds]
-    );
+    const [deactivatedRacmsCount, deletedUsersCount] = await prisma.$transaction(async (tx) => {
+      const deactivatedCount = await tx.$executeRawUnsafe(
+        `
+          UPDATE control_forms
+          SET control_owner = NULL,
+              active = FALSE,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE company_identifier = $1
+            AND LOWER(TRIM(control_owner)) = ANY($2::text[])
+            AND unit_id = ANY($3::text[])
+        `,
+        companyIdentifier,
+        authorizedEmails,
+        mappedUnitIds
+      );
 
-    const deletedUsersQuery = `
-      DELETE FROM ifc_users
-      WHERE company_identifier = $1
-        AND role = 'user'
-        AND LOWER(TRIM(email_id)) = ANY($2::text[])
-        AND unit_id = ANY($3::text[])
-      RETURNING email_id
-    `;
+      const deletedUsers = await tx.ifcUser.deleteMany({
+        where: {
+          id: {
+            in: authorizedUserIds,
+          },
+        },
+      });
 
-    const deletedUsersResult = await client.query(
-      deletedUsersQuery,
-      [companyIdentifier, normalizedEmails, mappedUnitIds]
-    );
-
-    await client.query('COMMIT');
+      return [deactivatedCount, deletedUsers.count];
+    });
 
     return res.status(200).json({
       success: true,
-      message: `Deleted ${deletedUsersResult.rowCount} user(s) successfully`,
-      deleted_users: deletedUsersResult.rows.map((row) => row.email_id),
-      deactivated_racms: deactivatedRacmsResult.rowCount,
+      message: `Deleted ${deletedUsersCount} user(s) successfully`,
+      deleted_users: authorizedEmails,
+      deactivated_racms: deactivatedRacmsCount,
     });
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Error deleting users:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to delete user(s)',
     });
-  } finally {
-    client.release();
   }
 }
 
@@ -1569,7 +1783,17 @@ async function getRacmAuditLogs(req, res) {
 
     const result = await pool.query(
       `
-      SELECT id, timestamp, action, user_email_id, form_id, ref_data
+      SELECT
+        id,
+        timestamp,
+        TO_CHAR(
+          timezone('Asia/Kolkata', timestamp AT TIME ZONE 'UTC'),
+          'DD/MM/YYYY HH24:MI:SS'
+        ) AS timestamp_ist,
+        action,
+        user_email_id,
+        form_id,
+        ref_data
       FROM audit_logs_racm
       WHERE form_id = $1
       ORDER BY timestamp ASC NULLS LAST, id ASC

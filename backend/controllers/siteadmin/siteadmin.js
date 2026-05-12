@@ -1,9 +1,9 @@
 const crypto = require('crypto');
 const { pool } = require('../../utils/db');
+const { prisma } = require('../../lib/prisma');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
 const { encryptTempPassword } = require('../../utils/login_email');
 const { deleteFileFromS3 } = require('../../utils/s3Upload');
-const { getControlFormDocumentRows } = require('../../utils/racm_documents');
 
 // Helper function to generate company identifier
 function generateCompanyIdentifier(companyName) {
@@ -69,7 +69,7 @@ function normalizeBusinessProcessValue(value) {
   return String(value || '').trim();
 }
 
-async function createBusinessProcess(client, payload = {}) {
+async function createBusinessProcess(payload = {}) {
   const businessProcess = normalizeBusinessProcessValue(payload.business_process);
   const businessProcessCode = normalizeBusinessProcessValue(payload.business_process_code);
 
@@ -85,26 +85,35 @@ async function createBusinessProcess(client, payload = {}) {
     throw error;
   }
 
-  const duplicateResult = await client.query(
-    `
-      SELECT
-        id,
-        TRIM(business_process) AS business_process,
-        TRIM(business_process_code) AS business_process_code
-      FROM businees_process_code
-      WHERE LOWER(TRIM(business_process)) = LOWER(TRIM($1))
-         OR LOWER(TRIM(business_process_code)) = LOWER(TRIM($2))
-      LIMIT 1
-    `,
-    [businessProcess, businessProcessCode]
-  );
+  const existing = await prisma.busineesProcessCode.findFirst({
+    where: {
+      OR: [
+        {
+          businessProcess: {
+            equals: businessProcess,
+            mode: 'insensitive',
+          },
+        },
+        {
+          businessProcessCode: {
+            equals: businessProcessCode,
+            mode: 'insensitive',
+          },
+        },
+      ],
+    },
+    select: {
+      id: true,
+      businessProcess: true,
+      businessProcessCode: true,
+    },
+  });
 
-  if (duplicateResult.rows.length > 0) {
-    const existing = duplicateResult.rows[0];
+  if (existing) {
     const sameProcess =
-      normalizeBusinessProcessValue(existing.business_process).toLowerCase() === businessProcess.toLowerCase();
+      normalizeBusinessProcessValue(existing.businessProcess).toLowerCase() === businessProcess.toLowerCase();
     const sameCode =
-      normalizeBusinessProcessValue(existing.business_process_code).toLowerCase() === businessProcessCode.toLowerCase();
+      normalizeBusinessProcessValue(existing.businessProcessCode).toLowerCase() === businessProcessCode.toLowerCase();
 
     const error = new Error(
       sameProcess
@@ -117,20 +126,25 @@ async function createBusinessProcess(client, payload = {}) {
     throw error;
   }
 
-  const insertResult = await client.query(
-    `
-      INSERT INTO businees_process_code (business_process, business_process_code)
-      VALUES ($1, $2)
-      RETURNING
-        id,
-        TRIM(business_process) AS business_process,
-        TRIM(business_process_code) AS business_process_code,
-        created_at
-    `,
-    [businessProcess, businessProcessCode]
-  );
+  const created = await prisma.busineesProcessCode.create({
+    data: {
+      businessProcess,
+      businessProcessCode,
+    },
+    select: {
+      id: true,
+      businessProcess: true,
+      businessProcessCode: true,
+      createdAt: true,
+    },
+  });
 
-  return insertResult.rows[0];
+  return {
+    id: created.id,
+    business_process: created.businessProcess,
+    business_process_code: created.businessProcessCode,
+    created_at: created.createdAt,
+  };
 }
 
 // Get all companies API endpoint
@@ -265,121 +279,124 @@ async function createCompany(req, res) {
   }
   const coordinatorUnitIndexSet = new Set(coordinatorUnitIndexes);
 
-  const client = await pool.connect();
-
   try {
     getPasswordPepper();
-    await client.query('BEGIN');
 
     // Generate company identifier
     const company_identifier = generateCompanyIdentifier(company_name);
 
-    // Insert company into companies table
-    const insertCompanyQuery = `
-      INSERT INTO companies (
-        company_identifier, company_name, registered_email, registered_address,
-        unique_identification_number, gst, pan, number_of_corporate_offices,
-        number_of_factory_units
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING id, company_identifier;
-    `;
+    const tempPassword = crypto.randomBytes(8).toString('hex');
+    const tempPasswordHash = await hashPassword(tempPassword);
+    const tempPasswordEncrypted = encryptTempPassword(tempPassword);
 
-    const companyResult = await client.query(insertCompanyQuery, [
-      company_identifier,
-      company_name,
-      registered_email,
-      registered_address,
-      unique_identification_number,
-      gst,
-      pan,
-      number_of_corporate_offices,
-      number_of_factory_units
-    ]);
+    const { company, companyUnits } = await prisma.$transaction(async (tx) => {
+      const createdCompany = await tx.company.create({
+        data: {
+          companyIdentifier: company_identifier,
+          companyName: company_name,
+          registeredEmail: registered_email,
+          registeredAddress: registered_address,
+          uniqueIdentificationNumber: unique_identification_number,
+          gst,
+          pan,
+          numberOfCorporateOffices: number_of_corporate_offices,
+          numberOfFactoryUnits: number_of_factory_units,
+          createdAt: new Date(),
+        },
+        select: {
+          id: true,
+          companyIdentifier: true,
+        },
+      });
 
-    const company = companyResult.rows[0];
+      const createdUnits = [];
+      for (const [index, unit] of normalizedCompanyUnits.entries()) {
+        let insertedUnit = null;
+        let attempts = 0;
 
-    const insertUnitQuery = `
-      INSERT INTO company_unit_master (
-        company_identifier, unit_name, unit_address, unit_id, coordinator_email_id
-      )
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, unit_id, unit_name, unit_address, coordinator_email_id;
-    `;
-    const companyUnits = [];
-    for (const [index, unit] of normalizedCompanyUnits.entries()) {
-      let insertedUnit = null;
-      let attempts = 0;
+        while (!insertedUnit && attempts < 5) {
+          attempts += 1;
+          const unitId = generateUnitIdentifier(unit.unit_name);
 
-      while (!insertedUnit && attempts < 5) {
-        attempts += 1;
-        const unitId = generateUnitIdentifier(unit.unit_name);
-
-        try {
-          const unitResult = await client.query(insertUnitQuery, [
-            company_identifier,
-            unit.unit_name,
-            unit.unit_address || null,
-            unitId,
-            coordinatorUnitIndexSet.has(index) ? coordinatorEmail : null
-          ]);
-          insertedUnit = unitResult.rows[0];
-        } catch (unitError) {
-          if (unitError.code === '23505' && attempts < 5) {
-            continue;
+          try {
+            insertedUnit = await tx.companyUnitMaster.create({
+              data: {
+                companyIdentifier: company_identifier,
+                unitName: unit.unit_name,
+                unitAddress: unit.unit_address || null,
+                unitId,
+                coordinatorEmailId: coordinatorUnitIndexSet.has(index) ? coordinatorEmail : null,
+              },
+              select: {
+                id: true,
+                unitId: true,
+                unitName: true,
+                unitAddress: true,
+                coordinatorEmailId: true,
+              },
+            });
+          } catch (unitError) {
+            const uniqueViolation =
+              unitError?.code === 'P2002' ||
+              String(unitError?.meta?.target || '').includes('unit_id');
+            if (uniqueViolation && attempts < 5) {
+              continue;
+            }
+            throw unitError;
           }
-          throw unitError;
+        }
+
+        createdUnits.push({
+          id: insertedUnit.id,
+          unit_id: insertedUnit.unitId,
+          unit_name: insertedUnit.unitName,
+          unit_address: insertedUnit.unitAddress,
+          coordinator_email_id: insertedUnit.coordinatorEmailId,
+        });
+      }
+
+      if (coordinatorEmail) {
+        const existingUser = await tx.ifcUser.findFirst({
+          where: {
+            emailId: {
+              equals: coordinatorEmail,
+              mode: 'insensitive',
+            },
+          },
+          select: { id: true },
+        });
+
+        if (existingUser) {
+          await tx.ifcUser.update({
+            where: { id: existingUser.id },
+            data: { companyIdentifier: company_identifier },
+          });
+        } else {
+          await tx.ifcUser.create({
+            data: {
+              emailId: coordinatorEmail,
+              password: tempPasswordHash,
+              role: 'company_co',
+              companyIdentifier: company_identifier,
+              tempLogin: true,
+              loginEmailSent: false,
+              tempPasswordEncrypted,
+            },
+          });
         }
       }
 
-      companyUnits.push(insertedUnit);
-    }
-
-    // If company coordinator email is provided, create/update user in ifc_users table
-    if (coordinatorEmail) {
-      // Check if user already exists
-      const checkUserQuery = 'SELECT * FROM ifc_users WHERE email_id = $1';
-      const userCheck = await client.query(checkUserQuery, [coordinatorEmail]);
-
-      if (userCheck.rows.length > 0) {
-        // Update existing user with company_identifier
-        const updateUserQuery = `
-          UPDATE ifc_users
-          SET company_identifier = $1
-          WHERE email_id = $2
-        `;
-        await client.query(updateUserQuery, [company_identifier, coordinatorEmail]);
-      } else {
-        // Create new user with company_identifier
-        // Generate a temporary password (user will need to reset it)
-        const tempPassword = crypto.randomBytes(8).toString('hex');
-        const tempPasswordHash = await hashPassword(tempPassword);
-        const tempPasswordEncrypted = encryptTempPassword(tempPassword);
-
-        const insertUserQuery = `
-          INSERT INTO ifc_users (
-            email_id,
-            password,
-            role,
-            company_identifier,
-            temp_login,
-            login_email_sent,
-            temp_password_encrypted
-          )
-          VALUES ($1, $2, $3, $4, $5, FALSE, $6)
-        `;
-        await client.query(insertUserQuery, [
-          coordinatorEmail,
-          tempPasswordHash,
-          'company_co',
-          company_identifier,
-          1, // Set temp_login to 1 to force password update on first login
-          tempPasswordEncrypted
-        ]);
-      }
-    }
-
-    await client.query('COMMIT');
+      return {
+        company: {
+          id: createdCompany.id,
+          company_identifier: createdCompany.companyIdentifier,
+        },
+        companyUnits: createdUnits,
+      };
+    }, {
+      maxWait: 10000,
+      timeout: 30000,
+    });
 
     res.status(201).json({
       success: true,
@@ -393,11 +410,10 @@ async function createCompany(req, res) {
     });
 
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Error creating company:', error);
 
-    if (error.code === '23505') { // Unique constraint violation
-      if (String(error.constraint || '').includes('company_unit_master')) {
+    if (error.code === 'P2002') {
+      if (String(error.meta?.target || '').includes('unit_id')) {
         return res.status(409).json({
           success: false,
           message: 'Company unit identifier already exists. Please try again.'
@@ -414,8 +430,6 @@ async function createCompany(req, res) {
       success: false,
       message: 'Internal server error'
     });
-  } finally {
-    client.release();
   }
 }
 
@@ -432,30 +446,25 @@ async function deleteCompany(req, res) {
     });
   }
 
-  const client = await pool.connect();
-
   try {
-    await client.query('BEGIN');
+    const existingCompany = await prisma.company.findFirst({
+      where: { companyIdentifier: company_identifier },
+      select: { id: true, companyIdentifier: true, companyName: true },
+    });
 
-    const companyResult = await client.query(
-      'SELECT id, company_identifier, company_name FROM companies WHERE company_identifier = $1 LIMIT 1',
-      [company_identifier]
-    );
-
-    if (companyResult.rows.length === 0) {
-      await client.query('ROLLBACK');
+    if (!existingCompany) {
       return res.status(404).json({
         success: false,
         message: 'Company not found'
       });
     }
 
-    const formsResult = await client.query(
-      'SELECT form_id FROM control_forms WHERE company_identifier = $1',
-      [company_identifier]
-    );
-    const formIds = formsResult.rows
-      .map((row) => (row.form_id == null ? '' : String(row.form_id).trim()))
+    const formRows = await prisma.controlForm.findMany({
+      where: { companyIdentifier: company_identifier },
+      select: { formId: true },
+    });
+    const formIds = formRows
+      .map((row) => (row.formId == null ? '' : String(row.formId).trim()))
       .filter(Boolean);
 
     let deletedS3Objects = 0;
@@ -464,14 +473,25 @@ async function deleteCompany(req, res) {
     let deletedRacmRows = 0;
 
     if (deleteRacms && formIds.length > 0) {
-      const { sampleDocsByFormId, userDocsByFormId } = await getControlFormDocumentRows(client, formIds);
+      const [sampleDocs, userDocs] = await Promise.all([
+        prisma.sampleDoc.findMany({
+          where: { formId: { in: formIds } },
+          select: { formId: true, sampleDoc: true },
+          orderBy: { id: 'asc' },
+        }),
+        prisma.docUploadedByUser.findMany({
+          where: { formId: { in: formIds } },
+          select: { formId: true, docUploadedByUser: true },
+          orderBy: { id: 'asc' },
+        }),
+      ]);
+
       const docUrlsToDelete = Array.from(
         new Set(
-          formIds
-            .flatMap((formId) => [
-              ...(userDocsByFormId.get(formId) || []).map((doc) => doc.doc_uploaded_by_user),
-              ...(sampleDocsByFormId.get(formId) || []).map((doc) => doc.sample_doc),
-            ])
+          [
+            ...userDocs.map((doc) => doc.docUploadedByUser),
+            ...sampleDocs.map((doc) => doc.sampleDoc),
+          ]
             .map((value) => (value == null ? '' : String(value).trim()))
             .filter(Boolean)
         )
@@ -486,52 +506,65 @@ async function deleteCompany(req, res) {
         }
       }
 
-      const deletedUserDocsResult = await client.query(
-        'DELETE FROM doc_uploaded_by_user WHERE form_id = ANY($1::text[])',
-        [formIds]
-      );
-      deletedUserDocRows = deletedUserDocsResult.rowCount;
+      const racmDeleteCounts = await prisma.$transaction(async (tx) => {
+        const deletedUserDocsResult = await tx.docUploadedByUser.deleteMany({
+          where: { formId: { in: formIds } },
+        });
+        const deletedSampleDocsResult = await tx.sampleDoc.deleteMany({
+          where: { formId: { in: formIds } },
+        });
+        const deletedRacmsResult = await tx.controlForm.deleteMany({
+          where: { companyIdentifier: company_identifier },
+        });
 
-      const deletedSampleDocsResult = await client.query(
-        'DELETE FROM sample_docs WHERE form_id = ANY($1::text[])',
-        [formIds]
-      );
-      deletedSampleDocRows = deletedSampleDocsResult.rowCount;
+        return {
+          deletedUserDocRows: deletedUserDocsResult.count,
+          deletedSampleDocRows: deletedSampleDocsResult.count,
+          deletedRacmRows: deletedRacmsResult.count,
+        };
+      });
 
-      const deletedRacmsResult = await client.query(
-        'DELETE FROM control_forms WHERE company_identifier = $1',
-        [company_identifier]
-      );
-      deletedRacmRows = deletedRacmsResult.rowCount;
+      deletedUserDocRows = racmDeleteCounts.deletedUserDocRows;
+      deletedSampleDocRows = racmDeleteCounts.deletedSampleDocRows;
+      deletedRacmRows = racmDeleteCounts.deletedRacmRows;
     }
-
-    const deletedUnitResult = await client.query(
-      'DELETE FROM company_unit_master WHERE company_identifier = $1',
-      [company_identifier]
-    );
 
     let deletedUserRows = 0;
     let detachedUserRows = 0;
-    if (deleteUsers) {
-      const deletedUsersResult = await client.query(
-        'DELETE FROM ifc_users WHERE company_identifier = $1',
-        [company_identifier]
-      );
-      deletedUserRows = deletedUsersResult.rowCount;
-    } else {
-      const detachedUsersResult = await client.query(
-        'UPDATE ifc_users SET company_identifier = NULL WHERE company_identifier = $1',
-        [company_identifier]
-      );
-      detachedUserRows = detachedUsersResult.rowCount;
-    }
+    const finalDeleteCounts = await prisma.$transaction(async (tx) => {
+      const deletedUnitResult = await tx.companyUnitMaster.deleteMany({
+        where: { companyIdentifier: company_identifier },
+      });
 
-    const deletedCompanyResult = await client.query(
-      'DELETE FROM companies WHERE company_identifier = $1',
-      [company_identifier]
-    );
+      let deletedUsersCount = 0;
+      let detachedUsersCount = 0;
+      if (deleteUsers) {
+        const deletedUsersResult = await tx.ifcUser.deleteMany({
+          where: { companyIdentifier: company_identifier },
+        });
+        deletedUsersCount = deletedUsersResult.count;
+      } else {
+        const detachedUsersResult = await tx.ifcUser.updateMany({
+          where: { companyIdentifier: company_identifier },
+          data: { companyIdentifier: null },
+        });
+        detachedUsersCount = detachedUsersResult.count;
+      }
 
-    await client.query('COMMIT');
+      const deletedCompanyResult = await tx.company.deleteMany({
+        where: { companyIdentifier: company_identifier },
+      });
+
+      return {
+        deletedUnitRows: deletedUnitResult.count,
+        deletedCompanyRows: deletedCompanyResult.count,
+        deletedUsersCount,
+        detachedUsersCount,
+      };
+    });
+
+    deletedUserRows = finalDeleteCounts.deletedUsersCount;
+    detachedUserRows = finalDeleteCounts.detachedUsersCount;
 
     return res.status(200).json({
       success: true,
@@ -540,8 +573,8 @@ async function deleteCompany(req, res) {
         company_identifier,
         delete_users: deleteUsers,
         delete_racms: deleteRacms,
-        deleted_company_rows: deletedCompanyResult.rowCount,
-        deleted_unit_rows: deletedUnitResult.rowCount,
+        deleted_company_rows: finalDeleteCounts.deletedCompanyRows,
+        deleted_unit_rows: finalDeleteCounts.deletedUnitRows,
         deleted_user_rows: deletedUserRows,
         detached_user_rows: detachedUserRows,
         deleted_racm_rows: deletedRacmRows,
@@ -553,14 +586,11 @@ async function deleteCompany(req, res) {
       },
     });
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Error deleting company:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error'
     });
-  } finally {
-    client.release();
   }
 }
 
@@ -639,7 +669,7 @@ async function createAuditor(req, res) {
           login_email_sent,
           temp_password_encrypted
         )
-        VALUES ($1, $2, 'auditor', 1, FALSE, $3)
+        VALUES ($1, $2, 'auditor', TRUE, FALSE, $3)
         RETURNING id, email_id, role, created_at, temp_login, login_email_sent
       `,
       [emailId, tempPasswordHash, tempPasswordEncrypted]
@@ -676,9 +706,8 @@ async function createAuditor(req, res) {
 }
 
 async function createBusinessProcessManagementEntry(req, res) {
-  const client = await pool.connect();
   try {
-    const created = await createBusinessProcess(client, req.body || {});
+    const created = await createBusinessProcess(req.body || {});
     return res.status(201).json({
       success: true,
       message: 'Business Process created successfully',
@@ -693,8 +722,6 @@ async function createBusinessProcessManagementEntry(req, res) {
       success: false,
       message: error.message || 'Failed to create business process',
     });
-  } finally {
-    client.release();
   }
 }
 

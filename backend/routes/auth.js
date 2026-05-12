@@ -184,7 +184,6 @@ router.post('/login', async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
 
-    // Log audit event for successful login
     await logAuditEvent('Logged In', user.email_id);
 
     res.status(200).json({
@@ -197,7 +196,7 @@ router.post('/login', async (req, res) => {
         company_identifier: user.company_identifier,
         emp_name: user.emp_name
       },
-      requiresPasswordUpdate: user.temp_login === 1 || user.temp_login === true
+      requiresPasswordUpdate: Boolean(user.temp_login)
     });
 
   } catch (error) {
@@ -264,7 +263,7 @@ router.get('/verify', async (req, res) => {
         company_identifier: user.company_identifier,
         emp_name: user.emp_name
       },
-      requiresPasswordUpdate: user.temp_login === 1 || user.temp_login === true
+      requiresPasswordUpdate: Boolean(user.temp_login)
     });
 
   } catch (error) {
@@ -504,7 +503,7 @@ router.post('/logout', async (req, res) => {
       }
     }
 
-    // Log audit event for logout
+    // Ensure logout audit is persisted (Prisma -> DB fallback -> file fallback).
     if (userEmail) {
       await logAuditEvent('Logged Out', userEmail);
     }
@@ -603,10 +602,10 @@ router.post('/forgot-password', async (req, res) => {
     const tempPassword = generateTempPassword();
     const tempPasswordHash = await hashPassword(tempPassword);
 
-    // Update user with temporary password and set temp_login to 1
+    // Update user with temporary password and set temp_login true (must change password)
     const updateQuery = `
       UPDATE ifc_users 
-      SET password = $1, temp_login = 1 
+      SET password = $1, temp_login = TRUE 
       WHERE email_id = $2
     `;
     await pool.query(updateQuery, [tempPasswordHash, email_id]);
@@ -695,10 +694,10 @@ router.post('/update-password', async (req, res) => {
 
     const newPasswordHash = await hashPassword(newPassword);
 
-    // Update password and set temp_login to 0
+    // Update password and clear temp_login
     const updateQuery = `
       UPDATE ifc_users 
-      SET password = $1, temp_login = 0 
+      SET password = $1, temp_login = FALSE 
       WHERE LOWER(TRIM(email_id)) = $2
       RETURNING id, email_id, role, company_identifier, emp_name, temp_login
     `;

@@ -39,7 +39,17 @@ Compensatory RACM/doc --> A textarea for explaination and document upload.
 
 Mitigation Plan --> Textarea for action plan, due date, converned person/process owner
 
-User can request Coordinator to change existing process, if change is found.
+Mapping of "Control Frequency" column is mendatory.
+Maintain a list of alternative terms for Frequency category.
+
+
+
+
+
+Ask whether to add functionality role change in the project or not.
+
+
+
 
 
 
@@ -48,4 +58,14 @@ preventive ratio
 manual semi automated
 cycle wise key control
 AI Summary
+
+
+
+
+
+
+
+
+
+
 

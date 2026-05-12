@@ -31,7 +31,7 @@ function getIsActive(value) {
 function formatApprovalStatus(status) {
   const value = String(status || '').trim()
 
-  if (!value || value.toLowerCase() === 'null' || value.toLowerCase() === 'sent for approval') {
+  if (!value || value.toLowerCase() === 'null') {
     return 'Pending'
   }
 

@@ -377,6 +377,8 @@ function UnitManagement() {
       toast.success(result.message || 'Assignment updated successfully')
       setAssignmentPerformed(true)
       setAssignmentDialog(assignmentDialogDefaults)
+      setAssignMode(false)
+      setAssignmentPerformed(false)
       await fetchUnitManagement()
     } catch (assignmentError) {
       console.error('Update unit assignment error:', assignmentError)
@@ -708,12 +710,40 @@ function UnitManagement() {
         onClose={handleCloseAssignmentDialog}
         fullWidth
         maxWidth="md"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '400px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
       >
-        <DialogTitle>
+        <DialogTitle
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 600,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
           Assign {assignmentDialog.role === 'approver' ? 'Approver' : 'Company Coordinator'}
         </DialogTitle>
-        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2.5 }}>
-          <Typography color="text.secondary">
+        <DialogContent
+          dividers
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            px: 3,
+            pt: 2.5,
+            pb: 3,
+          }}
+        >
+          <Typography color="text.secondary" sx={{ lineHeight: 1.5 }}>
             {assignmentDialog.unit?.unit_name || 'Selected unit'}
           </Typography>
           {isAssignmentOutsideMappedUnits ? (
@@ -777,8 +807,39 @@ function UnitManagement() {
           ) : null}
           {assignmentDialog.error && <Alert severity={assignmentOptions.length === 0 ? 'info' : 'error'}>{assignmentDialog.error}</Alert>}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseAssignmentDialog} disabled={assignmentDialog.submitting}>
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            pt: 2.5,
+            gap: 1.5,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Button
+            onClick={handleCloseAssignmentDialog}
+            disabled={assignmentDialog.submitting}
+            variant="outlined"
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '100px',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.23)'
+                : 'rgba(0, 0, 0, 0.23)',
+              color: theme.palette.text.primary,
+              '&:hover': {
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.3)'
+                  : 'rgba(0, 0, 0, 0.3)',
+                backgroundColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.05)'
+                  : 'rgba(0, 0, 0, 0.04)',
+              },
+            }}
+          >
             Cancel
           </Button>
           <Button
@@ -789,6 +850,13 @@ function UnitManagement() {
               assignmentOptions.length === 0 ||
               (isAssignmentOutsideMappedUnits && !assignmentDialog.confirmExternalAssignment)
             }
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '100px',
+              fontWeight: 600,
+            }}
           >
             {assignmentDialog.submitting ? 'Assigning...' : 'Assign'}
           </Button>

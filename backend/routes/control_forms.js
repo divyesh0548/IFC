@@ -4,12 +4,17 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { prisma } = require('../lib/prisma');
 const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
 const { sendEmail } = require('../utils/send_email');
 const { getCcEmailsForRacm } = require('../utils/racm_cc_recipients');
 const { decryptToken } = require('../utils/auth_utility');
 const { verifyUserAuth } = require('../modules/auth/auth.middleware');
 const { logAuditEvent, EXCEL_BULK_RACM_UPLOAD_ACTION } = require('../utils/auditLog');
+const {
+  createOrResubmitDeficiencyResponse,
+  getDeficiencyResponseByFormId,
+} = require('../utils/deficiency_response');
 const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/sample_required');
 const {
   attachControlFormDocuments,
@@ -114,6 +119,19 @@ function formatDueDateDisplay(dueDateRaw) {
   return `${getOrdinal(day)} ${monthName}, ${year}`;
 }
 
+function normalizeActiveInput(value) {
+  if (value === undefined) return undefined;
+  return value === '1' || value === 1 || value === true || String(value).trim().toLowerCase() === 'true';
+}
+
+function parseActiveFilter(value) {
+  if (value === undefined) return undefined;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1') return true;
+  if (normalized === 'false' || normalized === '0') return false;
+  return undefined;
+}
+
 function buildControlFormStatusEmail(status, businessProcess, processOwnerName, coordinatorName, coordinatorCompanyName, dueDate, formId) {
   const recipientName = processOwnerName || 'Control Owner';
   const coordinatorDisplayName = coordinatorName || 'Company Coordinator';
@@ -171,37 +189,49 @@ function buildSentForApprovalEmail({
   userDisplayName,
   formId,
   businessProcess,
-  unitName,
-  controlNumber,
   financialYear,
+  standardControlDescription,
+  subProcess,
   dueDate,
+  companyName,
 }) {
   const reviewerName = String(approverName || '').trim() || 'Approver';
   const submittedBy = String(userDisplayName || '').trim() || 'User';
-  const bp = String(businessProcess || '').trim() || 'N/A';
-  const unit = String(unitName || '').trim() || 'N/A';
-  const cn = String(controlNumber || '').trim() || 'N/A';
-  const fy = String(financialYear || '').trim() || 'N/A';
-  const dueDateText = formatDueDateDisplay(dueDate);
+  const companyDisplayName = String(companyName || '').trim() || 'Sharp and Tannan Associates';
+  const bp = String(businessProcess || '').trim();
+  const fy = String(financialYear || '').trim();
+  const controlDesc = String(standardControlDescription || '').trim();
+  const sp = String(subProcess || '').trim();
+  const dueDateText = dueDate ? formatDueDateDisplay(dueDate) : '';
   const portalUrl = process.env.VITE_FRONTEND_URL || process.env.FRONTEND_URL || '';
+  const lines = [];
+  const pushIfPresent = (label, value) => {
+    const text = String(value || '').trim();
+    if (!text) return;
+    lines.push(`${label}: ${text}`);
+  };
+  pushIfPresent('Submitted by', submittedBy);
+  pushIfPresent('Business Process', bp);
+  pushIfPresent('Financial Year', fy);
+  pushIfPresent('Control Description', controlDesc);
+  pushIfPresent('Sub-Process', sp);
+  pushIfPresent('Due Date', dueDateText);
+  const detailsBlock = lines.join('\n\n');
+  const subjectSuffix = bp || String(formId || '').trim() || 'RACM';
 
   return {
-    subject: `RACM sent for approval - ${bp}`,
+    subject: `RACM sent for approval - ${subjectSuffix}`,
     text: `Dear ${reviewerName},
 
 A RACM has been sent for approval.
 
-Submitted by: ${submittedBy}
-Financial Year: ${fy}
-Business Process: ${bp}
-Unit: ${unit}
-Control Number: ${cn}
+${detailsBlock}
 
 Please review the uploaded documents and Approve/Reject based on your judgement.
 ${portalUrl ? `\nPortal: ${portalUrl}` : ''}
 
 Regards,
-IFC System`,
+${companyDisplayName}`,
   };
 }
 
@@ -410,6 +440,172 @@ const DESIGN_IMPLEMENTATION_GROUP_FIELDS = [
   'design_deficiency_desc',
 ];
 
+const REQUEST_CHANGE_ALLOWED_FIELDS = new Set([
+  'control_number',
+  'area',
+  'sub_process',
+  'risk_description',
+  'risk_heat',
+  'standard_control_description',
+  'control_objective',
+  'whether_fraud_risks_exist',
+  'process_walkthrough',
+  'control_relies_on_ipe',
+  'audit_evidence_accuracy',
+  'ipe_reference',
+  'key_control',
+  'application_name',
+  'control_performer',
+  'control_owner',
+  'control_design_procs',
+  'control_design_conclusion',
+  'design_deficiency_desc',
+  'control_type_fo',
+  'control_type_ma',
+  'nature_of_control',
+  'sample_size',
+  'sample_required',
+  'completeness',
+  'existence_occurrence',
+  'rights_and_obligation',
+  'valuation_and_allocation',
+  'presentation_and_disclosure',
+  'due_date',
+]);
+
+const REQUEST_CHANGE_BOOLEAN_FIELDS = new Set([
+  'completeness',
+  'existence_occurrence',
+  'rights_and_obligation',
+  'valuation_and_allocation',
+  'presentation_and_disclosure',
+]);
+
+const REQUEST_CHANGE_FIELD_LABELS = {
+  control_number: 'Control Number',
+  area: 'Area',
+  sub_process: 'Sub Process',
+  risk_description: 'Risk Description',
+  risk_heat: 'Risk Heat',
+  standard_control_description: 'Standard Control Description',
+  control_objective: 'Control Objective',
+  whether_fraud_risks_exist: 'Whether Fraud Risks Exist',
+  process_walkthrough: 'Process Activity and Walkthrough Details',
+  control_relies_on_ipe: 'Does the Control Rely on IPE?',
+  audit_evidence_accuracy: 'Audit Evidence Accuracy',
+  ipe_reference: 'IPE Reference',
+  key_control: 'Key Control',
+  application_name: 'Application Name',
+  control_performer: 'Control Performer',
+  control_owner: 'Control Owner',
+  control_design_procs: 'Procedures to Evaluate Design and Implementation',
+  control_design_conclusion: 'Conclusion on Design of Control',
+  design_deficiency_desc: 'Description of Deficiency in Control Design',
+  control_type_fo: 'Type of Control (Operational/Financial)',
+  control_type_ma: 'Type of Control (Manual/Automated)',
+  nature_of_control: 'Nature of Control',
+  sample_size: 'Sample Size',
+  sample_required: 'Sample Required',
+  completeness: 'Completeness',
+  existence_occurrence: 'Existence & Occurrence',
+  rights_and_obligation: 'Rights and Obligations',
+  valuation_and_allocation: 'Valuation & Allocation',
+  presentation_and_disclosure: 'Presentation and Disclosure',
+  due_date: 'Due Date',
+};
+
+function generateChangeRequestId() {
+  const randomPart = crypto.randomBytes(4).toString('hex').toUpperCase();
+  return `CR${Date.now()}${randomPart}`.slice(0, 30);
+}
+
+function normalizeChangeRequestTextValue(fieldName, value) {
+  if (value == null) return '';
+
+  if (REQUEST_CHANGE_BOOLEAN_FIELDS.has(fieldName)) {
+    if (value === true || value === 'true' || value === '1' || value === 1) return 'true';
+    if (value === false || value === 'false' || value === '0' || value === 0) return 'false';
+    return '';
+  }
+
+  if (fieldName === 'due_date') {
+    const raw = String(value).trim();
+    if (!raw) return '';
+    return raw.length >= 10 ? raw.slice(0, 10) : raw;
+  }
+
+  return String(value).trim();
+}
+
+function getRequestChangeFieldLabel(fieldName, providedLabel) {
+  const derivedLabel = REQUEST_CHANGE_FIELD_LABELS[fieldName];
+  if (derivedLabel) return derivedLabel;
+  const safeLabel = String(providedLabel || '').trim();
+  if (safeLabel) return safeLabel;
+  return fieldName
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function quoteIdentifier(identifier) {
+  return `"${String(identifier).replace(/"/g, '""')}"`;
+}
+
+function parseApprovedChangeRequestValue(fieldName, value) {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (REQUEST_CHANGE_BOOLEAN_FIELDS.has(fieldName)) {
+    const normalized = raw.toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
+    if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
+    return null;
+  }
+
+  if (fieldName === 'due_date') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+    return raw;
+  }
+
+  return raw;
+}
+
+async function getAuthorizedControlFormForChangeRequest(clientOrPool, formId, user) {
+  const result = await clientOrPool.query(
+    `
+      SELECT form_id, company_identifier, unit_id, control_owner
+      FROM control_forms
+      WHERE form_id = $1
+      LIMIT 1
+    `,
+    [formId]
+  );
+
+  if (result.rows.length === 0) {
+    return { error: { status: 404, message: 'RACM not found' } };
+  }
+
+  const form = result.rows[0];
+  const userRole = String(user?.role || '').trim().toLowerCase();
+  const userEmail = String(user?.email_id || '').trim().toLowerCase();
+  const formOwnerEmail = String(form.control_owner || '').trim().toLowerCase();
+  const formCompanyIdentifier = String(form.company_identifier || '').trim();
+  const userCompanyIdentifier = String(user?.company_identifier || '').trim();
+
+  if (userRole === 'user' && formOwnerEmail !== userEmail) {
+    return { error: { status: 403, message: 'Access denied. You are not authorized to view this change request.' } };
+  }
+
+  if (userRole === 'company_co' && formCompanyIdentifier !== userCompanyIdentifier) {
+    return { error: { status: 403, message: 'Access denied. RACM is not assigned to this company coordinator.' } };
+  }
+
+  return { form };
+}
+
 function designImplementationGroupHasAnyValue(row) {
   if (!row || typeof row !== 'object') return false;
   return DESIGN_IMPLEMENTATION_GROUP_FIELDS.some((key) => {
@@ -438,9 +634,7 @@ function isDatabaseConnectionError(error) {
   );
 }
 
-const INACTIVE_RACM_APPROVER_MESSAGE = 'Approver of this RACM is not active';
 const MISSING_UNIT_APPROVER_MESSAGE = 'No approver is assigned for current company unit';
-const MISSING_APPROVER_USER_MESSAGE = 'Approver of this RACM does not exist';
 
 async function getControlFormApproverDetails(clientOrPool, formId) {
   const result = await clientOrPool.query(
@@ -470,23 +664,55 @@ async function getControlFormApproverDetails(clientOrPool, formId) {
   return result.rows[0] || null;
 }
 
-function isApproverTempLogin(details) {
-  return Number(details?.approver_temp_login) === 1;
-}
-
 function isApproverAssigned(details) {
   return String(details?.approver_email_id || '').trim() !== '';
 }
 
-function doesApproverUserExist(details) {
-  return details?.approver_user_id !== null && details?.approver_user_id !== undefined;
-}
-
 function getApproverSubmissionBlockMessage(details) {
   if (!isApproverAssigned(details)) return MISSING_UNIT_APPROVER_MESSAGE;
-  if (!doesApproverUserExist(details)) return MISSING_APPROVER_USER_MESSAGE;
-  if (isApproverTempLogin(details)) return INACTIVE_RACM_APPROVER_MESSAGE;
   return '';
+}
+
+function isDeficiencyResponseEditable(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  return normalized === 'rejected' || normalized === 'resubmission_required';
+}
+
+async function getAuthorizedControlFormForDeficiency(clientOrPool, formId, user) {
+  const result = await clientOrPool.query(
+    `
+      SELECT form_id, company_identifier, unit_id, control_owner, deficiency_action_status, deficiency_response_status, status
+      FROM control_forms
+      WHERE form_id = $1
+      LIMIT 1
+    `,
+    [formId]
+  );
+
+  if (result.rows.length === 0) {
+    return { error: { status: 404, message: 'RACM not found' } };
+  }
+
+  const form = result.rows[0];
+  const userRole = String(user?.role || '').trim().toLowerCase();
+  const userEmail = String(user?.email_id || '').trim().toLowerCase();
+  const formOwnerEmail = String(form.control_owner || '').trim().toLowerCase();
+  const formCompanyIdentifier = String(form.company_identifier || '').trim();
+  const userCompanyIdentifier = String(user?.company_identifier || '').trim();
+
+  if (userRole === 'user' && formOwnerEmail !== userEmail) {
+    return { error: { status: 403, message: 'Access denied. You are not authorized to update this deficiency response.' } };
+  }
+
+  if (userRole === 'company_co' && formCompanyIdentifier !== userCompanyIdentifier) {
+    return { error: { status: 403, message: 'Access denied. RACM is not assigned to this company coordinator.' } };
+  }
+
+  if (!['user', 'company_co'].includes(userRole)) {
+    return { error: { status: 403, message: 'Only process owners and company coordinators can submit deficiency responses.' } };
+  }
+
+  return { form };
 }
 
 async function queryAuthenticatedUser(emailId) {
@@ -847,6 +1073,7 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
         duplicateCount,
         errorCount,
         duplicateControlNumberSamples,
+        createdAuditEvents,
       } = importStats;
 
       if (insertedCount === 0) {
@@ -866,6 +1093,10 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
       }
 
       await client.query('COMMIT');
+
+      for (const event of createdAuditEvents || []) {
+        await logAuditEvent(event.action, event.userEmailId, event.formId);
+      }
 
       await logAuditEvent(EXCEL_BULK_RACM_UPLOAD_ACTION, coordinatorEmailId, null, null);
 
@@ -981,12 +1212,11 @@ router.get('/', verifyAuth, async (req, res) => {
     
     // Filter by active status if provided
     if (active !== undefined) {
-      if (active === 'true' || active === '1') {
-        // Active: not null, not empty, and not '0'
-        query += ` AND cf.active IS NOT NULL AND cf.active != '' AND cf.active != '0'`;
-      } else if (active === 'false' || active === '0') {
-        // Inactive: null, empty, or '0'
-        query += ` AND (cf.active IS NULL OR cf.active = '' OR cf.active = '0')`;
+      const activeFilter = parseActiveFilter(active);
+      if (activeFilter === true) {
+        query += ` AND cf.active = TRUE`;
+      } else if (activeFilter === false) {
+        query += ` AND COALESCE(cf.active, FALSE) = FALSE`;
       }
     }
     
@@ -1212,6 +1442,7 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
     
     const formData = result.rows[0];
     await attachControlFormDocuments(pool, [formData]);
+    formData.deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
     
     // Authorization check: For users with role 'user', verify they are the control_owner
     // company_co and approver roles can still access (existing behavior)
@@ -1257,42 +1488,658 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     audit_evidence_accuracy, key_control, application_name,
     control_performer, control_owner, control_design_procs,
     control_design_conclusion, design_deficiency_desc,
-    sample_size, control_type_fo, control_type_ma,
+    control_type_fo, control_type_ma,
     completeness, existence_occurrence, rights_and_obligation,
     valuation_and_allocation, presentation_and_disclosure,
     due_date, reminder_frequency,
     doc_uploaded_by_user, doc_uploaded_by_user_docs, replace_user_documents, active, status, reason_by_approver, remarks_by_user,
-    modifiedFields, // Array of modified field names from frontend
-    modifiedChanges // Array of { column_name, old_value, new_value } from frontend
+    modifiedFields,
+    modifiedChanges
   } = req.body;
 
-  const client = await pool.connect();
+  const normalizedFormId = String(form_id || '').trim();
+  const currentForm = await prisma.controlForm.findUnique({
+    where: { formId: normalizedFormId },
+  });
+  if (!currentForm) {
+    return res.status(404).json({ success: false, message: 'RACM not found' });
+  }
 
+  const currentActiveStatus = Boolean(currentForm.active);
+  const hasChangesArray = Array.isArray(modifiedChanges) && modifiedChanges.length > 0;
+  const hasFieldsArray = Array.isArray(modifiedFields) && modifiedFields.length > 0;
+  const assignmentEmail = control_owner !== undefined && control_owner !== null ? String(control_owner).trim() : '';
+  const normalizeAssignmentEmail = (value) => value == null ? '' : String(value).trim().toLowerCase();
+  const currentAssignmentEmail = normalizeAssignmentEmail(currentForm.controlOwner);
+  const nextAssignmentEmail = normalizeAssignmentEmail(control_owner);
+  const assignmentInChangesArray = hasChangesArray && modifiedChanges.some((item) => {
+    const col = item?.column_name || item?.column || item?.field;
+    return String(col || '').trim() === 'control_owner';
+  });
+  const assignmentInFieldsArray = hasFieldsArray && modifiedFields.some((col) => String(col || '').trim() === 'control_owner');
+  const isControlOwnerChanged = control_owner !== undefined && nextAssignmentEmail !== '' && nextAssignmentEmail !== currentAssignmentEmail;
+  const isAssignmentUpdate = Boolean((assignmentInChangesArray || assignmentInFieldsArray || control_owner !== undefined) && isControlOwnerChanged);
+  const isRacmAssignmentOperation = Boolean(isAssignmentUpdate && assignmentEmail);
+
+  const normalizeDateOnly = (value) => {
+    if (value == null) return '';
+    const raw = String(value).trim();
+    if (!raw) return '';
+    return raw.length >= 10 ? raw.slice(0, 10) : raw;
+  };
+  const normalizeReminderFrequency = (value) => value == null ? '' : String(value).trim().toLowerCase();
+  const dueDateChanged = due_date !== undefined && normalizeDateOnly(due_date) !== normalizeDateOnly(currentForm.dueDate);
+  const reminderFrequencyChanged = reminder_frequency !== undefined
+    && normalizeReminderFrequency(reminder_frequency) !== normalizeReminderFrequency(currentForm.reminderFrequency);
+  const dueDateInChangesArray = hasChangesArray && modifiedChanges.some((item) => {
+    const col = item?.column_name || item?.column || item?.field;
+    return String(col || '').trim() === 'due_date';
+  });
+  const reminderInChangesArray = hasChangesArray && modifiedChanges.some((item) => {
+    const col = item?.column_name || item?.column || item?.field;
+    return String(col || '').trim() === 'reminder_frequency';
+  });
+  const dueDateInFieldsArray = hasFieldsArray && modifiedFields.some((col) => String(col || '').trim() === 'due_date');
+  const reminderInFieldsArray = hasFieldsArray && modifiedFields.some((col) => String(col || '').trim() === 'reminder_frequency');
+  const isReminderSettingsUpdate = Boolean(
+    dueDateChanged || reminderFrequencyChanged || dueDateInChangesArray || reminderInChangesArray || dueDateInFieldsArray || reminderInFieldsArray
+  );
+  if (req.user?.role === 'company_co' && currentActiveStatus && (isRacmAssignmentOperation || isReminderSettingsUpdate)) {
+    return res.status(400).json({
+      success: false,
+      message: isRacmAssignmentOperation
+        ? 'RACM assignment cannot be changed once RACM is Active'
+        : 'Reminder settings cannot be changed once RACM is Active',
+    });
+  }
+
+  const parseDateOnlyInput = (value) => {
+    if (value == null) return null;
+    const s = String(value).trim();
+    if (!s) return null;
+    const datePart = s.length >= 10 ? s.slice(0, 10) : s;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return null;
+    return new Date(`${datePart}T00:00:00.000Z`);
+  };
+  const normalizeNullableBoolean = (value) => {
+    if (value === undefined) return undefined;
+    if (value === null || String(value).trim() === '') return null;
+    const normalized = String(value).trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+    return value;
+  };
+  const normalizeUserDocumentUrl = (value) => {
+    if (value && typeof value === 'object') return value.doc_uploaded_by_user == null ? '' : String(value.doc_uploaded_by_user).trim();
+    return value == null ? '' : String(value).trim();
+  };
+  const uploadedUserDocumentUrls = Array.isArray(doc_uploaded_by_user_docs)
+    ? [...new Set(doc_uploaded_by_user_docs.map(normalizeUserDocumentUrl).filter(Boolean))]
+    : (doc_uploaded_by_user !== undefined && doc_uploaded_by_user !== null ? [normalizeUserDocumentUrl(doc_uploaded_by_user)].filter(Boolean) : []);
+  const hasUserDocumentUpload = uploadedUserDocumentUrls.length > 0;
+
+  const isApprover = !!req.cookies.approverAuthToken;
+  const approverOnlyFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc'];
+  if (!isApprover) {
+    const attemptedApproverFields = approverOnlyFields.filter((field) => {
+      const v = req.body[field];
+      return v !== undefined && v !== null && String(v).trim() !== '';
+    });
+    if (attemptedApproverFields.length > 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to update these fields. Only approvers can update: control_design_procs, control_design_conclusion, design_deficiency_desc'
+      });
+    }
+  }
+
+  const normalizeFrequencyForCompare = (value) =>
+    value == null ? '' : String(value).trim().toLowerCase().replace(/&/g, 'and').replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+  const nextControlFrequency = control_frequency !== undefined ? (control_frequency ? String(control_frequency).trim() : null) : undefined;
+  const isControlFrequencyChange = control_frequency !== undefined
+    && normalizeFrequencyForCompare(nextControlFrequency) !== normalizeFrequencyForCompare(currentForm.controlFrequency);
+  const derivedSampleSize = control_frequency !== undefined ? getSampleSizeByFrequency(nextControlFrequency) : undefined;
+  const sampleSizeForUpdate = control_frequency !== undefined ? (derivedSampleSize !== null ? String(derivedSampleSize) : null) : undefined;
+  const sampleRequiredForUpdate = isControlFrequencyChange
+    ? calculateSampleRequired(nextControlFrequency, currentForm.createdAt || new Date())
+    : undefined;
+
+  const data = {
+    standardControlDescription: standard_control_description,
+    subProcess: sub_process,
+    riskDescription: risk_description,
+    whetherFraudRisksExist: whether_fraud_risks_exist,
+    controlObjective: control_objective,
+    ipeReference: ipe_reference,
+    natureOfControl: nature_of_control,
+    controlFrequency: control_frequency,
+    controlNumber: control_number,
+    area,
+    riskHeat: risk_heat,
+    processWalkthrough: process_walkthrough,
+    controlReliesOnIpe: control_relies_on_ipe,
+    auditEvidenceAccuracy: audit_evidence_accuracy,
+    keyControl: key_control,
+    applicationName: application_name,
+    controlPerformer: control_performer,
+    controlDesignProcs: control_design_procs,
+    controlDesignConclusion: control_design_conclusion,
+    designDeficiencyDesc: design_deficiency_desc,
+    sampleSize: sampleSizeForUpdate,
+    sampleRequired: sampleRequiredForUpdate,
+    controlTypeFo: control_type_fo,
+    controlTypeMa: control_type_ma,
+    completeness: normalizeNullableBoolean(completeness),
+    existenceOccurrence: normalizeNullableBoolean(existence_occurrence),
+    rightsAndObligation: normalizeNullableBoolean(rights_and_obligation),
+    valuationAndAllocation: normalizeNullableBoolean(valuation_and_allocation),
+    presentationAndDisclosure: normalizeNullableBoolean(presentation_and_disclosure),
+    dueDate: due_date !== undefined ? parseDateOnlyInput(due_date) : undefined,
+    reminderFrequency: reminder_frequency,
+    status,
+    reasonByApprover: reason_by_approver,
+    remarksByUser: remarks_by_user,
+  };
+  if (!isApprover) {
+    delete data.controlDesignProcs;
+    delete data.controlDesignConclusion;
+    delete data.designDeficiencyDesc;
+  }
+  if (!isRacmAssignmentOperation && control_owner !== undefined && nextAssignmentEmail !== currentAssignmentEmail) {
+    data.controlOwner = control_owner;
+    data.userMailSent = false;
+  }
+  if (!(isRacmAssignmentOperation && active !== undefined) && active !== undefined) {
+    data.active = normalizeActiveInput(active);
+    if (normalizeActiveInput(active) !== currentActiveStatus) {
+      data.userMailSent = false;
+    }
+  }
+  if (status === 'sent for approval' && currentForm.status === 'Rejected' && String(currentForm.reasonByApprover || '').trim() !== '') {
+    data.reasonByApprover = null;
+  }
+  const wasSentForApproval = String(currentForm?.status || '').trim().toLowerCase() === 'sent for approval';
+  const isNowSentForApprovalRequest = status !== undefined
+    && String(status || '').trim().toLowerCase() === 'sent for approval';
+  if (isNowSentForApprovalRequest && !wasSentForApproval) {
+    data.sentForApprovalTimestamp = new Date();
+  }
+  const cleanedUpdateData = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+  if (Object.keys(cleanedUpdateData).length === 0 && !isRacmAssignmentOperation && active === undefined && !hasUserDocumentUpload) {
+    return res.status(400).json({ success: false, message: 'No fields to update' });
+  }
+
+  try {
+    if (control_number !== undefined) {
+      const cid = currentForm.companyIdentifier ? String(currentForm.companyIdentifier).trim() : '';
+      const nextCn = control_number != null ? String(control_number).trim() : '';
+      if (cid && nextCn) {
+        const dup = await prisma.controlForm.findFirst({
+          where: { companyIdentifier: cid, controlNumber: nextCn, NOT: { formId: normalizedFormId } },
+          select: { id: true },
+        });
+        if (dup) {
+          return res.status(409).json({ success: false, message: DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE });
+        }
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (Object.keys(cleanedUpdateData).length > 0) {
+        await tx.controlForm.update({
+          where: { formId: normalizedFormId },
+          data: cleanedUpdateData,
+        });
+      }
+
+      if (isRacmAssignmentOperation) {
+        await tx.controlForm.update({
+          where: { formId: normalizedFormId },
+          data: { controlOwner: assignmentEmail, userMailSent: false },
+        });
+        if (active !== undefined) {
+          const normalizedActive = normalizeActiveInput(active);
+          if (normalizedActive !== currentActiveStatus) {
+            await tx.controlForm.update({
+              where: { formId: normalizedFormId },
+              data: { active: normalizedActive, userMailSent: false },
+            });
+          }
+        }
+      }
+
+      if (replace_user_documents === true) {
+        const existing = await tx.docUploadedByUser.findMany({
+          where: { formId: normalizedFormId },
+          select: { docUploadedByUser: true },
+        });
+        const replacementDocSet = new Set(uploadedUserDocumentUrls);
+        const docsToDeleteFromS3 = existing
+          .map((row) => row.docUploadedByUser == null ? '' : String(row.docUploadedByUser).trim())
+          .filter((docUrl) => docUrl && !replacementDocSet.has(docUrl));
+        for (const docUrl of docsToDeleteFromS3) {
+          await deleteFileFromS3(docUrl);
+        }
+        await tx.docUploadedByUser.deleteMany({ where: { formId: normalizedFormId } });
+      }
+      for (const userDocUrl of uploadedUserDocumentUrls) {
+        await tx.docUploadedByUser.create({
+          data: { formId: normalizedFormId, docUploadedByUser: userDocUrl },
+        });
+      }
+    });
+
+    if (status === 'sent for approval' && req.user && req.user.email_id) {
+      await logAuditEvent('Sent RACM for approval', req.user.email_id, form_id, null);
+    }
+    if (req.user && req.user.email_id) {
+      if (isRacmAssignmentOperation) {
+        await logAuditEvent('RACM Assignment', req.user.email_id, form_id, assignmentEmail);
+      }
+      if (hasChangesArray) {
+        const nonAssignmentChanges = modifiedChanges.filter((item) => {
+          const col = item?.column_name || item?.column || item?.field;
+          const normalizedCol = String(col || '').trim();
+          return normalizedCol !== 'control_owner' && normalizedCol !== 'due_date' && normalizedCol !== 'reminder_frequency';
+        });
+        if (nonAssignmentChanges.length > 0) {
+          await logAuditEvent('RACM Modification', req.user.email_id, form_id, JSON.stringify(nonAssignmentChanges));
+        }
+      } else if (hasFieldsArray) {
+        const nonAssignmentFields = modifiedFields.filter((col) => {
+          const normalizedCol = String(col || '').trim();
+          return normalizedCol !== 'control_owner' && normalizedCol !== 'due_date' && normalizedCol !== 'reminder_frequency';
+        });
+        if (nonAssignmentFields.length > 0) {
+          await logAuditEvent('RACM Modification', req.user.email_id, form_id, JSON.stringify(nonAssignmentFields.map((col) => ({ column_name: col }))));
+        }
+      }
+    }
+    if (!isRacmAssignmentOperation && active !== undefined && req.user && req.user.email_id) {
+      const newActiveStatus = normalizeActiveInput(active);
+      if (newActiveStatus !== currentActiveStatus) {
+        await logAuditEvent(newActiveStatus === true ? 'Set RACM Active' : 'Set RACM Inactive', req.user.email_id, form_id);
+      }
+    }
+
+    const form = await prisma.controlForm.findUnique({ where: { formId: normalizedFormId } });
+    if (!form) {
+      return res.status(404).json({ success: false, message: 'RACM not found' });
+    }
+    const sampleDocs = await prisma.sampleDoc.findMany({ where: { formId: normalizedFormId }, orderBy: { id: 'asc' } });
+    const userDocs = await prisma.docUploadedByUser.findMany({ where: { formId: normalizedFormId }, orderBy: { id: 'asc' } });
+    const updatedRow = {
+      id: form.id,
+      standard_control_description: form.standardControlDescription,
+      sub_process: form.subProcess,
+      risk_description: form.riskDescription,
+      whether_fraud_risks_exist: form.whetherFraudRisksExist,
+      control_objective: form.controlObjective,
+      ipe_reference: form.ipeReference,
+      nature_of_control: form.natureOfControl,
+      control_frequency: form.controlFrequency,
+      active: form.active,
+      status: form.status,
+      reason_by_approver: form.reasonByApprover,
+      created_at: form.createdAt,
+      updated_at: form.updatedAt,
+      company_identifier: form.companyIdentifier,
+      form_id: form.formId,
+      unit_id: form.unitId,
+      remarks_by_user: form.remarksByUser,
+      business_process: form.businessProcess,
+      financial_year: form.financialYear,
+      sample_required: form.sampleRequired,
+      completeness: form.completeness,
+      existence_occurrence: form.existenceOccurrence,
+      rights_and_obligation: form.rightsAndObligation,
+      valuation_and_allocation: form.valuationAndAllocation,
+      presentation_and_disclosure: form.presentationAndDisclosure,
+      control_number: form.controlNumber,
+      area: form.area,
+      risk_heat: form.riskHeat,
+      process_walkthrough: form.processWalkthrough,
+      control_relies_on_ipe: form.controlReliesOnIpe,
+      audit_evidence_accuracy: form.auditEvidenceAccuracy,
+      key_control: form.keyControl,
+      application_name: form.applicationName,
+      control_performer: form.controlPerformer,
+      control_owner: form.controlOwner,
+      control_design_procs: form.controlDesignProcs,
+      control_design_conclusion: form.controlDesignConclusion,
+      design_deficiency_desc: form.designDeficiencyDesc,
+      sample_size: form.sampleSize,
+      control_type_fo: form.controlTypeFo,
+      control_type_ma: form.controlTypeMa,
+      due_date: form.dueDate,
+      reminder_frequency: form.reminderFrequency,
+      reminder_datetime: form.reminderDatetime,
+      sent_for_approval_timestamp: form.sentForApprovalTimestamp,
+      approval_status_change_timestamp: form.approvalStatusChangeTs,
+      user_mail_sent: form.userMailSent,
+      sample_docs: sampleDocs.map((d) => ({ id: d.id, form_id: d.formId, sample_doc: d.sampleDoc, created_at: d.createdAt })),
+      doc_uploaded_by_user_docs: userDocs.map((d) => ({ id: d.id, form_id: d.formId, doc_uploaded_by_user: d.docUploadedByUser, created_at: d.createdAt })),
+      sample_doc: sampleDocs.length > 0 ? sampleDocs[sampleDocs.length - 1].sampleDoc : null,
+      doc_uploaded_by_user: userDocs.length > 0 ? userDocs[userDocs.length - 1].docUploadedByUser : null,
+    };
+
+    const isNowSentForApproval = String(updatedRow?.status || '').trim().toLowerCase() === 'sent for approval';
+    if (isNowSentForApproval && !wasSentForApproval && req.user?.role === 'user') {
+      try {
+        const unitMeta = await prisma.companyUnitMaster.findFirst({
+          where: {
+            companyIdentifier: updatedRow.company_identifier || undefined,
+            unitId: updatedRow.unit_id || undefined,
+          },
+          select: {
+            approverEmailId: true,
+          },
+        });
+        const approverEmail = String(unitMeta?.approverEmailId || '').trim();
+        if (approverEmail) {
+          const [approverUser, submitterUser, company] = await Promise.all([
+            prisma.ifcUser.findFirst({
+              where: { emailId: { equals: approverEmail, mode: 'insensitive' } },
+              select: { empName: true },
+            }),
+            prisma.ifcUser.findFirst({
+              where: { emailId: { equals: req.user.email_id, mode: 'insensitive' } },
+              select: { empName: true, emailId: true },
+            }),
+            updatedRow.company_identifier
+              ? prisma.company.findUnique({
+                  where: { companyIdentifier: updatedRow.company_identifier },
+                  select: { companyName: true },
+                })
+              : Promise.resolve(null),
+          ]);
+          const submitterName = String(submitterUser?.empName || submitterUser?.emailId || req.user.email_id || '').trim();
+          const payload = buildSentForApprovalEmail({
+            approverName: approverUser?.empName,
+            userDisplayName: submitterName,
+            formId: updatedRow.form_id,
+            businessProcess: updatedRow.business_process,
+            financialYear: updatedRow.financial_year,
+            standardControlDescription: updatedRow.standard_control_description,
+            subProcess: updatedRow.sub_process,
+            dueDate: updatedRow.due_date,
+            companyName: company?.companyName,
+          });
+          await sendEmail(approverEmail, payload.subject, payload.text);
+        }
+      } catch (notifyError) {
+        console.error('Error sending sent-for-approval approver email:', notifyError);
+      }
+    }
+
+    updatedRow.deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
+    const dataForClient = req.user.role === 'user' ? shapeControlFormJsonForProcessOwner(updatedRow) : updatedRow;
+    res.status(200).json({ success: true, message: 'RACM updated successfully', data: dataForClient });
+  } catch (error) {
+    console.error('Error updating RACM:', error);
+    res.status(500).json({ success: false, message: 'Error updating RACM', error: error.message });
+  }
+});
+
+router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
+  const normalizedFormId = String(req.params.form_id || '').trim();
+  const responseType = String(req.body?.response_type || '').trim();
+  const explaination = req.body?.explaination;
+  const dueDate = req.body?.due_date;
+  const concernedPerson = req.body?.concerned_person;
+  const attachments = Array.isArray(req.body?.attachments) ? req.body.attachments : [];
+  const submittedByEmail = String(req.user?.email_id || '').trim();
+
+  if (!normalizedFormId) {
+    return res.status(400).json({ success: false, message: 'Form id is required' });
+  }
+
+  if (!['mitigation_plan', 'compensatory_racm'].includes(responseType)) {
+    return res.status(400).json({ success: false, message: 'response_type must be either mitigation_plan or compensatory_racm' });
+  }
+
+  if (!String(explaination || '').trim()) {
+    return res.status(400).json({ success: false, message: 'Explaination is required' });
+  }
+
+  if (responseType === 'mitigation_plan') {
+    if (!String(concernedPerson || '').trim()) {
+      return res.status(400).json({ success: false, message: 'Concerned Person is required for mitigation plan' });
+    }
+    if (!String(dueDate || '').trim()) {
+      return res.status(400).json({ success: false, message: 'Due date is required for mitigation plan' });
+    }
+  }
+
+  if (responseType === 'compensatory_racm' && attachments.length === 0) {
+    return res.status(400).json({ success: false, message: 'Please upload at least one document for compensatory RACM' });
+  }
+
+  const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Get current form data (for status/active change logic and history handling)
-    const getCurrentFormQuery = `
-      SELECT 
-        active, 
-        control_owner, 
-        standard_control_description, 
-        business_process,
-        financial_year,
-        control_number,
-        control_frequency,
-        created_at,
-        due_date,
-        unit_id,
-        company_identifier,
-        status AS current_status,
-        reason_by_approver AS current_reason_by_approver
-      FROM control_forms 
-      WHERE form_id = $1
-    `;
-    const currentFormResult = await client.query(getCurrentFormQuery, [form_id]);
-    const currentForm = currentFormResult.rows.length > 0 ? currentFormResult.rows[0] : null;
-    if (!currentForm) {
+    const authorized = await getAuthorizedControlFormForDeficiency(client, normalizedFormId, req.user);
+    if (authorized.error) {
+      await client.query('ROLLBACK');
+      return res.status(authorized.error.status).json({ success: false, message: authorized.error.message });
+    }
+
+    const currentForm = authorized.form;
+    if (!currentForm.deficiency_action_status) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Deficiency response can only be submitted when action is required for this RACM',
+      });
+    }
+
+    const currentDeficiencyResponse = await getDeficiencyResponseByFormId(client, normalizedFormId);
+    if (currentDeficiencyResponse && currentDeficiencyResponse.status === 'submitted') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'A deficiency response is already submitted and pending approver review',
+      });
+    }
+
+    if (currentDeficiencyResponse && !isDeficiencyResponseEditable(currentDeficiencyResponse.status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Deficiency response cannot be updated in its current status',
+      });
+    }
+
+    const saved = await createOrResubmitDeficiencyResponse(client, {
+      formId: normalizedFormId,
+      companyIdentifier: currentForm.company_identifier,
+      unitId: currentForm.unit_id,
+      responseType,
+      explaination,
+      dueDate: responseType === 'mitigation_plan' ? dueDate : null,
+      concernedPerson: responseType === 'mitigation_plan' ? concernedPerson : null,
+      submittedByEmail,
+      attachments,
+    });
+
+    await client.query(
+      `
+        UPDATE control_forms
+        SET deficiency_action_status = FALSE,
+            deficiency_response_status = 'submitted_for_review',
+            deficiency_case_id = $2,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE form_id = $1
+      `,
+      [normalizedFormId, saved.response_id]
+    );
+
+    await client.query('COMMIT');
+
+    await logAuditEvent('Deficiency Response Submitted', submittedByEmail, normalizedFormId, saved.response_id);
+
+    const formResult = await pool.query(
+      `
+        SELECT
+          cf.*,
+          cum.unit_name,
+          NULLIF(TRIM(owner.emp_name), '') AS control_owner_name,
+          cum.approver_email_id,
+          NULLIF(TRIM(approver.emp_name), '') AS approver_name,
+          approver.temp_login AS approver_temp_login,
+          COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(cum.approver_email_id), '')) AS approver_display_name
+        FROM control_forms cf
+        LEFT JOIN company_unit_master cum
+          ON cum.unit_id = cf.unit_id
+         AND cum.company_identifier = cf.company_identifier
+        LEFT JOIN ifc_users owner
+          ON LOWER(TRIM(owner.email_id)) = LOWER(TRIM(cf.control_owner))
+        LEFT JOIN ifc_users approver
+          ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(cum.approver_email_id, '')))
+        WHERE cf.form_id = $1
+      `,
+      [normalizedFormId]
+    );
+
+    const updatedForm = formResult.rows[0];
+    await attachControlFormDocuments(pool, [updatedForm]);
+    updatedForm.deficiency_response = await getDeficiencyResponseByFormId(pool, normalizedFormId);
+    const dataForClient = req.user.role === 'user' ? shapeControlFormJsonForProcessOwner(updatedForm) : updatedForm;
+
+    return res.status(200).json({
+      success: true,
+      message: currentDeficiencyResponse ? 'Deficiency response resubmitted successfully' : 'Deficiency response submitted successfully',
+      data: dataForClient,
+    });
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Deficiency response rollback error:', rollbackError);
+    }
+    console.error('Deficiency response submit error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit deficiency response',
+      error: error.message,
+    });
+  } finally {
+    client.release();
+  }
+});
+
+router.post(
+  '/:form_id/deficiency-response/upload-attachments',
+  verifyAuth,
+  uploadUserDoc.fields([
+    { name: 'documents', maxCount: 20 },
+    { name: 'document', maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const normalizedFormId = String(req.params.form_id || '').trim();
+    const files = [
+      ...((req.files && req.files.documents) || []),
+      ...((req.files && req.files.document) || []),
+    ];
+
+    if (!normalizedFormId) {
+      return res.status(400).json({ success: false, message: 'Form id is required' });
+    }
+
+    if (files.length === 0) {
+      return res.status(400).json({ success: false, message: 'No files uploaded' });
+    }
+
+    try {
+      const authorized = await getAuthorizedControlFormForDeficiency(pool, normalizedFormId, req.user);
+      if (authorized.error) {
+        return res.status(authorized.error.status).json({ success: false, message: authorized.error.message });
+      }
+
+      if (!authorized.form.deficiency_action_status) {
+        return res.status(400).json({
+          success: false,
+          message: 'Deficiency response attachment upload is allowed only when action is required for this RACM',
+        });
+      }
+
+      const uploadedFiles = [];
+      for (const file of files) {
+        const s3Key = await uploadFileToS3(
+          file.buffer,
+          file.originalname,
+          `IFC/Deficiency Response/${normalizedFormId}`,
+          { preserveFileName: true }
+        );
+        uploadedFiles.push({
+          file_url: s3Key,
+          original_name: file.originalname,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: uploadedFiles.length === 1 ? 'Attachment uploaded successfully' : 'Attachments uploaded successfully',
+        data: {
+          form_id: normalizedFormId,
+          attachments: uploadedFiles,
+        },
+      });
+    } catch (error) {
+      console.error('Deficiency response attachment upload error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to upload deficiency response attachment',
+        error: error.message,
+      });
+    }
+  }
+);
+
+router.post('/:form_id/request-change', verifyAuth, async (req, res) => {
+  const normalizedFormId = String(req.params.form_id || '').trim();
+  const requesterEmail = String(req.user?.email_id || '').trim();
+  const requesterRole = String(req.user?.role || '').trim().toLowerCase();
+  const submittedChanges = Array.isArray(req.body?.changes) ? req.body.changes : [];
+  const requestReason = req.body?.request_reason == null ? null : String(req.body.request_reason).trim() || null;
+
+  if (requesterRole !== 'user') {
+    return res.status(403).json({
+      success: false,
+      message: 'Only process owners can request RACM changes',
+    });
+  }
+
+  if (!normalizedFormId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Form id is required',
+    });
+  }
+
+  if (submittedChanges.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'No change items were provided',
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const formResult = await client.query(
+      `
+        SELECT *
+        FROM control_forms
+        WHERE form_id = $1
+        FOR UPDATE
+      `,
+      [normalizedFormId]
+    );
+
+    if (formResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({
         success: false,
@@ -1300,522 +2147,661 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       });
     }
 
-    if (status === 'sent for approval' && req.user?.role === 'user') {
-      const processOwnerEmail = String(currentForm.control_owner || '').trim().toLowerCase();
-      const userEmail = String(req.user.email_id || '').trim().toLowerCase();
-
-      if (processOwnerEmail !== userEmail) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied. You are not authorized to update this form.',
-        });
-      }
-
-      const approverDetails = await getControlFormApproverDetails(client, form_id);
-      const approverBlockMessage = getApproverSubmissionBlockMessage(approverDetails);
-      if (approverBlockMessage) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          success: false,
-          message: approverBlockMessage,
-        });
-      }
+    const currentForm = formResult.rows[0];
+    const processOwnerEmail = String(currentForm.control_owner || '').trim().toLowerCase();
+    if (processOwnerEmail !== requesterEmail.toLowerCase()) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You are not authorized to request changes for this RACM.',
+      });
     }
 
-    const currentActiveStatus = currentForm?.active && currentForm.active !== '' && currentForm.active !== '0' ? '1' : '0';
-    const hasChangesArray = Array.isArray(modifiedChanges) && modifiedChanges.length > 0;
-    const hasFieldsArray = Array.isArray(modifiedFields) && modifiedFields.length > 0;
-    const assignmentEmail = control_owner !== undefined && control_owner !== null
-      ? String(control_owner).trim()
-      : '';
-    const normalizeAssignmentEmail = (value) =>
-      value == null ? '' : String(value).trim().toLowerCase();
-    const currentAssignmentEmail = normalizeAssignmentEmail(currentForm?.control_owner);
-    const nextAssignmentEmail = normalizeAssignmentEmail(control_owner);
-    const assignmentInChangesArray = hasChangesArray && modifiedChanges.some((item) => {
-      const col = item?.column_name || item?.column || item?.field;
-      return String(col || '').trim() === 'control_owner';
-    });
-    const assignmentInFieldsArray = hasFieldsArray && modifiedFields.some(
-      (col) => String(col || '').trim() === 'control_owner'
-    );
-    const isControlOwnerChanged = control_owner !== undefined
-      && nextAssignmentEmail !== ''
-      && nextAssignmentEmail !== currentAssignmentEmail;
-    const isAssignmentUpdate = Boolean(
-      (assignmentInChangesArray || assignmentInFieldsArray || control_owner !== undefined)
-      && isControlOwnerChanged
-    );
-    const isRacmAssignmentOperation = Boolean(isAssignmentUpdate && assignmentEmail);
-    const requestedActiveStatus = active !== undefined
-      ? (active === '1' || active === 1 || active === true ? '1' : '0')
-      : null;
-    const targetOwnerEmail = isRacmAssignmentOperation
-      ? assignmentEmail
-      : (control_owner !== undefined && control_owner !== null
-          ? String(control_owner).trim()
-          : String(currentForm?.control_owner || '').trim());
-    const shouldValidateOwnerUnit = req.user?.role === 'company_co'
-      && targetOwnerEmail
-      && (isRacmAssignmentOperation || requestedActiveStatus === '1');
-
-    if (shouldValidateOwnerUnit) {
-      const formCompanyIdentifier = currentForm?.company_identifier
-        ? String(currentForm.company_identifier).trim()
-        : '';
-      const formUnitId = currentForm?.unit_id ? String(currentForm.unit_id).trim() : '';
-
-      if (!formUnitId) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          success: false,
-          message: 'RACM unit is missing. Cannot assign a process owner.',
-        });
-      }
-
-      const ownerUnitResult = await client.query(
-        `
-          SELECT unit_id
-          FROM ifc_users
-          WHERE company_identifier = $1
-            AND role = 'user'
-            AND LOWER(TRIM(email_id)) = LOWER(TRIM($2))
-            AND unit_id = $3
-          LIMIT 1
-        `,
-        [formCompanyIdentifier, targetOwnerEmail, formUnitId]
-      );
-
-      if (ownerUnitResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          success: false,
-          message: 'Process Owner must be a user from the same unit as this RACM',
-        });
-      }
+    if (Boolean(currentForm.pending_changes)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        message: 'A change request is already pending for this RACM',
+      });
     }
 
-    const normalizeUserDocumentUrl = (value) => {
-      if (value && typeof value === 'object') {
-        return value.doc_uploaded_by_user == null ? '' : String(value.doc_uploaded_by_user).trim();
-      }
-      return value == null ? '' : String(value).trim();
-    };
-    const uploadedUserDocumentUrls = Array.isArray(doc_uploaded_by_user_docs)
-      ? doc_uploaded_by_user_docs
-          .map(normalizeUserDocumentUrl)
-          .filter(Boolean)
-      : (
-          doc_uploaded_by_user !== undefined && doc_uploaded_by_user !== null
-            ? [normalizeUserDocumentUrl(doc_uploaded_by_user)].filter(Boolean)
-            : []
-        );
-    const hasUserDocumentUpload = uploadedUserDocumentUrls.length > 0;
-
-    // Check if user is an approver (only approvers can edit conclusion/procedures/deficiency fields)
-    const isApprover = !!req.cookies.approverAuthToken;
-    
-    // Fields that only approvers can update
-    const approverOnlyFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc'];
-    
-    // If user is not an approver, remove approver-only fields from the update
-    if (!isApprover) {
-      // Check if user is trying to update approver-only fields
-      const attemptedApproverFields = approverOnlyFields.filter(field => {
-        const v = req.body[field]
-        // Allow empty string / null / undefined to pass (often sent as defaults from UI),
-        // but block meaningful non-empty values.
-        return v !== undefined && v !== null && String(v).trim() !== ''
-      })
-      
-      if (attemptedApproverFields.length > 0) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({
-          success: false,
-          message: 'You do not have permission to update these fields. Only approvers can update: control_design_procs, control_design_conclusion, design_deficiency_desc'
-        });
-      }
-    }
-
-    // Build dynamic update query - exclude created_at to preserve original timestamp
-    const updateFields = [];
-    const updateValues = [];
-    let paramIndex = 1;
-
-    const normalizeFrequencyForCompare = (value) =>
-      value == null ? '' : String(value).trim().toLowerCase().replace(/&/g, 'and').replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
-    const nextControlFrequency = control_frequency !== undefined
-      ? (control_frequency ? String(control_frequency).trim() : null)
-      : undefined;
-    const isControlFrequencyChange = control_frequency !== undefined
-      && normalizeFrequencyForCompare(nextControlFrequency) !== normalizeFrequencyForCompare(currentForm?.control_frequency);
-    const derivedSampleSize = control_frequency !== undefined
-      ? getSampleSizeByFrequency(nextControlFrequency)
-      : undefined;
-    const sampleSizeForUpdate = control_frequency !== undefined
-      ? (derivedSampleSize !== null ? String(derivedSampleSize) : null)
-      : undefined;
-    const sampleRequiredForUpdate = isControlFrequencyChange
-      ? calculateSampleRequired(nextControlFrequency, currentForm?.created_at || new Date())
-      : undefined;
-
-    const fieldsToUpdate = {
-      standard_control_description, sub_process, risk_description,
-      whether_fraud_risks_exist, control_objective, ipe_reference,
-      nature_of_control, control_frequency,
-      control_number, area,
-      risk_heat, process_walkthrough, control_relies_on_ipe,
-      audit_evidence_accuracy, key_control, application_name,
-      control_performer, control_design_procs,
-      control_design_conclusion, design_deficiency_desc,
-      sample_size: sampleSizeForUpdate, sample_required: sampleRequiredForUpdate, control_type_fo, control_type_ma,
-      completeness, existence_occurrence, rights_and_obligation,
-      valuation_and_allocation, presentation_and_disclosure,
-      due_date, reminder_frequency,
-      status, reason_by_approver, remarks_by_user
-    };
-
-    if (!isRacmAssignmentOperation && control_owner !== undefined && nextAssignmentEmail !== currentAssignmentEmail) {
-      fieldsToUpdate.control_owner = control_owner;
-      fieldsToUpdate.user_mail_sent = false;
-    }
-    if (!(isRacmAssignmentOperation && active !== undefined) && active !== undefined) {
-      fieldsToUpdate.active = active;
-      const normalizedActiveForMail = active === '1' || active === 1 || active === true ? '1' : '0';
-      if (normalizedActiveForMail !== currentActiveStatus) {
-        fieldsToUpdate.user_mail_sent = false;
-      }
-    }
-
-    Object.keys(fieldsToUpdate).forEach(field => {
-      // Skip approver-only fields if user is not an approver
-      if (!isApprover && approverOnlyFields.includes(field)) {
-        return;
-      }
-      
-      // Skip modifiedFields as it's metadata, not a database column
-      if (field === 'modifiedFields') {
-        return;
-      }
-      
-      if (fieldsToUpdate[field] !== undefined) {
-        updateFields.push(`${field} = $${paramIndex}`);
-        updateValues.push(fieldsToUpdate[field]);
-        paramIndex++;
-      }
-    });
-
-    // Debug: Log the update query (before finalizing)
-    console.log('Update query fields (pre-history):', updateFields);
-
-    // If user is resubmitting after rejection, only clear the previous live approver reason.
-    const isResubmission = status === 'sent for approval'
-      && currentForm
-      && currentForm.current_status === 'Rejected';
-
-    if (isResubmission) {
-      const previousReason = currentForm.current_reason_by_approver;
-
-      if (previousReason && String(previousReason).trim() !== '') {
-        updateFields.push(`reason_by_approver = $${paramIndex}`);
-        updateValues.push(null);
-        paramIndex++;
-      }
-    }
-
-    if (updateFields.length === 0 && !isRacmAssignmentOperation && active === undefined && !hasUserDocumentUpload) {
+    const currentStatus = String(currentForm.status || '').trim().toLowerCase();
+    if (currentStatus === 'sent for approval' || currentStatus === 'approved') {
       await client.query('ROLLBACK');
       return res.status(400).json({
         success: false,
-        message: 'No fields to update'
+        message: 'Change requests cannot be submitted for RACMs that are already under approval or approved',
       });
     }
 
-    if (control_number !== undefined && currentForm) {
-      const cid = currentForm.company_identifier ? String(currentForm.company_identifier).trim() : '';
-      const nextCn = control_number != null ? String(control_number).trim() : '';
-      if (cid && nextCn) {
-        const dupUpdate = await client.query(
-          `
-            SELECT 1
-            FROM control_forms
-            WHERE company_identifier = $1
-              AND TRIM(control_number) = TRIM($2)
-              AND TRIM(form_id) <> TRIM($3)
-            LIMIT 1
-          `,
-          [cid, nextCn, form_id]
-        );
-        if (dupUpdate.rows.length > 0) {
-          await client.query('ROLLBACK');
-          return res.status(409).json({
-            success: false,
-            message: DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE,
-          });
-        }
+    const sanitizedItems = [];
+    const seenFields = new Set();
+    for (let index = 0; index < submittedChanges.length; index++) {
+      const rawItem = submittedChanges[index] || {};
+      const fieldDbName = String(rawItem.field_db_name || '').trim();
+      if (!REQUEST_CHANGE_ALLOWED_FIELDS.has(fieldDbName)) {
+        continue;
       }
+      if (seenFields.has(fieldDbName)) {
+        continue;
+      }
+      seenFields.add(fieldDbName);
+
+      const oldValueText = normalizeChangeRequestTextValue(fieldDbName, currentForm[fieldDbName]);
+      const newValueText = normalizeChangeRequestTextValue(fieldDbName, rawItem.new_value_text);
+      if (oldValueText === newValueText) {
+        continue;
+      }
+
+      sanitizedItems.push({
+        fieldDbName,
+        fieldLabel: getRequestChangeFieldLabel(fieldDbName, rawItem.field_label),
+        oldValueText,
+        newValueText,
+        displayOrder: Number.isInteger(rawItem.display_order) ? rawItem.display_order : index,
+      });
     }
 
-    let result;
-    try {
-      if (updateFields.length > 0) {
-        // Add form_id as the last parameter
-        updateValues.push(form_id);
-
-        const updateQuery = `
-          UPDATE control_forms
-          SET ${updateFields.join(', ')}
-          WHERE form_id = $${paramIndex}
-          RETURNING *;
-        `;
-
-        result = await client.query(updateQuery, updateValues);
-      } else {
-        // Ensure result is still available for pure assignment flows.
-        result = await client.query(
-          'SELECT * FROM control_forms WHERE form_id = $1',
-          [form_id]
-        );
-      }
-
-      // RACM Assignment operation must be two separate SQL updates:
-      // 1) assign control_owner, 2) set active.
-      if (isRacmAssignmentOperation) {
-        const assignmentResult = await client.query(
-          `
-            UPDATE control_forms
-            SET control_owner = $1,
-                user_mail_sent = FALSE
-            WHERE form_id = $2
-            RETURNING *;
-          `,
-          [assignmentEmail, form_id]
-        );
-        result = assignmentResult;
-
-        if (active !== undefined) {
-          const normalizedActive = active === '1' || active === 1 || active === true ? '1' : '0';
-          if (normalizedActive !== currentActiveStatus) {
-            const activeResult = await client.query(
-              `
-                UPDATE control_forms
-                SET active = $1::varchar,
-                    user_mail_sent = FALSE
-                WHERE form_id = $2
-                RETURNING *;
-              `,
-              [normalizedActive, form_id]
-            );
-            result = activeResult;
-          }
-        }
-      }
-
-      if (result.rows.length > 0) {
-        if (replace_user_documents === true) {
-          const existingUserDocsResult = await client.query(
-            `
-              SELECT id, doc_uploaded_by_user
-              FROM doc_uploaded_by_user
-              WHERE form_id = $1
-              ORDER BY id ASC
-            `,
-            [form_id]
-          );
-          const replacementDocSet = new Set(uploadedUserDocumentUrls);
-          const docsToDeleteFromS3 = existingUserDocsResult.rows
-            .map((row) => row.doc_uploaded_by_user == null ? '' : String(row.doc_uploaded_by_user).trim())
-            .filter((docUrl) => docUrl && !replacementDocSet.has(docUrl));
-
-          for (const docUrl of docsToDeleteFromS3) {
-            await deleteFileFromS3(docUrl);
-          }
-
-          await client.query(
-            'DELETE FROM doc_uploaded_by_user WHERE form_id = $1',
-            [form_id]
-          );
-        }
-
-        for (const userDocUrl of uploadedUserDocumentUrls) {
-          await insertUserDocument(client, form_id, userDocUrl);
-        }
-      }
-    } catch (dbError) {
+    if (sanitizedItems.length === 0) {
       await client.query('ROLLBACK');
-      console.error('Database error during update:', dbError);
-      // Check if it's a column doesn't exist error
-      if (dbError.message && dbError.message.includes('column') && dbError.message.includes('does not exist')) {
-        return res.status(500).json({
-          success: false,
-          message: 'Database column error. Please ensure remarks_by_user column exists in control_forms table.',
-          error: dbError.message
-        });
-      }
-      return res.status(500).json({
+      return res.status(400).json({
         success: false,
-        message: 'Database error during update',
-        error: dbError.message
+        message: 'No valid field changes detected',
       });
     }
 
-    if (result.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: 'RACM not found'
-      });
+    const requestId = generateChangeRequestId();
+    const insertRequestResult = await client.query(
+      `
+        INSERT INTO change_request (
+          request_id,
+          form_id,
+          company_identifier,
+          unit_id,
+          requested_by_email,
+          requested_at,
+          status,
+          request_reason,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+          'Review Pending',
+          $6,
+          CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+          CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+        )
+        RETURNING id, request_id, status, requested_at, request_reason
+      `,
+      [
+        requestId,
+        normalizedFormId,
+        currentForm.company_identifier,
+        currentForm.unit_id,
+        requesterEmail,
+        requestReason,
+      ]
+    );
+
+    const insertedRequest = insertRequestResult.rows[0];
+
+    for (const item of sanitizedItems) {
+      await client.query(
+        `
+          INSERT INTO change_request_item (
+            change_request_id,
+            field_db_name,
+            field_label,
+            old_value_text,
+            new_value_text,
+            status,
+            rejection_reason,
+            display_order,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            'Pending',
+            NULL,
+            $6,
+            CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+            CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+          )
+        `,
+        [
+          insertedRequest.id,
+          item.fieldDbName,
+          item.fieldLabel,
+          item.oldValueText,
+          item.newValueText,
+          item.displayOrder,
+        ]
+      );
     }
 
-    const updatedRow = result.rows[0];
+    await client.query(
+      `
+        UPDATE control_forms
+        SET pending_changes = TRUE,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE form_id = $1
+      `,
+      [normalizedFormId]
+    );
 
     await client.query('COMMIT');
 
-    // Log audit event when RACM is submitted for approval (e.g. user flow in UserFormDetail)
-    if (status === 'sent for approval' && req.user && req.user.email_id) {
-      await logAuditEvent('Sent RACM for approval', req.user.email_id, form_id, null);
-    }
+    await logAuditEvent(
+      'RACM Change Requested',
+      requesterEmail,
+      normalizedFormId,
+      insertedRequest.request_id
+    );
 
-    // Log audit events for RACM assignment/modifications (store payload in ref_data as TEXT)
-    if (req.user && req.user.email_id) {
-      // Assignment-specific audit log: action + assigned user email in ref_data.
-      if (isRacmAssignmentOperation) {
-        await logAuditEvent('RACM Assignment', req.user.email_id, form_id, assignmentEmail);
-        if (active !== undefined) {
-          const newActiveStatus = active === '1' || active === 1 || active === true ? '1' : '0';
-          if (newActiveStatus !== currentActiveStatus) {
-            const action = newActiveStatus === '1' ? 'Set RACM Active' : 'Set RACM Inactive';
-            await logAuditEvent(action, req.user.email_id, form_id);
-          }
-        }
-      }
-
-      if (hasChangesArray) {
-        const nonAssignmentChanges = modifiedChanges.filter((item) => {
-          const col = item?.column_name || item?.column || item?.field;
-          const normalizedCol = String(col || '').trim()
-          return (
-            normalizedCol !== 'control_owner' &&
-            normalizedCol !== 'due_date' &&
-            normalizedCol !== 'reminder_frequency'
-          );
-        });
-        if (nonAssignmentChanges.length > 0) {
-          await logAuditEvent('RACM Modification', req.user.email_id, form_id, JSON.stringify(nonAssignmentChanges));
-        }
-      } else if (hasFieldsArray) {
-        // Fallback for older clients
-        const nonAssignmentFields = modifiedFields.filter(
-          (col) => {
-            const normalizedCol = String(col || '').trim()
-            return (
-              normalizedCol !== 'control_owner' &&
-              normalizedCol !== 'due_date' &&
-              normalizedCol !== 'reminder_frequency'
-            )
-          }
-        );
-        if (nonAssignmentFields.length > 0) {
-          const refData = JSON.stringify(nonAssignmentFields.map((col) => ({ column_name: col })));
-          await logAuditEvent('RACM Modification', req.user.email_id, form_id, refData);
-        }
-      }
-    }
-
-    // Log audit when RACM active flag changes (non-assignment flows only)
-    if (!isRacmAssignmentOperation && active !== undefined && currentForm && req.user && req.user.email_id) {
-      const newActiveStatus = active === '1' || active === 1 || active === true ? '1' : '0';
-      if (newActiveStatus !== currentActiveStatus) {
-        const action = newActiveStatus === '1' ? 'Set RACM Active' : 'Set RACM Inactive';
-        await logAuditEvent(action, req.user.email_id, form_id);
-      }
-    }
-
-    // User notification email is handled by background scheduler:
-    // send when active != 0 and user_mail_sent = FALSE, then flip to TRUE.
-    // (No direct trigger here.)
-
-    // Notify intended approver when user submits RACM for approval.
-    if (status === 'sent for approval' && req.user?.role === 'user') {
-      try {
-        const approverDetails = await getControlFormApproverDetails(client, form_id);
-        const approverEmail = String(approverDetails?.approver_email_id || '').trim();
-        if (approverEmail) {
-          const unitNameResult = await client.query(
-            `
-              SELECT NULLIF(TRIM(unit_name), '') AS unit_name
-              FROM company_unit_master
-              WHERE company_identifier = $1
-                AND unit_id = $2
-              LIMIT 1
-            `,
-            [
-              updatedRow?.company_identifier || currentForm?.company_identifier,
-              updatedRow?.unit_id || currentForm?.unit_id,
-            ]
-          );
-          const resolvedUnitName = unitNameResult.rows[0]?.unit_name || updatedRow?.unit_id || currentForm?.unit_id || '';
-
-          const userDisplayNameResult = await client.query(
-            `
-              SELECT COALESCE(NULLIF(TRIM(emp_name), ''), LOWER(TRIM(email_id))) AS display_name
-              FROM ifc_users
-              WHERE LOWER(TRIM(email_id)) = LOWER(TRIM($1))
-              LIMIT 1
-            `,
-            [req.user.email_id]
-          );
-          const userDisplayName = userDisplayNameResult.rows[0]?.display_name || req.user.email_id;
-
-          const payload = buildSentForApprovalEmail({
-            approverName: approverDetails?.approver_name,
-            userDisplayName,
-            formId: form_id,
-            businessProcess: updatedRow?.business_process || currentForm?.business_process,
-            unitName: resolvedUnitName,
-            controlNumber: updatedRow?.control_number || currentForm?.control_number,
-            financialYear: updatedRow?.financial_year || currentForm?.financial_year,
-            dueDate: updatedRow?.due_date || currentForm?.due_date,
-          });
-
-          const ccEmails = await getCcEmailsForRacm({
-            companyIdentifier: updatedRow?.company_identifier || currentForm?.company_identifier,
-            businessProcess: updatedRow?.business_process || currentForm?.business_process,
-            unitId: updatedRow?.unit_id || currentForm?.unit_id,
-            excludeEmail: approverEmail,
-          });
-
-          const emailSent = await sendEmail(approverEmail, payload.subject, payload.text, { cc: ccEmails });
-          if (!emailSent) {
-            console.warn(`Warning: failed to send sent-for-approval email to approver for form ${form_id}`);
-          }
-        }
-      } catch (notifyError) {
-        console.error('Error sending sent-for-approval approver email:', notifyError);
-      }
-    }
-
-    await attachControlFormDocuments(client, [updatedRow]);
-    const dataForClient =
-      req.user.role === 'user'
-        ? shapeControlFormJsonForProcessOwner(updatedRow)
-        : updatedRow;
-
-    res.status(200).json({
+    return res.status(201).json({
       success: true,
-      message: 'RACM updated successfully',
-      data: dataForClient
+      message: 'RACM change request submitted successfully',
+      data: {
+        request_id: insertedRequest.request_id,
+        status: insertedRequest.status,
+        requested_at: insertedRequest.requested_at,
+        request_reason: insertedRequest.request_reason,
+        pending_changes: true,
+        items: sanitizedItems.map((item) => ({
+          field_db_name: item.fieldDbName,
+          field_label: item.fieldLabel,
+          old_value_text: item.oldValueText,
+          new_value_text: item.newValueText,
+          display_order: item.displayOrder,
+        })),
+      },
     });
-
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error updating RACM:', error);
-    
-    res.status(500).json({
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Request change rollback error:', rollbackError);
+    }
+    console.error('Request change error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Error updating RACM',
-      error: error.message
+      message: 'Failed to submit RACM change request',
+    });
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/:form_id/change-request/active', verifyAuth, async (req, res) => {
+  const normalizedFormId = String(req.params.form_id || '').trim();
+  if (!normalizedFormId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Form id is required',
+    });
+  }
+
+  try {
+    const authResult = await getAuthorizedControlFormForChangeRequest(pool, normalizedFormId, req.user);
+    if (authResult.error) {
+      return res.status(authResult.error.status).json({
+        success: false,
+        message: authResult.error.message,
+      });
+    }
+
+    const requestResult = await pool.query(
+      `
+        SELECT
+          cr.id,
+          cr.request_id,
+          cr.form_id,
+          cr.requested_by_email,
+          COALESCE(NULLIF(TRIM(requested_user.emp_name), ''), cr.requested_by_email) AS requested_by_display,
+          cr.requested_at,
+          cr.status,
+          cr.reviewed_by_email,
+          COALESCE(NULLIF(TRIM(reviewed_user.emp_name), ''), cr.reviewed_by_email) AS reviewed_by_display,
+          cr.request_reason,
+          cr.reviewer_comment,
+          cr.created_at,
+          cr.updated_at
+        FROM change_request cr
+        LEFT JOIN ifc_users requested_user
+          ON LOWER(TRIM(requested_user.email_id)) = LOWER(TRIM(cr.requested_by_email))
+        LEFT JOIN ifc_users reviewed_user
+          ON LOWER(TRIM(reviewed_user.email_id)) = LOWER(TRIM(cr.reviewed_by_email))
+        WHERE cr.form_id = $1
+          AND cr.status = 'Review Pending'
+        ORDER BY cr.created_at DESC, cr.id DESC
+        LIMIT 1
+      `,
+      [normalizedFormId]
+    );
+
+    if (requestResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No active change request found',
+      });
+    }
+
+    const activeRequest = requestResult.rows[0];
+    const itemsResult = await pool.query(
+      `
+        SELECT
+          id,
+          change_request_id,
+          field_db_name,
+          field_label,
+          old_value_text,
+          new_value_text,
+          status,
+          rejection_reason,
+          display_order,
+          created_at,
+          updated_at
+        FROM change_request_item
+        WHERE change_request_id = $1
+        ORDER BY display_order ASC, id ASC
+      `,
+      [activeRequest.id]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...activeRequest,
+        items: itemsResult.rows,
+      },
+    });
+  } catch (error) {
+    console.error('Get active change request error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch active change request',
+    });
+  }
+});
+
+router.get('/:form_id/change-request/history', verifyAuth, async (req, res) => {
+  const normalizedFormId = String(req.params.form_id || '').trim();
+  if (!normalizedFormId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Form id is required',
+    });
+  }
+
+  try {
+    const authResult = await getAuthorizedControlFormForChangeRequest(pool, normalizedFormId, req.user);
+    if (authResult.error) {
+      return res.status(authResult.error.status).json({
+        success: false,
+        message: authResult.error.message,
+      });
+    }
+
+    const userRole = String(req.user?.role || '').trim().toLowerCase();
+    const userEmail = String(req.user?.email_id || '').trim();
+    let filterSql = '';
+    const queryParams = [normalizedFormId];
+
+    if (userRole === 'user') {
+      filterSql = 'AND LOWER(TRIM(requested_by_email)) = LOWER(TRIM($2))';
+      queryParams.push(userEmail);
+    } else if (userRole === 'company_co') {
+      filterSql = 'AND LOWER(TRIM(COALESCE(reviewed_by_email, \'\'))) = LOWER(TRIM($2))';
+      queryParams.push(userEmail);
+    }
+
+    const requestsResult = await pool.query(
+      `
+        SELECT
+          cr.id,
+          cr.request_id,
+          cr.form_id,
+          cr.requested_by_email,
+          COALESCE(NULLIF(TRIM(requested_user.emp_name), ''), cr.requested_by_email) AS requested_by_display,
+          cr.requested_at,
+          cr.status,
+          cr.reviewed_by_email,
+          COALESCE(NULLIF(TRIM(reviewed_user.emp_name), ''), cr.reviewed_by_email) AS reviewed_by_display,
+          cr.request_reason,
+          cr.reviewer_comment,
+          cr.created_at,
+          cr.updated_at
+        FROM change_request cr
+        LEFT JOIN ifc_users requested_user
+          ON LOWER(TRIM(requested_user.email_id)) = LOWER(TRIM(cr.requested_by_email))
+        LEFT JOIN ifc_users reviewed_user
+          ON LOWER(TRIM(reviewed_user.email_id)) = LOWER(TRIM(cr.reviewed_by_email))
+        WHERE cr.form_id = $1
+          ${filterSql}
+        ORDER BY cr.created_at DESC, cr.id DESC
+      `,
+      queryParams
+    );
+
+    const requests = requestsResult.rows;
+    if (requests.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          count: 0,
+          requests: [],
+        },
+      });
+    }
+
+    const requestIds = requests.map((row) => row.id);
+    const itemsResult = await pool.query(
+      `
+        SELECT
+          id,
+          change_request_id,
+          field_db_name,
+          field_label,
+          old_value_text,
+          new_value_text,
+          status,
+          rejection_reason,
+          display_order,
+          created_at,
+          updated_at
+        FROM change_request_item
+        WHERE change_request_id = ANY($1::bigint[])
+        ORDER BY change_request_id ASC, display_order ASC, id ASC
+      `,
+      [requestIds]
+    );
+
+    const itemsByRequestId = new Map();
+    for (const item of itemsResult.rows) {
+      const key = String(item.change_request_id);
+      if (!itemsByRequestId.has(key)) {
+        itemsByRequestId.set(key, []);
+      }
+      itemsByRequestId.get(key).push(item);
+    }
+
+    const hydratedRequests = requests.map((request) => ({
+      ...request,
+      items: itemsByRequestId.get(String(request.id)) || [],
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        count: hydratedRequests.length,
+        requests: hydratedRequests,
+      },
+    });
+  } catch (error) {
+    console.error('Get change request history error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch change request history',
+    });
+  }
+});
+
+router.post('/:form_id/change-request/:request_id/review', verifyAuth, async (req, res) => {
+  const normalizedFormId = String(req.params.form_id || '').trim();
+  const normalizedRequestId = String(req.params.request_id || '').trim();
+  const reviewerEmail = String(req.user?.email_id || '').trim();
+  const reviewerRole = String(req.user?.role || '').trim().toLowerCase();
+  const submittedItems = Array.isArray(req.body?.items) ? req.body.items : [];
+  const reviewerComment = req.body?.reviewer_comment == null ? null : String(req.body.reviewer_comment).trim() || null;
+
+  if (reviewerRole !== 'company_co') {
+    return res.status(403).json({
+      success: false,
+      message: 'Only company coordinators can review suggested changes',
+    });
+  }
+
+  if (!normalizedFormId || !normalizedRequestId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Form id and request id are required',
+    });
+  }
+
+  if (submittedItems.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'No review decisions were provided',
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const authResult = await getAuthorizedControlFormForChangeRequest(client, normalizedFormId, req.user);
+    if (authResult.error) {
+      await client.query('ROLLBACK');
+      return res.status(authResult.error.status).json({
+        success: false,
+        message: authResult.error.message,
+      });
+    }
+
+    const requestResult = await client.query(
+      `
+        SELECT id, request_id, status
+        FROM change_request
+        WHERE form_id = $1
+          AND request_id = $2
+        FOR UPDATE
+      `,
+      [normalizedFormId, normalizedRequestId]
+    );
+
+    if (requestResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Change request not found',
+      });
+    }
+
+    const activeRequest = requestResult.rows[0];
+    if (String(activeRequest.status || '').trim() !== 'Review Pending') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Only Review Pending change requests can be reviewed',
+      });
+    }
+
+    const dbItemsResult = await client.query(
+      `
+        SELECT id, field_db_name, field_label, old_value_text, new_value_text, display_order
+        FROM change_request_item
+        WHERE change_request_id = $1
+        ORDER BY display_order ASC, id ASC
+        FOR UPDATE
+      `,
+      [activeRequest.id]
+    );
+
+    const dbItems = dbItemsResult.rows;
+    if (dbItems.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'No change request items found for review',
+      });
+    }
+
+    const dbItemsById = new Map(dbItems.map((item) => [String(item.id), item]));
+    if (submittedItems.length !== dbItems.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Every requested field must be approved or rejected before submitting',
+      });
+    }
+
+    const approvedItems = [];
+    let approvedCount = 0;
+    let rejectedCount = 0;
+
+    for (const submittedItem of submittedItems) {
+      const itemId = String(submittedItem?.id || '').trim();
+      const decision = String(submittedItem?.status || '').trim();
+      const dbItem = dbItemsById.get(itemId);
+
+      if (!dbItem) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid change request item received',
+        });
+      }
+
+      if (decision !== 'Approved' && decision !== 'Rejected') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Each field must be marked as Approved or Rejected',
+        });
+      }
+
+      const rejectionReason = submittedItem?.rejection_reason == null
+        ? null
+        : String(submittedItem.rejection_reason).trim() || null;
+
+      await client.query(
+        `
+          UPDATE change_request_item
+          SET status = $1,
+              rejection_reason = $2,
+              updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+          WHERE id = $3
+        `,
+        [decision, rejectionReason, dbItem.id]
+      );
+
+      if (decision === 'Approved') {
+        approvedCount += 1;
+        approvedItems.push(dbItem);
+      } else {
+        rejectedCount += 1;
+      }
+    }
+
+    let finalStatus = 'Rejected';
+    if (approvedCount === dbItems.length) {
+      finalStatus = 'Approved';
+    } else if (approvedCount > 0 && rejectedCount > 0) {
+      finalStatus = 'Partially approved';
+    }
+
+    if (approvedItems.length > 0) {
+      const updateAssignments = [];
+      const updateValues = [normalizedFormId];
+      let paramIndex = 2;
+
+      for (const approvedItem of approvedItems) {
+        const fieldName = String(approvedItem.field_db_name || '').trim();
+        if (!REQUEST_CHANGE_ALLOWED_FIELDS.has(fieldName)) {
+          continue;
+        }
+        const parsedValue = parseApprovedChangeRequestValue(fieldName, approvedItem.new_value_text);
+        updateAssignments.push(`${quoteIdentifier(fieldName)} = $${paramIndex}`);
+        updateValues.push(parsedValue);
+        paramIndex += 1;
+      }
+
+      if (updateAssignments.length > 0) {
+        updateAssignments.push(`pending_changes = FALSE`, `updated_at = CURRENT_TIMESTAMP`);
+        await client.query(
+          `
+            UPDATE control_forms
+            SET ${updateAssignments.join(', ')}
+            WHERE form_id = $1
+          `,
+          updateValues
+        );
+      } else {
+        await client.query(
+          `
+            UPDATE control_forms
+            SET pending_changes = FALSE,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE form_id = $1
+          `,
+          [normalizedFormId]
+        );
+      }
+    } else {
+      await client.query(
+        `
+          UPDATE control_forms
+          SET pending_changes = FALSE,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE form_id = $1
+        `,
+        [normalizedFormId]
+      );
+    }
+
+    await client.query(
+      `
+        UPDATE change_request
+        SET status = $1,
+            reviewed_by_email = $2,
+            reviewer_comment = $3,
+            updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+        WHERE id = $4
+      `,
+      [finalStatus, reviewerEmail, reviewerComment, activeRequest.id]
+    );
+
+    await client.query('COMMIT');
+
+    await logAuditEvent(
+      'RACM Change Request Reviewed',
+      reviewerEmail,
+      normalizedFormId,
+      normalizedRequestId
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Suggested changes reviewed successfully',
+      data: {
+        request_id: normalizedRequestId,
+        status: finalStatus,
+        approved_count: approvedCount,
+        rejected_count: rejectedCount,
+        pending_changes: false,
+      },
+    });
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Review change request rollback error:', rollbackError);
+    }
+    console.error('Review change request error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to review suggested changes',
     });
   } finally {
     client.release();
@@ -1845,12 +2831,13 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     // Build WHERE clause based on filters
     let query = `UPDATE control_forms
                  SET active = $1,
+                     updated_at = CURRENT_TIMESTAMP,
                      user_mail_sent = CASE
-                       WHEN $1 = '1' THEN FALSE
+                      WHEN $1 = TRUE THEN FALSE
                        ELSE user_mail_sent
                      END
                  WHERE 1=1`;
-    const queryParams = ['1'];
+    const queryParams = [true];
     let paramIndex = 2;
     
     // Filter by company_identifier (required for company_co)
@@ -1869,12 +2856,11 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     
     // Filter by active status if provided (to only update inactive forms, for example)
     if (active !== undefined) {
-      if (active === 'true' || active === '1') {
-        // Only update forms that are currently active
-        query += ` AND active IS NOT NULL AND active != '' AND active != '0'`;
-      } else if (active === 'false' || active === '0') {
-        // Only update forms that are currently inactive
-        query += ` AND (active IS NULL OR active = '' OR active = '0')`;
+      const activeFilter = parseActiveFilter(active);
+      if (activeFilter === true) {
+        query += ` AND active = TRUE`;
+      } else if (activeFilter === false) {
+        query += ` AND COALESCE(active, FALSE) = FALSE`;
       }
     }
     
@@ -1900,12 +2886,11 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     
     // Filter by active status if provided (to only update inactive forms, for example)
     if (active !== undefined) {
-      if (active === 'true' || active === '1') {
-        // Only update forms that are currently active
-        getFormsQuery += ` AND active IS NOT NULL AND active != '' AND active != '0'`;
-      } else if (active === 'false' || active === '0') {
-        // Only update forms that are currently inactive
-        getFormsQuery += ` AND (active IS NULL OR active = '' OR active = '0')`;
+      const activeFilter = parseActiveFilter(active);
+      if (activeFilter === true) {
+        getFormsQuery += ` AND active = TRUE`;
+      } else if (activeFilter === false) {
+        getFormsQuery += ` AND COALESCE(active, FALSE) = FALSE`;
       }
     }
     
@@ -1919,7 +2904,7 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     // Log audit event for each RACM transitioned to active='1' in bulk action
     if (req.user && req.user.email_id && formsToUpdate.rows.length > 0) {
       for (const form of formsToUpdate.rows) {
-        const wasActive = form.active && form.active !== '' && form.active !== '0';
+        const wasActive = Boolean(form.active);
         if (!wasActive) {
           await logAuditEvent('Set RACM Active', req.user.email_id, form.form_id);
         }
@@ -1950,7 +2935,6 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
 
 // Bulk set due_date and reminder_frequency for specific RACM(s)
 router.post('/bulk-set-due-date', verifyAuth, async (req, res) => {
-  const client = await pool.connect();
   try {
     const userRole = req.user?.role;
     if (userRole !== 'company_co') {
@@ -1998,34 +2982,34 @@ router.post('/bulk-set-due-date', verifyAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'form_ids is required' });
     }
 
-    await client.query('BEGIN');
+    const dueDateValue = new Date(`${dueDate}T00:00:00.000Z`);
 
     // Only update RACMs that belong to the coordinator's company.
-    const eligible = await client.query(
-      `SELECT form_id FROM control_forms WHERE company_identifier = $1 AND form_id = ANY($2::text[])`,
-      [companyIdentifier, formIds]
-    );
-    const eligibleFormIds = eligible.rows.map((r) => r.form_id);
+    const eligible = await prisma.controlForm.findMany({
+      where: {
+        companyIdentifier,
+        formId: { in: formIds },
+      },
+      select: { formId: true },
+    });
+    const eligibleFormIds = eligible.map((r) => r.formId).filter(Boolean);
 
     if (eligibleFormIds.length === 0) {
-      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, message: 'No matching RACM(s) found' });
     }
 
     // Reset reminder_datetime so the reminder scheduler starts from the new due date/frequency.
-    const update = await client.query(
-      `
-      UPDATE control_forms
-      SET due_date = $1,
-          reminder_frequency = $2,
-          reminder_datetime = NULL
-      WHERE company_identifier = $3
-        AND form_id = ANY($4::text[])
-      `,
-      [dueDate, reminderFrequency, companyIdentifier, eligibleFormIds]
-    );
-
-    await client.query('COMMIT');
+    await prisma.controlForm.updateMany({
+      where: {
+        companyIdentifier,
+        formId: { in: eligibleFormIds },
+      },
+      data: {
+        dueDate: dueDateValue,
+        reminderFrequency,
+        reminderDatetime: null,
+      },
+    });
 
     // Audit: one row per RACM for traceability.
     if (req.user?.email_id) {
@@ -2041,16 +3025,11 @@ router.post('/bulk-set-due-date', verifyAuth, async (req, res) => {
       skippedCount: formIds.length - eligibleFormIds.length,
     });
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
     console.error('Error bulk setting due date:', error);
     return res.status(500).json({
       success: false,
       message: 'Error bulk setting due date',
     });
-  } finally {
-    client.release();
   }
 });
 
@@ -2195,9 +3174,10 @@ router.post('/', verifyAuth, async (req, res) => {
         form_id, company_identifier, business_process, financial_year, unit_id, sample_required,
         due_date, reminder_frequency,
         completeness, existence_occurrence, rights_and_obligation,
-        valuation_and_allocation, presentation_and_disclosure
+        valuation_and_allocation, presentation_and_disclosure,
+        created_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, NOW() AT TIME ZONE 'UTC')
       RETURNING *;
     `;
 
@@ -2302,11 +3282,16 @@ router.post('/replicate', verifyAuth, async (req, res) => {
       'control_owner',
       'doc_uploaded_by_user',
       'active',
+      'user_mail_sent',
       'status',
       'reason_by_approver',
       'remarks_by_user',
       'sample_doc',
       'due_date',
+      'form_id',
+      'approval_status_change_timestamp',
+      'sent_for_approval_timestamp',
+      'updated_at',
       // Design / conclusion fields should not be carried over on replication
       'control_design_procs',
       'control_design_conclusion',
@@ -2329,6 +3314,23 @@ router.post('/replicate', verifyAuth, async (req, res) => {
       // Override required fields
       insertObj.form_id = await generateUniqueFormId(client);
       insertObj.financial_year = String(financial_year).trim();
+
+      // Generate new control_number using existing business-process-code sequence logic.
+      try {
+        const companyId = coordinatorCompany || insertObj.company_identifier || null;
+        const businessProcessName = insertObj.business_process != null
+          ? String(insertObj.business_process).trim()
+          : '';
+        if (companyId && businessProcessName) {
+          const generatedPrefix = await getBusinessProcessCodeForName(client, businessProcessName);
+          const nextControlNumber = await getNextGeneratedControlNumber(client, companyId, generatedPrefix);
+          if (nextControlNumber) {
+            insertObj.control_number = nextControlNumber;
+          }
+        }
+      } catch (e) {
+        console.error('[control_forms replicate] control number generation error:', e);
+      }
 
       // Prevent duplicate RACM creation (same company + control_number)
       try {
@@ -2411,22 +3413,31 @@ router.post('/replicate', verifyAuth, async (req, res) => {
 // Delete a RACM
 router.delete('/:form_id', verifyAuth, async (req, res) => {
   const { form_id } = req.params;
-  const client = await pool.connect();
 
   try {
     // Check if user is company coordinator
     const userEmail = req.user.email_id;
-    const getUserQuery = 'SELECT role FROM ifc_users WHERE email_id = $1';
-    const userResult = await client.query(getUserQuery, [userEmail]);
-    
-    if (userResult.rows.length === 0) {
+    const user = await prisma.ifcUser.findFirst({
+      where: {
+        emailId: {
+          equals: userEmail,
+          mode: 'insensitive',
+        },
+      },
+      select: {
+        role: true,
+        companyIdentifier: true,
+      },
+    });
+
+    if (!user) {
       return res.status(401).json({
         success: false,
         message: 'User not found'
       });
     }
 
-    const userRole = userResult.rows[0].role;
+    const userRole = user.role;
     if (userRole !== 'company_co') {
       return res.status(403).json({
         success: false,
@@ -2434,52 +3445,47 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       });
     }
 
-    await client.query('BEGIN');
-
     // Check if form exists.
-    const checkQuery = `
-      SELECT 
-        id, 
-        company_identifier
-      FROM control_forms 
-      WHERE form_id = $1
-    `;
-    const checkResult = await client.query(checkQuery, [form_id]);
+    const form = await prisma.controlForm.findFirst({
+      where: { formId: form_id },
+      select: {
+        id: true,
+        companyIdentifier: true,
+      },
+    });
 
-    if (checkResult.rows.length === 0) {
-      await client.query('ROLLBACK');
+    if (!form) {
       return res.status(404).json({
         success: false,
         message: 'RACM not found'
       });
     }
 
-    const form = checkResult.rows[0];
-
     // Verify that the coordinator can only delete forms from their own company
-    const coordinatorCompanyQuery = 'SELECT company_identifier FROM ifc_users WHERE email_id = $1';
-    const coordinatorResult = await client.query(coordinatorCompanyQuery, [userEmail]);
-    
-    if (coordinatorResult.rows.length > 0) {
-      const coordinatorCompany = coordinatorResult.rows[0].company_identifier;
-      if (form.company_identifier !== coordinatorCompany) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied. You can only delete forms from your own company.'
-        });
-      }
+    const coordinatorCompany = user.companyIdentifier || null;
+    if (form.companyIdentifier !== coordinatorCompany) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only delete forms from your own company.'
+      });
     }
 
     // Delete all sample and user-uploaded documents from S3 before deleting DB rows.
-    const { sampleDocsByFormId, userDocsByFormId } = await getControlFormDocumentRows(client, [form_id]);
-    const sampleDocs = sampleDocsByFormId.get(form_id) || [];
-    const userDocs = userDocsByFormId.get(form_id) || [];
+    const [sampleDocs, userDocs] = await Promise.all([
+      prisma.sampleDoc.findMany({
+        where: { formId: form_id },
+        select: { sampleDoc: true },
+      }),
+      prisma.docUploadedByUser.findMany({
+        where: { formId: form_id },
+        select: { docUploadedByUser: true },
+      }),
+    ]);
     const docUrlsToDelete = Array.from(
       new Set(
         [
-          ...userDocs.map((doc) => doc.doc_uploaded_by_user),
-          ...sampleDocs.map((doc) => doc.sample_doc),
+          ...userDocs.map((doc) => doc.docUploadedByUser),
+          ...sampleDocs.map((doc) => doc.sampleDoc),
         ]
           .map((value) => (value == null ? '' : String(value).trim()))
           .filter(Boolean)
@@ -2491,7 +3497,6 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
         await deleteFileFromS3(s3Key);
       }
     } catch (s3Error) {
-      await client.query('ROLLBACK');
       console.error('Error deleting associated documents from S3 for RACM:', s3Error);
       return res.status(500).json({
         success: false,
@@ -2500,36 +3505,33 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       });
     }
 
-    const deletedUserDocsResult = await client.query(
-      'DELETE FROM doc_uploaded_by_user WHERE form_id = $1',
-      [form_id]
-    );
-    const deletedSampleDocsResult = await client.query(
-      'DELETE FROM sample_docs WHERE form_id = $1',
-      [form_id]
-    );
-
-    // Delete the RACM
-    const deleteQuery = 'DELETE FROM control_forms WHERE form_id = $1';
-    await client.query(deleteQuery, [form_id]);
-
-    await client.query('COMMIT');
-
-    // Log audit event
-    await logAuditEvent('RACM deleted', userEmail, form_id);
+    const deleteResult = await prisma.$transaction(async (tx) => {
+      const deletedUserDocsResult = await tx.docUploadedByUser.deleteMany({
+        where: { formId: form_id },
+      });
+      const deletedSampleDocsResult = await tx.sampleDoc.deleteMany({
+        where: { formId: form_id },
+      });
+      await tx.controlForm.deleteMany({
+        where: { formId: form_id },
+      });
+      return {
+        user_uploaded_rows: deletedUserDocsResult.count,
+        sample_doc_rows: deletedSampleDocsResult.count,
+      };
+    });
 
     res.status(200).json({
       success: true,
       message: 'RACM deleted successfully',
       deleted_documents: {
         s3_objects: docUrlsToDelete.length,
-        user_uploaded_rows: deletedUserDocsResult.rowCount,
-        sample_doc_rows: deletedSampleDocsResult.rowCount,
+        user_uploaded_rows: deleteResult.user_uploaded_rows,
+        sample_doc_rows: deleteResult.sample_doc_rows,
       }
     });
 
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Error deleting RACM:', error);
     
     res.status(500).json({
@@ -2537,8 +3539,6 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       message: 'Error deleting RACM',
       error: error.message
     });
-  } finally {
-    client.release();
   }
 });
 
@@ -2574,8 +3574,6 @@ router.get('/:form_id/approver-status', verifyUserAuth, async (req, res) => {
         approver_user_id: approverDetails.approver_user_id || null,
         approver_temp_login: approverDetails.approver_temp_login,
         approver_assigned: isApproverAssigned(approverDetails),
-        approver_exists: doesApproverUserExist(approverDetails),
-        approver_active: doesApproverUserExist(approverDetails) && !isApproverTempLogin(approverDetails),
       },
     });
   } catch (error) {
@@ -2829,42 +3827,65 @@ router.post(
     });
   }
 
-  const client = await pool.connect();
-
   try {
-    await client.query('BEGIN');
+    const form = await prisma.controlForm.findFirst({
+      where: { formId: form_id },
+      select: { formId: true },
+    });
 
-    // Verify form exists
-    const formCheckQuery = 'SELECT form_id FROM control_forms WHERE form_id = $1';
-    const formResult = await client.query(formCheckQuery, [form_id]);
-
-    if (formResult.rows.length === 0) {
-      await client.query('ROLLBACK');
+    if (!form) {
       return res.status(404).json({
         success: false,
         message: 'Control form not found'
       });
     }
 
+    const uploadedS3Keys = [];
     const sampleDocs = [];
-    for (const file of files) {
-      const fileName = file.originalname;
-      const fileBuffer = file.buffer;
+    try {
+      for (const file of files) {
+        const fileName = file.originalname;
+        const fileBuffer = file.buffer;
 
-      // Upload file to S3 in IFC/sample_docs path
-      console.log(`Uploading sampling Excel file to S3: ${fileName}`);
-      const s3Key = await uploadFileToS3(fileBuffer, fileName, `IFC/sample_docs/${form_id}`, {
-        preserveFileName: true,
-      });
-      console.log(`Sampling Excel file uploaded to S3 with key: ${s3Key}`);
+        // Upload file to S3 first (outside DB transaction to avoid long txn wait/P2028)
+        console.log(`Uploading sampling Excel file to S3: ${fileName}`);
+        const s3Key = await uploadFileToS3(fileBuffer, fileName, `IFC/sample_docs/${form_id}`, {
+          preserveFileName: true,
+        });
+        console.log(`Sampling Excel file uploaded to S3 with key: ${s3Key}`);
+        uploadedS3Keys.push(s3Key);
 
-      const sampleDoc = await insertSampleDocument(client, form_id, s3Key);
-      if (sampleDoc) {
-        sampleDocs.push(sampleDoc);
+        const sampleDoc = await prisma.sampleDoc.create({
+          data: {
+            formId: form_id,
+            sampleDoc: s3Key,
+          },
+          select: {
+            id: true,
+            formId: true,
+            sampleDoc: true,
+            createdAt: true,
+          },
+        });
+
+        sampleDocs.push({
+          id: sampleDoc.id,
+          form_id: sampleDoc.formId,
+          sample_doc: sampleDoc.sampleDoc,
+          created_at: sampleDoc.createdAt,
+        });
       }
+    } catch (innerError) {
+      // Best-effort cleanup if something fails after upload
+      for (const key of uploadedS3Keys) {
+        try {
+          await deleteFileFromS3(key);
+        } catch (cleanupError) {
+          console.warn(`Failed to cleanup sampling doc from S3: ${key}`, cleanupError);
+        }
+      }
+      throw innerError;
     }
-
-    await client.query('COMMIT');
 
     res.status(200).json({
       success: true,
@@ -2878,7 +3899,6 @@ router.post(
     });
 
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Error uploading sampling Excel file to S3:', error);
     
     res.status(500).json({
@@ -2886,8 +3906,6 @@ router.post(
       message: 'Error uploading sampling Excel file',
       error: error.message
     });
-  } finally {
-    client.release();
   }
 });
 

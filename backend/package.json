@@ -4,11 +4,16 @@
   "description": "",
   "license": "ISC",
   "author": "divyesh95",
-  "type": "commonjs",
   "main": "app.js",
   "scripts": {
     "dev": "nodemon app.js",
     "start": "node app.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:sync": "prisma db push",
+    "prisma:pull": "prisma db pull",
+    "studio": "prisma studio --browser none --port 5555",
+    "prisma:studio": "prisma studio --browser none --port 5555",
     "migrate:hash-passwords": "node scripts/hash_existing_passwords.js",
     "util:decrypt-password-hash": "node scripts/decrypt_password_hash.js",
     "util:encrypt-password-hash": "node scripts/encrypt_password_hash.js",
@@ -17,16 +22,21 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.965.0",
     "@aws-sdk/s3-request-presigner": "^3.965.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.12",
     "nodemon": "^3.1.11",
-    "pg": "^8.16.3",
+    "pg": "^8.20.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "prisma": "^7.8.0"
   }
 }

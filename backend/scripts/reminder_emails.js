@@ -3,7 +3,7 @@
  * Runs every 1 minute. reminder_frequency has three values: Daily, Weekly, Monthly.
  *
  * Send conditions:
- * - active = 1, status != 'Approved', current date >= due_date
+ * - active = TRUE, status != 'Approved', current date >= due_date
  * - First time: reminder_datetime is empty → send as soon as current date is ahead of due_date
  * - Next times: send when current datetime reaches reminder_datetime
  * reminder_datetime is treated as the "next trigger at" timestamp.
@@ -118,23 +118,26 @@ function parseTimestampAsMumbai(value) {
 async function fetchFormsDueForReminder(client) {
   const query = `
     SELECT
-      form_id,
-      control_owner,
-      standard_control_description,
-      business_process,
-      due_date,
-      reminder_frequency,
-      reminder_datetime
-    FROM control_forms
-    WHERE active IS NOT NULL AND TRIM(active) != '' AND active != '0'
+      cf.form_id,
+      cf.control_owner,
+      cf.standard_control_description,
+      cf.business_process,
+      cf.due_date,
+      cf.reminder_frequency,
+      cf.reminder_datetime,
+      c.company_name
+    FROM control_forms cf
+    LEFT JOIN companies c
+      ON c.company_identifier = cf.company_identifier
+    WHERE active = TRUE
       AND (status IS NULL OR TRIM(status) = '' OR status != 'Approved')
       AND due_date IS NOT NULL
       AND CURRENT_DATE >= due_date
       AND (
-        reminder_datetime IS NULL
+        cf.reminder_datetime IS NULL
         OR (
           -- reminder_datetime stores the next trigger timestamp
-          (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata') >= reminder_datetime::timestamp
+          (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata') >= cf.reminder_datetime::timestamp
         )
       )
   `;
@@ -167,7 +170,8 @@ async function updateReminderDatetime(client, formId, reminderFrequency) {
     `
       UPDATE control_forms
       -- Store next trigger timestamp in IST wall-clock time.
-      SET reminder_datetime = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata') + ($2::interval)
+      SET reminder_datetime = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata') + ($2::interval),
+          updated_at = CURRENT_TIMESTAMP
       WHERE form_id = $1
       RETURNING reminder_datetime;
     `,
@@ -181,23 +185,24 @@ async function updateReminderDatetime(client, formId, reminderFrequency) {
  */
 function buildReminderEmailBody(form) {
   const dueStr = formatDueDateDisplay(form.due_date);
+  const companyName = String(form.company_name || '').trim() || 'IFC';
   const formUrl = process.env.FRONTEND_URL
     ? `${process.env.FRONTEND_URL}/user/form/${form.form_id}`
     : null;
-  return `Hello ${form.control_owner || 'Control Owner'},
+  return `Dear ${form.control_owner || 'Control Owner'},
 
 This is a reminder that your RACM (Risk and Control Matrix) is pending.
 
-Business Process: ${form.business_process || 'N/A'}
 Control: ${form.standard_control_description || 'N/A'}
+Business Process: ${form.business_process || 'N/A'}
 Due date: ${dueStr}
 
-${formUrl ? `Access your RACM: ${formUrl}\n\n` : ''}${process.env.FRONTEND_URL ? `Portal: ${process.env.FRONTEND_URL}` : ''}
+${process.env.FRONTEND_URL ? `Portal: ${process.env.FRONTEND_URL}` : ''}
 
 Please complete and submit your evidence at your earliest convenience.
 
 Regards,
-IFC System
+${companyName}
 `;
 }
 
