@@ -15,6 +15,9 @@ const {
   createOrResubmitDeficiencyResponse,
   getDeficiencyResponseByFormId,
 } = require('../utils/deficiency_response');
+const {
+  notifyDeficiencyResponseSubmitted,
+} = require('../utils/deficiency_response_notifications');
 const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/sample_required');
 const {
   attachControlFormDocuments,
@@ -432,6 +435,44 @@ const uploadUserDoc = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
+
+const DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const uploadDeficiencyResponseDoc = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES },
+});
+
+function handleDeficiencyResponseUpload(req, res, next) {
+  uploadDeficiencyResponseDoc.fields([
+    { name: 'documents', maxCount: 20 },
+    { name: 'document', maxCount: 1 },
+  ])(req, res, (error) => {
+    if (!error) {
+      next();
+      return;
+    }
+
+    if (error instanceof multer.MulterError) {
+      if (error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Each deficiency response document must be 20 MB or smaller',
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Failed to upload deficiency response documents',
+      });
+    }
+
+    console.error('Deficiency response upload middleware error:', error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to upload deficiency response documents',
+    });
+  });
+}
 
 /** Design & Implementation block (process owner / user UI). Keep in sync with UserFormDetail groupedApproverFields. */
 const DESIGN_IMPLEMENTATION_GROUP_FIELDS = [
@@ -2005,6 +2046,14 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
     const updatedForm = formResult.rows[0];
     await attachControlFormDocuments(pool, [updatedForm]);
     updatedForm.deficiency_response = await getDeficiencyResponseByFormId(pool, normalizedFormId);
+    try {
+      await notifyDeficiencyResponseSubmitted({
+        form: updatedForm,
+        deficiencyResponse: updatedForm.deficiency_response,
+      });
+    } catch (notifyError) {
+      console.error('Error sending deficiency response submitted email:', notifyError);
+    }
     const dataForClient = req.user.role === 'user' ? shapeControlFormJsonForProcessOwner(updatedForm) : updatedForm;
 
     return res.status(200).json({
@@ -2032,10 +2081,7 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
 router.post(
   '/:form_id/deficiency-response/upload-attachments',
   verifyAuth,
-  uploadUserDoc.fields([
-    { name: 'documents', maxCount: 20 },
-    { name: 'document', maxCount: 1 },
-  ]),
+  handleDeficiencyResponseUpload,
   async (req, res) => {
     const normalizedFormId = String(req.params.form_id || '').trim();
     const files = [

@@ -22,6 +22,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import AddIcon from '@mui/icons-material/Add'
@@ -82,6 +83,8 @@ const REQUEST_CHANGE_BOOLEAN_FIELDS = new Set([
   'presentation_and_disclosure',
 ])
 
+const DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
+
 const REQUEST_CHANGE_DROPDOWN_OPTIONS = {
   risk_heat: ['High', 'Low', 'Medium'],
   control_type_fo: ['Financial', 'Operational'],
@@ -93,6 +96,38 @@ const REQUEST_CHANGE_DROPDOWN_OPTIONS = {
 }
 
 const REQUEST_CHANGE_FIELD_SET = new Set(REQUEST_CHANGE_FIELD_KEYS)
+
+function getDefaultDeficiencyResponseForm() {
+  return {
+    response_type: 'mitigation_plan',
+    explaination: '',
+    concerned_person: '',
+    due_date: '',
+  }
+}
+
+function buildDeficiencyResponseFormState(data, fallbackResponseType = 'mitigation_plan') {
+  const currentDeficiencySubmission = data?.deficiency_response?.current_submission
+  const currentSubmissionStatus = String(currentDeficiencySubmission?.status || '').trim().toLowerCase()
+
+  if (currentSubmissionStatus !== 'submitted') {
+    return {
+      ...getDefaultDeficiencyResponseForm(),
+      response_type: fallbackResponseType || 'mitigation_plan',
+    }
+  }
+
+  return {
+    response_type: currentDeficiencySubmission?.submission_type || data?.deficiency_response?.response_type || fallbackResponseType || 'mitigation_plan',
+    explaination: currentDeficiencySubmission?.explaination || data?.deficiency_response?.explaination || '',
+    concerned_person: currentDeficiencySubmission?.concerned_person || data?.deficiency_response?.concerned_person || '',
+    due_date: currentDeficiencySubmission?.due_date
+      ? String(currentDeficiencySubmission.due_date).slice(0, 10)
+      : data?.deficiency_response?.due_date
+        ? String(data.deficiency_response.due_date).slice(0, 10)
+        : '',
+  }
+}
 
 function normalizeRequestChangeValue(fieldKey, value) {
   if (REQUEST_CHANGE_BOOLEAN_FIELDS.has(fieldKey)) {
@@ -134,6 +169,7 @@ function UserFormDetail() {
   const [changeRequestHistoryLoading, setChangeRequestHistoryLoading] = useState(false)
   const [changeRequestHistoryDialogOpen, setChangeRequestHistoryDialogOpen] = useState(false)
   const [expandedHistoryRequestIds, setExpandedHistoryRequestIds] = useState({})
+  const [expandedDeficiencyVersions, setExpandedDeficiencyVersions] = useState({})
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [sampleDocsDialogOpen, setSampleDocsDialogOpen] = useState(false)
   const [userDocsDialogOpen, setUserDocsDialogOpen] = useState(false)
@@ -214,17 +250,7 @@ function UserFormDetail() {
         setIsRequestChangeMode(false)
         setRequestReason('')
         setRemovedUploadedDocPaths([])
-        const currentDeficiencySubmission = data.data?.deficiency_response?.current_submission
-        setDeficiencyResponseForm({
-          response_type: currentDeficiencySubmission?.submission_type || data.data?.deficiency_response?.response_type || 'mitigation_plan',
-          explaination: currentDeficiencySubmission?.explaination || data.data?.deficiency_response?.explaination || '',
-          concerned_person: currentDeficiencySubmission?.concerned_person || data.data?.deficiency_response?.concerned_person || '',
-          due_date: currentDeficiencySubmission?.due_date
-            ? String(currentDeficiencySubmission.due_date).slice(0, 10)
-            : data.data?.deficiency_response?.due_date
-              ? String(data.data.deficiency_response.due_date).slice(0, 10)
-              : '',
-        })
+        setDeficiencyResponseForm(buildDeficiencyResponseFormState(data.data))
         setDeficiencyResponseFiles([])
       } else if (response.status === 403) {
         // User is authenticated but not authorized (different email)
@@ -691,9 +717,27 @@ function UserFormDetail() {
     }))
   }
 
+  const toggleDeficiencySubmissionExpansion = (submissionId) => {
+    setExpandedDeficiencyVersions((prev) => ({
+      ...prev,
+      [submissionId]: !prev[submissionId],
+    }))
+  }
+
   const formatDateTime = (dateString) => {
     return formatIndianDateTime(dateString, 'N/A')
   }
+
+  const formatDeficiencyStatus = (status) => {
+    const value = String(status || '').trim()
+    if (!value) return '-'
+    return value
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  }
+
   const formatDateOnly = (dateString) => {
     if (!dateString) return '-'
     const date = new Date(dateString)
@@ -722,7 +766,17 @@ function UserFormDetail() {
   const handleDeficiencyResponseFileSelect = (e) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
-    setDeficiencyResponseFiles((currentFiles) => [...currentFiles, ...files])
+    const validFiles = files.filter((file) => file.size <= DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES)
+    const invalidFiles = files.filter((file) => file.size > DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES)
+
+    if (invalidFiles.length > 0) {
+      toast.error('Each deficiency response document must be 20 MB or smaller')
+    }
+
+    if (validFiles.length > 0) {
+      setDeficiencyResponseFiles((currentFiles) => [...currentFiles, ...validFiles])
+    }
+
     e.target.value = ''
   }
 
@@ -807,15 +861,7 @@ function UserFormDetail() {
           deficiency_response_status: 'submitted_for_review',
         }))
         setDeficiencyResponseFiles([])
-        const currentDeficiencySubmission = data.data?.deficiency_response?.current_submission
-        setDeficiencyResponseForm({
-          response_type: currentDeficiencySubmission?.submission_type || data.data?.deficiency_response?.response_type || responseType,
-          explaination: currentDeficiencySubmission?.explaination || data.data?.deficiency_response?.explaination || explaination,
-          concerned_person: currentDeficiencySubmission?.concerned_person || data.data?.deficiency_response?.concerned_person || '',
-          due_date: currentDeficiencySubmission?.due_date
-            ? String(currentDeficiencySubmission.due_date).slice(0, 10)
-            : '',
-        })
+        setDeficiencyResponseForm(buildDeficiencyResponseFormState(data.data, responseType))
       } else {
         toast.error(data.message || 'Failed to submit deficiency response')
       }
@@ -1105,6 +1151,15 @@ function UserFormDetail() {
   const uploadedUserDocCount = visibleUploadedUserDocs.length
   const deficiencyResponse = formData?.deficiency_response || null
   const deficiencyCurrentSubmission = deficiencyResponse?.current_submission || null
+  const deficiencySubmissions = Array.isArray(deficiencyResponse?.submissions)
+    ? deficiencyResponse.submissions
+    : []
+  const deficiencyHistorySubmissions = deficiencySubmissions.filter((submission) => {
+    const isCurrentSubmission = Number(submission?.id) === Number(deficiencyCurrentSubmission?.id)
+    if (!isCurrentSubmission) return true
+    const normalizedStatus = String(submission?.status || '').trim().toLowerCase()
+    return normalizedStatus === 'approved' || normalizedStatus === 'rejected'
+  })
   const deficiencyAttachments = Array.isArray(deficiencyCurrentSubmission?.attachments)
     ? deficiencyCurrentSubmission.attachments
     : []
@@ -1112,6 +1167,9 @@ function UserFormDetail() {
   const needsDeficiencyResponse = Boolean(formData?.deficiency_action_status)
   const showDeficiencyActionNotice = needsDeficiencyResponse
   const canSubmitDeficiencyResponse = needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review'
+  const showActiveDeficiencyResponseSection = Boolean(
+    deficiencyResponse && String(deficiencyResponse.status || '').trim().toLowerCase() === 'submitted'
+  )
 
   const renderRequestChangeInput = (fieldKey, label) => {
     const value = getRequestChangeValue(fieldKey)
@@ -2518,7 +2576,206 @@ function UserFormDetail() {
               </CardContent>
             </Card>
 
-            {(needsDeficiencyResponse || deficiencyResponse) ? (
+            {deficiencyHistorySubmissions.length > 0 ? (
+              <Card
+                sx={{
+                  borderRadius: 3,
+                  boxShadow: theme.palette.mode === 'dark'
+                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                    : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid',
+                  borderColor: theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.12)'
+                    : 'rgba(0, 0, 0, 0.08)',
+                  overflow: 'hidden',
+                }}
+              >
+                <CardContent sx={{ p: 4 }}>
+                  <Typography
+                    variant="h6"
+                    component="h3"
+                    sx={{
+                      fontWeight: 700,
+                      mb: 3,
+                      color: 'text.primary',
+                      fontSize: '1.25rem',
+                      pb: 2,
+                      borderBottom: '2px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    Deficiency Response History
+                  </Typography>
+
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    {deficiencyHistorySubmissions.map((submission) => {
+                      const isExpanded = Boolean(expandedDeficiencyVersions[submission.id])
+                      const submissionAttachments = Array.isArray(submission.attachments) ? submission.attachments : []
+                      const submissionTypeLabel = String(submission.submission_type || '').trim() === 'compensatory_racm'
+                        ? 'Compensatory RACM'
+                        : 'Mitigation Plan'
+                      const normalizedSubmissionStatus = String(submission.status || '').trim().toLowerCase()
+                      const tileTimestampLabel = normalizedSubmissionStatus === 'approved'
+                        ? 'Approved on'
+                        : normalizedSubmissionStatus === 'rejected'
+                          ? 'Rejected on'
+                          : 'Updated on'
+                      const tileTimestampValue = submission.reviewed_at || submission.submitted_at
+
+                      return (
+                        <Box
+                          key={submission.id}
+                          sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}
+                        >
+                          <Box
+                            sx={{
+                              px: 2,
+                              py: 1.5,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 2,
+                              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(15,23,42,0.02)',
+                            }}
+                          >
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                                Version {submission.version_no} • {submissionTypeLabel}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                Status: {formatDeficiencyStatus(submission.status)}
+                                {tileTimestampValue ? ` • ${tileTimestampLabel} ${formatIndianDateTime(tileTimestampValue)}` : ''}
+                              </Typography>
+                            </Box>
+                            <Button
+                              size="small"
+                              onClick={() => toggleDeficiencySubmissionExpansion(submission.id)}
+                              endIcon={isExpanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+                              sx={{ textTransform: 'none', flexShrink: 0 }}
+                            >
+                              {isExpanded ? 'Hide details' : 'View details'}
+                            </Button>
+                          </Box>
+
+                          {isExpanded ? (
+                            <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                              <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                  Explaination
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                                  {String(submission.explaination || '').trim() || '-'}
+                                </Typography>
+                              </Box>
+                              {(String(submission.concerned_person || '').trim() || submission.due_date) ? (
+                                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.5 }}>
+                                  <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                      Concerned Person
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                      {String(submission.concerned_person || '').trim() || '-'}
+                                    </Typography>
+                                  </Box>
+                                  <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                      Due Date
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                      {submission.due_date ? formatDateOnly(submission.due_date) : '-'}
+                                    </Typography>
+                                  </Box>
+                                </Box>
+                              ) : null}
+                              {submissionAttachments.length > 0 ? (
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Documents
+                                  </Typography>
+                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                    {submissionAttachments.map((attachment) => (
+                                      <Box key={attachment.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                                        <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                          {attachment.original_name || getFileName(attachment.file_url)}
+                                        </Typography>
+                                        <Button
+                                          size="small"
+                                          startIcon={<DownloadRoundedIcon />}
+                                          onClick={() => handleDownloadUserDocument(attachment.file_url)}
+                                          sx={{ textTransform: 'none' }}
+                                        >
+                                          Download
+                                        </Button>
+                                      </Box>
+                                    ))}
+                                  </Box>
+                                </Box>
+                              ) : null}
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.5 }}>
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Submitted By
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                    {String(submission.submitted_by_email || '').trim() || '-'}
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Submitted On
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                    {submission.submitted_at ? formatIndianDateTime(submission.submitted_at) : '-'}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.5 }}>
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Reviewed By
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                    {String(submission.reviewed_by_email || '').trim() || '-'}
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Reviewed On
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                    {submission.reviewed_at ? formatIndianDateTime(submission.reviewed_at) : '-'}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                              <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                  Review Decision
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                  {formatDeficiencyStatus(submission.review_decision)}
+                                </Typography>
+                              </Box>
+                              {String(submission.review_comment || '').trim() ? (
+                                <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                    Review Comment
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                                    {String(submission.review_comment)}
+                                  </Typography>
+                                </Box>
+                              ) : null}
+                            </Box>
+                          ) : null}
+                        </Box>
+                      )
+                    })}
+                  </Box>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {(needsDeficiencyResponse || showActiveDeficiencyResponseSection) ? (
               <Card
                 sx={{
                   borderRadius: 3,
@@ -2567,25 +2824,15 @@ function UserFormDetail() {
                     </Box>
                   ) : null}
 
-                  {deficiencyResponse ? (
+                  {showActiveDeficiencyResponseSection && deficiencyResponse ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, mb: canSubmitDeficiencyResponse ? 4 : 0 }}>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
-                        <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
-                            Response Type
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: 'text.primary' }}>
-                            {String(deficiencyResponse.response_type || '').trim() === 'compensatory_racm' ? 'Compensatory RACM' : 'Mitigation Plan'}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
-                            Status
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: 'text.primary' }}>
-                            {String(deficiencyResponse.status || '').trim() || '-'}
-                          </Typography>
-                        </Box>
+                      <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                          Response Type
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                          {String(deficiencyResponse.response_type || '').trim() === 'compensatory_racm' ? 'Compensatory RACM' : 'Mitigation Plan'}
+                        </Typography>
                       </Box>
                       <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
                         <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>

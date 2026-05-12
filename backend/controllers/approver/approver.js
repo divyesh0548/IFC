@@ -6,6 +6,10 @@ const {
   attachControlFormDocuments,
 } = require('../../utils/racm_documents');
 const { getDeficiencyResponseByFormId } = require('../../utils/deficiency_response');
+const {
+  getCoordinatorEmailForUnit,
+  notifyDeficiencyResponseReviewed,
+} = require('../../utils/deficiency_response_notifications');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -47,6 +51,13 @@ function scopedApproverRacmJoin(alias = 'cf') {
      AND approver_units.unit_id = ${alias}.unit_id
      AND LOWER(TRIM(COALESCE(approver_units.approver_email_id, ''))) = LOWER(TRIM($1))
   `;
+}
+
+function normalizeConclusion(conclusion) {
+  return String(conclusion || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, ' ');
 }
 
 /**
@@ -100,6 +111,8 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   let emailBody = `Dear ${processOwnerName},\n\n`;
   emailBody += `Your RACM has been ${statusText}.\n\n`;
 
+  const normalizedConclusion = normalizeConclusion(updatedForm.control_design_conclusion);
+
   if (reason_by_approver) {
     emailBody += `Reason/Comments from Approver:\n${reason_by_approver}\n\n`;
   }
@@ -117,21 +130,37 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
 
   emailBody += '\n';
 
-  if (status === 'Rejected') {
-    emailBody += 'You can review the feedback above, uploade the necessary documents for it, and resubmit the RACM for approval.\n\n';
+  if (status === 'Approved') {
+    if (normalizedConclusion === 'effective' || normalizedConclusion === 'accepted under deviation') {
+      emailBody += 'No further action is required from the Process Owner or Company Coordinator for this RACM.\n\n';
+    } else if (normalizedConclusion === 'not effective') {
+      emailBody += 'Action required: the Process Owner or Company Coordinator must submit a Deficiency Response for this RACM by providing either a Mitigation Plan or a Compensatory RACM.\n\n';
+    }
+  } else if (status === 'Rejected') {
+    emailBody += 'You can review the feedback above, upload the necessary documents for it, and resubmit the RACM for approval.\n\n';
   }
 
   emailBody += 'Thank you for using the IFC system.\n\n';
   emailBody += `Best regards,\n${companyName}`;
 
   try {
-    const ccEmails = await getCcEmailsForRacm({
-      companyIdentifier: updatedForm.company_identifier,
-      businessProcess: updatedForm.business_process,
-      unitId: updatedForm.unit_id,
-      excludeEmail: ownerTrim,
-    });
-    const emailSent = await sendEmail(ownerTrim, emailSubject, emailBody, { cc: ccEmails });
+    const [ccEmails, coordinatorEmail] = await Promise.all([
+      getCcEmailsForRacm({
+        companyIdentifier: updatedForm.company_identifier,
+        businessProcess: updatedForm.business_process,
+        unitId: updatedForm.unit_id,
+        excludeEmail: ownerTrim,
+      }),
+      getCoordinatorEmailForUnit(updatedForm.company_identifier, updatedForm.unit_id),
+    ]);
+
+    const mergedCcEmails = Array.from(
+      new Set([
+        ...ccEmails,
+        coordinatorEmail,
+      ].map((email) => String(email || '').trim().toLowerCase()).filter((email) => email && email !== ownerTrim.toLowerCase()))
+    );
+    const emailSent = await sendEmail(ownerTrim, emailSubject, emailBody, { cc: mergedCcEmails });
     if (emailSent) {
       console.log(`✓ Email sent successfully to ${ownerTrim} for form ${form_id}`);
     } else {
@@ -887,6 +916,7 @@ async function reviewDeficiencyResponse(req, res) {
     }
 
     const client = await pool.connect();
+    const reviewDecisionValue = normalizedReviewDecision === 'reject' ? 'rejected' : reviewDecision;
     try {
       await client.query('BEGIN');
 
@@ -929,7 +959,6 @@ async function reviewDeficiencyResponse(req, res) {
 
       const isApprovalDecision = normalizedReviewDecision === 'effective' || normalizedReviewDecision === 'accepted under deviation';
       const responseStatus = isApprovalDecision ? 'approved' : 'rejected';
-      const reviewDecisionValue = normalizedReviewDecision === 'reject' ? 'rejected' : reviewDecision;
 
       await client.query(
         `
@@ -1029,6 +1058,17 @@ async function reviewDeficiencyResponse(req, res) {
     const updatedForm = updatedResult.rows[0];
     await attachControlFormDocuments(pool, [updatedForm]);
     updatedForm.deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
+
+    try {
+      await notifyDeficiencyResponseReviewed({
+        form: updatedForm,
+        deficiencyResponse: updatedForm.deficiency_response,
+        reviewDecision: updatedForm?.deficiency_response?.current_submission?.review_decision || reviewDecisionValue,
+        reviewComment: updatedForm?.deficiency_response?.current_submission?.review_comment || reviewComment,
+      });
+    } catch (notifyError) {
+      console.error('Error sending deficiency response reviewed email:', notifyError);
+    }
 
     await logAuditEvent(
       normalizedReviewDecision === 'reject' ? 'Deficiency Response Rejected' : 'Deficiency Response Approved',

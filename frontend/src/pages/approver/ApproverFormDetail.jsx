@@ -2478,23 +2478,13 @@ function ApproverFormDetail() {
 
                   {deficiencyResponse ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
-                        <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
-                            Response Type
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: 'text.primary' }}>
-                            {String(deficiencyResponse.response_type || '').trim() === 'compensatory_racm' ? 'Compensatory RACM' : 'Mitigation Plan'}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
-                            Status
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: 'text.primary' }}>
-                            {formatDeficiencyStatus(deficiencyResponse.status)}
-                          </Typography>
-                        </Box>
+                      <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                          Response Type
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                          {String(deficiencyResponse.response_type || '').trim() === 'compensatory_racm' ? 'Compensatory RACM' : 'Mitigation Plan'}
+                        </Typography>
                       </Box>
 
                       <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
@@ -2579,9 +2569,9 @@ function ApproverFormDetail() {
                             fullWidth
                           >
                             <MenuItem value="">Select</MenuItem>
-                            <MenuItem value="Effective">Effective</MenuItem>
-                            <MenuItem value="Accepted under deviation">Accepted under deviation</MenuItem>
-                            <MenuItem value="Reject">Reject</MenuItem>
+                            <MenuItem value="Effective">Approved - Effective</MenuItem>
+                            <MenuItem value="Accepted under deviation">Approved - Accepted Under Deviation</MenuItem>
+                            <MenuItem value="Reject">Rejected</MenuItem>
                           </TextField>
 
                           {deficiencyReviewDecision ? (
