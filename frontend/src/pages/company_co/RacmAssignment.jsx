@@ -11,6 +11,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Tooltip from '@mui/material/Tooltip'
 import Switch from '@mui/material/Switch'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import Alert from '@mui/material/Alert'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -41,6 +42,7 @@ function RacmAssignment() {
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [filterSubProcess, setFilterSubProcess] = useState('all') // 'all' or specific sub_process
   const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific unit_id
+  const [filterActive, setFilterActive] = useState('all') // 'all' | 'active' | 'inactive'
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [subProcessOptions, setSubProcessOptions] = useState([])
   const [coordinatorUnits, setCoordinatorUnits] = useState([])
@@ -66,6 +68,7 @@ function RacmAssignment() {
     return isSameCompany && user.role === 'user'
   })
   const getFormUnitId = (form) => String(form?.unit_id || '').trim()
+  const isFormActive = (form) => Boolean(form?.active)
   const getFormUnitName = (form) => {
     const unitName = String(form?.unit_name || '').trim()
     if (unitName) return unitName
@@ -81,6 +84,7 @@ function RacmAssignment() {
   const selectedFormRows = forms.filter((form) => selectedForms.has(form.form_id))
   const selectedBulkUnitId = selectedFormRows.length > 0 ? getFormUnitId(selectedFormRows[0]) : ''
   const selectedBulkUnitName = selectedFormRows.length > 0 ? getFormUnitName(selectedFormRows[0]) : ''
+  const hasSelectedActiveRacm = selectedFormRows.some((form) => isFormActive(form))
   const selectedUnitUserOptions = filterUsersByUnit(assignableUsers, getFormUnitId(selectedForm))
   const bulkUnitUserOptions = filterUsersByUnit(assignableUsers, selectedBulkUnitId)
 
@@ -179,7 +183,7 @@ function RacmAssignment() {
     }
 
     try {
-      const url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyId)}`
+      const url = `${API_BASE_URL}/api/control-forms/assignment-eligible?company_identifier=${encodeURIComponent(companyId)}`
       const response = await fetch(url, {
         method: 'GET',
         credentials: 'include',
@@ -200,7 +204,7 @@ function RacmAssignment() {
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterAssignment, filterBusinessProcess, filterFinancialYear, filterSubProcess, filterUnit])
+  }, [companyIdentifier, filterAssignment, filterBusinessProcess, filterFinancialYear, filterSubProcess, filterUnit, filterActive])
 
   useEffect(() => {
     if (!bulkAssignmentMode) {
@@ -249,7 +253,7 @@ function RacmAssignment() {
     
     setLoading(true)
     try {
-      let url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyIdentifier)}`
+      let url = `${API_BASE_URL}/api/control-forms/assignment-eligible?company_identifier=${encodeURIComponent(companyIdentifier)}`
       
       if (filterBusinessProcess !== 'all') {
         url += `&business_process=${encodeURIComponent(filterBusinessProcess)}`
@@ -266,6 +270,14 @@ function RacmAssignment() {
       if (filterUnit !== 'all') {
         url += `&unit_id=${encodeURIComponent(filterUnit)}`
       }
+
+      if (filterActive !== 'all') {
+        url += `&active=${encodeURIComponent(filterActive === 'active' ? 'true' : 'false')}`
+      }
+
+      if (filterAssignment !== 'all') {
+        url += `&assignment=${encodeURIComponent(filterAssignment)}`
+      }
       
       const cacheBustUrl = `${url}&_ts=${Date.now()}`
       const response = await fetch(cacheBustUrl, {
@@ -277,32 +289,8 @@ function RacmAssignment() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        let fetchedForms = data.data
-        
-        // Sort forms by created_at timestamp (newest first)
-        const sortedForms = [...fetchedForms].sort((a, b) => {
-          const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
-          const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
-          return dateB - dateA // Descending order (newest first)
-        })
-
-        const eligibleForms = sortedForms.filter((form) => {
-          const hasDueDate = !!form?.due_date
-          const hasReminderFrequency =
-            form?.reminder_frequency !== null &&
-            form?.reminder_frequency !== undefined &&
-            String(form.reminder_frequency).trim() !== ''
-
-          return hasDueDate && hasReminderFrequency
-        })
-
-        const assignmentFilteredForms = eligibleForms.filter((form) => {
-          if (filterAssignment === 'all') return true
-          const hasControlOwner = Boolean(form.control_owner && form.control_owner.trim() !== '')
-          return filterAssignment === 'assigned' ? hasControlOwner : !hasControlOwner
-        })
-
-        setForms(assignmentFilteredForms)
+        const fetchedForms = Array.isArray(data.data) ? data.data : []
+        setForms(fetchedForms)
 
         // Keep cached financial year options updated with any newly seen values
         const latestYears = extractUniqueFinancialYears(data.data)
@@ -474,6 +462,7 @@ function RacmAssignment() {
 
   const handleUpdateAssignment = async () => {
     if (!selectedForm?.form_id || !selectedUser?.email_id) return
+    if (isFormActive(selectedForm)) return
 
     setUpdatingAssignment(true)
     try {
@@ -551,6 +540,7 @@ function RacmAssignment() {
 
   const handleBulkUpdateAssignment = async () => {
     if (!bulkSelectedUser?.email_id || selectedForms.size === 0) return
+    if (hasSelectedActiveRacm) return
 
     setUpdatingAssignment(true)
     try {
@@ -775,7 +765,7 @@ function RacmAssignment() {
               <Typography
                 sx={PAGE_SUBHEADER_TEXT_SX}
               >
-                Assign RACM to control owners and manage existing RACM assignments.
+                Assign RACM to Process Owners and manage existing RACM assignments.
               </Typography>
             </Box>
             
@@ -895,6 +885,24 @@ function RacmAssignment() {
                   <MenuItem value="unassigned">Unassigned</MenuItem>
                 </Select>
               </FormControl>
+
+              <FormControl
+                variant="outlined"
+                sx={filterFormControlSx}
+              >
+                <InputLabel id="active-filter-label">Status</InputLabel>
+                <Select
+                  labelId="active-filter-label"
+                  id="active-filter"
+                  value={filterActive}
+                  label="Status"
+                  onChange={(e) => setFilterActive(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  <MenuItem value="active">Active</MenuItem>
+                  <MenuItem value="inactive">Inactive</MenuItem>
+                </Select>
+              </FormControl>
               
             </Box>
           </Box>
@@ -909,6 +917,11 @@ function RacmAssignment() {
             </Box>
           ) : (
             <Box>
+              {bulkAssignmentMode && hasSelectedActiveRacm && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  Active RACM assignment cannot be changed. Remove the selected active RACM(s) before bulk assignment.
+                </Alert>
+              )}
               <Box
                 sx={{
                   display: 'flex',
@@ -1077,11 +1090,29 @@ function RacmAssignment() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '8%',
+                        minWidth: '90px',
+                        maxWidth: '110px',
+                      }}
+                    >
+                      Active
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 2,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
                         width: '17%',
                         minWidth: '180px',
                       }}
                     >
-                      Control Owner
+                      Process Owner
                     </Box>
                     <Box
                       component="th"
@@ -1098,7 +1129,7 @@ function RacmAssignment() {
                         minWidth: '160px',
                       }}
                     >
-                      Control Owner Name
+                      Process Owner Name
                     </Box>
                   </Box>
                 </Box>
@@ -1251,6 +1282,28 @@ function RacmAssignment() {
                         </Box>
                         <Box
                           component="td"
+                          sx={dataCellSx({
+                            px: 2,
+                            py: 2,
+                            width: '8%',
+                            minWidth: '90px',
+                            maxWidth: '110px',
+                            fontSize: '0.875rem',
+                            color: theme.palette.text.primary,
+                          })}
+                        >
+                          <Tooltip
+                            title={isFormActive(form) ? 'Active' : 'Inactive'}
+                            arrow
+                            slotProps={{ tooltip: { sx: tooltipSx } }}
+                          >
+                            <Box component="span" sx={dataCellTextSx}>
+                              {isFormActive(form) ? 'Active' : 'Inactive'}
+                            </Box>
+                          </Tooltip>
+                        </Box>
+                        <Box
+                          component="td"
                           title={form.control_owner || 'N/A'}
                           sx={dataCellSx({
                             px: 2,
@@ -1315,6 +1368,11 @@ function RacmAssignment() {
           <DialogContent dividers>
             {selectedForm && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {isFormActive(selectedForm) && (
+                  <Alert severity="warning">
+                    This RACM is Active. Active RACM assignment cannot be changed.
+                  </Alert>
+                )}
                 <Box sx={popupRowSx}>
                   <Typography variant="body2" component="span" sx={popupLabelSx}>Standard Control Description:</Typography>
                   <Typography variant="body2" component="span">{popupValue(selectedForm.standard_control_description)}</Typography>
@@ -1336,11 +1394,11 @@ function RacmAssignment() {
                   <Typography variant="body2" component="span">{popupValue(getFormUnitName(selectedForm))}</Typography>
                 </Box>
                 <Box sx={popupRowSx}>
-                  <Typography variant="body2" component="span" sx={popupLabelSx}>Current Control Owner Name:</Typography>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>Current Process Owner Name:</Typography>
                   <Typography variant="body2" component="span">{popupValue(selectedForm.control_owner_name)}</Typography>
                 </Box>
                 <Box sx={{ ...popupRowSx, mb: 2 }}>
-                  <Typography variant="body2" component="span" sx={popupLabelSx}>Current Control Owner Email:</Typography>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>Current Process Owner Email:</Typography>
                   <Typography variant="body2" component="span">{popupValue(selectedForm.control_owner)}</Typography>
                 </Box>
 
@@ -1358,6 +1416,7 @@ function RacmAssignment() {
                   inputValue={userSearchText}
                   onInputChange={(_, newInputValue) => setUserSearchText(newInputValue)}
                   onChange={(_, newValue) => setSelectedUser(newValue)}
+                  disabled={isFormActive(selectedForm)}
                   getOptionLabel={(option) => option?.emp_name || option?.email_id || ''}
                   isOptionEqualToValue={(option, value) => option.email_id === value.email_id}
                   filterOptions={(options, state) => {
@@ -1397,7 +1456,7 @@ function RacmAssignment() {
                 variant="contained"
                 color="secondary"
                 onClick={handleUpdateAssignment}
-                disabled={updatingAssignment}
+                disabled={updatingAssignment || isFormActive(selectedForm)}
               >
                 {updatingAssignment ? 'Updating...' : 'Update Assignment'}
               </Button>
@@ -1416,6 +1475,11 @@ function RacmAssignment() {
           </DialogTitle>
           <DialogContent dividers>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {hasSelectedActiveRacm && (
+                <Alert severity="warning">
+                  Active RACM assignment cannot be changed. Remove the active RACM(s) from this selection to continue.
+                </Alert>
+              )}
               <Box sx={popupRowSx}>
                 <Typography variant="body2" component="span" sx={popupLabelSx}>Total selected RACMs:</Typography>
                 <Typography variant="body2" component="span">{popupValue(selectedForms.size)}</Typography>
@@ -1425,7 +1489,7 @@ function RacmAssignment() {
                 <Typography variant="body2" component="span">{popupValue(selectedBulkUnitName)}</Typography>
               </Box>
               <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-                The selected user will overwrite the current Control Owner for all selected RACMs.
+                The selected user will overwrite the current Process Owner for all selected RACMs.
               </Typography>
 
               <Autocomplete
@@ -1435,6 +1499,7 @@ function RacmAssignment() {
                 inputValue={bulkUserSearchText}
                 onInputChange={(_, newInputValue) => setBulkUserSearchText(newInputValue)}
                 onChange={(_, newValue) => setBulkSelectedUser(newValue)}
+                disabled={hasSelectedActiveRacm}
                 getOptionLabel={(option) => option?.emp_name || option?.email_id || ''}
                 isOptionEqualToValue={(option, value) => option.email_id === value.email_id}
                 filterOptions={(options, state) => {
@@ -1473,7 +1538,7 @@ function RacmAssignment() {
                 variant="contained"
                 color="secondary"
                 onClick={handleBulkUpdateAssignment}
-                disabled={updatingAssignment}
+                disabled={updatingAssignment || hasSelectedActiveRacm}
               >
                 {updatingAssignment ? 'Updating...' : 'Update Assignments'}
               </Button>

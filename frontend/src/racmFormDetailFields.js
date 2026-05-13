@@ -53,7 +53,7 @@ export const RACM_FIELD_LABELS = {
   control_type_fo: 'Type of control (Operational/Financial)',
   control_type_ma: 'Type of control (Manual/ Automated)',
   nature_of_control: 'Nature of Control',
-  control_owner: 'Control Owner',
+  control_owner: 'Process Owner',
   control_frequency: 'Control Frequency',
   sample_size: 'Sample Size',
   sample_required: 'Sample Required',

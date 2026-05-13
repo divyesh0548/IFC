@@ -28,6 +28,10 @@ import ChecklistRoundedIcon from '@mui/icons-material/ChecklistRounded'
 import { toast } from 'react-hot-toast'
 import dayjs from 'dayjs'
 import { parseRacmExcelFromArrayBuffer } from '../../utils/racmExcelParse'
+import {
+  findDetectedControlFrequencyHeader,
+  validateControlFrequencyColumnValues,
+} from '../../utils/controlFrequencyValidation'
 import { RACM_BULK_IMPORT_SESSION_KEY } from '../../racmFormDetailFields'
 import { useUnsavedChangesWarning } from '../../utils/useUnsavedChangesWarning'
 import { apiUrl } from '../../config/api'
@@ -356,6 +360,18 @@ function ExcelUpload() {
       return
     }
 
+    const detectedControlFrequencyHeader = findDetectedControlFrequencyHeader(rows)
+    if (detectedControlFrequencyHeader) {
+      const controlFrequencyValidation = validateControlFrequencyColumnValues(
+        rows,
+        detectedControlFrequencyHeader
+      )
+      if (!controlFrequencyValidation.ok) {
+        toast.error(controlFrequencyValidation.message)
+        return
+      }
+    }
+
     setPendingImport({
       rows,
       businessProcess,
@@ -378,6 +394,24 @@ function ExcelUpload() {
       handleMappingDialogCancel()
       return
     }
+
+    const detectedControlFrequencyHeader = findDetectedControlFrequencyHeader(pendingImport.rows)
+    if (!detectedControlFrequencyHeader) {
+      toast.error(
+        'Control Frequency column was not detected automatically. Map it manually or correct the Excel file and upload again.'
+      )
+      return
+    }
+
+    const controlFrequencyValidation = validateControlFrequencyColumnValues(
+      pendingImport.rows,
+      detectedControlFrequencyHeader
+    )
+    if (!controlFrequencyValidation.ok) {
+      toast.error(controlFrequencyValidation.message)
+      return
+    }
+
     const ctx = pendingImport
     setMappingDialogOpen(false)
     setPendingImport(null)
@@ -1007,25 +1041,157 @@ function ExcelUpload() {
         open={mappingDialogOpen}
         onClose={handleMappingDialogCancel}
         aria-labelledby="racm-mapping-dialog-title"
+        aria-describedby="racm-mapping-dialog-description"
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '440px' },
+            boxShadow:
+              theme.palette.mode === 'dark'
+                ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+                : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
       >
-        <DialogTitle id="racm-mapping-dialog-title">Column mapping</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
+        <DialogTitle
+          id="racm-mapping-dialog-title"
+          sx={{
+            pb: 2,
+            pt: 3,
+            px: 3,
+            fontWeight: 600,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          Column Mapping
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 1, pb: 3 }}>
+          <DialogContentText
+            id="racm-mapping-dialog-description"
+            sx={{
+              color: theme.palette.text.secondary,
+              fontSize: '0.9375rem',
+              lineHeight: 1.6,
+              m: 0,
+              mb: 2,
+            }}
+          >
             Do you want to review and map Excel column headers to RACM fields? Use this when your sheet
             uses names that do not match the template (for example, map &quot;Query Name&quot; to
             Application Name). If you choose automatic import, the same header matching as before is used.
           </DialogContentText>
+          <Box sx={{ display: 'grid', gap: 1.5 }}>
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 1.5,
+                border: '1px solid',
+                borderColor: alpha(theme.palette.divider, 0.9),
+                backgroundColor:
+                  theme.palette.mode === 'dark'
+                    ? alpha(theme.palette.common.white, 0.02)
+                    : alpha('#f8fafc', 0.9),
+              }}
+            >
+              <Typography sx={{ fontSize: '0.98rem', fontWeight: 800, color: theme.palette.text.primary, mb: 0.6 }}>
+                Use automatic mapping
+              </Typography>
+              <Typography sx={{ fontSize: '0.9rem', lineHeight: 1.6, color: theme.palette.text.secondary }}>
+                Continue immediately when your Excel headers already resemble the RACM template.
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 1.5,
+                border: '1px solid',
+                borderColor: accentBorder,
+                backgroundColor: accentSoft,
+              }}
+            >
+              <Typography sx={{ fontSize: '0.98rem', fontWeight: 800, color: theme.palette.text.primary, mb: 0.6 }}>
+                Adjust column mapping
+              </Typography>
+              <Typography sx={{ fontSize: '0.9rem', lineHeight: 1.6, color: theme.palette.text.secondary }}>
+                Review detected headers one by one and map them manually before importing.
+              </Typography>
+            </Box>
+          </Box>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2, flexWrap: 'wrap', gap: 1 }}>
-          <Button onClick={handleMappingDialogCancel} color="inherit">
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            pt: 2.5,
+            gap: 1.5,
+            flexWrap: 'wrap',
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Button
+            onClick={handleMappingDialogCancel}
+            variant="outlined"
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '100px',
+              borderColor:
+                theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.23)'
+                  : 'rgba(0, 0, 0, 0.23)',
+              color: theme.palette.text.primary,
+              '&:hover': {
+                borderColor:
+                  theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.3)'
+                    : 'rgba(0, 0, 0, 0.3)',
+                backgroundColor:
+                  theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.05)'
+                    : 'rgba(0, 0, 0, 0.04)',
+              },
+            }}
+          >
             Cancel
           </Button>
-          <Button onClick={handleAutomaticColumnMapping} variant="outlined" disabled={loading}>
+          <Button
+            onClick={handleAutomaticColumnMapping}
+            variant="outlined"
+            disabled={loading}
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '164px',
+              borderColor: alpha(accentColor, 0.35),
+              color: accentColor,
+              '&:hover': {
+                borderColor: alpha(accentColor, 0.55),
+                backgroundColor: alpha(accentColor, 0.06),
+              },
+            }}
+          >
             Use automatic mapping
           </Button>
-          <Button onClick={handleCustomColumnMapping} variant="contained" color="secondary" disabled={loading}>
+          <Button
+            onClick={handleCustomColumnMapping}
+            variant="contained"
+            color="secondary"
+            disabled={loading}
+            autoFocus
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '164px',
+              fontWeight: 600,
+            }}
+          >
             Adjust column mapping
           </Button>
         </DialogActions>

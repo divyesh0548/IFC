@@ -151,18 +151,26 @@ function getQuarterInfoByQuarter(quarter) {
  * @param {Date|string} createdAt - The created_at timestamp of the control form
  * @returns {string|null} Formatted date string (YYYY-MM-DD) or null if frequency is not supported
  */
-function getSampleSizeByFrequency(controlFrequency) {
+function normalizeControlFrequencyValue(controlFrequency) {
   if (!controlFrequency) {
-    return null;
+    return '';
   }
 
-  const normalizedFreq = String(controlFrequency)
+  return String(controlFrequency)
     .toLowerCase()
     .trim()
     .replace(/&/g, 'and')
     .replace(/[-_]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function getSampleSizeByFrequency(controlFrequency) {
+  if (!controlFrequency) {
+    return null;
+  }
+
+  const normalizedFreq = normalizeControlFrequencyValue(controlFrequency);
 
   const hasWords = (...words) => words.every((word) => normalizedFreq.includes(word));
 
@@ -192,8 +200,11 @@ function getSampleSizeByFrequency(controlFrequency) {
 
   if (
     (normalizedFreq === 'as and when needed') ||
+    (normalizedFreq === 'as and when required') ||
     (hasWords('as', 'when') && (normalizedFreq.includes('needed') || normalizedFreq.includes('required'))) ||
-    (normalizedFreq === 'on event')
+    (normalizedFreq === 'on event') ||
+    (normalizedFreq === 'on going') ||
+    (normalizedFreq === 'ongoing')
   ) {
     return 5;
   }
@@ -210,6 +221,10 @@ function getSampleSizeByFrequency(controlFrequency) {
   return null;
 }
 
+function isSupportedControlFrequency(controlFrequency) {
+  return getSampleSizeByFrequency(controlFrequency) !== null;
+}
+
 function calculateSampleRequired(controlFrequency, createdAt) {
   if (!controlFrequency || !createdAt) {
     console.log('[sample_required] Missing controlFrequency or createdAt:', { controlFrequency, createdAt });
@@ -219,7 +234,7 @@ function calculateSampleRequired(controlFrequency, createdAt) {
   // Normalize control_frequency to lowercase for comparison (handle all case variations)
   // Also replace "&" with "and" for consistent matching
   const frequency = String(controlFrequency).toLowerCase().trim();
-  const normalizedFreq = frequency.replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+  const normalizedFreq = normalizeControlFrequencyValue(controlFrequency);
   console.log('[sample_required] Normalized frequency:', frequency, 'normalized (no &):', normalizedFreq, 'from original:', controlFrequency);
 
   // Parse created_at to Date object if it's a string
@@ -477,8 +492,19 @@ function calculateSampleRequired(controlFrequency, createdAt) {
 
   // For 'as & when needed' frequency (handle both "&" and "and" variations)
   // Pick 5 random dates (weekdays only) from last 6 months
-  if (normalizedFreq === 'as and when needed' || normalizedFreq === 'as and when required' ||
-    (normalizedFreq.includes('as') && normalizedFreq.includes('when') && (normalizedFreq.includes('needed') || normalizedFreq.includes('required')))) {
+  if (
+    normalizedFreq === 'as and when needed' ||
+    normalizedFreq === 'as and when required' ||
+    normalizedFreq === 'on event' ||
+    normalizedFreq === 'on going' ||
+    normalizedFreq === 'ongoing' ||
+    (
+      normalizedFreq.includes('as') &&
+      normalizedFreq.includes('when') &&
+      (normalizedFreq.includes('needed') || normalizedFreq.includes('required'))
+    ) ||
+    (normalizedFreq.includes('on') && normalizedFreq.includes('going'))
+  ) {
     console.log('[sample_required] Processing as & when needed frequency');
 
     // Calculate date range: 6 months back from created_at
@@ -637,5 +663,7 @@ module.exports = {
   getWeekdaysInRange,
   formatDate,
   calculateSampleRequired,
-  getSampleSizeByFrequency
+  getSampleSizeByFrequency,
+  normalizeControlFrequencyValue,
+  isSupportedControlFrequency
 };

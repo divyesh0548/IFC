@@ -4,19 +4,41 @@
  */
 import * as XLSX from 'xlsx'
 
-const headerKeywords = [
-  'control number',
-  'sub process',
+const headerLooseMatchKeywords = [
+  'control',
+  'account',
+  'process',
   'risk',
-  'risk heat',
-  'control objective',
-  'standard control description',
-  'ipe reference',
-  'control frequency',
-  'nature of control',
-  'control performer',
-  'control owner',
+  'heat',
+  'objective',
+  'standard',
+  'description',
+  'fraud',
+  'reference',
+  'frequency',
+  'nature',
+  'performer',
+  'owner',
+  'key',
+  'application',
+  'whether',
+  'walkthrough',
+  'financial',
+  'operational',
+  'manual',
+  'automated',
+  'completeness',
+  'existence',
+  'occurrence',
+  'rights',
+  'obligation',
+  'valuation',
+  'allocation',
+  'presentation',
+  'disclosure',
 ]
+
+const MIN_HEADER_KEYWORD_MATCHES = 10
 
 function normalizeText(text) {
   if (!text) return ''
@@ -25,6 +47,34 @@ function normalizeText(text) {
     .trim()
     .replace(/[/()&-]/g, ' ')
     .replace(/\s+/g, ' ')
+}
+
+function getHeaderKeywordMatchCount(cellValue) {
+  if (!cellValue) return 0
+
+  const tokens = new Set(
+    String(cellValue)
+      .split(' ')
+      .map((token) => token.trim())
+      .filter(Boolean)
+  )
+
+  let matchCount = 0
+  for (const keyword of headerLooseMatchKeywords) {
+    const normalizedKeyword = normalizeText(keyword)
+    if (!normalizedKeyword) continue
+
+    const keywordTokens = normalizedKeyword.split(' ').filter(Boolean)
+    const hasLooseMatch = keywordTokens.every((keywordToken) =>
+      [...tokens].some((token) => token === keywordToken || token.startsWith(keywordToken))
+    )
+
+    if (hasLooseMatch) {
+      matchCount++
+    }
+  }
+
+  return matchCount
 }
 
 function findHeaderRow(worksheet) {
@@ -53,16 +103,11 @@ function findHeaderRow(worksheet) {
         if (firstNonEmptyCol === -1) firstNonEmptyCol = col
         lastNonEmptyCol = col
 
-        for (const keyword of headerKeywords) {
-          if (cellValue.includes(keyword) || keyword.includes(cellValue)) {
-            matchCount++
-            break
-          }
-        }
+        matchCount += getHeaderKeywordMatchCount(cellValue)
       }
     }
 
-    if (matchCount > bestMatchCount && matchCount >= 4) {
+    if (matchCount > bestMatchCount && matchCount >= MIN_HEADER_KEYWORD_MATCHES) {
       bestMatchCount = matchCount
       bestHeaderRow = row
       headerStartCol = firstNonEmptyCol

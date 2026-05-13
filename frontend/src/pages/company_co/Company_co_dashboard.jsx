@@ -32,6 +32,7 @@ function Company_Co_dashboard() {
   const [filterApprovalStatus, setFilterApprovalStatus] = useState('all') // 'all', 'Approved', 'Rejected', 'Pending'
   const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific mapped unit
   const [filterConclusion, setFilterConclusion] = useState('all')
+  const [conclusionOptions, setConclusionOptions] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [mappedUnits, setMappedUnits] = useState([])
   const [loading, setLoading] = useState(true)
@@ -202,6 +203,15 @@ function Company_Co_dashboard() {
           return dateB - dateA
         })
         setForms(sortedForms)
+        setConclusionOptions(
+          [...new Set(
+            (data.data || []).map((form) => formatConclusion(form.control_design_conclusion))
+          )].sort((a, b) => {
+            if (a === 'None') return 1
+            if (b === 'None') return -1
+            return a.localeCompare(b)
+          })
+        )
 
         const latestYears = extractUniqueFinancialYears(data.data)
         if (latestYears.length > 0) {
@@ -260,14 +270,6 @@ function Company_Co_dashboard() {
     if (!normalized) return 'None'
     return normalized.charAt(0).toUpperCase() + normalized.slice(1)
   }
-
-  const conclusionOptions = [...new Set(
-    (forms || []).map((form) => formatConclusion(form.control_design_conclusion))
-  )].sort((a, b) => {
-    if (a === 'None') return 1
-    if (b === 'None') return -1
-    return a.localeCompare(b)
-  })
 
   const displayedForms = filteredForms.filter((form) => {
     if (filterConclusion === 'all') return true

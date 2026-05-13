@@ -73,7 +73,7 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   const statusText = status === 'Approved' ? 'approved' : 'rejected';
   const emailSubject = `Internal Financial Controls - RACM ${status}`;
 
-  let processOwnerName = 'Control Owner';
+  let processOwnerName = 'Process Owner';
   try {
     const ownerQuery = `
       SELECT emp_name
@@ -1074,7 +1074,9 @@ async function reviewDeficiencyResponse(req, res) {
       normalizedReviewDecision === 'reject' ? 'Deficiency Response Rejected' : 'Deficiency Response Approved',
       approverEmail,
       form_id,
-      updatedForm?.deficiency_case_id || updatedForm?.deficiency_response?.response_id || null
+      updatedForm?.deficiency_response?.current_submission?.version_no != null
+        ? `Version ${updatedForm.deficiency_response.current_submission.version_no}`
+        : null
     );
 
     return res.status(200).json({

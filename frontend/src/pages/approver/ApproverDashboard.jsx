@@ -11,6 +11,7 @@ import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Switch from '@mui/material/Switch'
+import Alert from '@mui/material/Alert'
 import {
   FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
@@ -37,8 +38,10 @@ function ApproverDashboard() {
   const [filterFinancialYear, setFilterFinancialYear] = useState('all')
   const [filterUnit, setFilterUnit] = useState('all')
   const [filterConclusion, setFilterConclusion] = useState('all')
+  const [conclusionOptions, setConclusionOptions] = useState([])
   const [mappedUnits, setMappedUnits] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
+  const [actionRequiredAlertDismissed, setActionRequiredAlertDismissed] = useState(false)
   const showUnitContext = mappedUnits.length > 1
   const { businessProcessOptions } = useBusinessProcesses()
 
@@ -238,6 +241,16 @@ function ApproverDashboard() {
           })
         }
 
+        setConclusionOptions(
+          [...new Set(
+            (data.data || []).map((form) => formatConclusion(form.control_design_conclusion))
+          )].sort((a, b) => {
+            if (a === 'None') return 1
+            if (b === 'None') return -1
+            return a.localeCompare(b)
+          })
+        )
+
         setForms(sortedForms)
       } else {
         console.error('Error fetching forms:', data.message)
@@ -280,16 +293,15 @@ function ApproverDashboard() {
 
     return true
   })
-  const conclusionOptions = [...new Set(
-    (forms || []).map((form) => formatConclusion(form.control_design_conclusion))
-  )].sort((a, b) => {
-    if (a === 'None') return 1
-    if (b === 'None') return -1
-    return a.localeCompare(b)
-  })
   const approverActionRequiredCount = (forms || []).filter((form) =>
     String(form?.deficiency_response_status || '').trim().toLowerCase() === 'submitted_for_review'
   ).length
+
+  useEffect(() => {
+    if (approverActionRequiredCount > 0) {
+      setActionRequiredAlertDismissed(false)
+    }
+  }, [approverActionRequiredCount])
   const truncatedTextSx = {
     display: 'inline-block',
     maxWidth: '100%',
@@ -396,28 +408,6 @@ function ApproverDashboard() {
         pb: 4,
       }}
     >
-      {approverActionRequiredCount > 0 ? (
-        <Box
-          sx={{
-            mb: 2,
-            px: 2,
-            py: 1.25,
-            borderRadius: 2,
-            backgroundColor: '#fef3c7',
-            border: '1px solid #f59e0b',
-          }}
-        >
-          <Typography
-            variant="body2"
-            sx={{
-              color: '#92400e',
-              fontWeight: 700,
-            }}
-          >
-            Action Required - {approverActionRequiredCount} RACMs are awaiting deficiency response review
-          </Typography>
-        </Box>
-      ) : null}
       <Paper
         elevation={3}
         sx={{
@@ -426,6 +416,15 @@ function ApproverDashboard() {
           borderRadius: 2,
         }}
       >
+        {approverActionRequiredCount > 0 && !actionRequiredAlertDismissed ? (
+          <Alert
+            severity="warning"
+            onClose={() => setActionRequiredAlertDismissed(true)}
+            sx={{ mb: 3, alignItems: 'center' }}
+          >
+            Action Required - {approverActionRequiredCount} RACMs are awaiting deficiency response review
+          </Alert>
+        ) : null}
         <Box
           sx={{
             display: 'flex',

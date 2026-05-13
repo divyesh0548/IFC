@@ -19,7 +19,6 @@ Sapan sir said to display number of RACMs in sample required excel.
 
 Prompts : 
 
-C:\Divyesh\IFC\IFC_Prisma\frontend\src\pages\approver\ApproverFormDetail.jsx --> On this page Reason by Approver field has double borders, Make that input field same as other input field with single border.
 
 
 

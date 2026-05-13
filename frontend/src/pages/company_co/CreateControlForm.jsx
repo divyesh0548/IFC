@@ -478,7 +478,7 @@ function CreateControlForm() {
   key_control: 'Key Control (Yes / No)',
   application_name: 'Application Name',
   control_performer: 'Control Performer',
-  control_owner: 'Control Owner',
+  control_owner: 'Process Owner',
   control_type_fo: 'Type of control (Operational/Financial)',
   control_type_ma: 'Type of control (Manual/ Automated)',
   nature_of_control: 'Nature of Control (Preventive or Detective)',

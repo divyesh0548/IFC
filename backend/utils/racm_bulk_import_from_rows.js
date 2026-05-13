@@ -1,7 +1,11 @@
 const crypto = require('crypto');
 const { normalizeColumnName } = require('./column_mapping');
 const { logAuditEvent } = require('./auditLog');
-const { calculateSampleRequired, getSampleSizeByFrequency } = require('./sample_required');
+const {
+  calculateSampleRequired,
+  getSampleSizeByFrequency,
+  normalizeControlFrequencyValue,
+} = require('./sample_required');
 const { getBusinessProcessCodeForCompany } = require('./business_process_master');
 
 function generateFormId() {
@@ -366,6 +370,70 @@ function transformExcelDataWithColumnMapping(excelRows, columnMapping) {
   });
 }
 
+function validateBulkImportControlFrequencies(transformedData) {
+  const rows = Array.isArray(transformedData) ? transformedData : [];
+  const controlFrequencyValues = [];
+  let hasControlFrequencyColumn = false;
+  let hasBlankControlFrequency = false;
+
+  for (const row of rows) {
+    if (row && Object.prototype.hasOwnProperty.call(row, 'control_frequency')) {
+      hasControlFrequencyColumn = true;
+    }
+
+    const rawValue = row?.control_frequency;
+    const trimmedValue = rawValue !== null && rawValue !== undefined ? String(rawValue).trim() : '';
+
+    if (trimmedValue === '') {
+      hasBlankControlFrequency = true;
+      continue;
+    }
+
+    controlFrequencyValues.push(trimmedValue);
+  }
+
+  if (!hasControlFrequencyColumn && controlFrequencyValues.length === 0) {
+    return {
+      ok: false,
+      reason: 'missing_column',
+      message: 'Control Frequency column was not found in the Excel data. No RACMs were imported.',
+      invalidValues: [],
+    };
+  }
+
+  if (hasBlankControlFrequency) {
+    return {
+      ok: false,
+      reason: 'blank_value',
+      message: 'Control Frequency is missing for one or more Excel rows. Update the Excel file and upload again.',
+      invalidValues: [],
+    };
+  }
+
+  const invalidValues = Array.from(
+    new Set(
+      controlFrequencyValues.filter((value) => getSampleSizeByFrequency(value) === null)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  if (invalidValues.length > 0) {
+    return {
+      ok: false,
+      reason: 'invalid_value',
+      message: `Unsupported Control Frequency value(s) found in Excel: ${invalidValues.join(', ')}. Update the Excel file and upload again.`,
+      invalidValues,
+      normalizedInvalidValues: invalidValues.map((value) => normalizeControlFrequencyValue(value)),
+    };
+  }
+
+  return {
+    ok: true,
+    reason: null,
+    message: '',
+    invalidValues: [],
+  };
+}
+
 /**
  * Insert RACM rows from already-transformed DB-shaped rows (same rules as process_excel_files).
  * Caller manages transaction (BEGIN/COMMIT/ROLLBACK).
@@ -476,4 +544,5 @@ module.exports = {
   transformExcelData,
   transformExcelDataWithColumnMapping,
   insertRacmRowsFromTransformedData,
+  validateBulkImportControlFrequencies,
 };

@@ -13,6 +13,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Tooltip from '@mui/material/Tooltip'
 import Checkbox from '@mui/material/Checkbox'
 import Switch from '@mui/material/Switch'
+import Alert from '@mui/material/Alert'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -59,6 +60,7 @@ function RacmManagementDashboard() {
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific assigned unit
   const [filterConclusion, setFilterConclusion] = useState('all')
+  const [conclusionOptions, setConclusionOptions] = useState([])
   const [coordinatorUnits, setCoordinatorUnits] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -100,6 +102,7 @@ function RacmManagementDashboard() {
   const [validatingSetActiveSelection, setValidatingSetActiveSelection] = useState(false)
   const [creatingMissingUsers, setCreatingMissingUsers] = useState(false)
   const [setActiveClassifying, setSetActiveClassifying] = useState(false)
+  const [actionRequiredAlertDismissed, setActionRequiredAlertDismissed] = useState(false)
   const userRoleChecksRef = useRef({})
   const { businessProcessOptions } = useBusinessProcesses()
 
@@ -302,6 +305,15 @@ function RacmManagementDashboard() {
           return dateB - dateA // Descending order (newest first)
         })
         setForms(sortedForms)
+        setConclusionOptions(
+          [...new Set(
+            (data.data || []).map((form) => formatConclusion(form.control_design_conclusion))
+          )].sort((a, b) => {
+            if (a === 'None') return 1
+            if (b === 'None') return -1
+            return a.localeCompare(b)
+          })
+        )
 
         // Keep cached financial year options updated with any newly seen values
         const latestYears = extractUniqueFinancialYears(data.data)
@@ -1262,17 +1274,15 @@ function RacmManagementDashboard() {
     setFilterActive(value)
   }
 
-  const conclusionOptions = [...new Set(
-    (forms || []).map((form) => formatConclusion(form.control_design_conclusion))
-  )].sort((a, b) => {
-    if (a === 'None') return 1
-    if (b === 'None') return -1
-    return a.localeCompare(b)
-  })
-
   const actionRequiredCount = (forms || []).filter((form) =>
     Boolean(form?.deficiency_action_status)
   ).length
+
+  useEffect(() => {
+    if (actionRequiredCount > 0) {
+      setActionRequiredAlertDismissed(false)
+    }
+  }, [actionRequiredCount])
 
   const showUnitColumn = coordinatorUnits.length > 1
   const showUnitFilter = coordinatorUnits.length > 1
@@ -1317,6 +1327,16 @@ function RacmManagementDashboard() {
   }
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
+      {actionRequiredCount > 0 && !actionRequiredAlertDismissed ? (
+        <Alert
+          severity="warning"
+          onClose={() => setActionRequiredAlertDismissed(true)}
+          sx={{ mb: 2, alignItems: 'center' }}
+        >
+          Action Required - {actionRequiredCount} RACMs are found ineffective
+        </Alert>
+      ) : null}
+
       <Box
         sx={{
           display: 'flex',
@@ -1502,29 +1522,6 @@ function RacmManagementDashboard() {
             : 'Delete'}
         </Button>
       </Box>
-
-      {actionRequiredCount > 0 ? (
-        <Box
-          sx={{
-            mb: 2,
-            px: 2,
-            py: 1.25,
-            borderRadius: 2,
-            backgroundColor: '#fef3c7',
-            border: '1px solid #f59e0b',
-          }}
-          >
-            <Typography
-              variant="body2"
-            sx={{
-              color: '#92400e',
-              fontWeight: 700,
-            }}
-            >
-            Action Required - {actionRequiredCount} RACMs are found ineffective
-          </Typography>
-        </Box>
-      ) : null}
 
       <Paper
         elevation={3}

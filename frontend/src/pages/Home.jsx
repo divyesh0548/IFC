@@ -259,7 +259,7 @@ function Home() {
     width: '100%',
     maxWidth: MAIN_CONTENT_MAX_WIDTH,
     mx: 'auto',
-    px: { xs: 2, sm: 3, md: 4 },
+    px: { xs: 2, sm: 3, md: 4.5, lg: 5 },
   }
 
   const panelSx = {
@@ -273,6 +273,8 @@ function Home() {
         ? '0 24px 60px rgba(0, 0, 0, 0.28)'
         : '0 24px 60px rgba(15, 23, 42, 0.08)',
   }
+
+  const sectionCardPaddingSx = { xs: 3, sm: 3.5, md: 4.25 }
 
   const bulletListSx = {
     m: 0,
@@ -291,7 +293,7 @@ function Home() {
   const heroHighlightCardSx = {
     width: '100%',
     minHeight: 116,
-    p: 2,
+    p: 2.25,
     borderRadius: 4,
     border: '1px solid',
     borderColor: alpha(theme.palette.text.primary, 0.1),
@@ -372,26 +374,25 @@ function Home() {
         </Box>
       </Box>
 
-      <Box sx={{ ...shellInnerSx, py: { xs: 4, md: 6 } }}>
+      <Box sx={{ ...shellInnerSx, py: { xs: 4, sm: 5, md: 6.5 } }}>
         <Stack spacing={{ xs: 3, md: 4 }} sx={{ animation: 'homeFadeUp 720ms ease-out' }}>
           <Card sx={{ ...panelSx, overflow: 'hidden' }}>
-            <CardContent sx={{ p: { xs: 3, md: 5 } }}>
+            <CardContent sx={{ p: sectionCardPaddingSx }}>
               <Box
                 sx={{
-                  display: 'flex',
-                  flexDirection: { xs: 'column', md: 'row' },
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) minmax(0, 1fr)' },
                   alignItems: 'stretch',
-                  gap: { xs: 3, md: 3 },
+                  gap: { xs: 3, md: 4 },
                 }}
               >
                 <Box
                   sx={{
-                    width: { xs: '100%', md: '60%' },
-                    flex: { md: '0 0 60%' },
                     minWidth: 0,
+                    display: 'flex',
                   }}
                 >
-                  <Stack spacing={2.5}>
+                  <Stack spacing={2.5} sx={{ width: '100%', justifyContent: 'center' }}>
                     <Chip
                       label={portalContent.hero.eyebrow}
                       sx={{
@@ -457,9 +458,8 @@ function Home() {
 
                 <Box
                   sx={{
-                    width: { xs: '100%', md: '40%' },
-                    flex: { md: '0 0 40%' },
                     minWidth: 0,
+                    display: 'flex',
                   }}
                 >
                   <Box
@@ -469,6 +469,7 @@ function Home() {
                       display: 'flex',
                       flexDirection: 'column',
                       borderRadius: 5,
+                      width: '100%',
                       p: { xs: 3, md: 3.5 },
                       position: 'relative',
                       overflow: 'hidden',
@@ -566,13 +567,20 @@ function Home() {
             </CardContent>
           </Card>
 
-          <Stack id="ifc-value-sections" spacing={3}>
+          <Stack id="ifc-value-sections" spacing={{ xs: 3, md: 3.5 }}>
             {portalContent.sections.map((section) => (
               <Card key={section.title} sx={{ ...panelSx, overflow: 'hidden' }}>
-                <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-                  <Grid container spacing={{ xs: 3, md: 4 }}>
+                <CardContent sx={{ p: sectionCardPaddingSx }}>
+                  <Grid container spacing={{ xs: 3, md: 4 }} alignItems="stretch">
                     <Grid item xs={12} lg={4}>
-                      <Stack spacing={2}>
+                      <Stack
+                        spacing={2}
+                        sx={{
+                          height: '100%',
+                          justifyContent: 'center',
+                          pr: { lg: 1 },
+                        }}
+                      >
                         <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.55rem', md: '1.9rem' }, lineHeight: 1.15 }}>
                           {section.title}
                         </Typography>
@@ -581,7 +589,7 @@ function Home() {
                     </Grid>
 
                     <Grid item xs={12} lg={8}>
-                      <Grid container spacing={2.25}>
+                      <Grid container spacing={2.25} alignItems="stretch">
                         {section.subsections.map((sub) => (
                           <Grid item xs={12} md={6} key={sub.title} sx={{ display: 'flex' }}>
                             <Box sx={subsectionCardSx}>
@@ -618,7 +626,7 @@ function Home() {
                   : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.12)} 0%, ${alpha(theme.palette.background.paper, 0.9)} 100%)`,
             }}
           >
-            <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+            <CardContent sx={{ p: sectionCardPaddingSx }}>
               <Stack spacing={2} sx={{ textAlign: 'center', alignItems: 'center' }}>
                 <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.4rem', md: '1.8rem' }, maxWidth: 900, lineHeight: 1.3 }}>
                   {portalContent.closing}
@@ -637,7 +645,7 @@ function Home() {
           </Card>
 
           <Card sx={panelSx}>
-            <CardContent sx={{ p: { xs: 3, md: 3.5 } }}>
+            <CardContent sx={{ p: sectionCardPaddingSx }}>
               <Stack spacing={2}>
                 <Typography sx={{ fontWeight: 800, fontSize: '1rem' }}>Legal disclaimer</Typography>
                 <Divider />

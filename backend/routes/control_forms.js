@@ -136,8 +136,167 @@ function parseActiveFilter(value) {
   return undefined;
 }
 
+async function getControlFormsForList(req, options = {}) {
+  const { assignmentEligibleOnly = false } = options;
+  const {
+    assignment,
+    company_identifier,
+    control_owner,
+    active,
+    business_process,
+    status,
+    financial_year,
+    cycle,
+    sub_process,
+    unit_id,
+  } = req.query;
+
+  let query = `
+    SELECT
+      cf.*,
+      NULLIF(TRIM(cum.unit_name), '') AS unit_name,
+      NULLIF(TRIM(u.emp_name), '') AS control_owner_name
+    FROM control_forms cf
+    LEFT JOIN company_unit_master cum
+      ON cum.company_identifier = cf.company_identifier
+     AND cum.unit_id = cf.unit_id
+    LEFT JOIN ifc_users u
+      ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
+     AND u.company_identifier = cf.company_identifier
+     AND NULLIF(TRIM(u.unit_id), '') = NULLIF(TRIM(cf.unit_id), '')
+     AND u.role = 'user'
+    WHERE 1=1
+  `;
+  const queryParams = [];
+  let paramIndex = 1;
+
+  if (req.user.role === 'company_co') {
+    const coordinatorCompanyIdentifier = req.user.company_identifier;
+    if (coordinatorCompanyIdentifier) {
+      query += ` AND cf.company_identifier = $${paramIndex}`;
+      queryParams.push(coordinatorCompanyIdentifier);
+      paramIndex++;
+    }
+    query += `
+      AND EXISTS (
+        SELECT 1
+        FROM company_unit_master coordinator_units
+        WHERE coordinator_units.company_identifier = cf.company_identifier
+          AND coordinator_units.unit_id = cf.unit_id
+          AND LOWER(TRIM(COALESCE(coordinator_units.coordinator_email_id, ''))) = LOWER(TRIM($${paramIndex}))
+      )
+    `;
+    queryParams.push(req.user.email_id);
+    paramIndex++;
+  } else if (company_identifier) {
+    query += ` AND cf.company_identifier = $${paramIndex}`;
+    queryParams.push(company_identifier);
+    paramIndex++;
+  }
+
+  if (unit_id) {
+    query += ` AND cf.unit_id = $${paramIndex}`;
+    queryParams.push(String(unit_id).trim());
+    paramIndex++;
+  }
+
+  if (control_owner) {
+    query += ` AND LOWER(TRIM(cf.control_owner)) = LOWER(TRIM($${paramIndex}))`;
+    queryParams.push(control_owner.trim());
+    paramIndex++;
+  }
+
+  if (business_process) {
+    query += ` AND cf.business_process IS NOT NULL AND LOWER(TRIM(cf.business_process)) = $${paramIndex}`;
+    queryParams.push(business_process.trim().toLowerCase());
+    paramIndex++;
+  }
+
+  if (active !== undefined) {
+    const activeFilter = parseActiveFilter(active);
+    if (activeFilter === true) {
+      query += ` AND cf.active = TRUE`;
+    } else if (activeFilter === false) {
+      query += ` AND COALESCE(cf.active, FALSE) = FALSE`;
+    }
+  }
+
+  if (status) {
+    if (status === 'pending') {
+      query += ` AND (cf.status IS NULL OR cf.status = '' OR cf.status = 'null')`;
+    } else if (status === 'sent for approval') {
+      query += ` AND cf.status = $${paramIndex}`;
+      queryParams.push('sent for approval');
+      paramIndex++;
+    } else if (status === 'approved') {
+      query += ` AND cf.status = $${paramIndex}`;
+      queryParams.push('Approved');
+      paramIndex++;
+    } else if (status === 'rejected') {
+      query += ` AND cf.status = $${paramIndex}`;
+      queryParams.push('Rejected');
+      paramIndex++;
+    }
+  }
+
+  if (financial_year) {
+    query += ` AND cf.financial_year IS NOT NULL AND TRIM(cf.financial_year) = $${paramIndex}`;
+    queryParams.push(financial_year.trim());
+    paramIndex++;
+  }
+
+  if (sub_process) {
+    query += ` AND cf.sub_process IS NOT NULL AND TRIM(cf.sub_process) = $${paramIndex}`;
+    queryParams.push(sub_process.trim());
+    paramIndex++;
+  }
+
+  if (cycle) {
+    query += ` AND cf.cycle IS NOT NULL AND TRIM(cf.cycle) = $${paramIndex}`;
+    queryParams.push(cycle.trim());
+    paramIndex++;
+  }
+
+  if (assignment === 'assigned') {
+    query += `
+      AND EXISTS (
+        SELECT 1
+        FROM ifc_users valid_owner
+        WHERE LOWER(TRIM(valid_owner.email_id)) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
+          AND valid_owner.company_identifier = cf.company_identifier
+          AND NULLIF(TRIM(valid_owner.unit_id), '') = NULLIF(TRIM(cf.unit_id), '')
+          AND valid_owner.role = 'user'
+      )
+    `;
+  } else if (assignment === 'unassigned') {
+    query += `
+      AND NOT EXISTS (
+        SELECT 1
+        FROM ifc_users valid_owner
+        WHERE LOWER(TRIM(valid_owner.email_id)) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
+          AND valid_owner.company_identifier = cf.company_identifier
+          AND NULLIF(TRIM(valid_owner.unit_id), '') = NULLIF(TRIM(cf.unit_id), '')
+          AND valid_owner.role = 'user'
+      )
+    `;
+  }
+
+  if (assignmentEligibleOnly) {
+    query += `
+      AND cf.due_date IS NOT NULL
+      AND NULLIF(TRIM(COALESCE(cf.reminder_frequency, '')), '') IS NOT NULL
+    `;
+  }
+
+  query += ' ORDER BY cf.created_at DESC';
+
+  const result = await pool.query(query, queryParams);
+  await attachControlFormDocuments(pool, result.rows);
+  return result.rows;
+}
+
 function buildControlFormStatusEmail(status, businessProcess, processOwnerName, coordinatorName, coordinatorCompanyName, dueDate, formId) {
-  const recipientName = processOwnerName || 'Control Owner';
+  const recipientName = processOwnerName || 'Process Owner';
   const coordinatorDisplayName = coordinatorName || 'Company Coordinator';
   const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
   const formattedDueDate = formatDueDateDisplay(dueDate);
@@ -355,6 +514,7 @@ const {
   transformExcelData,
   transformExcelDataWithColumnMapping,
   insertRacmRowsFromTransformedData,
+  validateBulkImportControlFrequencies,
 } = require('../utils/racm_bulk_import_from_rows');
 
 const MAX_BULK_IMPORT_ROWS = 5000;
@@ -528,7 +688,7 @@ const REQUEST_CHANGE_FIELD_LABELS = {
   key_control: 'Key Control',
   application_name: 'Application Name',
   control_performer: 'Control Performer',
-  control_owner: 'Control Owner',
+  control_owner: 'Process Owner',
   control_design_procs: 'Procedures to Evaluate Design and Implementation',
   control_design_conclusion: 'Conclusion on Design of Control',
   design_deficiency_desc: 'Description of Deficiency in Control Design',
@@ -1030,6 +1190,18 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
         ? transformExcelDataWithColumnMapping(rows, columnMapping)
         : transformExcelData(rows);
 
+    const controlFrequencyValidation = validateBulkImportControlFrequencies(transformedData);
+    if (!controlFrequencyValidation.ok) {
+      return res.status(400).json({
+        success: false,
+        message: controlFrequencyValidation.message,
+        data: {
+          reason: controlFrequencyValidation.reason,
+          invalidControlFrequencies: controlFrequencyValidation.invalidValues,
+        },
+      });
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -1165,152 +1337,38 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
 // Get all RACM forms (with optional company_identifier, control_owner, active, business_process, status, financial_year, sub_process, cycle, and unit filters)
 router.get('/', verifyAuth, async (req, res) => {
   try {
-    const { company_identifier, control_owner, active, business_process, status, financial_year, cycle, sub_process, unit_id } = req.query;
-    
-    // Debug logging
-    console.log('RACM GET request filters:', {
-      company_identifier,
-      active,
-      business_process,
-      status,
-      financial_year,
-      cycle,
-      sub_process,
-      unit_id,
-    });
-    
-    let query = `
-      SELECT
-        cf.*,
-        NULLIF(TRIM(cum.unit_name), '') AS unit_name,
-        NULLIF(TRIM(u.emp_name), '') AS control_owner_name
-      FROM control_forms cf
-      LEFT JOIN company_unit_master cum
-        ON cum.company_identifier = cf.company_identifier
-       AND cum.unit_id = cf.unit_id
-      LEFT JOIN ifc_users u
-        ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
-      WHERE 1=1
-    `;
-    const queryParams = [];
-    let paramIndex = 1;
+    console.log('RACM GET request filters:', req.query);
+    const rows = await getControlFormsForList(req);
 
-    // Company coordinator should only see forms for their own company identifier
-    if (req.user.role === 'company_co') {
-      const coordinatorCompanyIdentifier = req.user.company_identifier;
-      if (coordinatorCompanyIdentifier) {
-        query += ` AND cf.company_identifier = $${paramIndex}`;
-        queryParams.push(coordinatorCompanyIdentifier);
-        paramIndex++;
-      }
-      query += `
-        AND EXISTS (
-          SELECT 1
-          FROM company_unit_master coordinator_units
-          WHERE coordinator_units.company_identifier = cf.company_identifier
-            AND coordinator_units.unit_id = cf.unit_id
-            AND LOWER(TRIM(COALESCE(coordinator_units.coordinator_email_id, ''))) = LOWER(TRIM($${paramIndex}))
-        )
-      `;
-      queryParams.push(req.user.email_id);
-      paramIndex++;
-    } else if (company_identifier) {
-      query += ` AND cf.company_identifier = $${paramIndex}`;
-      queryParams.push(company_identifier);
-      paramIndex++;
-    }
-
-    if (unit_id) {
-      query += ` AND cf.unit_id = $${paramIndex}`;
-      queryParams.push(String(unit_id).trim());
-      paramIndex++;
-    }
-    
-    // Filter by control_owner if provided
-    if (control_owner) {
-      query += ` AND LOWER(TRIM(cf.control_owner)) = LOWER(TRIM($${paramIndex}))`;
-      queryParams.push(control_owner.trim());
-      paramIndex++;
-    }
-    
-    // Filter by business_process if provided
-    if (business_process) {
-      // Use case-insensitive comparison and handle NULL values
-      query += ` AND cf.business_process IS NOT NULL AND LOWER(TRIM(cf.business_process)) = $${paramIndex}`;
-      queryParams.push(business_process.trim().toLowerCase());
-      paramIndex++;
-    }
-    
-    // Filter by active status if provided
-    if (active !== undefined) {
-      const activeFilter = parseActiveFilter(active);
-      if (activeFilter === true) {
-        query += ` AND cf.active = TRUE`;
-      } else if (activeFilter === false) {
-        query += ` AND COALESCE(cf.active, FALSE) = FALSE`;
-      }
-    }
-    
-    // Filter by status if provided
-    if (status) {
-      if (status === 'pending') {
-        // Pending: status is null or empty
-        query += ` AND (cf.status IS NULL OR cf.status = '' OR cf.status = 'null')`;
-      } else if (status === 'sent for approval') {
-        // Sent for approval: status is exactly 'sent for approval'
-        query += ` AND cf.status = $${paramIndex}`;
-        queryParams.push('sent for approval');
-        paramIndex++;
-      } else if (status === 'approved') {
-        // Approved: status is exactly 'Approved'
-        query += ` AND cf.status = $${paramIndex}`;
-        queryParams.push('Approved');
-        paramIndex++;
-      } else if (status === 'rejected') {
-        // Rejected: status is exactly 'Rejected'
-        query += ` AND cf.status = $${paramIndex}`;
-        queryParams.push('Rejected');
-        paramIndex++;
-      }
-      // For 'all' or any other value, no status filter is applied
-    }
-
-    // Filter by financial_year if provided
-    if (financial_year) {
-      query += ` AND cf.financial_year IS NOT NULL AND TRIM(cf.financial_year) = $${paramIndex}`;
-      queryParams.push(financial_year.trim());
-      paramIndex++;
-    }
-
-    // Filter by sub_process if provided (exact trim match)
-    if (sub_process) {
-      query += ` AND cf.sub_process IS NOT NULL AND TRIM(cf.sub_process) = $${paramIndex}`;
-      queryParams.push(sub_process.trim());
-      paramIndex++;
-    }
-
-    // Filter by cycle if provided
-    if (cycle) {
-      query += ` AND cf.cycle IS NOT NULL AND TRIM(cf.cycle) = $${paramIndex}`;
-      queryParams.push(cycle.trim());
-      paramIndex++;
-    }
-    
-    query += ' ORDER BY cf.created_at DESC';
-    
-    const result = await pool.query(query, queryParams);
-    await attachControlFormDocuments(pool, result.rows);
-    
     res.status(200).json({
       success: true,
-      data: result.rows,
-      count: result.rows.length
+      data: rows,
+      count: rows.length
     });
   } catch (error) {
     console.error('Error fetching RACM records:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching RACM records'
+    });
+  }
+});
+
+router.get('/assignment-eligible', verifyAuth, async (req, res) => {
+  try {
+    console.log('RACM assignment-eligible GET request filters:', req.query);
+    const rows = await getControlFormsForList(req, { assignmentEligibleOnly: true });
+
+    return res.status(200).json({
+      success: true,
+      data: rows,
+      count: rows.length,
+    });
+  } catch (error) {
+    console.error('Error fetching assignment-eligible RACM records:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching assignment-eligible RACM records',
     });
   }
 });
@@ -2008,7 +2066,12 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
 
     await client.query('COMMIT');
 
-    await logAuditEvent('Deficiency Response Submitted', submittedByEmail, normalizedFormId, saved.response_id);
+    await logAuditEvent(
+      'Deficiency Response Submitted',
+      submittedByEmail,
+      normalizedFormId,
+      `Version ${saved.version_no}`
+    );
 
     const formResult = await pool.query(
       `
@@ -3046,13 +3109,6 @@ router.post('/bulk-set-due-date', verifyAuth, async (req, res) => {
         reminderDatetime: null,
       },
     });
-
-    // Audit: one row per RACM for traceability.
-    if (req.user?.email_id) {
-      for (const fid of eligibleFormIds) {
-        await logAuditEvent('Set Due Date', req.user.email_id, fid);
-      }
-    }
 
     return res.status(200).json({
       success: true,

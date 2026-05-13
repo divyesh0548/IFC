@@ -2067,6 +2067,18 @@ function ApproverFormDetail() {
                           onChange={(e) => setReasonByApprover(e.target.value)}
                           variant="outlined"
                           required={approvalDecision === 'Rejected'}
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              backgroundColor: 'transparent',
+                              borderRadius: 1.5,
+                              '&:hover': {
+                                backgroundColor: 'transparent',
+                              },
+                              '&.Mui-focused': {
+                                backgroundColor: 'transparent',
+                              },
+                            },
+                          }}
                         />
                       ) : null}
 

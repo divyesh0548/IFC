@@ -4416,11 +4416,11 @@ function FormDetail() {
                 <Typography variant="body2" component="span">{popupValue(formData.financial_year)}</Typography>
               </Box>
               <Box sx={popupRowSx}>
-                <Typography variant="body2" component="span" sx={popupLabelSx}>Current Control Owner Email:</Typography>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Current Process Owner Email:</Typography>
                 <Typography variant="body2" component="span">{popupValue(formData.control_owner)}</Typography>
               </Box>
               <Box sx={{ ...popupRowSx, mb: 2 }}>
-                <Typography variant="body2" component="span" sx={popupLabelSx}>Current Control Owner Name:</Typography>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Current Process Owner Name:</Typography>
                 <Typography variant="body2" component="span">
                   {popupValue(formData.control_owner_name || formatNameFromEmail(formData.control_owner))}
                 </Typography>

@@ -24,6 +24,7 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { useUnsavedChangesWarning } from '../../utils/useUnsavedChangesWarning'
 import { apiUrl } from '../../config/api'
+import { validateControlFrequencyColumnValues } from '../../utils/controlFrequencyValidation'
 
 const AUTO = '__auto__'
 const SKIP = '__skip__'
@@ -369,6 +370,23 @@ function ExcelColumnMap() {
     }
     if (poCheck.warnEmpty) {
       toast('Process Owner column is empty.', { icon: '⚠️' })
+    }
+
+    const controlFrequencyHeader = headers.find(
+      (header) => mappedFieldByHeader[header] === 'control_frequency'
+    )
+    if (!controlFrequencyHeader) {
+      toast.error('Map one Excel column to Control Frequency before importing.')
+      return
+    }
+
+    const controlFrequencyValidation = validateControlFrequencyColumnValues(
+      payload.rows,
+      controlFrequencyHeader
+    )
+    if (!controlFrequencyValidation.ok) {
+      toast.error(controlFrequencyValidation.message)
+      return
     }
 
     const column_mapping = buildColumnMapping(headers, selections)

@@ -124,12 +124,6 @@ function BusinessProcessManagement() {
           }}
         >
           <Box sx={{ display: 'grid', gap: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <AccountTreeRoundedIcon sx={{ color: theme.palette.primary.main }} />
-              <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: theme.palette.text.secondary }}>
-                Company Coordinator
-              </Typography>
-            </Box>
             <Typography sx={{ fontSize: { xs: '1.7rem', md: '2.1rem' }, fontWeight: 900, lineHeight: 1.1 }}>
               Business Process Management
             </Typography>
@@ -162,41 +156,165 @@ function BusinessProcessManagement() {
           overflow: 'hidden',
         }}
       >
-        <TableContainer>
-          <Table>
+        <TableContainer
+          sx={{
+            backgroundColor: theme.palette.background.paper,
+          }}
+        >
+          <Table sx={{ minWidth: 720 }}>
             <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 800 }}>#</TableCell>
-                <TableCell sx={{ fontWeight: 800 }}>Business Process</TableCell>
-                <TableCell sx={{ fontWeight: 800 }}>Code</TableCell>
-                <TableCell sx={{ fontWeight: 800 }}>Scope</TableCell>
+              <TableRow
+                sx={{
+                  backgroundColor:
+                    theme.palette.mode === 'dark'
+                      ? alpha(theme.palette.common.white, 0.04)
+                      : alpha(theme.palette.primary.main, 0.05),
+                }}
+              >
+                <TableCell
+                  sx={{
+                    fontWeight: 800,
+                    fontSize: '0.82rem',
+                    color: 'text.secondary',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid',
+                    borderBottomColor: 'divider',
+                    py: 1.75,
+                    width: 72,
+                  }}
+                >
+                  #
+                </TableCell>
+                <TableCell
+                  sx={{
+                    fontWeight: 800,
+                    fontSize: '0.82rem',
+                    color: 'text.secondary',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid',
+                    borderBottomColor: 'divider',
+                    py: 1.75,
+                  }}
+                >
+                  Business Process
+                </TableCell>
+                <TableCell
+                  sx={{
+                    fontWeight: 800,
+                    fontSize: '0.82rem',
+                    color: 'text.secondary',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid',
+                    borderBottomColor: 'divider',
+                    py: 1.75,
+                    width: 180,
+                  }}
+                >
+                  Code
+                </TableCell>
+                <TableCell
+                  sx={{
+                    fontWeight: 800,
+                    fontSize: '0.82rem',
+                    color: 'text.secondary',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid',
+                    borderBottomColor: 'divider',
+                    py: 1.75,
+                    width: 190,
+                  }}
+                >
+                  Scope
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={4} sx={{ py: 4, textAlign: 'center', color: 'text.secondary' }}>
+                  <TableCell
+                    colSpan={4}
+                    sx={{
+                      py: 6,
+                      textAlign: 'center',
+                      color: 'text.secondary',
+                      borderBottom: 'none',
+                    }}
+                  >
                     Loading business processes...
                   </TableCell>
                 </TableRow>
               ) : sortedRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} sx={{ py: 4, textAlign: 'center', color: 'text.secondary' }}>
+                  <TableCell
+                    colSpan={4}
+                    sx={{
+                      py: 6,
+                      textAlign: 'center',
+                      color: 'text.secondary',
+                      borderBottom: 'none',
+                    }}
+                  >
                     No business process found.
                   </TableCell>
                 </TableRow>
               ) : (
                 sortedRows.map((row, index) => (
-                  <TableRow key={row.id || `${row.business_process}-${row.business_process_code}`}>
-                    <TableCell>{index + 1}</TableCell>
-                    <TableCell>{row.business_process}</TableCell>
-                    <TableCell>{row.business_process_code}</TableCell>
+                  <TableRow
+                    key={row.id || `${row.business_process}-${row.business_process_code}`}
+                    hover
+                    sx={{
+                      backgroundColor:
+                        index % 2 === 0
+                          ? 'transparent'
+                          : theme.palette.mode === 'dark'
+                            ? alpha(theme.palette.common.white, 0.015)
+                            : alpha('#0f172a', 0.015),
+                      '&:hover': {
+                        backgroundColor:
+                          theme.palette.mode === 'dark'
+                            ? alpha(theme.palette.primary.main, 0.08)
+                            : alpha(theme.palette.primary.main, 0.04),
+                      },
+                      '& td': {
+                        borderBottom: '1px solid',
+                        borderBottomColor: alpha(theme.palette.divider, 0.9),
+                        py: 1.8,
+                        verticalAlign: 'middle',
+                      },
+                      '&:last-child td': {
+                        borderBottom: 'none',
+                      },
+                    }}
+                  >
+                    <TableCell sx={{ fontWeight: 700, color: 'text.secondary' }}>{index + 1}</TableCell>
+                    <TableCell>
+                      <Typography sx={{ fontWeight: 700, color: 'text.primary' }}>
+                        {row.business_process}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography
+                        sx={{
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace',
+                          fontSize: '0.92rem',
+                          fontWeight: 700,
+                          color: 'text.primary',
+                        }}
+                      >
+                        {row.business_process_code}
+                      </Typography>
+                    </TableCell>
                     <TableCell>
                       <Chip
                         size="small"
                         label={row.is_default ? 'Common' : 'Company Specific'}
                         color={row.is_default ? 'primary' : 'secondary'}
                         variant={row.is_default ? 'outlined' : 'filled'}
+                        sx={{ fontWeight: 700 }}
                       />
                     </TableCell>
                   </TableRow>

@@ -9,6 +9,7 @@ import Chip from '@mui/material/Chip'
 import Tooltip from '@mui/material/Tooltip'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import Alert from '@mui/material/Alert'
 import {
   FILTER_BOX_MIN_WIDTH,
   PAGE_SUBHEADER_TEXT_SX,
@@ -34,8 +35,10 @@ function User_dashboard() {
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [filterConclusion, setFilterConclusion] = useState('all')
+  const [conclusionOptions, setConclusionOptions] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
+  const [actionRequiredAlertDismissed, setActionRequiredAlertDismissed] = useState(false)
   const { businessProcessOptions } = useBusinessProcesses()
   useSyncGlobalLoading(loading)
 
@@ -115,6 +118,15 @@ function User_dashboard() {
         })
         
         setForms(sortedForms)
+        setConclusionOptions(
+          [...new Set(
+            (data.data || []).map((form) => formatConclusion(form.control_design_conclusion))
+          )].sort((a, b) => {
+            if (a === 'None') return 1
+            if (b === 'None') return -1
+            return a.localeCompare(b)
+          })
+        )
 
         // Update financial year options based on fetched data
         const latestYears = extractUniqueFinancialYears(data.data)
@@ -174,14 +186,6 @@ function User_dashboard() {
     return normalized.charAt(0).toUpperCase() + normalized.slice(1)
   }
 
-  const conclusionOptions = [...new Set(
-    (forms || []).map((form) => formatConclusion(form.control_design_conclusion))
-  )].sort((a, b) => {
-    if (a === 'None') return 1
-    if (b === 'None') return -1
-    return a.localeCompare(b)
-  })
-
   const displayedForms = forms.filter((form) => {
     if (filterConclusion === 'all') return true
     return formatConclusion(form.control_design_conclusion) === filterConclusion
@@ -189,6 +193,12 @@ function User_dashboard() {
   const actionRequiredCount = (forms || []).filter((form) =>
     Boolean(form?.deficiency_action_status)
   ).length
+
+  useEffect(() => {
+    if (actionRequiredCount > 0) {
+      setActionRequiredAlertDismissed(false)
+    }
+  }, [actionRequiredCount])
 
   const truncatedTextSx = {
     display: 'inline-block',
@@ -234,28 +244,6 @@ function User_dashboard() {
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
-        {actionRequiredCount > 0 ? (
-          <Box
-            sx={{
-              mb: 2,
-              px: 2,
-              py: 1.25,
-              borderRadius: 2,
-              backgroundColor: '#fef3c7',
-              border: '1px solid #f59e0b',
-            }}
-          >
-            <Typography
-              variant="body2"
-              sx={{
-                color: '#92400e',
-                fontWeight: 700,
-              }}
-            >
-              Action Required - {actionRequiredCount} RACMs are found ineffective
-            </Typography>
-          </Box>
-        ) : null}
         {/* Forms Section */}
         <Paper 
           elevation={3}
@@ -265,6 +253,15 @@ function User_dashboard() {
             borderRadius: 2,
           }}
         >
+          {actionRequiredCount > 0 && !actionRequiredAlertDismissed ? (
+            <Alert
+              severity="warning"
+              onClose={() => setActionRequiredAlertDismissed(true)}
+              sx={{ mb: 3, alignItems: 'center' }}
+            >
+              Action Required - {actionRequiredCount} RACMs are found ineffective
+            </Alert>
+          ) : null}
           <Box 
             sx={{ 
               display: 'flex', 

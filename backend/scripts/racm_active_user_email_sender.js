@@ -23,7 +23,7 @@ function formatDueDateDisplay(dueDate) {
 }
 
 function buildControlFormStatusEmail(status, businessProcess, processOwnerName, coordinatorName, coordinatorCompanyName, dueDate, formId) {
-  const recipientName = processOwnerName || 'Control Owner';
+  const recipientName = processOwnerName || 'Process Owner';
   const coordinatorDisplayName = coordinatorName || 'Company Coordinator';
   const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
   const formattedDueDate = formatDueDateDisplay(dueDate);
