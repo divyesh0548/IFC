@@ -3213,7 +3213,7 @@ function UserFormDetail() {
                           {request.request_id}
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                          {String(request.status || '').trim() || '-'}
+                          Outcome: {String(request.status || '').trim() || '-'}
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
                           Requested on: {request.requested_at ? formatDateTime(request.requested_at) : '-'}
@@ -3238,9 +3238,6 @@ function UserFormDetail() {
                             </Typography>
                           </Box>
                         ) : null}
-                        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
-                          Reviewed by: {String(request.reviewed_by_display || request.reviewed_by_email || '').trim() || '-'}
-                        </Typography>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                           {(Array.isArray(request.items) ? request.items : []).map((item) => (
                             <Box

@@ -25,9 +25,16 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded'
+import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
+import AssignmentIndRoundedIcon from '@mui/icons-material/AssignmentIndRounded'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
+import {
+  STATUS_BADGE_PILL_SX,
+  TABLE_HEADER_BG,
+  TABLE_ROW_HOVER_BG,
+} from '../../uiConstants'
 
 const emptyData = {
   currentCoordinatorUnits: [],
@@ -76,7 +83,6 @@ function UnitManagement() {
   const [createDialog, setCreateDialog] = useState(createDialogDefaults)
   const [unitDialog, setUnitDialog] = useState(unitDialogDefaults)
   const [assignMode, setAssignMode] = useState(false)
-  const [assignmentPerformed, setAssignmentPerformed] = useState(false)
   const [assignmentDialog, setAssignmentDialog] = useState(assignmentDialogDefaults)
 
   useSyncGlobalLoading(loading)
@@ -153,7 +159,6 @@ function UnitManagement() {
     const handleOutsideClick = (event) => {
       if (unitMasterRef.current?.contains(event.target)) return
       setAssignMode(false)
-      setAssignmentPerformed(false)
     }
 
     document.addEventListener('mousedown', handleOutsideClick)
@@ -375,10 +380,8 @@ function UnitManagement() {
       }
 
       toast.success(result.message || 'Assignment updated successfully')
-      setAssignmentPerformed(true)
       setAssignmentDialog(assignmentDialogDefaults)
       setAssignMode(false)
-      setAssignmentPerformed(false)
       await fetchUnitManagement()
     } catch (assignmentError) {
       console.error('Update unit assignment error:', assignmentError)
@@ -391,71 +394,108 @@ function UnitManagement() {
   }
 
   const assignmentOptions = getAssignmentOptions(assignmentDialog.role)
-  const tableBorderColor = alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.16 : 0.2)
+  const tableBorderColor = theme.palette.mode === 'light'
+    ? alpha(theme.palette.text.primary, 0.16)
+    : alpha('#0f172a', 0.72)
   const mappedUnitNames = data.currentCoordinatorUnits
     .map((unit) => String(unit.unit_name || unit.unit_id || '').trim())
     .filter(Boolean)
   const selectedAssignmentUnitId = String(assignmentDialog.unit?.unit_id || '').trim()
   const isAssignmentOutsideMappedUnits =
     selectedAssignmentUnitId !== '' && !mappedUnitIdSet.has(selectedAssignmentUnitId)
+  const shellCardSx = {
+    borderRadius: 3,
+    border: '1px solid',
+    borderColor: theme.palette.mode === 'light'
+      ? alpha(theme.palette.divider, 0.9)
+      : alpha('#0f172a', 0.72),
+    backgroundColor: alpha(theme.palette.background.paper, 0.96),
+    boxShadow: theme.palette.mode === 'dark'
+      ? '0 10px 24px rgba(0, 0, 0, 0.16)'
+      : '0 10px 24px rgba(15, 23, 42, 0.05)',
+  }
+  const sectionHeaderSx = {
+    px: { xs: 2, sm: 2.5 },
+    py: 2,
+    display: 'flex',
+    alignItems: { xs: 'flex-start', sm: 'center' },
+    justifyContent: 'space-between',
+    gap: 1.5,
+    flexDirection: { xs: 'column', sm: 'row' },
+  }
+  const commonTableCellSx = {
+    py: 1.5,
+    px: 2.25,
+    borderBottom: `1px solid ${tableBorderColor}`,
+    verticalAlign: 'top',
+  }
+  const commonHeadCellSx = {
+    ...commonTableCellSx,
+    fontSize: '0.76rem',
+    fontWeight: 800,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    color: 'text.secondary',
+    backgroundColor: TABLE_HEADER_BG,
+  }
+  const assignButtonLabel = assignMode ? 'Select Unit To Reassign' : 'Reassign Mapping'
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, py: 1 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, py: 2 }}>
       <Box
         sx={{
+          ...shellCardSx,
+          p: { xs: 2, sm: 2.5 },
           display: 'flex',
-          flexDirection: { xs: 'column', md: 'row' },
           justifyContent: 'space-between',
-          alignItems: { xs: 'stretch', md: 'flex-start' },
+          alignItems: 'center',
           gap: 2,
+          flexWrap: 'wrap',
         }}
       >
-        <Box>
+        <Box sx={{ minWidth: 0 }}>
           <Typography
             component="h1"
             sx={{
-              fontSize: { xs: '1.7rem', sm: '2rem' },
-              fontWeight: 900,
+              fontSize: { xs: '1.45rem', sm: '1.7rem' },
+              fontWeight: 850,
               color: 'text.primary',
               lineHeight: 1.15,
             }}
           >
             Unit Management
           </Typography>
-          <Typography sx={{ mt: 0.8, color: 'text.secondary', lineHeight: 1.6 }}>
-            View coordinator and approver mappings across company units.
-          </Typography>
         </Box>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.2 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.2, justifyContent: { xs: 'flex-start', lg: 'flex-end' } }}>
           <Button
             variant="contained"
             startIcon={<AddRoundedIcon />}
             onClick={() => setUnitDialog({ ...unitDialogDefaults, open: true })}
             disabled={loading || assignMode}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
           >
-            Company Unit
+            Create Unit
           </Button>
           <Button
             variant="outlined"
             startIcon={<AddRoundedIcon />}
             onClick={handleOpenCreateDialog}
             disabled={loading || assignMode}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
           >
-            Coordinator / Approver
+            Add Coordinator or Approver
           </Button>
         </Box>
       </Box>
 
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <Alert severity="error" sx={{ borderRadius: 2.5 }}>{error}</Alert>}
 
       {loading ? (
         <Paper
           elevation={0}
           sx={{
+            ...shellCardSx,
             p: 4,
-            borderRadius: 2,
-            border: '1px solid',
-            borderColor: 'divider',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -467,241 +507,255 @@ function UnitManagement() {
         </Paper>
       ) : (
         <>
-          <Paper
-            elevation={0}
+          <Box
             sx={{
-              p: 2.5,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              backgroundColor: alpha(theme.palette.background.paper, 0.96),
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' },
+              gap: 2,
             }}
           >
-            <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'text.secondary' }}>
-              Units Mapped To You
-            </Typography>
-            <Typography sx={{ mt: 1, fontSize: '1rem', fontWeight: 700, color: 'text.primary', lineHeight: 1.6 }}>
-              {mappedUnitNames.length > 0 ? mappedUnitNames.join(', ') : 'No units are currently mapped to your coordinator account.'}
-            </Typography>
-          </Paper>
-
-          <Paper
-            ref={unitMasterRef}
-            elevation={0}
-            sx={{
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              overflow: 'hidden',
-              backgroundColor: alpha(theme.palette.background.paper, 0.96),
-            }}
-          >
-            <Box
+            <Paper
+              ref={unitMasterRef}
+              elevation={0}
               sx={{
-                p: 2.5,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 1.5,
+                ...shellCardSx,
+                overflow: 'hidden',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0 }}>
-                <BadgeRoundedIcon sx={{ color: 'primary.main' }} />
-                <Typography sx={{ fontWeight: 850, color: 'text.primary' }}>
-                  Unit Master
-                </Typography>
-              </Box>
-              <Button
-                variant={assignMode ? 'contained' : 'outlined'}
-                onClick={() => {
-                  setAssignmentPerformed(false)
-                  setAssignMode(true)
-                }}
-                disabled={loading || data.units.length === 0 || assignMode}
-              >
-                {assignMode && assignmentPerformed ? 'Done' : 'Assign'}
-              </Button>
-            </Box>
-            <TableContainer sx={{ borderTop: `1px solid ${tableBorderColor}` }}>
-              <Table sx={{ minWidth: 720 }}>
-                <TableHead>
-                  <TableRow
-                    sx={{
-                      backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.06 : 0.12),
-                    }}
-                  >
-                    <TableCell
+              <Box sx={sectionHeaderSx}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0, flex: 1 }}>
+                  <BadgeRoundedIcon sx={{ color: 'primary.main' }} />
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 850, color: 'text.primary' }}>
+                      Unit Master
+                    </Typography>
+                    <Typography sx={{ mt: 0.4, color: 'text.secondary', fontSize: '0.9rem', lineHeight: 1.6 }}>
+                      Review coordinator and approver ownership for each unit. Use reassignment only when a mapping needs to change.
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
+                  {assignMode ? (
+                    <Box
                       sx={{
-                        py: 1.6,
-                        px: 2.25,
-                        fontWeight: 800,
-                        borderBottom: `1px solid ${tableBorderColor}`,
-                        ...(assignMode && {
-                          color: 'primary.main',
-                          backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                        }),
+                        ...STATUS_BADGE_PILL_SX,
+                        backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.12),
+                        color: theme.palette.primary.main,
                       }}
                     >
-                      Unit Name
-                    </TableCell>
-                    <TableCell sx={{ py: 1.6, px: 2.25, fontWeight: 800, borderBottom: `1px solid ${tableBorderColor}` }}>
-                      Coordinator
-                    </TableCell>
-                    <TableCell sx={{ py: 1.6, px: 2.25, fontWeight: 800, borderBottom: `1px solid ${tableBorderColor}` }}>
-                      Approver
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {data.units.length === 0 ? (
+                      Click a unit name to update its mapping
+                    </Box>
+                  ) : null}
+                  <Button
+                    variant={assignMode ? 'contained' : 'outlined'}
+                    startIcon={assignMode ? <ArrowOutwardRoundedIcon /> : <AssignmentIndRoundedIcon />}
+                    onClick={() => {
+                      setAssignMode((prev) => !prev)
+                    }}
+                    disabled={loading || data.units.length === 0}
+                    sx={{ textTransform: 'none', fontWeight: 700 }}
+                  >
+                    {assignMode ? 'Exit Reassign Mode' : assignButtonLabel}
+                  </Button>
+                </Box>
+              </Box>
+              <TableContainer sx={{ borderTop: `1px solid ${tableBorderColor}` }}>
+                <Table sx={{ minWidth: 720, tableLayout: 'fixed' }}>
+                  <TableHead>
                     <TableRow>
-                      <TableCell colSpan={3} sx={{ py: 3, px: 2.25, borderBottom: 0 }}>
-                        <Typography color="text.secondary">No units found.</Typography>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    data.units.map((unit, index) => (
-                      <TableRow
-                        key={unit.unit_id || unit.id}
-                        hover
+                      <TableCell
                         sx={{
-                          '&:last-of-type td': { borderBottom: 0 },
-                          '& td': {
-                            borderBottom: index === data.units.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
-                          },
+                          ...commonHeadCellSx,
+                          width: '20%',
+                          ...(assignMode && {
+                            color: 'primary.main',
+                            backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                          }),
                         }}
                       >
-                        <TableCell
-                          role={assignMode ? 'button' : undefined}
-                          tabIndex={assignMode ? 0 : undefined}
-                          onClick={() => handleOpenAssignmentDialog(unit, 'company_co')}
-                          onKeyDown={(event) => {
-                            if (!assignMode) return
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault()
-                              handleOpenAssignmentDialog(unit, 'company_co')
-                            }
-                          }}
+                        Unit Name
+                      </TableCell>
+                      <TableCell sx={{ ...commonHeadCellSx, width: '40%' }}>
+                        Coordinator
+                      </TableCell>
+                      <TableCell sx={{ ...commonHeadCellSx, width: '40%' }}>
+                        Approver
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {data.units.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} sx={{ py: 3, px: 2.25, borderBottom: 0 }}>
+                          <Typography color="text.secondary">No units found.</Typography>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      data.units.map((unit, index) => (
+                        <TableRow
+                          key={unit.unit_id || unit.id}
+                          hover
                           sx={{
-                            py: assignMode ? 1.25 : 1.7,
-                            px: 2.25,
-                            fontWeight: assignMode ? 850 : 650,
-                            color: assignMode ? 'primary.dark' : 'text.primary',
-                            backgroundColor: assignMode
-                              ? alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.11 : 0.18)
-                              : 'transparent',
-                            boxShadow: assignMode
-                              ? `inset 4px 0 0 ${theme.palette.primary.main}`
-                              : 'none',
-                            cursor: assignMode ? 'pointer' : 'default',
-                            transition: theme.transitions.create(
-                              ['background-color', 'box-shadow', 'color'],
-                              { duration: theme.transitions.duration.shorter }
-                            ),
-                            ...(assignMode && {
-                              textDecoration: 'underline',
-                              textUnderlineOffset: '4px',
-                              '&:hover, &:focus-visible': {
-                                backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.18 : 0.26),
-                                boxShadow: `inset 6px 0 0 ${theme.palette.primary.dark}`,
-                                outline: 'none',
-                              },
-                            }),
+                            '&:last-of-type td': { borderBottom: 0 },
+                            '&:hover': {
+                              backgroundColor: TABLE_ROW_HOVER_BG,
+                            },
+                            '& td': {
+                              borderBottom: index === data.units.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
+                            },
                           }}
                         >
-                          {unit.unit_name || 'N/A'}
-                        </TableCell>
-                        <TableCell sx={{ py: 1.7, px: 2.25 }}>
-                          {unit.coordinator_display_name || unit.coordinator_email_id || 'N/A'}
-                        </TableCell>
-                        <TableCell sx={{ py: 1.7, px: 2.25 }}>
-                          {unit.approver_display_name || unit.approver_email_id || 'N/A'}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper>
+                          <TableCell
+                            role={assignMode ? 'button' : undefined}
+                            tabIndex={assignMode ? 0 : undefined}
+                            onClick={() => handleOpenAssignmentDialog(unit, 'company_co')}
+                            onKeyDown={(event) => {
+                              if (!assignMode) return
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                handleOpenAssignmentDialog(unit, 'company_co')
+                              }
+                            }}
+                            sx={{
+                              ...commonTableCellSx,
+                              py: assignMode ? 1.3 : 1.55,
+                              fontWeight: assignMode ? 850 : 650,
+                              color: assignMode ? 'primary.dark' : 'text.primary',
+                              backgroundColor: assignMode
+                                ? alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.11 : 0.18)
+                                : 'transparent',
+                              boxShadow: assignMode
+                                ? `inset 4px 0 0 ${theme.palette.primary.main}`
+                                : 'none',
+                              cursor: assignMode ? 'pointer' : 'default',
+                              transition: theme.transitions.create(
+                                ['background-color', 'box-shadow', 'color'],
+                                { duration: theme.transitions.duration.shorter }
+                              ),
+                              ...(assignMode && {
+                                textDecoration: 'underline',
+                                textUnderlineOffset: '4px',
+                                '&:hover, &:focus-visible': {
+                                  backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.18 : 0.26),
+                                  boxShadow: `inset 6px 0 0 ${theme.palette.primary.dark}`,
+                                  outline: 'none',
+                                },
+                              }),
+                            }}
+                          >
+                            {unit.unit_name || 'N/A'}
+                          </TableCell>
+                          <TableCell sx={commonTableCellSx}>
+                            {unit.coordinator_display_name || unit.coordinator_email_id || 'N/A'}
+                          </TableCell>
+                          <TableCell sx={commonTableCellSx}>
+                            {unit.approver_display_name || unit.approver_email_id || 'N/A'}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
 
-          <Paper
-            elevation={0}
-            sx={{
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              overflow: 'hidden',
-              backgroundColor: alpha(theme.palette.background.paper, 0.96),
-            }}
-          >
-            <Box
-              sx={{
-                p: 2.5,
-                borderBottom: `1px solid ${tableBorderColor}`,
-              }}
-            >
-              <Typography sx={{ fontWeight: 850, color: 'text.primary' }}>
-                Unassigned Coordinators / Approvers
-              </Typography>
-              <Typography sx={{ mt: 0.6, color: 'text.secondary', lineHeight: 1.6 }}>
-                These users belong to this company but are not yet assigned to any company unit.
-              </Typography>
-            </Box>
-            <TableContainer>
-              <Table sx={{ minWidth: 720 }}>
-                <TableHead>
-                  <TableRow
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Paper elevation={0} sx={{ ...shellCardSx, p: 2.25 }}>
+                <Typography sx={{ fontSize: '0.76rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.secondary' }}>
+                  Units Under Your Scope
+                </Typography>
+                <Typography sx={{ mt: 1, fontSize: '0.98rem', fontWeight: 700, color: 'text.primary', lineHeight: 1.65 }}>
+                  {mappedUnitNames.length > 0 ? mappedUnitNames.join(', ') : 'No units are currently mapped to your coordinator account.'}
+                </Typography>
+              </Paper>
+
+              <Paper
+                elevation={0}
+                sx={{
+                  ...shellCardSx,
+                  overflow: 'hidden',
+                }}
+              >
+                <Box sx={sectionHeaderSx}>
+                  <Box>
+                    <Typography sx={{ fontWeight: 850, color: 'text.primary' }}>
+                      Unassigned Coordinators and Approvers
+                    </Typography>
+                    <Typography sx={{ mt: 0.45, color: 'text.secondary', lineHeight: 1.6, fontSize: '0.92rem' }}>
+                      These users exist in the company but are not yet linked to a unit.
+                    </Typography>
+                  </Box>
+                  <Box
                     sx={{
-                      backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.06 : 0.12),
+                      ...STATUS_BADGE_PILL_SX,
+                      backgroundColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.2 : 0.1),
+                      color: theme.palette.warning.main,
                     }}
                   >
-                    <TableCell sx={{ py: 1.6, px: 2.25, fontWeight: 800, borderBottom: `1px solid ${tableBorderColor}` }}>
-                      Name
-                    </TableCell>
-                    <TableCell sx={{ py: 1.6, px: 2.25, fontWeight: 800, borderBottom: `1px solid ${tableBorderColor}` }}>
-                      Email ID
-                    </TableCell>
-                    <TableCell sx={{ py: 1.6, px: 2.25, fontWeight: 800, borderBottom: `1px solid ${tableBorderColor}` }}>
-                      Role
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {data.unmappedRoleUsers.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={3} sx={{ py: 3, px: 2.25, borderBottom: 0 }}>
-                        <Typography color="text.secondary">No unassigned coordinators or approvers found.</Typography>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    data.unmappedRoleUsers.map((user, index) => (
-                      <TableRow
-                        key={`${user.role}-${user.email_id}`}
-                        sx={{
-                          '&:last-of-type td': { borderBottom: 0 },
-                          '& td': {
-                            borderBottom:
-                              index === data.unmappedRoleUsers.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
-                          },
-                        }}
-                      >
-                        <TableCell sx={{ py: 1.7, px: 2.25 }}>
-                          {user.display_name || 'N/A'}
+                    {data.unmappedRoleUsers.length} pending
+                  </Box>
+                </Box>
+                <TableContainer sx={{ borderTop: `1px solid ${tableBorderColor}` }}>
+                  <Table sx={{ minWidth: 720, tableLayout: 'fixed' }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ ...commonHeadCellSx, width: '40%' }}>
+                          Name
                         </TableCell>
-                        <TableCell sx={{ py: 1.7, px: 2.25 }}>
-                          {user.email_id || 'N/A'}
+                        <TableCell sx={{ ...commonHeadCellSx, width: '40%' }}>
+                          Email ID
                         </TableCell>
-                        <TableCell sx={{ py: 1.7, px: 2.25 }}>
-                          {user.role === 'company_co' ? 'Company Coordinator' : 'Approver'}
+                        <TableCell sx={{ ...commonHeadCellSx, width: '20%' }}>
+                          Role
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper>
+                    </TableHead>
+                    <TableBody>
+                      {data.unmappedRoleUsers.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={3} sx={{ py: 3, px: 2.25, borderBottom: 0 }}>
+                            <Typography color="text.secondary">No unassigned coordinators or approvers found.</Typography>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        data.unmappedRoleUsers.map((user, index) => (
+                          <TableRow
+                            key={`${user.role}-${user.email_id}`}
+                            sx={{
+                              '&:last-of-type td': { borderBottom: 0 },
+                              '&:hover': {
+                                backgroundColor: TABLE_ROW_HOVER_BG,
+                              },
+                              '& td': {
+                                borderBottom:
+                                  index === data.unmappedRoleUsers.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
+                              },
+                            }}
+                          >
+                            <TableCell sx={commonTableCellSx}>
+                              {(() => {
+                                const displayName = String(user.display_name || '').trim()
+                                const emailId = String(user.email_id || '').trim().toLowerCase()
+                                if (!displayName) return '-'
+                                if (displayName.toLowerCase() === emailId) return '-'
+                                return displayName
+                              })()}
+                            </TableCell>
+                            <TableCell sx={commonTableCellSx}>
+                              {user.email_id || 'N/A'}
+                            </TableCell>
+                            <TableCell sx={commonTableCellSx}>
+                              {user.role === 'company_co' ? 'Company Coordinator' : 'Approver'}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            </Box>
+          </Box>
         </>
       )}
 

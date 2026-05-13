@@ -120,6 +120,7 @@ async function fetchFormsDueForReminder(client) {
     SELECT
       cf.form_id,
       cf.control_owner,
+      owner_u.emp_name AS control_owner_emp_name,
       cf.standard_control_description,
       cf.business_process,
       cf.due_date,
@@ -127,6 +128,9 @@ async function fetchFormsDueForReminder(client) {
       cf.reminder_datetime,
       c.company_name
     FROM control_forms cf
+    LEFT JOIN ifc_users owner_u
+      ON owner_u.company_identifier = cf.company_identifier
+     AND LOWER(TRIM(COALESCE(owner_u.email_id, ''))) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
     LEFT JOIN companies c
       ON c.company_identifier = cf.company_identifier
     WHERE active = TRUE
@@ -186,10 +190,12 @@ async function updateReminderDatetime(client, formId, reminderFrequency) {
 function buildReminderEmailBody(form) {
   const dueStr = formatDueDateDisplay(form.due_date);
   const companyName = String(form.company_name || '').trim() || 'IFC';
+  const ownerSalutation =
+    String(form.control_owner_emp_name || '').trim() || 'Process Owner';
   const formUrl = process.env.FRONTEND_URL
     ? `${process.env.FRONTEND_URL}/user/form/${form.form_id}`
     : null;
-  return `Dear ${form.control_owner || 'Process Owner'},
+  return `Dear ${ownerSalutation},
 
 This is a reminder that your RACM (Risk and Control Matrix) is pending.
 

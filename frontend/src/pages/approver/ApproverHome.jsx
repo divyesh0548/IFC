@@ -455,7 +455,7 @@ function ApproverHome() {
         sx={{
           width: '100%',
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', lg: '1.2fr 0.8fr' },
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
           gap: 2.5,
         }}
       >

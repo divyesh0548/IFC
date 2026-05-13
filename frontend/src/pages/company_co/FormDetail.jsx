@@ -1881,23 +1881,21 @@ function FormDetail() {
       }}
     >
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-        {changeRequestHistoryCount > 0 ? (
-          <Button
-            onClick={handleOpenChangeRequestHistoryDialog}
-            disabled={changeRequestHistoryLoading}
-            variant="outlined"
-            sx={{
-              mr: 1.5,
-              py: 1,
-              fontWeight: 600,
-              textTransform: 'none',
-              fontSize: '0.9375rem',
-              borderRadius: 2,
-            }}
-          >
-            Change Requests ({changeRequestHistoryCount})
-          </Button>
-        ) : null}
+        <Button
+          onClick={handleOpenChangeRequestHistoryDialog}
+          disabled={changeRequestHistoryLoading}
+          variant="outlined"
+          sx={{
+            mr: 1.5,
+            py: 1,
+            fontWeight: 600,
+            textTransform: 'none',
+            fontSize: '0.9375rem',
+            borderRadius: 2,
+          }}
+        >
+          Change Requests ({changeRequestHistoryCount})
+        </Button>
         {!isEditMode && hasActiveSuggestedChanges && (
           <Button
             onClick={handleOpenSuggestedChangesDialog}
@@ -4660,7 +4658,7 @@ function FormDetail() {
                           {request.request_id}
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                          {String(request.status || '').trim() || '-'}
+                          Outcome: {String(request.status || '').trim() || '-'}
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
                           Requested on: {request.requested_at ? formatDateTime(request.requested_at) : '-'}
@@ -4685,9 +4683,6 @@ function FormDetail() {
                             </Typography>
                           </Box>
                         ) : null}
-                        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
-                          Requested by: {String(request.requested_by_display || request.requested_by_email || '').trim() || '-'}
-                        </Typography>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                           {(Array.isArray(request.items) ? request.items : []).map((item) => (
                             <Box

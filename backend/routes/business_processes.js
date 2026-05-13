@@ -6,10 +6,11 @@ const router = express.Router();
 
 router.get('/', verifyAuthenticatedUser, async (req, res) => {
   try {
+    const isAuditor = req.user?.role === 'auditor';
     const companyIdentifier = req.user?.role === 'siteadmin'
       ? null
       : req.user?.company_identifier || null;
-    const data = await listBusinessProcessesForCompany(undefined, companyIdentifier);
+    const data = await listBusinessProcessesForCompany(undefined, companyIdentifier, isAuditor);
     return res.status(200).json({
       success: true,
       data,

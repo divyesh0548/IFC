@@ -15,6 +15,24 @@ import PolicyRoundedIcon from '@mui/icons-material/PolicyRounded'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
+function formatAuditorName(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return 'Auditor'
+
+  if (!raw.includes('@')) {
+    return raw
+  }
+
+  const localPart = raw.split('@')[0] || ''
+  const words = localPart
+    .split('.')
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+
+  return words.length > 0 ? words.join(' ') : 'Auditor'
+}
+
 function AuditorHome() {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -59,7 +77,7 @@ function AuditorHome() {
   }, [])
 
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
-  const displayName = stats?.auditor_name?.trim() || 'Auditor'
+  const displayName = formatAuditorName(stats?.auditor_name)
 
   const quickStats = [
     {

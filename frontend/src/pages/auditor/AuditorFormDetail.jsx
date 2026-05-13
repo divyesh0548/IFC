@@ -58,6 +58,18 @@ function formatStatus(status) {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
+function getIsActive(value) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+
+  const normalizedValue = String(value ?? '').trim().toLowerCase()
+  if (!normalizedValue || normalizedValue === '0' || normalizedValue === 'false' || normalizedValue === 'null') {
+    return false
+  }
+
+  return true
+}
+
 function getFileName(filePath) {
   if (!filePath) return ''
   const parts = String(filePath).split(/[/\\]/)
@@ -304,7 +316,19 @@ function AuditorFormDetail() {
   const sampleDocCount = sampleDocs.length
   const userDocs = getUserDocs()
   const userDocCount = userDocs.length
-  const isActive = formData?.active && formData.active !== '' && formData.active !== '0'
+  const isActive = getIsActive(formData?.active)
+  const topSummaryCardSx = {
+    p: 2,
+    borderRadius: 2,
+    border: '1px solid',
+    borderColor: 'divider',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    gap: 1,
+    height: '100%',
+    minHeight: { xs: 'auto', md: 108 },
+  }
 
   if (loading) {
     return (
@@ -449,6 +473,7 @@ function AuditorFormDetail() {
                       md: 'repeat(4, 1fr)',
                     },
                     gap: 2,
+                    alignItems: 'stretch',
                   }}
                 >
                   {[
@@ -459,12 +484,7 @@ function AuditorFormDetail() {
                   ].map((item) => (
                     <Box
                       key={item.label}
-                      sx={{
-                        p: 2,
-                        borderRadius: 2,
-                        border: '1px solid',
-                        borderColor: 'divider',
-                      }}
+                      sx={topSummaryCardSx}
                     >
                       <Typography
                         variant="caption"
@@ -504,18 +524,7 @@ function AuditorFormDetail() {
                     alignItems: 'stretch',
                   }}
                 >
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      gap: 1,
-                    }}
-                  >
+                  <Box sx={topSummaryCardSx}>
                     <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       Reminder Settings
                     </Typography>
@@ -527,18 +536,7 @@ function AuditorFormDetail() {
                     </Typography>
                   </Box>
 
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      gap: 1,
-                    }}
-                  >
+                  <Box sx={topSummaryCardSx}>
                     <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       RACM Assignment
                     </Typography>
@@ -547,18 +545,7 @@ function AuditorFormDetail() {
                     </Typography>
                   </Box>
 
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      gap: 1,
-                    }}
-                  >
+                  <Box sx={topSummaryCardSx}>
                     <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       Unit Name
                     </Typography>
@@ -567,18 +554,7 @@ function AuditorFormDetail() {
                     </Typography>
                   </Box>
 
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      gap: 1,
-                    }}
-                  >
+                  <Box sx={topSummaryCardSx}>
                     <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       Control Number
                     </Typography>

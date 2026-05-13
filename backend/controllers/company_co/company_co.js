@@ -342,6 +342,22 @@ async function getUsers(req, res) {
       paramIndex++;
     }
 
+    // Assignable "user" role list (Process Owner / Control Performer): only users in units mapped to this coordinator
+    if (String(roleParam).toLowerCase() === 'user') {
+      const coordinatorEmail = normalizeEmail(req.user.email_id);
+      query += ` AND EXISTS (
+        SELECT 1
+        FROM company_unit_master cum
+        WHERE cum.company_identifier = u.company_identifier
+          AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
+          AND NULLIF(TRIM(u.unit_id), '') IS NOT NULL
+          AND LOWER(TRIM(cum.unit_id)) = LOWER(TRIM(u.unit_id))
+          AND LOWER(TRIM(COALESCE(cum.coordinator_email_id, ''))) = $${paramIndex}
+      )`;
+      params.push(coordinatorEmail);
+      paramIndex++;
+    }
+
     if (qRaw) {
       query += ` AND (
         LOWER(COALESCE(u.emp_name, '')) LIKE $${paramIndex}

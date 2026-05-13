@@ -1327,16 +1327,6 @@ function RacmManagementDashboard() {
   }
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
-      {actionRequiredCount > 0 && !actionRequiredAlertDismissed ? (
-        <Alert
-          severity="warning"
-          onClose={() => setActionRequiredAlertDismissed(true)}
-          sx={{ mb: 2, alignItems: 'center' }}
-        >
-          Action Required - {actionRequiredCount} RACMs are found ineffective
-        </Alert>
-      ) : null}
-
       <Box
         sx={{
           display: 'flex',
@@ -1531,6 +1521,16 @@ function RacmManagementDashboard() {
           borderRadius: 2,
         }}
       >
+        {actionRequiredCount > 0 && !actionRequiredAlertDismissed ? (
+          <Alert
+            severity="warning"
+            onClose={() => setActionRequiredAlertDismissed(true)}
+            sx={{ mb: 3, alignItems: 'center' }}
+          >
+            Action Required - {actionRequiredCount} RACMs are found ineffective
+          </Alert>
+        ) : null}
+
         <Box
           sx={{
             display: 'flex',

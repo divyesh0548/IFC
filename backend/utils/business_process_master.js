@@ -34,12 +34,14 @@ function toCaseInsensitiveWhere(field, value) {
   };
 }
 
-async function listBusinessProcessesForCompany(clientOrPool = pool, companyIdentifier = null) {
+async function listBusinessProcessesForCompany(clientOrPool = pool, companyIdentifier = null, includeAllScopes = false) {
   const normalizedCompanyIdentifier = normalizeBusinessProcessScope(companyIdentifier);
   const params = [];
   let scopeSql = 'bp.company_identifier IS NULL';
 
-  if (normalizedCompanyIdentifier) {
+  if (includeAllScopes) {
+    scopeSql = '1 = 1';
+  } else if (normalizedCompanyIdentifier) {
     params.push(normalizedCompanyIdentifier);
     scopeSql = '(bp.company_identifier IS NULL OR bp.company_identifier = $1)';
   }

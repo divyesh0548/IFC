@@ -411,6 +411,11 @@ function CreateControlForm() {
       return
     }
 
+    if (!String(formData.control_frequency || '').trim()) {
+      toast.error('Please select frequency of control')
+      return
+    }
+
     if (controlNumberMeta.duplicate) {
       toast.error('Control Number already exists. Please choose another one.')
       return
@@ -464,7 +469,7 @@ function CreateControlForm() {
   business_process: 'Business Process',
   financial_year: 'Financial Year',
   unit_id: 'Unit',
-  control_number: 'Control Number',
+  control_number: 'Control Number (Auto-generated if left empty)',
   area: 'Area',
   risk_heat: 'Risk Heat',
   standard_control_description: 'Standard Control Description',
@@ -943,7 +948,11 @@ function CreateControlForm() {
 
                       return (
                         <Box key={field}>
-                          <FormControl fullWidth disabled={loading}>
+                          <FormControl
+                            fullWidth
+                            required={field === 'control_frequency'}
+                            disabled={loading}
+                          >
                             <InputLabel id={`${field}-label`}>{label}</InputLabel>
                             <Select
                               labelId={`${field}-label`}
@@ -953,6 +962,7 @@ function CreateControlForm() {
                               label={label}
                               onChange={(e) => handleDropdownChange(field, e.target.value)}
                               variant="outlined"
+                              required={field === 'control_frequency'}
                             >
                               {options.map((option) => (
                                 <MenuItem key={option} value={option}>
@@ -994,7 +1004,9 @@ function CreateControlForm() {
                           ? 'Control Number already exists'
                           : (field === 'control_number' && controlNumberMeta.available
                             ? 'Control Number is available'
-                            : undefined)}
+                            : (field === 'control_number'
+                              ? 'Control number will be generated automatically if left empty'
+                              : undefined))}
                         FormHelperTextProps={{
                           sx: field === 'control_number' && controlNumberMeta.available
                             ? { color: 'success.main' }
@@ -1040,7 +1052,8 @@ function CreateControlForm() {
                   businessProcessesLoading ||
                   !formData.business_process ||
                   !formData.financial_year ||
-                  !formData.unit_id
+                  !formData.unit_id ||
+                  !String(formData.control_frequency || '').trim()
                 }
                 variant="contained"
                 color="secondary"

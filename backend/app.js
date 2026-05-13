@@ -110,14 +110,14 @@ app.get('/health', (req, res) => {
 
 
 // Reminder emails for control_forms (runs every 1 minute)
-// console.log('Starting reminder emails scheduler (runs every 1 minute)...');
-// setInterval(async () => {
-//   try {
-//     await runReminderEmails();
-//   } catch (error) {
-//     console.error('Error in reminder emails job:', error);
-//   }
-// }, 60 * 1000);
+console.log('Starting reminder emails scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await runReminderEmails();
+  } catch (error) {
+    console.error('Error in reminder emails job:', error);
+  }
+}, 60 * 1000);
 
 // Login emails for newly created temp-login users (runs every 1 minute)
 console.log('Starting login email scheduler (runs every 1 minute)...');
