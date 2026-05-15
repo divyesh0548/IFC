@@ -38,6 +38,222 @@ async function getCompanyName(companyIdentifier) {
   return company?.companyName || null;
 }
 
+const DASHBOARD_EMPTY_VALUE_LABEL = '(empty)';
+
+function normalizeDashboardFilterValue(value) {
+  const normalized = String(value ?? '').trim();
+  return normalized || null;
+}
+
+function parseDashboardActiveFilter(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'active') return true;
+  if (normalized === 'false' || normalized === '0' || normalized === 'inactive') return false;
+  return null;
+}
+
+function normalizeDashboardStatusFilter(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (['approved', 'rejected', 'pending'].includes(normalized)) {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizeDashboardDistinctValue(value) {
+  const trimmed = String(value ?? '').trim();
+  return trimmed || DASHBOARD_EMPTY_VALUE_LABEL;
+}
+
+async function getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail) {
+  if (!companyIdentifier || !coordinatorEmail) {
+    return [];
+  }
+
+  const result = await pool.query(
+    `
+      SELECT DISTINCT
+        NULLIF(TRIM(unit_id), '') AS unit_id,
+        NULLIF(TRIM(unit_name), '') AS unit_name
+      FROM company_unit_master
+      WHERE company_identifier = $1
+        AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
+        AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+      ORDER BY unit_name ASC, unit_id ASC
+    `,
+    [companyIdentifier, coordinatorEmail]
+  );
+
+  return result.rows;
+}
+
+async function getCompanyUnits(companyIdentifier) {
+  if (!companyIdentifier) {
+    return [];
+  }
+
+  const result = await pool.query(
+    `
+      SELECT DISTINCT
+        NULLIF(TRIM(unit_id), '') AS unit_id,
+        NULLIF(TRIM(unit_name), '') AS unit_name
+      FROM company_unit_master
+      WHERE company_identifier = $1
+        AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+      ORDER BY unit_name ASC, unit_id ASC
+    `,
+    [companyIdentifier]
+  );
+
+  return result.rows;
+}
+
+async function getCoordinatorDashboardScope(req) {
+  const companyIdentifier = String(req.user?.company_identifier || '').trim() || null;
+  const companyUnits = await getCompanyUnits(companyIdentifier);
+  const companyUnitIds = companyUnits
+    .map((row) => String(row.unit_id || '').trim())
+    .filter(Boolean);
+
+  const selectedUnitId = normalizeDashboardFilterValue(req.query?.unit_id);
+  if (selectedUnitId && !companyUnitIds.includes(selectedUnitId)) {
+    const error = new Error('Selected unit does not belong to this company');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return {
+    companyIdentifier,
+    companyUnits,
+    unitIdsToQuery: selectedUnitId ? [selectedUnitId] : companyUnitIds,
+    selectedUnitId,
+    filters: {
+      active: parseDashboardActiveFilter(req.query?.active),
+      businessProcess: normalizeDashboardFilterValue(req.query?.business_process),
+      financialYear: normalizeDashboardFilterValue(req.query?.financial_year),
+      status: normalizeDashboardStatusFilter(req.query?.status),
+      conclusion: normalizeDashboardFilterValue(req.query?.conclusion),
+    },
+  };
+}
+
+function buildCoordinatorDashboardWhereClause(scope, alias = 'cf') {
+  const params = [];
+  const conditions = [];
+  let paramIndex = 1;
+
+  conditions.push(`${alias}.company_identifier = $${paramIndex}`);
+  params.push(scope.companyIdentifier);
+  paramIndex += 1;
+
+  conditions.push(`NULLIF(TRIM(${alias}.unit_id), '') = ANY($${paramIndex}::text[])`);
+  params.push(scope.unitIdsToQuery);
+  paramIndex += 1;
+
+  if (scope.filters.active === true) {
+    conditions.push(`${alias}.active = TRUE`);
+  } else if (scope.filters.active === false) {
+    conditions.push(`COALESCE(${alias}.active, FALSE) = FALSE`);
+  }
+
+  if (scope.filters.businessProcess) {
+    conditions.push(`LOWER(TRIM(COALESCE(${alias}.business_process, ''))) = $${paramIndex}`);
+    params.push(scope.filters.businessProcess.toLowerCase());
+    paramIndex += 1;
+  }
+
+  if (scope.filters.financialYear) {
+    conditions.push(`TRIM(COALESCE(${alias}.financial_year, '')) = $${paramIndex}`);
+    params.push(scope.filters.financialYear);
+    paramIndex += 1;
+  }
+
+  if (scope.filters.status === 'approved') {
+    conditions.push(`LOWER(TRIM(COALESCE(${alias}.status, ''))) = 'approved'`);
+  } else if (scope.filters.status === 'rejected') {
+    conditions.push(`LOWER(TRIM(COALESCE(${alias}.status, ''))) = 'rejected'`);
+  } else if (scope.filters.status === 'pending') {
+    conditions.push(`(
+      COALESCE(NULLIF(TRIM(${alias}.status), ''), '') = ''
+      OR LOWER(TRIM(COALESCE(${alias}.status, ''))) = 'sent for approval'
+    )`);
+  }
+
+  if (scope.filters.conclusion) {
+    if (scope.filters.conclusion.toLowerCase() === 'none') {
+      conditions.push(`COALESCE(NULLIF(TRIM(${alias}.control_design_conclusion), ''), '') = ''`);
+    } else {
+      conditions.push(`LOWER(TRIM(COALESCE(${alias}.control_design_conclusion, ''))) = $${paramIndex}`);
+      params.push(scope.filters.conclusion.toLowerCase());
+      paramIndex += 1;
+    }
+  }
+
+  return {
+    whereClause: conditions.join('\n      AND '),
+    params,
+  };
+}
+
+async function getCoordinatorDashboardAggregateRow(scope, selectClause) {
+  if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+    return null;
+  }
+
+  const { whereClause, params } = buildCoordinatorDashboardWhereClause(scope);
+  const result = await pool.query(
+    `
+      SELECT
+        ${selectClause}
+      FROM control_forms cf
+      WHERE ${whereClause}
+    `,
+    params
+  );
+
+  return result.rows[0] || null;
+}
+
+async function getCoordinatorDashboardDistinctValues(scope, columnName, excludedValues = [], options = {}) {
+  if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+    return [];
+  }
+
+  const { includeEmpty = false } = options;
+  const { whereClause, params } = buildCoordinatorDashboardWhereClause(scope);
+  const distinctParams = [...params];
+  let paramIndex = distinctParams.length + 1;
+  let exclusionCondition = '';
+
+  if (excludedValues.length > 0) {
+    exclusionCondition = ` AND LOWER(TRIM(COALESCE(cf.${columnName}, ''))) <> ALL($${paramIndex}::text[])`;
+    distinctParams.push(excludedValues.map((value) => String(value).trim().toLowerCase()));
+    paramIndex += 1;
+  }
+
+  if (!includeEmpty) {
+    exclusionCondition += ` AND COALESCE(NULLIF(TRIM(cf.${columnName}), ''), '') <> ''`;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT DISTINCT
+        CASE
+          WHEN NULLIF(TRIM(cf.${columnName}), '') IS NULL THEN $${paramIndex}
+          ELSE TRIM(cf.${columnName})
+        END AS value
+      FROM control_forms cf
+      WHERE ${whereClause}${exclusionCondition}
+      ORDER BY value ASC
+    `,
+    [...distinctParams, DASHBOARD_EMPTY_VALUE_LABEL]
+  );
+
+  return result.rows
+    .map((row) => normalizeDashboardDistinctValue(row.value))
+    .filter(Boolean);
+}
+
 async function createCompanyUser(client, coordinator, payload = {}) {
   getPasswordPepper();
 
@@ -396,6 +612,72 @@ async function getUsers(req, res) {
   }
 }
 
+async function getDashboardFilters(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim() || null;
+
+    if (!companyIdentifier) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          units: [],
+          financialYears: [],
+          conclusions: [],
+        },
+      });
+    }
+
+    const [units, financialYearsResult, conclusionsResult] = await Promise.all([
+      getCompanyUnits(companyIdentifier),
+      pool.query(
+        `
+          SELECT DISTINCT TRIM(financial_year) AS financial_year
+          FROM control_forms
+          WHERE company_identifier = $1
+            AND COALESCE(NULLIF(TRIM(financial_year), ''), '') <> ''
+          ORDER BY financial_year ASC
+        `,
+        [companyIdentifier]
+      ),
+      pool.query(
+        `
+          SELECT DISTINCT COALESCE(NULLIF(TRIM(control_design_conclusion), ''), 'None') AS conclusion
+          FROM control_forms
+          WHERE company_identifier = $1
+          ORDER BY conclusion ASC
+        `,
+        [companyIdentifier]
+      ),
+    ]);
+
+    const conclusions = conclusionsResult.rows
+      .map((row) => String(row.conclusion || '').trim())
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a === 'None') return 1;
+        if (b === 'None') return -1;
+        return a.localeCompare(b);
+      });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        units,
+        financialYears: financialYearsResult.rows
+          .map((row) => String(row.financial_year || '').trim())
+          .filter(Boolean),
+        conclusions,
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator dashboard filters error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch dashboard filters',
+    });
+  }
+}
+
 async function getHomeStats(req, res) {
   try {
     const companyIdentifier = req.user.company_identifier;
@@ -495,6 +777,199 @@ async function getHomeStats(req, res) {
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch company coordinator home stats',
+    });
+  }
+}
+
+async function getDashboardSummary(req, res) {
+  try {
+    const scope = await getCoordinatorDashboardScope(req);
+
+    if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          totalRacms: 0,
+          units: scope.companyUnits,
+          selectedUnitId: scope.selectedUnitId,
+        },
+      });
+    }
+
+    const row = await getCoordinatorDashboardAggregateRow(
+      scope,
+      `COUNT(*)::int AS total_racms`
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalRacms: Number(row?.total_racms || 0),
+        units: scope.companyUnits,
+        selectedUnitId: scope.selectedUnitId,
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator dashboard summary error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to fetch dashboard summary',
+    });
+  }
+}
+
+async function getDashboardKeyControlStats(req, res) {
+  try {
+    const scope = await getCoordinatorDashboardScope(req);
+
+    if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          keyControls: 0,
+          nonKeyControls: 0,
+          notClassified: 0,
+          unclassifiedValues: [],
+        },
+      });
+    }
+
+    const [row, unclassifiedValues] = await Promise.all([
+      getCoordinatorDashboardAggregateRow(
+        scope,
+        `
+          COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.key_control, ''))) = 'yes'
+          )::int AS key_controls,
+          COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.key_control, ''))) IN ('', 'no')
+          )::int AS non_key_controls,
+          COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.key_control, ''))) NOT IN ('', 'yes', 'no')
+          )::int AS not_classified
+        `
+      ),
+      getCoordinatorDashboardDistinctValues(scope, 'key_control', ['yes', 'no', ''], { includeEmpty: false }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        keyControls: Number(row?.key_controls || 0),
+        nonKeyControls: Number(row?.non_key_controls || 0),
+        notClassified: Number(row?.not_classified || 0),
+        unclassifiedValues,
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator dashboard key control stats error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to fetch key control dashboard stats',
+    });
+  }
+}
+
+async function getDashboardNatureStats(req, res) {
+  try {
+    const scope = await getCoordinatorDashboardScope(req);
+
+    if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          preventive: 0,
+          detective: 0,
+          notClassified: 0,
+          unclassifiedValues: [],
+        },
+      });
+    }
+
+    const [row, unclassifiedValues] = await Promise.all([
+      getCoordinatorDashboardAggregateRow(
+        scope,
+        `
+          COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.nature_of_control, ''))) IN ('preventive', 'preventing')
+          )::int AS preventive,
+          COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.nature_of_control, ''))) = 'detective'
+          )::int AS detective,
+          COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.nature_of_control, ''))) NOT IN ('preventive', 'preventing', 'detective')
+          )::int AS not_classified
+        `
+      ),
+      getCoordinatorDashboardDistinctValues(scope, 'nature_of_control', ['preventive', 'preventing', 'detective'], { includeEmpty: true }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        preventive: Number(row?.preventive || 0),
+        detective: Number(row?.detective || 0),
+        notClassified: Number(row?.not_classified || 0),
+        unclassifiedValues,
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator dashboard nature stats error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to fetch nature of control dashboard stats',
+    });
+  }
+}
+
+async function getDashboardControlTypeStats(req, res) {
+  try {
+    const scope = await getCoordinatorDashboardScope(req);
+
+    if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          manual: 0,
+          automated: 0,
+          notClassified: 0,
+          unclassifiedValues: [],
+        },
+      });
+    }
+
+    const [row, unclassifiedValues] = await Promise.all([
+      getCoordinatorDashboardAggregateRow(
+        scope,
+        `
+          COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.control_type_ma, ''))) = 'manual'
+          )::int AS manual,
+          COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.control_type_ma, ''))) IN ('automated', 'automative')
+          )::int AS automated,
+          COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.control_type_ma, ''))) NOT IN ('manual', 'automated', 'automative')
+          )::int AS not_classified
+        `
+      ),
+      getCoordinatorDashboardDistinctValues(scope, 'control_type_ma', ['manual', 'automated', 'automative'], { includeEmpty: true }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        manual: Number(row?.manual || 0),
+        automated: Number(row?.automated || 0),
+        notClassified: Number(row?.not_classified || 0),
+        unclassifiedValues,
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator dashboard control type stats error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to fetch control type dashboard stats',
     });
   }
 }
@@ -2307,6 +2782,11 @@ async function deleteCommunicationMatrixEntries(req, res) {
 module.exports = {
   getUsers,
   getHomeStats,
+  getDashboardFilters,
+  getDashboardSummary,
+  getDashboardKeyControlStats,
+  getDashboardNatureStats,
+  getDashboardControlTypeStats,
   getUnitManagement,
   createUnitCoordinator,
   createUnitApprover,

@@ -13,8 +13,10 @@ import Alert from '@mui/material/Alert'
 import {
   FILTER_BOX_MIN_WIDTH,
   PAGE_SUBHEADER_TEXT_SX,
+  STATUS_BADGE_PILL_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
+  getConclusionBadgeSolidColors,
   getStatusBadgeSolidColors,
 } from '../../uiConstants'
 import InputLabel from '@mui/material/InputLabel'
@@ -575,6 +577,9 @@ function User_dashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
+                        width: '200px',
+                        minWidth: '180px',
+                        maxWidth: '220px',
                       }}
                     >
                       Conclusion
@@ -709,6 +714,9 @@ function User_dashboard() {
                           sx={dataCellSx({
                             px: 3,
                             py: 2,
+                            width: '200px',
+                            minWidth: '180px',
+                            maxWidth: '220px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                           })}
@@ -726,7 +734,13 @@ function User_dashboard() {
                             color: theme.palette.text.primary,
                           })}
                         >
-                          <Box component="span" sx={dataCellTextSx}>
+                          <Box
+                            component="span"
+                            sx={{
+                              ...STATUS_BADGE_PILL_SX,
+                              ...getConclusionBadgeSolidColors(form.control_design_conclusion),
+                            }}
+                          >
                             {formatConclusion(form.control_design_conclusion)}
                           </Box>
                         </Box>

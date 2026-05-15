@@ -19,11 +19,13 @@ import {
   TABLE_ROW_HOVER_BG,
   STATUS_BADGE_PILL_SX,
   getApprovalStatusBadgeSolidColors,
+  getConclusionBadgeSolidColors,
 } from '../../uiConstants'
 import { STORAGE_KEYS } from '../../storageKeys'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
+import { formatIndianDateTime as formatIndianDateTimeShared, parseDateValue } from '../../lib/dateTime'
 
 function ApproverDashboard() {
   const theme = useTheme()
@@ -207,6 +209,10 @@ function ApproverDashboard() {
     return normalized.charAt(0).toUpperCase() + normalized.slice(1)
   }
 
+  const formatSentForApprovalDateTime = (value) => {
+    return formatIndianDateTimeShared(value, 'N/A')
+  }
+
   const fetchForms = async () => {
     setLoading(true)
     try {
@@ -221,8 +227,8 @@ function ApproverDashboard() {
 
       if (response.ok && data.success) {
         const sortedForms = [...data.data].sort((a, b) => {
-          const dateA = a.sent_for_approval_timestamp ? new Date(a.sent_for_approval_timestamp).getTime() : 0
-          const dateB = b.sent_for_approval_timestamp ? new Date(b.sent_for_approval_timestamp).getTime() : 0
+          const dateA = parseDateValue(a.sent_for_approval_timestamp)?.getTime() || 0
+          const dateB = parseDateValue(b.sent_for_approval_timestamp)?.getTime() || 0
           return dateB - dateA // Descending order (newest first)
         })
 
@@ -338,13 +344,13 @@ function ApproverDashboard() {
     idx: 72,
     businessProcess: 200,
     subProcess: 200,
-    standardControl: 280,
+    standardControl: 290,
     unit: 180,
     financialYear: 140,
-    processOwner: 220,
-    conclusion: 160,
-    approval: 120,
-    sentForApprovalAt: 180,
+    processOwner: 160,
+    conclusion: 190,
+    approval: 130,
+    sentForApprovalAt: 170,
   }
   const approverTableColWidthsOrdered = [
     APPROVER_TABLE_COL_PX.idx,
@@ -354,8 +360,8 @@ function ApproverDashboard() {
     ...(showUnitContext ? [APPROVER_TABLE_COL_PX.unit] : []),
     APPROVER_TABLE_COL_PX.financialYear,
     APPROVER_TABLE_COL_PX.processOwner,
-    APPROVER_TABLE_COL_PX.conclusion,
     APPROVER_TABLE_COL_PX.approval,
+    APPROVER_TABLE_COL_PX.conclusion,
     APPROVER_TABLE_COL_PX.sentForApprovalAt,
   ]
   const approverTableTotalWidthPx = approverTableColWidthsOrdered.reduce((a, b) => a + b, 0)
@@ -746,22 +752,6 @@ function ApproverDashboard() {
                   <Box
                     component="th"
                     sx={{
-                      px: 2.5,
-                      py: 1.5,
-                      textAlign: 'left',
-                      fontSize: '0.75rem',
-                      fontWeight: 500,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      color: theme.palette.text.secondary,
-                      ...pctColSx(APPROVER_TABLE_COL_PX.conclusion),
-                    }}
-                  >
-                    Conclusion
-                  </Box>
-                  <Box
-                    component="th"
-                    sx={{
                       px: 3,
                       py: 1.5,
                       textAlign: 'left',
@@ -774,6 +764,22 @@ function ApproverDashboard() {
                     }}
                   >
                     Approval Status
+                  </Box>
+                  <Box
+                    component="th"
+                    sx={{
+                      px: 2.5,
+                      py: 1.5,
+                      textAlign: 'left',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: theme.palette.text.secondary,
+                      ...pctColSx(APPROVER_TABLE_COL_PX.conclusion),
+                    }}
+                  >
+                    Conclusion
                   </Box>
                   <Box
                     component="th"
@@ -947,20 +953,6 @@ function ApproverDashboard() {
                       </Box>
                       <Box
                         component="td"
-                        sx={mergeDataTdSx({
-                          px: 2.5,
-                          py: 2,
-                          ...pctColSx(APPROVER_TABLE_COL_PX.conclusion),
-                          fontSize: '0.875rem',
-                          color: theme.palette.text.primary,
-                        })}
-                      >
-                        <Box component="span" sx={dataCellTextSx}>
-                          {formatConclusion(form.control_design_conclusion)}
-                        </Box>
-                      </Box>
-                      <Box
-                        component="td"
                         sx={{
                           px: 3,
                           py: 2,
@@ -982,6 +974,26 @@ function ApproverDashboard() {
                       <Box
                         component="td"
                         sx={mergeDataTdSx({
+                          px: 2.5,
+                          py: 2,
+                          ...pctColSx(APPROVER_TABLE_COL_PX.conclusion),
+                          fontSize: '0.875rem',
+                          color: theme.palette.text.primary,
+                        })}
+                      >
+                        <Box
+                          component="span"
+                          sx={{
+                            ...STATUS_BADGE_PILL_SX,
+                            ...getConclusionBadgeSolidColors(form.control_design_conclusion),
+                          }}
+                        >
+                          {formatConclusion(form.control_design_conclusion)}
+                        </Box>
+                      </Box>
+                      <Box
+                        component="td"
+                        sx={mergeDataTdSx({
                           px: 3,
                           py: 2,
                           ...pctColSx(APPROVER_TABLE_COL_PX.sentForApprovalAt),
@@ -990,15 +1002,7 @@ function ApproverDashboard() {
                         })}
                       >
                         <Box component="span" sx={dataCellTextSx}>
-                          {form.sent_for_approval_timestamp
-                            ? new Date(form.sent_for_approval_timestamp).toLocaleDateString('en-IN', {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })
-                            : 'N/A'}
+                          {formatSentForApprovalDateTime(form.sent_for_approval_timestamp)}
                         </Box>
                       </Box>
                     </Box>

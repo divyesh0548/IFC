@@ -20,7 +20,9 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
 import TextField from '@mui/material/TextField'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { toast } from 'react-hot-toast'
+import dayjs from 'dayjs'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
@@ -29,8 +31,8 @@ import {
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   STATUS_BADGE_PILL_SX,
-  getActivityBadgeSolidColors,
   getApprovalStatusBadgeSolidColors,
+  getConclusionBadgeSolidColors,
 } from '../../uiConstants'
 
 /** Display order for Set Active selection notice (single-RACM list); missing-user line last. */
@@ -2046,9 +2048,9 @@ function RacmManagementDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '160px',
-                        minWidth: '140px',
-                        maxWidth: '180px',
+                        width: '200px',
+                        minWidth: '180px',
+                        maxWidth: '220px',
                       }}
                     >
                       Conclusion
@@ -2236,13 +2238,7 @@ function RacmManagementDashboard() {
                             maxWidth: '120px',
                           }}
                         >
-                          <Box
-                            component="span"
-                            sx={{
-                              ...STATUS_BADGE_PILL_SX,
-                              ...getActivityBadgeSolidColors(isActive),
-                            }}
-                          >
+                          <Box component="span" sx={{ fontSize: '0.875rem', fontWeight: 600, color: theme.palette.text.primary }}>
                             {isActive ? 'Active' : 'Inactive'}
                           </Box>
                         </Box>
@@ -2272,14 +2268,20 @@ function RacmManagementDashboard() {
                           sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            width: '160px',
-                            minWidth: '140px',
-                            maxWidth: '180px',
+                            width: '200px',
+                            minWidth: '180px',
+                            maxWidth: '220px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                           })}
                         >
-                          <Box component="span" sx={dataCellTextSx}>
+                          <Box
+                            component="span"
+                            sx={{
+                              ...STATUS_BADGE_PILL_SX,
+                              ...getConclusionBadgeSolidColors(form.control_design_conclusion),
+                            }}
+                          >
                             {formatConclusion(form.control_design_conclusion)}
                           </Box>
                         </Box>
@@ -2366,13 +2368,18 @@ function RacmManagementDashboard() {
               }}
             >
               <FormControl fullWidth>
-                <TextField
+                <DatePicker
                   label="Due Date"
-                  type="date"
-                  value={setDueDateValue}
-                  onChange={(e) => setSetDueDateValue(e.target.value)}
-                  InputLabelProps={{ shrink: true }}
+                  value={setDueDateValue ? dayjs(setDueDateValue) : null}
+                  onChange={(newValue) => {
+                    setSetDueDateValue(newValue && newValue.isValid() ? newValue.format('YYYY-MM-DD') : '')
+                  }}
                   disabled={setDueDateSubmitting}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                    },
+                  }}
                 />
               </FormControl>
 

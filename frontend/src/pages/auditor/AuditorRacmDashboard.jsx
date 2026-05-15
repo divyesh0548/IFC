@@ -18,7 +18,6 @@ import {
   STATUS_BADGE_PILL_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
-  getActivityBadgeSolidColors,
   getApprovalStatusBadgeSolidColors,
 } from '../../uiConstants'
 import { apiUrl } from '../../config/api'
@@ -708,7 +707,7 @@ function AuditorRacmDashboard() {
                   {filteredForms.map((form, index) => {
                     const approvalStatus = formatApprovalStatus(form.status)
                     const approvalStatusColors = getApprovalStatusBadgeSolidColors(approvalStatus)
-                    const activeColors = getActivityBadgeSolidColors(getIsActive(form.active))
+                    const isActive = getIsActive(form.active)
 
                     return (
                       <Box
@@ -773,14 +772,8 @@ function AuditorRacmDashboard() {
                           </Box>
                         </Box>
                         <Box component="td" sx={{ px: 3, py: 2, whiteSpace: 'nowrap', ...auditorColumnWidths.active }}>
-                          <Box
-                            component="span"
-                            sx={{
-                              ...STATUS_BADGE_PILL_SX,
-                              ...activeColors,
-                            }}
-                          >
-                            {getIsActive(form.active) ? 'Active' : 'Inactive'}
+                          <Box component="span" sx={{ fontSize: '0.875rem', fontWeight: 600, color: theme.palette.text.primary }}>
+                            {isActive ? 'Active' : 'Inactive'}
                           </Box>
                         </Box>
                         <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...auditorColumnWidths.dueDate })}>

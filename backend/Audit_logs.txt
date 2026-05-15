@@ -6,7 +6,11 @@ Excel bulk RACM upload
 RACM Audit Logs:
 RACM created
 RACM Modification
+RACM Assignment
 Set RACM Active/Inactive
 Sent RACM for approval
 RACM Approved/Rejected
-{"timestamp":"2026-05-07T06:34:35.426Z","action":"Logged Out","user_email_id":"sharp1.approver@gmail.com","form_id":null,"ref_data":null,"reason":"db_write_failed"}
+Deficiency Response Submitted
+Deficiency Response Approved/Rejected
+RACM Change Requested
+RACM Change Request Reviewed

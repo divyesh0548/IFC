@@ -6,6 +6,7 @@ import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import MenuItem from '@mui/material/MenuItem'
@@ -29,6 +30,7 @@ import AddIcon from '@mui/icons-material/Add'
 import EditNoteIcon from '@mui/icons-material/EditNote'
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
+import dayjs from 'dayjs'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
@@ -2812,14 +2814,14 @@ function UserFormDetail() {
                         mb: 3,
                         p: 2,
                         borderRadius: 2,
-                        border: '1px solid',
-                        borderColor: 'warning.main',
-                        backgroundColor: 'warning.light',
-                        color: 'warning.contrastText',
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.04)'
+                          : 'rgba(15, 23, 42, 0.04)',
+                        color: 'text.primary',
                       }}
                     >
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        Action required: approver marked this RACM as Not Effective.
+                        Action required: Approver marked this RACM as Not Effective.
                       </Typography>
                     </Box>
                   ) : null}
@@ -2941,13 +2943,20 @@ function UserFormDetail() {
                             onChange={(e) => handleDeficiencyResponseFieldChange('concerned_person', e.target.value)}
                             fullWidth
                           />
-                          <TextField
-                            type="date"
+                          <DatePicker
                             label="Due Date"
-                            value={deficiencyResponseForm.due_date}
-                            onChange={(e) => handleDeficiencyResponseFieldChange('due_date', e.target.value)}
-                            InputLabelProps={{ shrink: true }}
-                            fullWidth
+                            value={deficiencyResponseForm.due_date ? dayjs(deficiencyResponseForm.due_date) : null}
+                            onChange={(newValue) => {
+                              handleDeficiencyResponseFieldChange(
+                                'due_date',
+                                newValue && newValue.isValid() ? newValue.format('YYYY-MM-DD') : ''
+                              )
+                            }}
+                            slotProps={{
+                              textField: {
+                                fullWidth: true,
+                              },
+                            }}
                           />
                         </Box>
                       ) : (

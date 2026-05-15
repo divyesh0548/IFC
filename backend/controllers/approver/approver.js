@@ -121,6 +121,9 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   if (updatedForm.business_process) {
     emailBody += `- Business Process: ${updatedForm.business_process}\n`;
   }
+  if (updatedForm.financial_year) {
+    emailBody += `- Financial Year: ${updatedForm.financial_year}\n`;
+  }
   if (updatedForm.sub_process) {
     emailBody += `- Sub Process: ${updatedForm.sub_process}\n`;
   }
@@ -134,6 +137,7 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
     if (normalizedConclusion === 'effective' || normalizedConclusion === 'accepted under deviation') {
       emailBody += 'No further action is required from the Process Owner or Company Coordinator for this RACM.\n\n';
     } else if (normalizedConclusion === 'not effective') {
+      emailBody += 'Your RACM has been deemed ineffective by the approver.\n\n';
       emailBody += 'Action required: the Process Owner or Company Coordinator must submit a Deficiency Response for this RACM by providing either a Mitigation Plan or a Compensatory RACM.\n\n';
     }
   } else if (status === 'Rejected') {

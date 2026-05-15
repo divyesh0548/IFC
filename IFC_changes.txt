@@ -33,6 +33,22 @@ AI Summary
 
 
 
+Concerned person/process_owner/designation_responsible (Leave this for now)
+
+
+Keep a single point of contact for Ineffective RACMs. If Action plans are given by users/process_owner, then it should first go to coordinator before submission to approver. Coordinator will then modify the plan/date if needed and then submit to approver. Coordinator can submit action plans directly to approver. 
+
+Action plan and due date should be mendatory.
+
+
+In some cases process owner may not have additional documents, which are required by approver. In this case user/process_owner should be able to re-submit RACM with remarks, furthur submission not possible. This judgement from process_owner will require approval from coordinator before it reaches auditor/approver. Then it is up to auditor whether to mark RACM as effective or ineffective.
+
+Ensure reminder emails are triggered for unsubmitted/rejected RACMs and keep company coordinator in cc.
+
+
+
+
+
 
 
 

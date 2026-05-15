@@ -2603,7 +2603,6 @@ function ApproverFormDetail() {
                               <Button
                                 onClick={handleSubmitDeficiencyReview}
                                 variant="contained"
-                                color={deficiencyReviewDecision === 'Reject' ? 'error' : 'success'}
                                 disabled={deficiencyReviewing}
                                 sx={{ textTransform: 'none', fontWeight: 700 }}
                               >

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
@@ -9,38 +9,51 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
-import Tooltip from '@mui/material/Tooltip'
+import { PieChart } from '@mui/x-charts/PieChart'
 import {
   FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
-  STATUS_BADGE_PILL_SX,
-  getActivityBadgeSolidColors,
-  getApprovalStatusBadgeSolidColors,
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { apiUrl, API_BASE_URL } from '../../config/api'
+import { apiUrl } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
+
+const EMPTY_STATS = {
+  totalRacms: 0,
+  keyControls: 0,
+  nonKeyControls: 0,
+  keyNotClassified: 0,
+  keyUnclassifiedValues: [],
+  preventive: 0,
+  detective: 0,
+  natureNotClassified: 0,
+  natureUnclassifiedValues: [],
+  manual: 0,
+  automated: 0,
+  typeNotClassified: 0,
+  typeUnclassifiedValues: [],
+}
 
 function Company_Co_dashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
-  const [forms, setForms] = useState([])
-  const [filterActive, setFilterActive] = useState('all') // 'all', 'active', 'inactive'
-  const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
-  const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
-  const [filterApprovalStatus, setFilterApprovalStatus] = useState('all') // 'all', 'Approved', 'Rejected', 'Pending'
-  const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific mapped unit
+  const [dashboardStats, setDashboardStats] = useState(EMPTY_STATS)
+  const [filterActive, setFilterActive] = useState('all')
+  const [filterBusinessProcess, setFilterBusinessProcess] = useState('all')
+  const [filterFinancialYear, setFilterFinancialYear] = useState('all')
+  const [filterApprovalStatus, setFilterApprovalStatus] = useState('all')
+  const [filterUnit, setFilterUnit] = useState('all')
   const [filterConclusion, setFilterConclusion] = useState('all')
   const [conclusionOptions, setConclusionOptions] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [mappedUnits, setMappedUnits] = useState([])
   const [loading, setLoading] = useState(true)
+  const [statsLoading, setStatsLoading] = useState(true)
   const { businessProcessOptions } = useBusinessProcesses()
-  useSyncGlobalLoading(loading)
+  useSyncGlobalLoading(loading || statsLoading)
 
   useEffect(() => {
-    // Fetch user role and company_identifier on component mount
     const fetchUserInfo = async () => {
       try {
         const response = await fetch(apiUrl('/api/auth/verify'), {
@@ -64,180 +77,151 @@ function Company_Co_dashboard() {
   useEffect(() => {
     let cancelled = false
 
-    const fetchMappedUnits = async () => {
+    const fetchDashboardFilters = async () => {
+      if (!cancelled) {
+        setLoading(true)
+      }
       try {
-        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
+        const response = await fetch(apiUrl('/api/company-co/dashboard/filters'), {
           method: 'GET',
           credentials: 'include',
         })
         const data = await response.json()
 
         if (!cancelled && response.ok && data.success) {
-          const units = Array.isArray(data.data?.currentCoordinatorUnits)
-            ? data.data.currentCoordinatorUnits
-            : []
-          setMappedUnits(units)
+          setMappedUnits(Array.isArray(data.data?.units) ? data.data.units : [])
+          setFinancialYearOptions(Array.isArray(data.data?.financialYears) ? data.data.financialYears : [])
+          setConclusionOptions(Array.isArray(data.data?.conclusions) ? data.data.conclusions : [])
           return
         }
-      } catch (error) {
-        console.error('Error fetching mapped units:', error)
-      }
 
-      if (!cancelled) {
-        setMappedUnits([])
+        if (!cancelled) {
+          setMappedUnits([])
+          setFinancialYearOptions([])
+          setConclusionOptions([])
+        }
+      } catch (error) {
+        console.error('Error fetching dashboard filters:', error)
+        if (!cancelled) {
+          setMappedUnits([])
+          setFinancialYearOptions([])
+          setConclusionOptions([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
 
-    fetchMappedUnits()
+    fetchDashboardFilters()
 
     return () => {
       cancelled = true
     }
   }, [])
 
-  useEffect(() => {
-    // Fetch forms when company_identifier is available
-    if (companyIdentifier) {
-      fetchForms()
+  const buildDashboardQueryString = () => {
+    const params = new URLSearchParams()
+
+    if (filterActive === 'active') {
+      params.set('active', 'true')
+    } else if (filterActive === 'inactive') {
+      params.set('active', 'false')
     }
-  }, [companyIdentifier, filterActive, filterApprovalStatus, filterBusinessProcess, filterFinancialYear])
 
-  useEffect(() => {
-    if (companyIdentifier) {
-      loadFinancialYearOptions(companyIdentifier)
+    if (filterBusinessProcess !== 'all') {
+      params.set('business_process', filterBusinessProcess)
     }
-  }, [companyIdentifier])
 
-  const getFinancialYearStorageKey = (companyId) => `ifc_financial_year_options_${companyId}`
+    if (filterFinancialYear !== 'all') {
+      params.set('financial_year', filterFinancialYear)
+    }
 
-  const extractUniqueFinancialYears = (rows) => {
-    return [...new Set(
-      (rows || [])
-        .map(form => form.financial_year?.toString().trim())
-        .filter(year => year && year !== '')
-    )]
+    if (filterApprovalStatus !== 'all') {
+      params.set('status', filterApprovalStatus.toLowerCase())
+    }
+
+    if (filterUnit !== 'all') {
+      params.set('unit_id', filterUnit)
+    }
+
+    if (filterConclusion !== 'all') {
+      params.set('conclusion', filterConclusion)
+    }
+
+    return params.toString()
   }
 
-  const loadFinancialYearOptions = async (companyId) => {
-    const storageKey = getFinancialYearStorageKey(companyId)
-    try {
-      const cached = localStorage.getItem(storageKey)
-      if (cached) {
-        const parsed = JSON.parse(cached)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setFinancialYearOptions(parsed)
-          return
-        }
-      }
-    } catch (error) {
-      console.error('Error reading financial year options from localStorage:', error)
-    }
-
-    try {
-      const url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyId)}`
-      const response = await fetch(url, {
-        method: 'GET',
-        credentials: 'include',
-      })
-      const data = await response.json()
-      if (response.ok && data.success) {
-        const years = extractUniqueFinancialYears(data.data)
-        setFinancialYearOptions(years)
-        localStorage.setItem(storageKey, JSON.stringify(years))
-      }
-    } catch (error) {
-      console.error('Error bootstrapping financial year options:', error)
-    }
-  }
-
-  const fetchForms = async () => {
+  useEffect(() => {
     if (!companyIdentifier) return
-    
-    setLoading(true)
-    try {
-      // Company_co_dashboard can show both active and inactive forms
-      let url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyIdentifier)}`
-      
-      if (filterActive === 'active') {
-        url += '&active=true'
-      } else if (filterActive === 'inactive') {
-        url += '&active=false'
-      }
-      // If filterActive === 'all', don't add active filter (show both active and inactive)
-      
-      if (filterBusinessProcess !== 'all') {
-        url += `&business_process=${encodeURIComponent(filterBusinessProcess)}`
-      }
 
-      if (filterFinancialYear !== 'all') {
-        url += `&financial_year=${encodeURIComponent(filterFinancialYear)}`
-      }
+    const fetchDashboardStats = async () => {
+      setStatsLoading(true)
+      try {
+        const search = buildDashboardQueryString()
+        const suffix = search ? `?${search}` : ''
+        const [summaryResponse, keyResponse, natureResponse, typeResponse] = await Promise.all([
+          fetch(apiUrl(`/api/company-co/dashboard/summary${suffix}`), { credentials: 'include' }),
+          fetch(apiUrl(`/api/company-co/dashboard/key-controls${suffix}`), { credentials: 'include' }),
+          fetch(apiUrl(`/api/company-co/dashboard/nature-of-control${suffix}`), { credentials: 'include' }),
+          fetch(apiUrl(`/api/company-co/dashboard/control-type${suffix}`), { credentials: 'include' }),
+        ])
 
-      if (filterApprovalStatus !== 'all' && filterApprovalStatus !== 'Pending') {
-        url += `&status=${encodeURIComponent(filterApprovalStatus.toLowerCase())}`
-      }
+        const [summaryData, keyData, natureData, typeData] = await Promise.all([
+          summaryResponse.json(),
+          keyResponse.json(),
+          natureResponse.json(),
+          typeResponse.json(),
+        ])
 
-      const response = await fetch(url, {
-        method: 'GET',
-        credentials: 'include',
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        let filteredData = data.data
-        if (filterApprovalStatus === 'Pending') {
-          filteredData = data.data.filter((form) => {
-            const status = form.status || ''
-            return (
-              !status ||
-              status === '' ||
-              status.toLowerCase() === 'sent for approval'
-            )
-          })
+        if (
+          !summaryResponse.ok || !summaryData?.success ||
+          !keyResponse.ok || !keyData?.success ||
+          !natureResponse.ok || !natureData?.success ||
+          !typeResponse.ok || !typeData?.success
+        ) {
+          throw new Error('Failed to fetch RACM dashboard stats')
         }
 
-        const sortedForms = [...filteredData].sort((a, b) => {
-          const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
-          const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
-          return dateB - dateA
+        setDashboardStats({
+          totalRacms: Number(summaryData.data?.totalRacms || 0),
+          keyControls: Number(keyData.data?.keyControls || 0),
+          nonKeyControls: Number(keyData.data?.nonKeyControls || 0),
+          keyNotClassified: Number(keyData.data?.notClassified || 0),
+          keyUnclassifiedValues: Array.isArray(keyData.data?.unclassifiedValues) ? keyData.data.unclassifiedValues : [],
+          preventive: Number(natureData.data?.preventive || 0),
+          detective: Number(natureData.data?.detective || 0),
+          natureNotClassified: Number(natureData.data?.notClassified || 0),
+          natureUnclassifiedValues: Array.isArray(natureData.data?.unclassifiedValues) ? natureData.data.unclassifiedValues : [],
+          manual: Number(typeData.data?.manual || 0),
+          automated: Number(typeData.data?.automated || 0),
+          typeNotClassified: Number(typeData.data?.notClassified || 0),
+          typeUnclassifiedValues: Array.isArray(typeData.data?.unclassifiedValues) ? typeData.data.unclassifiedValues : [],
         })
-        setForms(sortedForms)
-        setConclusionOptions(
-          [...new Set(
-            (data.data || []).map((form) => formatConclusion(form.control_design_conclusion))
-          )].sort((a, b) => {
-            if (a === 'None') return 1
-            if (b === 'None') return -1
-            return a.localeCompare(b)
-          })
-        )
-
-        const latestYears = extractUniqueFinancialYears(data.data)
-        if (latestYears.length > 0) {
-          const mergedYears = [...new Set([...(financialYearOptions || []), ...latestYears])]
-          if (mergedYears.length !== financialYearOptions.length) {
-            setFinancialYearOptions(mergedYears)
-            if (companyIdentifier) {
-              localStorage.setItem(getFinancialYearStorageKey(companyIdentifier), JSON.stringify(mergedYears))
-            }
-          }
-        }
-      } else {
-        console.error('Error fetching forms:', data.message)
+      } catch (error) {
+        console.error('Error fetching RACM dashboard stats:', error)
+        setDashboardStats(EMPTY_STATS)
+      } finally {
+        setStatsLoading(false)
       }
-    } catch (error) {
-      console.error('Error fetching forms:', error)
-    } finally {
-      setLoading(false)
     }
-  }
 
-  const handleFormClick = (formId) => {
-    navigate(`/company_co/form/${formId}`)
-  }
+    fetchDashboardStats()
+  }, [
+    companyIdentifier,
+    filterActive,
+    filterApprovalStatus,
+    filterBusinessProcess,
+    filterFinancialYear,
+    filterUnit,
+    filterConclusion,
+  ])
 
-  const shouldShowUnitMapping = mappedUnits.length > 1
+  const shouldShowUnitMapping = mappedUnits.length > 0
+  const automatedPercentage = dashboardStats.totalRacms > 0
+    ? Math.round((dashboardStats.automated / dashboardStats.totalRacms) * 100)
+    : 0
 
   const normalizedMappedUnits = mappedUnits
     .map((unit) => ({
@@ -261,696 +245,438 @@ function Company_Co_dashboard() {
     }
   }, [filterUnit, normalizedMappedUnits, shouldShowUnitMapping])
 
-  const filteredForms = shouldShowUnitMapping && filterUnit !== 'all'
-    ? forms.filter((form) => String(form?.unit_id || '').trim() === filterUnit)
-    : forms
-
-  const formatConclusion = (value) => {
-    const normalized = String(value || '').trim()
-    if (!normalized) return 'None'
-    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
-  }
-
-  const displayedForms = filteredForms.filter((form) => {
-    if (filterConclusion === 'all') return true
-    return formatConclusion(form.control_design_conclusion) === filterConclusion
-  })
-  const getProcessOwnerDisplay = (form) => {
-    const name = (form?.control_owner_name ?? form?.emp_name ?? '')
-      .toString()
-      .trim()
-    if (name) return name
-    const owner = (form?.control_owner ?? '').toString().trim()
-    if (owner) return owner
-    return 'N/A'
-  }
-
-  const formatApprovalStatus = (status) => {
-    if (!status || status === '' || status === null) return 'Pending'
-    const s = String(status)
-    return s.charAt(0).toUpperCase() + s.slice(1)
-  }
-
-  const tooltipSx = {
-    bgcolor: 'rgba(17, 24, 39, 0.94)',
-    color: '#ffffff',
-    fontSize: '0.75rem',
-    lineHeight: 1.4,
-    borderRadius: '8px',
-    px: 1.25,
-    py: 0.75,
-    maxWidth: 420,
-    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.25)',
-  }
-  const truncatedTextSx = {
-    display: 'block',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  }
-
-  return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
-        {/* Forms Section */}
-        <Paper 
-          elevation={3}
+  const renderPieBreakdownCard = ({
+    title,
+    primaryValue,
+    primaryLabel,
+    secondaryLabel,
+    secondaryValue,
+    notClassified,
+    unclassifiedValues,
+    colors,
+    extraRows = [],
+  }) => (
+    <Paper
+      elevation={3}
+      sx={{
+        borderRadius: 2,
+        overflow: 'hidden',
+        height: 500,
+      }}
+    >
+      <Box
+        sx={{
+          px: 3,
+          py: 2,
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          backgroundColor:
+            theme.palette.mode === 'dark'
+              ? 'rgba(255, 255, 255, 0.06)'
+              : theme.palette.grey[100],
+        }}
+      >
+        <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+          {title}
+        </Typography>
+      </Box>
+      <Box
+        sx={{
+          px: 3,
+          py: 2.5,
+          display: 'flex',
+          flexDirection: { xs: 'column', lg: 'row' },
+          alignItems: 'stretch',
+          gap: 2,
+        }}
+      >
+        <Box
           sx={{
-            p: 3,
-            borderRadius: 2,
+            flexBasis: { xs: '100%', lg: '70%' },
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            minHeight: 280,
           }}
         >
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: { xs: 'column', sm: 'row' },
-              justifyContent: 'space-between',
-              alignItems: { xs: 'flex-start', sm: 'center' },
-              mb: 3,
-              gap: 2,
-            }}
-          >
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              <Typography 
-                variant="h5" 
-                component="h2"
-                sx={{ 
-                  fontWeight: 700, 
-                  color: theme.palette.text.primary,
-                }}
-              >
-                RACM
+          {primaryValue + secondaryValue > 0 ? (
+            <PieChart
+              // height={280}
+              // width={450}
+              margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+              series={[
+                {
+                  innerRadius: 0,
+                  outerRadius: 120,
+                  paddingAngle: 1,
+                  cornerRadius: 1,
+                  cx: 240,
+                  cy: 140,
+                  data: [
+                    { id: 0, value: primaryValue, label: title.split(' / ')[0], color: colors[0] },
+                    { id: 1, value: secondaryValue, label: secondaryLabel, color: colors[1] },
+                  ],
+                },
+              ]}
+              slotProps={{
+                legend: {
+                  hidden: true,
+                },
+              }}
+            />
+          ) : (
+            <Box
+              sx={{
+                height: 260,
+                width: '100%',
+                maxWidth: 420,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 2,
+                border: `1px dashed ${theme.palette.divider}`,
+                color: theme.palette.text.secondary,
+              }}
+            >
+              <Typography variant="body2">No classified RACMs</Typography>
+            </Box>
+          )}
+        </Box>
+        <Box
+          sx={{
+            flexBasis: { xs: '100%', lg: '30%' },
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-start',
+            gap: 1.25,
+            pt: { xs: 0, lg: 0.75 },
+            pr: { xs: 0, lg: 0.5 },
+            alignSelf: 'flex-start',
+          }}
+        >
+          {[
+            { label: primaryLabel, value: primaryValue },
+            { label: secondaryLabel, value: secondaryValue },
+            ...extraRows,
+          ].map((item) => (
+            <Box
+              key={item.label}
+              sx={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 2,
+                py: 0.5,
+                borderBottom: `1px solid ${theme.palette.divider}`,
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+                {item.label}
               </Typography>
               <Typography
                 variant="body2"
-                sx={PAGE_SUBHEADER_TEXT_SX}
+                sx={{ fontWeight: 700, color: theme.palette.text.primary, textAlign: 'right', whiteSpace: 'nowrap' }}
               >
-                Analyze and monitor RACM for your company.
+                {statsLoading ? '...' : item.value}
               </Typography>
             </Box>
-            
-            {/* Filter Options */}
-            <Box sx={{ 
-              display: 'flex', 
-              flexDirection: { xs: 'column', sm: 'row' },
-              gap: 2,
-              alignItems: { xs: 'stretch', sm: 'center' },
-              width: { xs: '100%', sm: 'auto' }
-            }}>
-              {/* Business Process Filter */}
-              <FormControl 
-                variant="outlined" 
-                sx={{ 
-                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
-                }}
-              >
-                <InputLabel id="business-process-filter-label">Business Process</InputLabel>
-                <Select
-                  labelId="business-process-filter-label"
-                  id="business-process-filter"
-                  value={filterBusinessProcess}
-                  label="Business Process"
-                  onChange={(e) => setFilterBusinessProcess(e.target.value)}
-                >
-                  <MenuItem value="all">All</MenuItem>
-                  {businessProcessOptions.map((option) => (
-                    <MenuItem key={option} value={option}>
-                      {option}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              {/* Financial Year Filter */}
-              <FormControl
-                variant="outlined"
-                sx={{
-                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
-                }}
-              >
-                <InputLabel id="financial-year-filter-label">Financial Year</InputLabel>
-                <Select
-                  labelId="financial-year-filter-label"
-                  id="financial-year-filter"
-                  value={filterFinancialYear}
-                  label="Financial Year"
-                  onChange={(e) => setFilterFinancialYear(e.target.value)}
-                >
-                  <MenuItem value="all">All</MenuItem>
-                  {financialYearOptions.map((option) => (
-                    <MenuItem key={option} value={option}>
-                      {option}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              {/* Active / Inactive */}
-              <FormControl
-                variant="outlined"
-                sx={{
-                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
-                }}
-              >
-                <InputLabel id="active-status-filter-label">Activity</InputLabel>
-                <Select
-                  labelId="active-status-filter-label"
-                  id="active-status-filter"
-                  value={filterActive}
-                  label="Activity"
-                  onChange={(e) => setFilterActive(e.target.value)}
-                >
-                  <MenuItem value="all">All</MenuItem>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="inactive">Inactive</MenuItem>
-                </Select>
-              </FormControl>
-
-              {/* Approval Status (same behavior as RACM Management) */}
-              <FormControl
-                variant="outlined"
-                sx={{
-                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
-                }}
-              >
-                <InputLabel id="approval-status-filter-label">Approval Status</InputLabel>
-                <Select
-                  labelId="approval-status-filter-label"
-                  id="approval-status-filter"
-                  value={filterApprovalStatus}
-                  label="Approval Status"
-                  onChange={(e) => setFilterApprovalStatus(e.target.value)}
-                >
-                  <MenuItem value="all">All</MenuItem>
-                  <MenuItem value="Approved">Approved</MenuItem>
-                  <MenuItem value="Rejected">Rejected</MenuItem>
-                  <MenuItem value="Pending">Pending</MenuItem>
-                </Select>
-              </FormControl>
-
-              <FormControl
-                variant="outlined"
-                sx={{
-                  minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
-                }}
-              >
-                <InputLabel id="conclusion-filter-label">Conclusion</InputLabel>
-                <Select
-                  labelId="conclusion-filter-label"
-                  id="conclusion-filter"
-                  value={filterConclusion}
-                  label="Conclusion"
-                  onChange={(e) => setFilterConclusion(e.target.value)}
-                >
-                  <MenuItem value="all">All</MenuItem>
-                  {conclusionOptions.map((option) => (
-                    <MenuItem key={option} value={option}>
-                      {option}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              {shouldShowUnitMapping ? (
-                <FormControl
-                  variant="outlined"
-                  sx={{
-                    minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG,
-                  }}
-                >
-                  <InputLabel id="unit-filter-label">Unit</InputLabel>
-                  <Select
-                    labelId="unit-filter-label"
-                    id="unit-filter"
-                    value={filterUnit}
-                    label="Unit"
-                    onChange={(e) => setFilterUnit(e.target.value)}
-                  >
-                    <MenuItem value="all">All</MenuItem>
-                    {normalizedMappedUnits.map((unit) => (
-                      <MenuItem key={unit.unitId} value={unit.unitId}>
-                        {unit.unitName || unit.unitId}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              ) : null}
-            </Box>
+          ))}
+        </Box>
+      </Box>
+      <Box
+        sx={{
+          px: 3,
+          pt: 0,
+          pb: 2.5,
+        }}
+      >
+        <Box
+          sx={{
+            pt: 2,
+            borderTop: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+              Unclassified RACMs:
+            </Typography>
+            <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
+              {statsLoading ? '...' : notClassified}
+            </Typography>
           </Box>
-
-          {loading ? (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <Typography color="text.secondary">Loading forms...</Typography>
-            </Box>
-          ) : displayedForms.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <Typography color="text.secondary">No forms found.</Typography>
-            </Box>
-          ) : (
-            <Box sx={{ overflowX: 'auto' }}>
+        </Box>
+        <Box sx={{ mt: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+              Unclassified values:
+            </Typography>
+            {unclassifiedValues.length > 0 ? (
               <Box
-                component="table"
                 sx={{
-                  minWidth: '100%',
-                  borderCollapse: 'collapse',
-                  '& th, & td': {
-                    borderBottom: `1px solid ${theme.palette.divider}`,
+                  minWidth: 0,
+                  flex: 1,
+                  overflowX: 'auto',
+                  overflowY: 'hidden',
+                  whiteSpace: 'nowrap',
+                  '&::-webkit-scrollbar': {
+                    height: 6,
                   },
                 }}
               >
-                <Box
-                  component="thead"
-                  sx={{
-                    backgroundColor: theme.palette.action.hover,
-                  }}
-                >
-                  <Box component="tr">
+                <Box sx={{ display: 'inline-flex', gap: 1, pr: 1 }}>
+                  {unclassifiedValues.map((value) => (
                     <Box
-                      component="th"
+                      key={value}
+                      component="span"
                       sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
+                        px: 1.25,
+                        py: 0.75,
+                        borderRadius: 999,
                         fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                        width: '220px',
-                        minWidth: '220px',
-                        maxWidth: '220px',
+                        lineHeight: 1,
+                        color: theme.palette.text.primary,
+                        backgroundColor: theme.palette.action.hover,
+                        border: `1px solid ${theme.palette.divider}`,
+                        whiteSpace: 'nowrap',
+                        flex: '0 0 auto',
                       }}
                     >
-                      Business Process
+                      {value}
                     </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                        width: '200px',
-                        minWidth: '160px',
-                        maxWidth: '240px',
-                      }}
-                    >
-                      Sub Process
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                        width: '240px',
-                        minWidth: '200px',
-                        maxWidth: '280px',
-                      }}
-                    >
-                      Process Owner
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                        width: '120px',
-                        minWidth: '120px',
-                        maxWidth: '120px',
-                      }}
-                    >
-                      Financial Year
-                    </Box>
-                    {shouldShowUnitMapping ? (
-                      <Box
-                        component="th"
-                        sx={{
-                          px: 3,
-                          py: 1.5,
-                          textAlign: 'left',
-                          fontSize: '0.75rem',
-                          fontWeight: 500,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                          color: theme.palette.text.secondary,
-                          width: '180px',
-                          minWidth: '160px',
-                          maxWidth: '220px',
-                        }}
-                      >
-                        Unit
-                      </Box>
-                    ) : null}
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                        width: '120px',
-                        minWidth: '120px',
-                        maxWidth: '120px',
-                      }}
-                    >
-                      Status
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                        width: '130px',
-                        minWidth: '120px',
-                        maxWidth: '140px',
-                      }}
-                    >
-                      Approval Status
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                        width: '140px',
-                        minWidth: '130px',
-                        maxWidth: '160px',
-                      }}
-                    >
-                      Conclusion
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                        width: '120px',
-                        minWidth: '110px',
-                        maxWidth: '130px',
-                      }}
-                    >
-                      Due Date
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                        width: '140px',
-                        minWidth: '140px',
-                        maxWidth: '140px',
-                      }}
-                    >
-                      Created At
-                    </Box>
-                  </Box>
-                </Box>
-                <Box component="tbody">
-                  {displayedForms.map((form) => {
-                    const isActive = form.active && form.active !== '' && form.active !== '0'
-                    const approvalLabel = formatApprovalStatus(form.status)
-                    const ownerDisplay = getProcessOwnerDisplay(form)
-                    return (
-                      <Box
-                        component="tr"
-                        key={form.id}
-                        onClick={() => handleFormClick(form.form_id)}
-                        sx={{
-                          cursor: 'pointer',
-                          transition: 'background-color 0.2s',
-                          '&:hover': {
-                            backgroundColor: theme.palette.action.hover,
-                          },
-                        }}
-                      >
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            width: '220px',
-                            minWidth: '220px',
-                            maxWidth: '220px',
-                            fontSize: '0.875rem',
-                            color: theme.palette.text.primary,
-                          }}
-                        >
-                          <Box component="span" sx={truncatedTextSx}>
-                            {form.business_process || 'N/A'}
-                          </Box>
-                        </Box>
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            width: '200px',
-                            minWidth: '160px',
-                            maxWidth: '240px',
-                            fontSize: '0.875rem',
-                            color: theme.palette.text.primary,
-                          }}
-                        >
-                          <Tooltip
-                            title={(form.sub_process || '').toString().trim() || 'N/A'}
-                            arrow
-                            slotProps={{ tooltip: { sx: tooltipSx } }}
-                          >
-                            <Box component="span" sx={truncatedTextSx}>
-                              {(form.sub_process || '').toString().trim() || 'N/A'}
-                            </Box>
-                          </Tooltip>
-                        </Box>
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            width: '240px',
-                            minWidth: '200px',
-                            maxWidth: '280px',
-                            fontSize: '0.875rem',
-                            color: theme.palette.text.primary,
-                          }}
-                        >
-                          <Tooltip title={ownerDisplay} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
-                            <Box component="span" sx={truncatedTextSx}>
-                              {ownerDisplay}
-                            </Box>
-                          </Tooltip>
-                        </Box>
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            width: '120px',
-                            minWidth: '120px',
-                            maxWidth: '120px',
-                            fontSize: '0.875rem',
-                            color: theme.palette.text.primary,
-                          }}
-                        >
-                          <Box component="span" sx={truncatedTextSx}>
-                            {form.financial_year || 'N/A'}
-                          </Box>
-                        </Box>
-                        {shouldShowUnitMapping ? (
-                          <Box
-                            component="td"
-                            sx={{
-                              px: 3,
-                              py: 2,
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              width: '180px',
-                              minWidth: '160px',
-                              maxWidth: '220px',
-                              fontSize: '0.875rem',
-                              color: theme.palette.text.primary,
-                            }}
-                          >
-                            <Tooltip
-                              title={(form.unit_name || form.unit_id || '').toString().trim() || 'N/A'}
-                              arrow
-                              slotProps={{ tooltip: { sx: tooltipSx } }}
-                            >
-                              <Box component="span" sx={truncatedTextSx}>
-                                {(form.unit_name || form.unit_id || '').toString().trim() || 'N/A'}
-                              </Box>
-                            </Tooltip>
-                          </Box>
-                        ) : null}
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            width: '120px',
-                            minWidth: '120px',
-                            maxWidth: '120px',
-                          }}
-                        >
-                          <Box
-                            component="span"
-                            sx={{
-                              ...STATUS_BADGE_PILL_SX,
-                              ...getActivityBadgeSolidColors(isActive),
-                            }}
-                          >
-                            {isActive ? 'Active' : 'Inactive'}
-                          </Box>
-                        </Box>
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            width: '130px',
-                            minWidth: '120px',
-                            maxWidth: '140px',
-                          }}
-                        >
-                          <Box
-                            component="span"
-                            sx={{
-                              ...STATUS_BADGE_PILL_SX,
-                              ...getApprovalStatusBadgeSolidColors(approvalLabel),
-                            }}
-                          >
-                            {approvalLabel}
-                          </Box>
-                        </Box>
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            width: '140px',
-                            minWidth: '130px',
-                            maxWidth: '160px',
-                            fontSize: '0.875rem',
-                            color: theme.palette.text.primary,
-                          }}
-                        >
-                          <Box component="span" sx={truncatedTextSx}>
-                            {formatConclusion(form.control_design_conclusion)}
-                          </Box>
-                        </Box>
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            width: '120px',
-                            minWidth: '110px',
-                            maxWidth: '130px',
-                            fontSize: '0.875rem',
-                            color: theme.palette.text.primary,
-                          }}
-                        >
-                          <Box component="span" sx={truncatedTextSx}>
-                            {form.due_date
-                              ? /^\d{4}-\d{2}-\d{2}$/.test(String(form.due_date).trim())
-                                ? String(form.due_date).trim()
-                                : new Date(form.due_date).toLocaleDateString()
-                              : 'N/A'}
-                          </Box>
-                        </Box>
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            width: '140px',
-                            minWidth: '140px',
-                            maxWidth: '140px',
-                            fontSize: '0.875rem',
-                            color: theme.palette.text.primary,
-                          }}
-                        >
-                          <Box component="span" sx={truncatedTextSx}>
-                            {form.created_at
-                              ? new Date(form.created_at).toLocaleDateString()
-                              : 'N/A'}
-                          </Box>
-                        </Box>
-                      </Box>
-                    )
-                  })}
+                  ))}
                 </Box>
               </Box>
-            </Box>
-          )}
-        </Paper>
+            ) : (
+              <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                None
+              </Typography>
+            )}
+          </Box>
+        </Box>
       </Box>
+    </Paper>
+  )
+
+  return (
+    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          alignItems: { xs: 'flex-start', md: 'flex-start' },
+          justifyContent: 'space-between',
+          gap: 2,
+          mb: 3,
+          pb: 2.5,
+          borderBottom: `1px solid ${theme.palette.divider}`,
+        }}
+      >
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 800, color: theme.palette.text.primary }}>
+            RACM Dashboard
+          </Typography>
+          <Typography variant="body2" sx={PAGE_SUBHEADER_TEXT_SX}>
+            Counts regenerate based on the selected company coordinator filters, including unit mapping.
+          </Typography>
+        </Box>
+        <Button variant="contained" onClick={() => navigate('/company_co/racm-management')}>
+          Open RACM Management
+        </Button>
+      </Box>
+
+      <Box
+        sx={{
+          mb: 3,
+          display: 'flex',
+          flexDirection: { xs: 'column', lg: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'flex-start', lg: 'flex-start' },
+          gap: 2,
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          pb: 2.5,
+        }}
+      >
+        <Box
+          sx={{
+            minWidth: { xs: '100%', lg: 'auto' },
+          }}
+        >
+          <Typography
+            variant="body2"
+            sx={{ color: theme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+          >
+            Total RACMs
+          </Typography>
+          <Typography variant="h4" sx={{ mt: 0.5, fontWeight: 800, color: theme.palette.text.primary }}>
+            {statsLoading ? '...' : dashboardStats.totalRacms}
+          </Typography>
+        </Box>
+
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 2,
+            alignItems: { xs: 'stretch', sm: 'center' },
+            justifyContent: { xs: 'flex-start', lg: 'flex-end' },
+            width: { xs: '100%', lg: 'auto' },
+            flexWrap: 'wrap',
+          }}
+        >
+          <FormControl variant="outlined" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG }}>
+            <InputLabel id="business-process-filter-label">Business Process</InputLabel>
+            <Select
+              labelId="business-process-filter-label"
+              id="business-process-filter"
+              value={filterBusinessProcess}
+              label="Business Process"
+              onChange={(e) => setFilterBusinessProcess(e.target.value)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              {businessProcessOptions.map((option) => (
+                <MenuItem key={option} value={option}>
+                  {option}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl variant="outlined" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG }}>
+            <InputLabel id="financial-year-filter-label">Financial Year</InputLabel>
+            <Select
+              labelId="financial-year-filter-label"
+              id="financial-year-filter"
+              value={filterFinancialYear}
+              label="Financial Year"
+              onChange={(e) => setFilterFinancialYear(e.target.value)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              {financialYearOptions.map((option) => (
+                <MenuItem key={option} value={option}>
+                  {option}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl variant="outlined" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG }}>
+            <InputLabel id="active-status-filter-label">Activity</InputLabel>
+            <Select
+              labelId="active-status-filter-label"
+              id="active-status-filter"
+              value={filterActive}
+              label="Activity"
+              onChange={(e) => setFilterActive(e.target.value)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              <MenuItem value="active">Active</MenuItem>
+              <MenuItem value="inactive">Inactive</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl variant="outlined" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG }}>
+            <InputLabel id="approval-status-filter-label">Approval Status</InputLabel>
+            <Select
+              labelId="approval-status-filter-label"
+              id="approval-status-filter"
+              value={filterApprovalStatus}
+              label="Approval Status"
+              onChange={(e) => setFilterApprovalStatus(e.target.value)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              <MenuItem value="Approved">Approved</MenuItem>
+              <MenuItem value="Rejected">Rejected</MenuItem>
+              <MenuItem value="Pending">Pending</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl variant="outlined" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG }}>
+            <InputLabel id="conclusion-filter-label">Conclusion</InputLabel>
+            <Select
+              labelId="conclusion-filter-label"
+              id="conclusion-filter"
+              value={filterConclusion}
+              label="Conclusion"
+              onChange={(e) => setFilterConclusion(e.target.value)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              {conclusionOptions.map((option) => (
+                <MenuItem key={option} value={option}>
+                  {option}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {shouldShowUnitMapping ? (
+            <FormControl variant="outlined" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG }}>
+              <InputLabel id="unit-filter-label">Unit</InputLabel>
+              <Select
+                labelId="unit-filter-label"
+                id="unit-filter"
+                value={filterUnit}
+                label="Unit"
+                onChange={(e) => setFilterUnit(e.target.value)}
+              >
+                <MenuItem value="all">All</MenuItem>
+                {normalizedMappedUnits.map((unit) => (
+                  <MenuItem key={unit.unitId} value={unit.unitId}>
+                    {unit.unitName || unit.unitId}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          ) : null}
+        </Box>
+      </Box>
+
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', xl: 'repeat(3, minmax(0, 1fr))' },
+          alignItems: 'start',
+          gap: 3,
+          mb: 3,
+        }}
+      >
+        {renderPieBreakdownCard({
+          title: 'Key / Non-Key RACMs',
+          primaryLabel: 'Key Controls',
+          primaryValue: dashboardStats.keyControls,
+          secondaryLabel: 'Non-Key Controls',
+          secondaryValue: dashboardStats.nonKeyControls,
+          notClassified: dashboardStats.keyNotClassified,
+          unclassifiedValues: dashboardStats.keyUnclassifiedValues,
+          colors: ['#0f766e', '#94a3b8'],
+        })}
+        {renderPieBreakdownCard({
+          title: 'Preventive / Detective RACMs',
+          primaryLabel: 'Preventive',
+          primaryValue: dashboardStats.preventive,
+          secondaryLabel: 'Detective',
+          secondaryValue: dashboardStats.detective,
+          notClassified: dashboardStats.natureNotClassified,
+          unclassifiedValues: dashboardStats.natureUnclassifiedValues,
+          colors: ['#1d4ed8', '#f59e0b'],
+        })}
+        {renderPieBreakdownCard({
+          title: 'Automated / Manual RACMs',
+          primaryLabel: 'Automated',
+          primaryValue: dashboardStats.automated,
+          secondaryLabel: 'Manual',
+          secondaryValue: dashboardStats.manual,
+          notClassified: dashboardStats.typeNotClassified,
+          unclassifiedValues: dashboardStats.typeUnclassifiedValues,
+          colors: ['#7c3aed', '#ea580c'],
+          extraRows: [
+            {
+              label: 'Automated %',
+              value: `${automatedPercentage}%`,
+            },
+          ],
+        })}
+      </Box>
+
+    </Box>
   )
 }
 

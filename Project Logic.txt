@@ -48,7 +48,6 @@ New Unit based IFC Testing model.
 5. One RACM will only belong to one Unit of the company.
 
 
-Company coordinator can't modify the RACM once it is set to Active. For modification coordinator has to first set it to Inactive and after modification set Active again. And user will be notified via email again.
 
 
 
@@ -59,9 +58,6 @@ Company coordinator can't modify the RACM once it is set to Active. For modifica
 
 
 
-
-
-
-
+ 
 
 

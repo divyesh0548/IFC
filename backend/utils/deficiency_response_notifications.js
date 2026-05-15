@@ -75,6 +75,22 @@ function getCounterpartEmail({ submittedByEmail, controlOwnerEmail, coordinatorE
       : '';
 }
 
+function buildCcEmailList(...emails) {
+  const seen = new Set();
+  const ccList = [];
+
+  emails.forEach((email) => {
+    const normalized = normalizeEmail(email);
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    ccList.push(normalized);
+  });
+
+  return ccList;
+}
+
 function formatResponseTypeLabel(responseType) {
   return String(responseType || '').trim() === 'compensatory_racm'
     ? 'Compensatory RACM'
@@ -97,11 +113,6 @@ async function notifyDeficiencyResponseSubmitted({
     || ''
   ).trim();
   const coordinatorEmail = await getCoordinatorEmailForUnit(form?.company_identifier, form?.unit_id);
-  const counterpartEmail = getCounterpartEmail({
-    submittedByEmail,
-    controlOwnerEmail: form?.control_owner,
-    coordinatorEmail,
-  });
 
   const responseTypeLabel = formatResponseTypeLabel(
     deficiencyResponse?.current_submission?.submission_type || deficiencyResponse?.response_type
@@ -130,7 +141,10 @@ async function notifyDeficiencyResponseSubmitted({
   emailBody += '\nPlease review the deficiency response in the IFC system.\n\n';
   emailBody += 'Best regards,\nIFC System';
 
-  const ccEmails = counterpartEmail ? [counterpartEmail] : [];
+  const ccEmails = buildCcEmailList(
+    form?.control_owner,
+    coordinatorEmail
+  ).filter((email) => email !== normalizeEmail(approverEmail));
   const emailSent = await sendEmail(
     approverEmail,
     'Internal Financial Controls - Deficiency Response Submitted',

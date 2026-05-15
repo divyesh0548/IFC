@@ -99,7 +99,7 @@ function Company_co_home() {
       eyebrow: 'Insights',
       title: 'Reports',
       description: 'Review RACM outcomes, progress trends, and approval summaries.',
-      path: '/company_co/dashboard',
+      path: '/company_co/racm-dashboard',
       icon: <AssessmentRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },

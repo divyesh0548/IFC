@@ -5,6 +5,11 @@ const { verifyCompanyCoordinator } = require('../../modules/auth/auth.middleware
 const router = express.Router();
 
 router.get('/home-stats', verifyCompanyCoordinator, controller.getHomeStats);
+router.get('/dashboard/filters', verifyCompanyCoordinator, controller.getDashboardFilters);
+router.get('/dashboard/summary', verifyCompanyCoordinator, controller.getDashboardSummary);
+router.get('/dashboard/key-controls', verifyCompanyCoordinator, controller.getDashboardKeyControlStats);
+router.get('/dashboard/nature-of-control', verifyCompanyCoordinator, controller.getDashboardNatureStats);
+router.get('/dashboard/control-type', verifyCompanyCoordinator, controller.getDashboardControlTypeStats);
 router.get('/unit-management', verifyCompanyCoordinator, controller.getUnitManagement);
 router.post('/unit-management/units', verifyCompanyCoordinator, controller.createCompanyUnit);
 router.patch('/unit-management/units/:unit_id/assignment', verifyCompanyCoordinator, controller.updateUnitAssignment);

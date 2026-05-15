@@ -13,6 +13,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
@@ -35,6 +36,7 @@ import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRound
 import DeleteRoundedIcon from '@mui/icons-material/DeleteRounded';
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
+import dayjs from 'dayjs'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
@@ -2259,19 +2261,26 @@ function FormDetail() {
                       }),
                     }}
                   >
-                      <TextField
-                        type="date"
+                      <DatePicker
                         label="Due Date"
-                        value={scheduleFields.due_date}
-                        onChange={(e) => handleScheduleFieldChange('due_date', e.target.value)}
-                        fullWidth
-                        size="small"
-                        InputLabelProps={{ shrink: true }}
-                        inputProps={{ min: getTomorrowDateString() }}
+                        value={scheduleFields.due_date ? dayjs(scheduleFields.due_date) : null}
+                        onChange={(newValue) => {
+                          handleScheduleFieldChange(
+                            'due_date',
+                            newValue && newValue.isValid() ? newValue.format('YYYY-MM-DD') : ''
+                          )
+                        }}
+                        minDate={dayjs(getTomorrowDateString())}
                         disabled={savingSchedule || isEditMode || isActive}
-                        sx={{
-                          '& .MuiInputBase-root': {
-                            minHeight: 38,
+                        slotProps={{
+                          textField: {
+                            fullWidth: true,
+                            size: 'small',
+                            sx: {
+                              '& .MuiInputBase-root': {
+                                minHeight: 38,
+                              },
+                            },
                           },
                         }}
                       />
@@ -3952,9 +3961,19 @@ function FormDetail() {
                 </Typography>
 
                 {showDeficiencyActionNotice ? (
-                  <Box sx={{ mb: 3, p: 2, borderRadius: 2, border: '1px solid', borderColor: 'warning.main', backgroundColor: 'warning.light', color: 'warning.contrastText' }}>
+                  <Box
+                    sx={{
+                      mb: 3,
+                      p: 2,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.04)'
+                        : 'rgba(15, 23, 42, 0.04)',
+                      color: 'text.primary',
+                    }}
+                  >
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      Action required: approver marked this RACM as Not Effective.
+                      Action required: Approver marked this RACM as Not Effective.
                     </Typography>
                   </Box>
                 ) : null}
@@ -4033,7 +4052,21 @@ function FormDetail() {
                     {deficiencyResponseForm.response_type === 'mitigation_plan' ? (
                       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 2 }}>
                         <TextField label="Concerned Person (email or name)" value={deficiencyResponseForm.concerned_person} onChange={(e) => handleDeficiencyResponseFieldChange('concerned_person', e.target.value)} fullWidth />
-                        <TextField type="date" label="Due Date" value={deficiencyResponseForm.due_date} onChange={(e) => handleDeficiencyResponseFieldChange('due_date', e.target.value)} InputLabelProps={{ shrink: true }} fullWidth />
+                        <DatePicker
+                          label="Due Date"
+                          value={deficiencyResponseForm.due_date ? dayjs(deficiencyResponseForm.due_date) : null}
+                          onChange={(newValue) => {
+                            handleDeficiencyResponseFieldChange(
+                              'due_date',
+                              newValue && newValue.isValid() ? newValue.format('YYYY-MM-DD') : ''
+                            )
+                          }}
+                          slotProps={{
+                            textField: {
+                              fullWidth: true,
+                            },
+                          }}
+                        />
                       </Box>
                     ) : (
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>

@@ -45,6 +45,11 @@ export const STATUS_BADGE_PILL_SX = {
   py: 0.5,
   fontSize: '0.75rem',
   fontWeight: 600,
+  lineHeight: 1.25,
+  textAlign: 'center',
+  whiteSpace: 'nowrap',
+  wordBreak: 'normal',
+  overflowWrap: 'normal',
   borderRadius: '9999px',
   width: 'fit-content',
   maxWidth: '100%',
@@ -61,6 +66,7 @@ const STATUS_BADGE_SOLID = {
   success: { backgroundColor: '#d1fae5', color: '#065f46' },
   error: { backgroundColor: '#fee2e2', color: '#991b1b' },
   warning: { backgroundColor: '#fef3c7', color: '#92400e' },
+  moderate: { backgroundColor: '#e0f2fe', color: '#075985' },
   neutral: { backgroundColor: '#f3f4f6', color: '#6b7280' },
 }
 
@@ -84,5 +90,15 @@ export function getApprovalStatusBadgeSolidColors(label) {
 
 export function getActivityBadgeSolidColors(isActive) {
   return isActive ? STATUS_BADGE_SOLID.success : STATUS_BADGE_SOLID.error
+}
+
+export function getConclusionBadgeSolidColors(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+
+  if (normalized === 'effective') return STATUS_BADGE_SOLID.success
+  if (normalized === 'not effective') return STATUS_BADGE_SOLID.warning
+  if (normalized === 'accepted under deviation') return STATUS_BADGE_SOLID.moderate
+
+  return STATUS_BADGE_SOLID.neutral
 }
 

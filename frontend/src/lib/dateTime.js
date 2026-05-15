@@ -1,4 +1,4 @@
-function parseDateValue(value) {
+export function parseDateValue(value) {
   if (!value) return null
   const raw = String(value).trim()
   if (!raw) return null
