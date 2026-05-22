@@ -1433,48 +1433,6 @@ function UserFormDetail() {
                     gap: 2,
                   }}
                 >
-                  {/* Status */}
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      component="label"
-                      sx={{
-                        display: 'block',
-                        fontWeight: 600,
-                        mb: 1,
-                        color: 'text.secondary',
-                        fontSize: '0.75rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                      }}
-                    >
-                      Status
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color:
-                          formData?.status === 'Approved'
-                            ? '#10b981'
-                            : formData?.status === 'Rejected'
-                              ? '#ef4444'
-                              : 'text.primary',
-                        fontWeight: 500,
-                        fontSize: '0.9375rem',
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {formData?.status && formData.status !== '' ? formData.status : 'Pending'}
-                    </Typography>
-                  </Box>
-
                   {/* Business Process */}
                   <Box
                     sx={{
@@ -1546,6 +1504,48 @@ function UserFormDetail() {
                       }}
                     >
                       {formData?.financial_year || '-'}
+                    </Typography>
+                  </Box>
+
+                  {/* Status */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Status
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color:
+                          formData?.status === 'Approved'
+                            ? '#10b981'
+                            : formData?.status === 'Rejected'
+                              ? '#ef4444'
+                              : 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formData?.status && formData.status !== '' ? formData.status : 'Pending'}
                     </Typography>
                   </Box>
 

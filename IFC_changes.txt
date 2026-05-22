@@ -1,26 +1,3 @@
-Add mitigation plan, due date and concerned person in RACM for ineffective RACMs.  
-This will be filled by either user or coordinate.
-
-Add third option accepted under deviation, along with effective
-
-Two options : Compensatory RACM/doc or Mitigation plan
-
-Compensatory RACM/doc --> A textarea for explaination and document upload.
-
-Mitigation Plan --> Textarea for action plan, due date, converned person/process owner
-
-Mapping of "Control Frequency" column is mendatory.
-Maintain a list of alternative terms for Frequency category.
-
-
-
-
-
-Ask whether to add functionality role change in the project or not.
-
-
-
-
 
 
 AI integration in the dashboard.
@@ -47,11 +24,17 @@ Ensure reminder emails are triggered for unsubmitted/rejected RACMs and keep com
 
 
 
+Mayank sir suggested to implement dynamic User controls. Curently each user role is fixed and can't be changed. But it should be dynamic and adjusted by siteadmin or coordinator.
 
 
+Change the header of dashboard to "Control Dispersion".
 
+Add these new insights in the dashboard : Key+Manual, Key+Automated, Key+High+Manual (If high, low risk levels are given)
 
+Add a semi-automated column if avaialble.
 
+Display controls which are not classified for any column. (Display in red if possible to show urgency) Also display total number of RACMs not classified.
 
+Write "Controls" instaed of RACMs.
 
 

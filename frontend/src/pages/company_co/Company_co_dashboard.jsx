@@ -16,7 +16,6 @@ import {
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
-import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
 const EMPTY_STATS = {
   totalRacms: 0,
@@ -32,6 +31,131 @@ const EMPTY_STATS = {
   automated: 0,
   typeNotClassified: 0,
   typeUnclassifiedValues: [],
+}
+
+const PIE_CHART_SIZE = 260
+const PIE_CHART_INNER_RADIUS = 0
+const PIE_CHART_OUTER_RADIUS = 120
+const SUMMARY_COLUMN_MIN_WIDTH = 112
+const SUMMARY_PROCESS_COLUMN_MIN_WIDTH = 260
+const HIGH_RISK_COLUMN_INDEX = 8
+
+const normalizeValue = (value) => String(value || '').trim().toLowerCase()
+
+const formatProcessName = (value) => {
+  const normalized = String(value || '').trim()
+  return normalized || 'Unassigned'
+}
+
+const matchesTableFilters = (form, filters = {}) => {
+  const {
+    active = 'all',
+    financialYear = 'all',
+    approvalStatus = 'all',
+    unit = 'all',
+    conclusion = 'all',
+  } = filters
+
+  if (active !== 'all') {
+    const isActive = Boolean(form?.active)
+    if ((active === 'active' && !isActive) || (active === 'inactive' && isActive)) {
+      return false
+    }
+  }
+
+  if (financialYear !== 'all' && String(form?.financial_year || '').trim() !== financialYear) {
+    return false
+  }
+
+  if (approvalStatus !== 'all') {
+    const normalizedStatus = normalizeValue(form?.status)
+    if (approvalStatus === 'Pending') {
+      if (normalizedStatus && normalizedStatus !== 'sent for approval') {
+        return false
+      }
+    } else if (normalizedStatus !== normalizeValue(approvalStatus)) {
+      return false
+    }
+  }
+
+  if (unit !== 'all' && String(form?.unit_id || '').trim() !== unit) {
+    return false
+  }
+
+  if (conclusion !== 'all') {
+    const normalizedConclusion = String(form?.control_design_conclusion || '').trim()
+    const formattedConclusion = normalizedConclusion
+      ? normalizedConclusion.charAt(0).toUpperCase() + normalizedConclusion.slice(1).toLowerCase()
+      : 'None'
+
+    if (formattedConclusion !== conclusion) {
+      return false
+    }
+  }
+
+  return true
+}
+
+const createBusinessProcessSummaryRows = (forms, futureFilters = {}) => {
+  const activeFilters = futureFilters
+
+  return (forms || []).reduce((rows, form) => {
+    if (!matchesTableFilters(form, activeFilters)) {
+      return rows
+    }
+
+    const businessProcess = formatProcessName(form?.business_process)
+    const row = rows.get(businessProcess) || {
+      businessProcess,
+      totalRacms: 0,
+      keyControls: 0,
+      nonKeyControls: 0,
+      preventive: 0,
+      detective: 0,
+      manual: 0,
+      automated: 0,
+      highRiskNonAutomated: 0,
+    }
+
+    const keyControl = normalizeValue(form?.key_control)
+    const natureOfControl = normalizeValue(form?.nature_of_control)
+    const controlType = normalizeValue(form?.control_type_ma)
+    const riskHeat = normalizeValue(form?.risk_heat)
+
+    row.totalRacms += 1
+
+    if (keyControl === 'yes') {
+      row.keyControls += 1
+    } else if (keyControl === 'no' || keyControl === '') {
+      row.nonKeyControls += 1
+    }
+
+    if (natureOfControl === 'preventive' || natureOfControl === 'preventing') {
+      row.preventive += 1
+    } else if (natureOfControl === 'detective') {
+      row.detective += 1
+    }
+
+    if (controlType === 'manual') {
+      row.manual += 1
+      if (riskHeat === 'high') {
+        row.highRiskNonAutomated += 1
+      }
+    } else if (controlType === 'automated' || controlType === 'automative') {
+      row.automated += 1
+    }
+
+    rows.set(businessProcess, row)
+    return rows
+  }, new Map())
+}
+
+const calculatePercentage = (value, total) => {
+  if (total <= 0) {
+    return 0
+  }
+
+  return Math.round((Number(value || 0) / total) * 100)
 }
 
 function Company_Co_dashboard() {
@@ -50,8 +174,9 @@ function Company_Co_dashboard() {
   const [mappedUnits, setMappedUnits] = useState([])
   const [loading, setLoading] = useState(true)
   const [statsLoading, setStatsLoading] = useState(true)
-  const { businessProcessOptions } = useBusinessProcesses()
-  useSyncGlobalLoading(loading || statsLoading)
+  const [businessProcessSummaryLoading, setBusinessProcessSummaryLoading] = useState(true)
+  const [allRacms, setAllRacms] = useState([])
+  useSyncGlobalLoading(loading || statsLoading || businessProcessSummaryLoading)
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -218,10 +343,49 @@ function Company_Co_dashboard() {
     filterConclusion,
   ])
 
+  useEffect(() => {
+    if (!companyIdentifier) return
+
+    let cancelled = false
+
+    const fetchAllRacms = async () => {
+      setBusinessProcessSummaryLoading(true)
+      try {
+        const params = new URLSearchParams({
+          company_identifier: companyIdentifier,
+        })
+        const response = await fetch(apiUrl(`/api/control-forms?${params.toString()}`), {
+          credentials: 'include',
+        })
+        const data = await response.json()
+
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.message || 'Failed to fetch RACMs')
+        }
+
+        if (!cancelled) {
+          setAllRacms(Array.isArray(data.data) ? data.data : [])
+        }
+      } catch (error) {
+        console.error('Error fetching RACMs for business-process summary:', error)
+        if (!cancelled) {
+          setAllRacms([])
+        }
+      } finally {
+        if (!cancelled) {
+          setBusinessProcessSummaryLoading(false)
+        }
+      }
+    }
+
+    fetchAllRacms()
+
+    return () => {
+      cancelled = true
+    }
+  }, [companyIdentifier])
+
   const shouldShowUnitMapping = mappedUnits.length > 0
-  const automatedPercentage = dashboardStats.totalRacms > 0
-    ? Math.round((dashboardStats.automated / dashboardStats.totalRacms) * 100)
-    : 0
 
   const normalizedMappedUnits = mappedUnits
     .map((unit) => ({
@@ -245,6 +409,24 @@ function Company_Co_dashboard() {
     }
   }, [filterUnit, normalizedMappedUnits, shouldShowUnitMapping])
 
+  const businessProcessSummaryRows = Array.from(createBusinessProcessSummaryRows(allRacms, {
+    active: filterActive,
+    financialYear: filterFinancialYear,
+    approvalStatus: filterApprovalStatus,
+    unit: filterUnit,
+    conclusion: filterConclusion,
+    // Reserved for future table-specific filters.
+  }).values())
+    .sort((left, right) => left.businessProcess.localeCompare(right.businessProcess))
+  const businessProcessOptions = [...new Set(
+    (allRacms || [])
+      .map((form) => String(form?.business_process || '').trim())
+      .filter(Boolean)
+  )].sort((left, right) => left.localeCompare(right))
+  const highRiskColumnBackground = theme.palette.mode === 'dark'
+    ? 'rgba(239, 68, 68, 0.16)'
+    : 'rgba(239, 68, 68, 0.10)'
+
   const renderPieBreakdownCard = ({
     title,
     primaryValue,
@@ -255,64 +437,82 @@ function Company_Co_dashboard() {
     unclassifiedValues,
     colors,
     extraRows = [],
-  }) => (
+  }) => {
+    const classifiedTotal = primaryValue + secondaryValue
+    const breakdownRows = [
+      { label: primaryLabel, value: primaryValue, color: colors[0] },
+      { label: secondaryLabel, value: secondaryValue, color: colors[1] },
+      ...extraRows.map((row) => ({
+        ...row,
+        color: row.color ?? colors[0],
+      })),
+    ].map((item) => ({
+      ...item,
+      percentage: calculatePercentage(item.value, classifiedTotal),
+    }))
+
+    return (
     <Paper
       elevation={3}
       sx={{
-        borderRadius: 2,
+        borderRadius: 3,
         overflow: 'hidden',
-        height: 500,
+        height: '100%',
+        border: `1px solid ${theme.palette.divider}`,
+        boxShadow: theme.palette.mode === 'dark'
+          ? '0 10px 28px rgba(0, 0, 0, 0.28)'
+          : '0 12px 30px rgba(15, 23, 42, 0.08)',
       }}
     >
       <Box
         sx={{
           px: 3,
-          py: 2,
-          borderBottom: `1px solid ${theme.palette.divider}`,
-          backgroundColor:
-            theme.palette.mode === 'dark'
-              ? 'rgba(255, 255, 255, 0.06)'
-              : theme.palette.grey[100],
+          pt: 3,
+          pb: 1.5,
+          textAlign: 'center',
         }}
       >
         <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
           {title}
         </Typography>
+        <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
+          Classified RACMs: {statsLoading ? '...' : classifiedTotal}
+        </Typography>
       </Box>
       <Box
         sx={{
           px: 3,
-          py: 2.5,
+          pb: 3,
           display: 'flex',
-          flexDirection: { xs: 'column', lg: 'row' },
-          alignItems: 'stretch',
-          gap: 2,
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 2.5,
         }}
       >
         <Box
           sx={{
-            flexBasis: { xs: '100%', lg: '70%' },
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            minHeight: 280,
+            width: '100%',
+            minHeight: 260,
           }}
         >
-          {primaryValue + secondaryValue > 0 ? (
+          {classifiedTotal > 0 ? (
             <PieChart
-              // height={280}
-              // width={450}
-              margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+              width={PIE_CHART_SIZE}
+              height={PIE_CHART_SIZE}
+              margin={{ top: 8, right: 8, bottom: 8, left: 8 }}
               series={[
                 {
-                  innerRadius: 0,
-                  outerRadius: 120,
+                  innerRadius: PIE_CHART_INNER_RADIUS,
+                  outerRadius: PIE_CHART_OUTER_RADIUS,
                   paddingAngle: 1,
                   cornerRadius: 1,
-                  cx: 240,
-                  cy: 140,
+                  cx: PIE_CHART_SIZE / 2,
+                  cy: PIE_CHART_SIZE / 2,
                   data: [
-                    { id: 0, value: primaryValue, label: title.split(' / ')[0], color: colors[0] },
+                    { id: 0, value: primaryValue, label: primaryLabel, color: colors[0] },
                     { id: 1, value: secondaryValue, label: secondaryLabel, color: colors[1] },
                   ],
                 },
@@ -328,12 +528,13 @@ function Company_Co_dashboard() {
               sx={{
                 height: 260,
                 width: '100%',
-                maxWidth: 420,
+                maxWidth: PIE_CHART_SIZE,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: 2,
                 border: `1px dashed ${theme.palette.divider}`,
+                backgroundColor: theme.palette.action.hover,
                 color: theme.palette.text.secondary,
               }}
             >
@@ -343,41 +544,51 @@ function Company_Co_dashboard() {
         </Box>
         <Box
           sx={{
-            flexBasis: { xs: '100%', lg: '30%' },
+            width: '100%',
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'flex-start',
             gap: 1.25,
-            pt: { xs: 0, lg: 0.75 },
-            pr: { xs: 0, lg: 0.5 },
-            alignSelf: 'flex-start',
           }}
         >
-          {[
-            { label: primaryLabel, value: primaryValue },
-            { label: secondaryLabel, value: secondaryValue },
-            ...extraRows,
-          ].map((item) => (
+          {breakdownRows.map((item) => (
             <Box
               key={item.label}
               sx={{
                 display: 'flex',
-                alignItems: 'baseline',
+                alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: 2,
-                py: 0.5,
-                borderBottom: `1px solid ${theme.palette.divider}`,
+                px: 1.5,
+                py: 1.25,
+                borderRadius: 2,
+                border: `1px solid ${theme.palette.divider}`,
+                backgroundColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255,255,255,0.03)'
+                  : theme.palette.grey[50],
               }}
             >
-              <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-                {item.label}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                {item.color ? (
+                  <Box
+                    component="span"
+                    aria-hidden
+                    sx={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      backgroundColor: item.color,
+                      flexShrink: 0,
+                    }}
+                  />
+                ) : null}
+                <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+                  {`${item.label} (${item.percentage}%)`}
+                </Typography>
+              </Box>
               <Typography
                 variant="body2"
                 sx={{ fontWeight: 700, color: theme.palette.text.primary, textAlign: 'right', whiteSpace: 'nowrap' }}
-              >
-                {statsLoading ? '...' : item.value}
-              </Typography>
+              >{statsLoading ? '...' : item.value}</Typography>
             </Box>
           ))}
         </Box>
@@ -454,7 +665,8 @@ function Company_Co_dashboard() {
         </Box>
       </Box>
     </Paper>
-  )
+    )
+  }
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
@@ -475,7 +687,7 @@ function Company_Co_dashboard() {
             RACM Dashboard
           </Typography>
           <Typography variant="body2" sx={PAGE_SUBHEADER_TEXT_SX}>
-            Counts regenerate based on the selected company coordinator filters, including unit mapping.
+            Analyze the RACM statistics for your company
           </Typography>
         </Box>
         <Button variant="contained" onClick={() => navigate('/company_co/racm-management')}>
@@ -642,7 +854,7 @@ function Company_Co_dashboard() {
           title: 'Key / Non-Key RACMs',
           primaryLabel: 'Key Controls',
           primaryValue: dashboardStats.keyControls,
-          secondaryLabel: 'Non-Key Controls',
+          secondaryLabel: 'Non-Key',
           secondaryValue: dashboardStats.nonKeyControls,
           notClassified: dashboardStats.keyNotClassified,
           unclassifiedValues: dashboardStats.keyUnclassifiedValues,
@@ -667,14 +879,146 @@ function Company_Co_dashboard() {
           notClassified: dashboardStats.typeNotClassified,
           unclassifiedValues: dashboardStats.typeUnclassifiedValues,
           colors: ['#7c3aed', '#ea580c'],
-          extraRows: [
-            {
-              label: 'Automated %',
-              value: `${automatedPercentage}%`,
-            },
-          ],
         })}
       </Box>
+
+      <Paper
+        elevation={3}
+        sx={{
+          borderRadius: 3,
+          overflow: 'hidden',
+          border: `1px solid ${theme.palette.divider}`,
+          boxShadow: theme.palette.mode === 'dark'
+            ? '0 10px 28px rgba(0, 0, 0, 0.28)'
+            : '0 12px 30px rgba(15, 23, 42, 0.08)',
+        }}
+      >
+        <Box
+          sx={{
+            px: 3,
+            pt: 3,
+            pb: 2,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+            RACM Summary By Business Process
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
+            Counts reflect the current applied filters. (This table does not take effect of Business Process filter.)
+          </Typography>
+        </Box>
+
+        <Box sx={{ width: '100%', overflowX: 'auto' }}>
+          <Box sx={{ minWidth: `calc(${SUMMARY_PROCESS_COLUMN_MIN_WIDTH}px + ${SUMMARY_COLUMN_MIN_WIDTH}px * 8)` }}>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: `${SUMMARY_PROCESS_COLUMN_MIN_WIDTH}px repeat(8, minmax(${SUMMARY_COLUMN_MIN_WIDTH}px, 1fr))`,
+                borderBottom: `1px solid ${theme.palette.divider}`,
+                backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : theme.palette.grey[100],
+              }}
+            >
+              {[
+                'Business Process',
+                'Total RACMs',
+                'Key Controls',
+                'Non-Key Controls',
+                'Preventive',
+                'Detective',
+                'Manual',
+                'Automated',
+                'High Risk Non-Automated',
+              ].map((column) => (
+                <Box
+                  key={column}
+                  sx={{
+                    px: 2,
+                    py: 1.75,
+                    borderRight: `1px solid ${theme.palette.divider}`,
+                    '&:last-of-type': {
+                      borderRight: 'none',
+                    },
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+                    {column}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+
+            {businessProcessSummaryLoading ? (
+              <Box sx={{ px: 3, py: 4 }}>
+                <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                  Loading business-process summary...
+                </Typography>
+              </Box>
+            ) : businessProcessSummaryRows.length === 0 ? (
+              <Box sx={{ px: 3, py: 4 }}>
+                <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                  No RACMs available.
+                </Typography>
+              </Box>
+            ) : (
+              businessProcessSummaryRows.map((row, index) => (
+                <Box
+                  key={row.businessProcess}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: `${SUMMARY_PROCESS_COLUMN_MIN_WIDTH}px repeat(8, minmax(${SUMMARY_COLUMN_MIN_WIDTH}px, 1fr))`,
+                    borderBottom: index === businessProcessSummaryRows.length - 1 ? 'none' : `1px solid ${theme.palette.divider}`,
+                    backgroundColor: index % 2 === 0
+                      ? 'transparent'
+                      : theme.palette.mode === 'dark'
+                        ? 'rgba(255,255,255,0.02)'
+                        : theme.palette.grey[50],
+                  }}
+                >
+                  {[
+                    row.businessProcess,
+                    row.totalRacms,
+                    row.keyControls,
+                    row.nonKeyControls,
+                    row.preventive,
+                    row.detective,
+                    row.manual,
+                    row.automated,
+                    row.highRiskNonAutomated,
+                  ].map((value, valueIndex) => (
+                    <Box
+                      key={`${row.businessProcess}-${valueIndex}`}
+                      sx={{
+                        px: 2,
+                        py: 1.75,
+                        borderRight: `1px solid ${theme.palette.divider}`,
+                        backgroundColor:
+                          valueIndex === HIGH_RISK_COLUMN_INDEX && Number(value) > 0
+                            ? highRiskColumnBackground
+                            : 'transparent',
+                        '&:last-of-type': {
+                          borderRight: 'none',
+                        },
+                      }}
+                    >
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: theme.palette.text.primary,
+                          fontWeight: valueIndex === 0 ? 600 : 500,
+                          whiteSpace: valueIndex === 0 ? 'normal' : 'nowrap',
+                        }}
+                      >
+                        {value}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              ))
+            )}
+          </Box>
+        </Box>
+      </Paper>
 
     </Box>
   )
