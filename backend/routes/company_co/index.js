@@ -10,6 +10,11 @@ router.get('/dashboard/summary', verifyCompanyCoordinator, controller.getDashboa
 router.get('/dashboard/key-controls', verifyCompanyCoordinator, controller.getDashboardKeyControlStats);
 router.get('/dashboard/nature-of-control', verifyCompanyCoordinator, controller.getDashboardNatureStats);
 router.get('/dashboard/control-type', verifyCompanyCoordinator, controller.getDashboardControlTypeStats);
+router.get('/dashboard/racms', verifyCompanyCoordinator, controller.getDashboardRacms);
+router.get('/ai-insights/key-manual-summary/availability', verifyCompanyCoordinator, controller.getKeyManualAiInsightsAvailability);
+router.get('/ai-insights/key-manual-summary', verifyCompanyCoordinator, controller.getKeyManualAiInsightsRun);
+router.post('/ai-insights/key-manual-summary/generate', verifyCompanyCoordinator, controller.generateKeyManualAiInsightsRun);
+router.delete('/ai-insights/key-manual-summary/:run_id', verifyCompanyCoordinator, controller.deleteKeyManualAiInsightsRun);
 router.get('/unit-management', verifyCompanyCoordinator, controller.getUnitManagement);
 router.post('/unit-management/units', verifyCompanyCoordinator, controller.createCompanyUnit);
 router.patch('/unit-management/units/:unit_id/assignment', verifyCompanyCoordinator, controller.updateUnitAssignment);

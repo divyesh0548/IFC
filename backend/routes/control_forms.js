@@ -18,8 +18,13 @@ const {
 const { getBusinessProcessCodeForCompany } = require('../utils/business_process_master');
 const {
   notifyDeficiencyResponseSubmitted,
+  getCoordinatorEmailForUnit,
 } = require('../utils/deficiency_response_notifications');
-const { calculateSampleRequired, getSampleSizeByFrequency } = require('../utils/sample_required');
+const {
+  calculateSampleRequired,
+  getSampleSizeByFrequency,
+  getSupportedControlFrequencyCategories,
+} = require('../utils/sample_required');
 const {
   attachControlFormDocuments,
   getControlFormDocumentRows,
@@ -510,6 +515,7 @@ router.get('/control-number-preview', verifyAuth, async (req, res) => {
 const { pool } = require('../utils/db');
 const { getColumnMappingConfig } = require('../utils/column_mapping');
 const {
+  applyControlFrequencyValueMapping,
   prepareBulkImportRows,
   transformExcelData,
   transformExcelDataWithColumnMapping,
@@ -530,6 +536,21 @@ router.get('/column-mapping-config', verifyAuth, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to load column mapping config',
+    });
+  }
+});
+
+router.get('/control-frequency-options', verifyAuth, async (req, res) => {
+  try {
+    return res.status(200).json({
+      success: true,
+      data: getSupportedControlFrequencyCategories(),
+    });
+  } catch (error) {
+    console.error('control-frequency-options error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch control frequency options',
     });
   }
 });
@@ -1182,13 +1203,23 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
 
     const coordinatorEmailId = req.user.email_id;
     const columnMapping = req.body.column_mapping;
-    const transformedData =
+    const transformedDataBase =
       columnMapping &&
       typeof columnMapping === 'object' &&
       !Array.isArray(columnMapping) &&
       Object.keys(columnMapping).length > 0
         ? transformExcelDataWithColumnMapping(rows, columnMapping)
         : transformExcelData(rows);
+    const controlFrequencyValueMapping =
+      req.body.control_frequency_value_mapping &&
+      typeof req.body.control_frequency_value_mapping === 'object' &&
+      !Array.isArray(req.body.control_frequency_value_mapping)
+        ? req.body.control_frequency_value_mapping
+        : null;
+    const transformedData = applyControlFrequencyValueMapping(
+      transformedDataBase,
+      controlFrequencyValueMapping
+    );
 
     const controlFrequencyValidation = validateBulkImportControlFrequencies(transformedData);
     if (!controlFrequencyValidation.ok) {
@@ -1954,7 +1985,26 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
             dueDate: updatedRow.due_date,
             companyName: company?.companyName,
           });
-          await sendEmail(approverEmail, payload.subject, payload.text);
+          const [communicationMatrixCcEmails, coordinatorEmail] = await Promise.all([
+            getCcEmailsForRacm({
+              companyIdentifier: updatedRow.company_identifier,
+              businessProcess: updatedRow.business_process,
+              unitId: updatedRow.unit_id,
+              excludeEmail: approverEmail,
+            }),
+            getCoordinatorEmailForUnit(updatedRow.company_identifier, updatedRow.unit_id),
+          ]);
+          const ccEmails = Array.from(
+            new Set(
+              [
+                ...communicationMatrixCcEmails,
+                coordinatorEmail,
+              ]
+                .map((email) => String(email || '').trim().toLowerCase())
+                .filter((email) => email && email !== String(approverEmail || '').trim().toLowerCase())
+            )
+          );
+          await sendEmail(approverEmail, payload.subject, payload.text, { cc: ccEmails });
         }
       } catch (notifyError) {
         console.error('Error sending sent-for-approval approver email:', notifyError);

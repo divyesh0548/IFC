@@ -133,6 +133,37 @@ model ControlForm {
   @@map("control_forms")
 }
 
+model KeyManualAiInsightsRunTable {
+  id                BigInt                     @id @default(autoincrement())
+  companyIdentifier String                     @map("company_identifier") @db.VarChar(255)
+  modelName         String                     @map("model_name") @db.VarChar(255)
+  promptVersion     String                     @map("prompt_version") @db.VarChar(100)
+  status            String                     @map("status") @db.VarChar(50)
+  createdAt         DateTime?                  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)")) @map("created_at") @db.Timestamp(6)
+  rows              KeyManualAiInsightsRowData[]
+
+  @@index([companyIdentifier])
+  @@map("key_manual_ai_insights_run_table")
+}
+
+model KeyManualAiInsightsRowData {
+  id                          BigInt                       @id @default(autoincrement())
+  runId                       BigInt                       @map("run_id")
+  companyIdentifier           String                       @map("company_identifier") @db.VarChar(255)
+  formId                      String?                      @map("form_id") @db.VarChar(255)
+  controlNumber               String                       @map("control_number") @db.VarChar(255)
+  businessProcess             String?                      @map("business_process") @db.VarChar(255)
+  rationalisationOpportunity  String                       @map("rationalisation_opportunity")
+  createdAt                   DateTime?                    @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)")) @map("created_at") @db.Timestamp(6)
+  updatedAt                   DateTime?                    @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)")) @map("updated_at") @db.Timestamp(6)
+  run                         KeyManualAiInsightsRunTable  @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([companyIdentifier, runId, controlNumber])
+  @@index([runId])
+  @@index([companyIdentifier, businessProcess])
+  @@map("key_manual_ai_insights_row_data")
+}
+
 model ChangeRequest {
   id                BigInt              @id @default(autoincrement())
   requestId         String              @unique @map("request_id") @db.VarChar(30)

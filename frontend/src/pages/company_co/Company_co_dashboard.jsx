@@ -5,6 +5,8 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
+import Alert from '@mui/material/Alert'
+import Link from '@mui/material/Link'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
@@ -16,6 +18,16 @@ import {
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import {
+  normalizeValue,
+  getFieldValue,
+  classifyNatureOfControl,
+  classifyControlType,
+  isKeyControlValue,
+  isNonKeyControlValue,
+  matchesDashboardFilters,
+  countUnclassifiedControls,
+} from './dashboardClassificationUtils'
 
 const EMPTY_STATS = {
   totalRacms: 0,
@@ -25,10 +37,12 @@ const EMPTY_STATS = {
   keyUnclassifiedValues: [],
   preventive: 0,
   detective: 0,
+  corrective: 0,
   natureNotClassified: 0,
   natureUnclassifiedValues: [],
   manual: 0,
   automated: 0,
+  semiAutomated: 0,
   typeNotClassified: 0,
   typeUnclassifiedValues: [],
 }
@@ -38,73 +52,22 @@ const PIE_CHART_INNER_RADIUS = 0
 const PIE_CHART_OUTER_RADIUS = 120
 const SUMMARY_COLUMN_MIN_WIDTH = 112
 const SUMMARY_PROCESS_COLUMN_MIN_WIDTH = 260
-const HIGH_RISK_COLUMN_INDEX = 8
-
-const normalizeValue = (value) => String(value || '').trim().toLowerCase()
+const HIGH_RISK_COLUMN_INDEX = 10
 
 const formatProcessName = (value) => {
   const normalized = String(value || '').trim()
   return normalized || 'Unassigned'
 }
 
-const matchesTableFilters = (form, filters = {}) => {
-  const {
-    active = 'all',
-    financialYear = 'all',
-    approvalStatus = 'all',
-    unit = 'all',
-    conclusion = 'all',
-  } = filters
-
-  if (active !== 'all') {
-    const isActive = Boolean(form?.active)
-    if ((active === 'active' && !isActive) || (active === 'inactive' && isActive)) {
-      return false
-    }
-  }
-
-  if (financialYear !== 'all' && String(form?.financial_year || '').trim() !== financialYear) {
-    return false
-  }
-
-  if (approvalStatus !== 'all') {
-    const normalizedStatus = normalizeValue(form?.status)
-    if (approvalStatus === 'Pending') {
-      if (normalizedStatus && normalizedStatus !== 'sent for approval') {
-        return false
-      }
-    } else if (normalizedStatus !== normalizeValue(approvalStatus)) {
-      return false
-    }
-  }
-
-  if (unit !== 'all' && String(form?.unit_id || '').trim() !== unit) {
-    return false
-  }
-
-  if (conclusion !== 'all') {
-    const normalizedConclusion = String(form?.control_design_conclusion || '').trim()
-    const formattedConclusion = normalizedConclusion
-      ? normalizedConclusion.charAt(0).toUpperCase() + normalizedConclusion.slice(1).toLowerCase()
-      : 'None'
-
-    if (formattedConclusion !== conclusion) {
-      return false
-    }
-  }
-
-  return true
-}
-
 const createBusinessProcessSummaryRows = (forms, futureFilters = {}) => {
   const activeFilters = futureFilters
 
   return (forms || []).reduce((rows, form) => {
-    if (!matchesTableFilters(form, activeFilters)) {
+    if (!matchesDashboardFilters(form, activeFilters)) {
       return rows
     }
 
-    const businessProcess = formatProcessName(form?.business_process)
+    const businessProcess = formatProcessName(getFieldValue(form, 'business_process', 'businessProcess'))
     const row = rows.get(businessProcess) || {
       businessProcess,
       totalRacms: 0,
@@ -112,28 +75,32 @@ const createBusinessProcessSummaryRows = (forms, futureFilters = {}) => {
       nonKeyControls: 0,
       preventive: 0,
       detective: 0,
+      corrective: 0,
       manual: 0,
       automated: 0,
+      semiAutomated: 0,
       highRiskNonAutomated: 0,
     }
 
-    const keyControl = normalizeValue(form?.key_control)
-    const natureOfControl = normalizeValue(form?.nature_of_control)
-    const controlType = normalizeValue(form?.control_type_ma)
-    const riskHeat = normalizeValue(form?.risk_heat)
+    const keyControl = normalizeValue(getFieldValue(form, 'key_control', 'keyControl'))
+    const natureOfControl = classifyNatureOfControl(getFieldValue(form, 'nature_of_control', 'natureOfControl'))
+    const controlType = classifyControlType(getFieldValue(form, 'control_type_ma', 'controlTypeMa'))
+    const riskHeat = normalizeValue(getFieldValue(form, 'risk_heat', 'riskHeat'))
 
     row.totalRacms += 1
 
-    if (keyControl === 'yes') {
+    if (isKeyControlValue(keyControl)) {
       row.keyControls += 1
-    } else if (keyControl === 'no' || keyControl === '') {
+    } else if (isNonKeyControlValue(keyControl)) {
       row.nonKeyControls += 1
     }
 
-    if (natureOfControl === 'preventive' || natureOfControl === 'preventing') {
+    if (natureOfControl === 'preventive') {
       row.preventive += 1
     } else if (natureOfControl === 'detective') {
       row.detective += 1
+    } else if (natureOfControl === 'corrective') {
+      row.corrective += 1
     }
 
     if (controlType === 'manual') {
@@ -141,8 +108,13 @@ const createBusinessProcessSummaryRows = (forms, futureFilters = {}) => {
       if (riskHeat === 'high') {
         row.highRiskNonAutomated += 1
       }
-    } else if (controlType === 'automated' || controlType === 'automative') {
+    } else if (controlType === 'automated') {
       row.automated += 1
+    } else if (controlType === 'semiAutomated') {
+      row.semiAutomated += 1
+      if (riskHeat === 'high') {
+        row.highRiskNonAutomated += 1
+      }
     }
 
     rows.set(businessProcess, row)
@@ -158,6 +130,37 @@ const calculatePercentage = (value, total) => {
   return Math.round((Number(value || 0) / total) * 100)
 }
 
+const countControlsByCombination = (forms, filters = {}) =>
+  (forms || []).reduce((counts, form) => {
+    if (!matchesDashboardFilters(form, filters)) {
+      return counts
+    }
+
+    const keyControl = normalizeValue(getFieldValue(form, 'key_control', 'keyControl'))
+    const controlType = classifyControlType(getFieldValue(form, 'control_type_ma', 'controlTypeMa'))
+    const riskHeat = normalizeValue(getFieldValue(form, 'risk_heat', 'riskHeat'))
+    const isKey = isKeyControlValue(keyControl)
+    const isHighRisk = riskHeat.includes('high')
+
+    if (isKey && controlType === 'manual') {
+      counts.keyManual += 1
+
+      if (isHighRisk) {
+        counts.highKeyManual += 1
+      }
+    }
+
+    if (isKey && controlType === 'automated') {
+      counts.keyAutomated += 1
+    }
+
+    return counts
+  }, {
+    keyManual: 0,
+    keyAutomated: 0,
+    highKeyManual: 0,
+  })
+
 function Company_Co_dashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -172,6 +175,7 @@ function Company_Co_dashboard() {
   const [conclusionOptions, setConclusionOptions] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [mappedUnits, setMappedUnits] = useState([])
+  const [unclassifiedAlertDismissed, setUnclassifiedAlertDismissed] = useState(false)
   const [loading, setLoading] = useState(true)
   const [statsLoading, setStatsLoading] = useState(true)
   const [businessProcessSummaryLoading, setBusinessProcessSummaryLoading] = useState(true)
@@ -317,10 +321,12 @@ function Company_Co_dashboard() {
           keyUnclassifiedValues: Array.isArray(keyData.data?.unclassifiedValues) ? keyData.data.unclassifiedValues : [],
           preventive: Number(natureData.data?.preventive || 0),
           detective: Number(natureData.data?.detective || 0),
+          corrective: Number(natureData.data?.corrective || 0),
           natureNotClassified: Number(natureData.data?.notClassified || 0),
           natureUnclassifiedValues: Array.isArray(natureData.data?.unclassifiedValues) ? natureData.data.unclassifiedValues : [],
           manual: Number(typeData.data?.manual || 0),
           automated: Number(typeData.data?.automated || 0),
+          semiAutomated: Number(typeData.data?.semiAutomated || 0),
           typeNotClassified: Number(typeData.data?.notClassified || 0),
           typeUnclassifiedValues: Array.isArray(typeData.data?.unclassifiedValues) ? typeData.data.unclassifiedValues : [],
         })
@@ -351,10 +357,9 @@ function Company_Co_dashboard() {
     const fetchAllRacms = async () => {
       setBusinessProcessSummaryLoading(true)
       try {
-        const params = new URLSearchParams({
-          company_identifier: companyIdentifier,
-        })
-        const response = await fetch(apiUrl(`/api/control-forms?${params.toString()}`), {
+        const search = buildDashboardQueryString()
+        const suffix = search ? `?${search}` : ''
+        const response = await fetch(apiUrl(`/api/company-co/dashboard/racms${suffix}`), {
           credentials: 'include',
         })
         const data = await response.json()
@@ -383,7 +388,15 @@ function Company_Co_dashboard() {
     return () => {
       cancelled = true
     }
-  }, [companyIdentifier])
+  }, [
+    companyIdentifier,
+    filterActive,
+    filterApprovalStatus,
+    filterBusinessProcess,
+    filterFinancialYear,
+    filterUnit,
+    filterConclusion,
+  ])
 
   const shouldShowUnitMapping = mappedUnits.length > 0
 
@@ -411,21 +424,48 @@ function Company_Co_dashboard() {
 
   const businessProcessSummaryRows = Array.from(createBusinessProcessSummaryRows(allRacms, {
     active: filterActive,
+    businessProcess: filterBusinessProcess,
     financialYear: filterFinancialYear,
     approvalStatus: filterApprovalStatus,
     unit: filterUnit,
     conclusion: filterConclusion,
-    // Reserved for future table-specific filters.
   }).values())
     .sort((left, right) => left.businessProcess.localeCompare(right.businessProcess))
   const businessProcessOptions = [...new Set(
     (allRacms || [])
-      .map((form) => String(form?.business_process || '').trim())
+      .map((form) => String(getFieldValue(form, 'business_process', 'businessProcess') || '').trim())
       .filter(Boolean)
   )].sort((left, right) => left.localeCompare(right))
+  const controlCombinationCounts = countControlsByCombination(allRacms, {
+    active: filterActive,
+    businessProcess: filterBusinessProcess,
+    financialYear: filterFinancialYear,
+    approvalStatus: filterApprovalStatus,
+    unit: filterUnit,
+    conclusion: filterConclusion,
+  })
+  const unclassifiedControlsCount = countUnclassifiedControls(allRacms, {
+    active: filterActive,
+    businessProcess: filterBusinessProcess,
+    financialYear: filterFinancialYear,
+    approvalStatus: filterApprovalStatus,
+    unit: filterUnit,
+    conclusion: filterConclusion,
+  })
   const highRiskColumnBackground = theme.palette.mode === 'dark'
     ? 'rgba(239, 68, 68, 0.16)'
     : 'rgba(239, 68, 68, 0.10)'
+
+  useEffect(() => {
+    setUnclassifiedAlertDismissed(false)
+  }, [
+    filterActive,
+    filterBusinessProcess,
+    filterFinancialYear,
+    filterApprovalStatus,
+    filterUnit,
+    filterConclusion,
+  ])
 
   const renderPieBreakdownCard = ({
     title,
@@ -433,21 +473,21 @@ function Company_Co_dashboard() {
     primaryLabel,
     secondaryLabel,
     secondaryValue,
-    notClassified,
-    unclassifiedValues,
     colors,
     extraRows = [],
   }) => {
-    const classifiedTotal = primaryValue + secondaryValue
     const breakdownRows = [
       { label: primaryLabel, value: primaryValue, color: colors[0] },
       { label: secondaryLabel, value: secondaryValue, color: colors[1] },
       ...extraRows.map((row) => ({
         ...row,
-        color: row.color ?? colors[0],
+        color: row.color ?? colors[2] ?? colors[0],
       })),
-    ].map((item) => ({
+    ]
+    const classifiedTotal = breakdownRows.reduce((sum, item) => sum + Number(item.value || 0), 0)
+    const normalizedRows = breakdownRows.map((item, index) => ({
       ...item,
+      id: index,
       percentage: calculatePercentage(item.value, classifiedTotal),
     }))
 
@@ -472,12 +512,12 @@ function Company_Co_dashboard() {
           textAlign: 'center',
         }}
       >
-        <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+        <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary, borderBottom: `1px solid ${theme.palette.divider}`, pb: 1.5 }}>
           {title}
         </Typography>
-        <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
+        {/* <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
           Classified RACMs: {statsLoading ? '...' : classifiedTotal}
-        </Typography>
+        </Typography> */}
       </Box>
       <Box
         sx={{
@@ -511,10 +551,7 @@ function Company_Co_dashboard() {
                   cornerRadius: 1,
                   cx: PIE_CHART_SIZE / 2,
                   cy: PIE_CHART_SIZE / 2,
-                  data: [
-                    { id: 0, value: primaryValue, label: primaryLabel, color: colors[0] },
-                    { id: 1, value: secondaryValue, label: secondaryLabel, color: colors[1] },
-                  ],
+                  data: normalizedRows,
                 },
               ]}
               slotProps={{
@@ -550,7 +587,7 @@ function Company_Co_dashboard() {
             gap: 1.25,
           }}
         >
-          {breakdownRows.map((item) => (
+          {normalizedRows.map((item) => (
             <Box
               key={item.label}
               sx={{
@@ -593,77 +630,6 @@ function Company_Co_dashboard() {
           ))}
         </Box>
       </Box>
-      <Box
-        sx={{
-          px: 3,
-          pt: 0,
-          pb: 2.5,
-        }}
-      >
-        <Box
-          sx={{
-            pt: 2,
-            borderTop: `1px solid ${theme.palette.divider}`,
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
-            <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-              Unclassified RACMs:
-            </Typography>
-            <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
-              {statsLoading ? '...' : notClassified}
-            </Typography>
-          </Box>
-        </Box>
-        <Box sx={{ mt: 1.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-            <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-              Unclassified values:
-            </Typography>
-            {unclassifiedValues.length > 0 ? (
-              <Box
-                sx={{
-                  minWidth: 0,
-                  flex: 1,
-                  overflowX: 'auto',
-                  overflowY: 'hidden',
-                  whiteSpace: 'nowrap',
-                  '&::-webkit-scrollbar': {
-                    height: 6,
-                  },
-                }}
-              >
-                <Box sx={{ display: 'inline-flex', gap: 1, pr: 1 }}>
-                  {unclassifiedValues.map((value) => (
-                    <Box
-                      key={value}
-                      component="span"
-                      sx={{
-                        px: 1.25,
-                        py: 0.75,
-                        borderRadius: 999,
-                        fontSize: '0.75rem',
-                        lineHeight: 1,
-                        color: theme.palette.text.primary,
-                        backgroundColor: theme.palette.action.hover,
-                        border: `1px solid ${theme.palette.divider}`,
-                        whiteSpace: 'nowrap',
-                        flex: '0 0 auto',
-                      }}
-                    >
-                      {value}
-                    </Box>
-                  ))}
-                </Box>
-              </Box>
-            ) : (
-              <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
-                None
-              </Typography>
-            )}
-          </Box>
-        </Box>
-      </Box>
     </Paper>
     )
   }
@@ -684,10 +650,10 @@ function Company_Co_dashboard() {
       >
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 800, color: theme.palette.text.primary }}>
-            RACM Dashboard
+            Control Dispersion Dashboard
           </Typography>
           <Typography variant="body2" sx={PAGE_SUBHEADER_TEXT_SX}>
-            Analyze the RACM statistics for your company
+            Analyze the controls for your company
           </Typography>
         </Box>
         <Button variant="contained" onClick={() => navigate('/company_co/racm-management')}>
@@ -716,7 +682,7 @@ function Company_Co_dashboard() {
             variant="body2"
             sx={{ color: theme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}
           >
-            Total RACMs
+            Total Controls
           </Typography>
           <Typography variant="h4" sx={{ mt: 0.5, fontWeight: 800, color: theme.palette.text.primary }}>
             {statsLoading ? '...' : dashboardStats.totalRacms}
@@ -841,6 +807,29 @@ function Company_Co_dashboard() {
         </Box>
       </Box>
 
+      {!unclassifiedAlertDismissed && (statsLoading || businessProcessSummaryLoading || unclassifiedControlsCount > 0) ? (
+        <Alert
+          severity="error"
+          onClose={(event) => {
+            event?.stopPropagation?.()
+            setUnclassifiedAlertDismissed(true)
+          }}
+          sx={{
+            mb: 3,
+            cursor: 'pointer',
+            alignItems: 'center',
+            '& .MuiAlert-message': {
+              width: '100%',
+            },
+          }}
+          onClick={() => navigate(`/company_co/unclassified-controls${buildDashboardQueryString() ? `?${buildDashboardQueryString()}` : ''}`)}
+        >
+          {statsLoading || businessProcessSummaryLoading
+            ? 'Found ... unclassified controls. Click to open the unclassified controls view.'
+            : `Found ${unclassifiedControlsCount} unclassified controls. Click to open the unclassified controls view.`}
+        </Alert>
+      ) : null}
+
       <Box
         sx={{
           display: 'grid',
@@ -851,35 +840,123 @@ function Company_Co_dashboard() {
         }}
       >
         {renderPieBreakdownCard({
-          title: 'Key / Non-Key RACMs',
+          title: 'Key / Non-Key Controls',
           primaryLabel: 'Key Controls',
           primaryValue: dashboardStats.keyControls,
           secondaryLabel: 'Non-Key',
           secondaryValue: dashboardStats.nonKeyControls,
-          notClassified: dashboardStats.keyNotClassified,
-          unclassifiedValues: dashboardStats.keyUnclassifiedValues,
           colors: ['#0f766e', '#94a3b8'],
         })}
         {renderPieBreakdownCard({
-          title: 'Preventive / Detective RACMs',
+          title: 'Preventive / Detective Controls',
           primaryLabel: 'Preventive',
           primaryValue: dashboardStats.preventive,
           secondaryLabel: 'Detective',
           secondaryValue: dashboardStats.detective,
-          notClassified: dashboardStats.natureNotClassified,
-          unclassifiedValues: dashboardStats.natureUnclassifiedValues,
           colors: ['#1d4ed8', '#f59e0b'],
+          extraRows: [
+            {
+              label: 'Corrective',
+              value: dashboardStats.corrective,
+              color: '#dc2626',
+            },
+          ],
         })}
         {renderPieBreakdownCard({
-          title: 'Automated / Manual RACMs',
+          title: 'Automated / Manual Controls',
           primaryLabel: 'Automated',
           primaryValue: dashboardStats.automated,
           secondaryLabel: 'Manual',
           secondaryValue: dashboardStats.manual,
-          notClassified: dashboardStats.typeNotClassified,
-          unclassifiedValues: dashboardStats.typeUnclassifiedValues,
           colors: ['#7c3aed', '#ea580c'],
+          extraRows: [
+            {
+              label: 'Semi-Automated',
+              value: dashboardStats.semiAutomated,
+              color: '#0f766e',
+            },
+          ],
         })}
+      </Box>
+
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', xl: 'repeat(3, minmax(0, 1fr))' },
+          alignItems: 'start',
+          gap: 3,
+          mb: 3,
+        }}
+      >
+        {[
+          {
+            label: 'Key + Manual Controls',
+            value: controlCombinationCounts.keyManual,
+            backgroundColor: 'transparent',
+            valueColor: theme.palette.text.primary,
+            linkLabel: 'View AI summary',
+            onClick: () => navigate(`/company_co/key-manual-ai-insights${buildDashboardQueryString() ? `?${buildDashboardQueryString()}` : ''}`),
+          },
+          {
+            label: 'Key + Automated Controls',
+            value: controlCombinationCounts.keyAutomated,
+            backgroundColor: 'transparent',
+            valueColor: theme.palette.text.primary,
+          },
+          {
+            label: 'High Risk + Key + Manual Controls',
+            value: controlCombinationCounts.highKeyManual,
+            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(220, 38, 38, 0.12)' : 'rgba(220, 38, 38, 0.08)',
+            valueColor: theme.palette.text.primary,
+          },
+        ].map((item) => (
+          <Paper
+            key={item.label}
+            elevation={3}
+            sx={{
+              px: 3,
+              py: 2.5,
+              borderRadius: 3,
+              border: `1px solid ${theme.palette.divider}`,
+              height: '100%',
+              backgroundColor: item.backgroundColor,
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 10px 28px rgba(0, 0, 0, 0.28)'
+                : '0 12px 30px rgba(15, 23, 42, 0.08)',
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{ color: theme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+            >
+              {item.label}
+            </Typography>
+            <Typography variant="h4" sx={{ mt: 0.75, fontWeight: 800, color: item.valueColor }}>
+              {businessProcessSummaryLoading ? '...' : item.value}
+            </Typography>
+            {item.onClick ? (
+              <Link
+                component="button"
+                type="button"
+                underline="hover"
+                onClick={item.onClick}
+                sx={{
+                  mt: 1.25,
+                  p: 0,
+                  border: 'none',
+                  background: 'none',
+                  color: theme.palette.primary.main,
+                  fontWeight: 700,
+                  fontSize: '0.92rem',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                {`${item.linkLabel} ->`}
+              </Link>
+            ) : null}
+          </Paper>
+        ))}
       </Box>
 
       <Paper
@@ -902,19 +979,19 @@ function Company_Co_dashboard() {
           }}
         >
           <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-            RACM Summary By Business Process
+            Summary of Controls per Business Cycle
           </Typography>
           <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
-            Counts reflect the current applied filters. (This table does not take effect of Business Process filter.)
+            Counts reflect the current applied filters.
           </Typography>
         </Box>
 
         <Box sx={{ width: '100%', overflowX: 'auto' }}>
-          <Box sx={{ minWidth: `calc(${SUMMARY_PROCESS_COLUMN_MIN_WIDTH}px + ${SUMMARY_COLUMN_MIN_WIDTH}px * 8)` }}>
+          <Box sx={{ minWidth: `calc(${SUMMARY_PROCESS_COLUMN_MIN_WIDTH}px + ${SUMMARY_COLUMN_MIN_WIDTH}px * 10)` }}>
             <Box
               sx={{
                 display: 'grid',
-                gridTemplateColumns: `${SUMMARY_PROCESS_COLUMN_MIN_WIDTH}px repeat(8, minmax(${SUMMARY_COLUMN_MIN_WIDTH}px, 1fr))`,
+                gridTemplateColumns: `${SUMMARY_PROCESS_COLUMN_MIN_WIDTH}px repeat(10, minmax(${SUMMARY_COLUMN_MIN_WIDTH}px, 1fr))`,
                 borderBottom: `1px solid ${theme.palette.divider}`,
                 backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : theme.palette.grey[100],
               }}
@@ -926,8 +1003,10 @@ function Company_Co_dashboard() {
                 'Non-Key Controls',
                 'Preventive',
                 'Detective',
+                'Corrective',
                 'Manual',
                 'Automated',
+                'Semi-Automated',
                 'High Risk Non-Automated',
               ].map((column) => (
                 <Box
@@ -966,7 +1045,7 @@ function Company_Co_dashboard() {
                   key={row.businessProcess}
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: `${SUMMARY_PROCESS_COLUMN_MIN_WIDTH}px repeat(8, minmax(${SUMMARY_COLUMN_MIN_WIDTH}px, 1fr))`,
+                    gridTemplateColumns: `${SUMMARY_PROCESS_COLUMN_MIN_WIDTH}px repeat(10, minmax(${SUMMARY_COLUMN_MIN_WIDTH}px, 1fr))`,
                     borderBottom: index === businessProcessSummaryRows.length - 1 ? 'none' : `1px solid ${theme.palette.divider}`,
                     backgroundColor: index % 2 === 0
                       ? 'transparent'
@@ -982,8 +1061,10 @@ function Company_Co_dashboard() {
                     row.nonKeyControls,
                     row.preventive,
                     row.detective,
+                    row.corrective,
                     row.manual,
                     row.automated,
+                    row.semiAutomated,
                     row.highRiskNonAutomated,
                   ].map((value, valueIndex) => (
                     <Box

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { pool } = require('../../utils/db');
 const { prisma } = require('../../lib/prisma');
+const { requestControlSummary, OLLAMA_MODEL, isOllamaReachable } = require('../../llm_racm_summary/ollama_client');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
 const { encryptTempPassword, sendUserCreationEmail } = require('../../utils/login_email');
 const { sendEmail } = require('../../utils/send_email');
@@ -8,6 +9,17 @@ const {
   createBusinessProcessMasterEntry,
   listBusinessProcessesForCompany,
 } = require('../../utils/business_process_master');
+const {
+  classifyKeyControlValue,
+  isUnclassifiedKeyControlValue,
+  isKeyControlValue,
+} = require('../../utils/key_control_classification');
+const {
+  tryAcquireGlobalAiModelLock,
+  releaseGlobalAiModelLock,
+} = require('../../utils/ai_model_lock');
+
+const KEY_MANUAL_AI_PROMPT_VERSION = 'v1';
 
 function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();
@@ -125,7 +137,6 @@ async function getCoordinatorDashboardScope(req) {
   return {
     companyIdentifier,
     companyUnits,
-    unitIdsToQuery: selectedUnitId ? [selectedUnitId] : companyUnitIds,
     selectedUnitId,
     filters: {
       active: parseDashboardActiveFilter(req.query?.active),
@@ -146,9 +157,11 @@ function buildCoordinatorDashboardWhereClause(scope, alias = 'cf') {
   params.push(scope.companyIdentifier);
   paramIndex += 1;
 
-  conditions.push(`NULLIF(TRIM(${alias}.unit_id), '') = ANY($${paramIndex}::text[])`);
-  params.push(scope.unitIdsToQuery);
-  paramIndex += 1;
+  if (scope.selectedUnitId) {
+    conditions.push(`TRIM(COALESCE(${alias}.unit_id, '')) = $${paramIndex}`);
+    params.push(scope.selectedUnitId);
+    paramIndex += 1;
+  }
 
   if (scope.filters.active === true) {
     conditions.push(`${alias}.active = TRUE`);
@@ -195,8 +208,26 @@ function buildCoordinatorDashboardWhereClause(scope, alias = 'cf') {
   };
 }
 
+function classifyDashboardControlType(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+
+  if (normalized.includes('semi')) {
+    return 'semiAutomated';
+  }
+
+  if (normalized === 'manual') {
+    return 'manual';
+  }
+
+  if (normalized === 'automated' || normalized === 'automative') {
+    return 'automated';
+  }
+
+  return 'unclassified';
+}
+
 async function getCoordinatorDashboardAggregateRow(scope, selectClause) {
-  if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+  if (!scope.companyIdentifier) {
     return null;
   }
 
@@ -215,7 +246,7 @@ async function getCoordinatorDashboardAggregateRow(scope, selectClause) {
 }
 
 async function getCoordinatorDashboardDistinctValues(scope, columnName, excludedValues = [], options = {}) {
-  if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+  if (!scope.companyIdentifier) {
     return [];
   }
 
@@ -252,6 +283,73 @@ async function getCoordinatorDashboardDistinctValues(scope, columnName, excluded
   return result.rows
     .map((row) => normalizeDashboardDistinctValue(row.value))
     .filter(Boolean);
+}
+
+async function getCoordinatorDashboardKeyControlValues(scope) {
+  if (!scope.companyIdentifier) {
+    return [];
+  }
+
+  const { whereClause, params } = buildCoordinatorDashboardWhereClause(scope);
+  const result = await pool.query(
+    `
+      SELECT cf.key_control
+      FROM control_forms cf
+      WHERE ${whereClause}
+    `,
+    params
+  );
+
+  return result.rows;
+}
+
+async function getCoordinatorDashboardRacmRows(scope) {
+  const { whereClause, params } = buildCoordinatorDashboardWhereClause(scope);
+  const result = await pool.query(
+    `
+      SELECT
+        cf.*
+      FROM control_forms cf
+      WHERE ${whereClause}
+      ORDER BY
+        LOWER(TRIM(COALESCE(cf.business_process, ''))) ASC,
+        cf.id ASC
+    `,
+    params
+  );
+
+  return result.rows.map((row) => ({
+    ...row,
+    key_control_classification: classifyKeyControlValue(row?.key_control),
+    control_type_classification: classifyDashboardControlType(row?.control_type_ma),
+  }));
+}
+
+function filterKeyManualControls(rows) {
+  return (rows || []).filter((row) => (
+    isKeyControlValue(row?.key_control) &&
+    classifyDashboardControlType(row?.control_type_ma) === 'manual'
+  ));
+}
+
+function shapeControlForAi(row) {
+  return {
+    controlNumber: String(row?.control_number || '').trim(),
+    businessProcess: String(row?.business_process || '').trim(),
+    subProcess: String(row?.sub_process || '').trim(),
+    riskDescription: String(row?.risk_description || '').trim(),
+    controlObjective: String(row?.control_objective || '').trim(),
+    standardControlDescription: String(row?.standard_control_description || '').trim(),
+    natureOfControl: String(row?.nature_of_control || '').trim(),
+    controlFrequency: String(row?.control_frequency || '').trim(),
+    whetherFraudRisksExist: String(row?.whether_fraud_risks_exist || '').trim(),
+    controlTypeFo: String(row?.control_type_fo || '').trim(),
+    controlTypeMa: String(row?.control_type_ma || '').trim(),
+    keyControl: String(row?.key_control || '').trim(),
+    riskHeat: String(row?.risk_heat || '').trim(),
+    controlReliesOnIpe: String(row?.control_relies_on_ipe || '').trim(),
+    applicationName: String(row?.application_name || '').trim(),
+  };
 }
 
 async function createCompanyUser(client, coordinator, payload = {}) {
@@ -785,7 +883,7 @@ async function getDashboardSummary(req, res) {
   try {
     const scope = await getCoordinatorDashboardScope(req);
 
-    if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+    if (!scope.companyIdentifier) {
       return res.status(200).json({
         success: true,
         data: {
@@ -822,7 +920,7 @@ async function getDashboardKeyControlStats(req, res) {
   try {
     const scope = await getCoordinatorDashboardScope(req);
 
-    if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+    if (!scope.companyIdentifier) {
       return res.status(200).json({
         success: true,
         data: {
@@ -834,31 +932,37 @@ async function getDashboardKeyControlStats(req, res) {
       });
     }
 
-    const [row, unclassifiedValues] = await Promise.all([
-      getCoordinatorDashboardAggregateRow(
-        scope,
-        `
-          COUNT(*) FILTER (
-            WHERE LOWER(TRIM(COALESCE(cf.key_control, ''))) = 'yes'
-          )::int AS key_controls,
-          COUNT(*) FILTER (
-            WHERE LOWER(TRIM(COALESCE(cf.key_control, ''))) IN ('', 'no')
-          )::int AS non_key_controls,
-          COUNT(*) FILTER (
-            WHERE LOWER(TRIM(COALESCE(cf.key_control, ''))) NOT IN ('', 'yes', 'no')
-          )::int AS not_classified
-        `
-      ),
-      getCoordinatorDashboardDistinctValues(scope, 'key_control', ['yes', 'no', ''], { includeEmpty: false }),
-    ]);
+    const rows = await getCoordinatorDashboardKeyControlValues(scope);
+    const counts = {
+      keyControls: 0,
+      nonKeyControls: 0,
+      notClassified: 0,
+    };
+    const unclassifiedSet = new Set();
+
+    for (const item of rows) {
+      const rawValue = String(item?.key_control || '').trim();
+      const classification = classifyKeyControlValue(rawValue);
+
+      if (classification === 'key') {
+        counts.keyControls += 1;
+      } else if (classification === 'nonKey') {
+        counts.nonKeyControls += 1;
+      } else {
+        counts.notClassified += 1;
+        if (rawValue && isUnclassifiedKeyControlValue(rawValue)) {
+          unclassifiedSet.add(rawValue);
+        }
+      }
+    }
 
     return res.status(200).json({
       success: true,
       data: {
-        keyControls: Number(row?.key_controls || 0),
-        nonKeyControls: Number(row?.non_key_controls || 0),
-        notClassified: Number(row?.not_classified || 0),
-        unclassifiedValues,
+        keyControls: counts.keyControls,
+        nonKeyControls: counts.nonKeyControls,
+        notClassified: counts.notClassified,
+        unclassifiedValues: Array.from(unclassifiedSet).sort((a, b) => a.localeCompare(b)),
       },
     });
   } catch (error) {
@@ -874,12 +978,13 @@ async function getDashboardNatureStats(req, res) {
   try {
     const scope = await getCoordinatorDashboardScope(req);
 
-    if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+    if (!scope.companyIdentifier) {
       return res.status(200).json({
         success: true,
         data: {
           preventive: 0,
           detective: 0,
+          corrective: 0,
           notClassified: 0,
           unclassifiedValues: [],
         },
@@ -897,11 +1002,15 @@ async function getDashboardNatureStats(req, res) {
             WHERE LOWER(TRIM(COALESCE(cf.nature_of_control, ''))) = 'detective'
           )::int AS detective,
           COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.nature_of_control, ''))) LIKE '%corrective%'
+          )::int AS corrective,
+          COUNT(*) FILTER (
             WHERE LOWER(TRIM(COALESCE(cf.nature_of_control, ''))) NOT IN ('preventive', 'preventing', 'detective')
+              AND LOWER(TRIM(COALESCE(cf.nature_of_control, ''))) NOT LIKE '%corrective%'
           )::int AS not_classified
         `
       ),
-      getCoordinatorDashboardDistinctValues(scope, 'nature_of_control', ['preventive', 'preventing', 'detective'], { includeEmpty: true }),
+      getCoordinatorDashboardDistinctValues(scope, 'nature_of_control', ['preventive', 'preventing', 'detective', 'corrective'], { includeEmpty: true }),
     ]);
 
     return res.status(200).json({
@@ -909,6 +1018,7 @@ async function getDashboardNatureStats(req, res) {
       data: {
         preventive: Number(row?.preventive || 0),
         detective: Number(row?.detective || 0),
+        corrective: Number(row?.corrective || 0),
         notClassified: Number(row?.not_classified || 0),
         unclassifiedValues,
       },
@@ -926,12 +1036,13 @@ async function getDashboardControlTypeStats(req, res) {
   try {
     const scope = await getCoordinatorDashboardScope(req);
 
-    if (!scope.companyIdentifier || scope.unitIdsToQuery.length === 0) {
+    if (!scope.companyIdentifier) {
       return res.status(200).json({
         success: true,
         data: {
           manual: 0,
           automated: 0,
+          semiAutomated: 0,
           notClassified: 0,
           unclassifiedValues: [],
         },
@@ -949,11 +1060,15 @@ async function getDashboardControlTypeStats(req, res) {
             WHERE LOWER(TRIM(COALESCE(cf.control_type_ma, ''))) IN ('automated', 'automative')
           )::int AS automated,
           COUNT(*) FILTER (
+            WHERE LOWER(TRIM(COALESCE(cf.control_type_ma, ''))) LIKE '%semi%'
+          )::int AS semi_automated,
+          COUNT(*) FILTER (
             WHERE LOWER(TRIM(COALESCE(cf.control_type_ma, ''))) NOT IN ('manual', 'automated', 'automative')
+              AND LOWER(TRIM(COALESCE(cf.control_type_ma, ''))) NOT LIKE '%semi%'
           )::int AS not_classified
         `
       ),
-      getCoordinatorDashboardDistinctValues(scope, 'control_type_ma', ['manual', 'automated', 'automative'], { includeEmpty: true }),
+      getCoordinatorDashboardDistinctValues(scope, 'control_type_ma', ['manual', 'automated', 'automative', 'semi automated'], { includeEmpty: true }),
     ]);
 
     return res.status(200).json({
@@ -961,6 +1076,7 @@ async function getDashboardControlTypeStats(req, res) {
       data: {
         manual: Number(row?.manual || 0),
         automated: Number(row?.automated || 0),
+        semiAutomated: Number(row?.semi_automated || 0),
         notClassified: Number(row?.not_classified || 0),
         unclassifiedValues,
       },
@@ -970,6 +1086,365 @@ async function getDashboardControlTypeStats(req, res) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || 'Failed to fetch control type dashboard stats',
+    });
+  }
+}
+
+async function getDashboardRacms(req, res) {
+  try {
+    const scope = await getCoordinatorDashboardScope(req);
+
+    if (!scope.companyIdentifier) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        count: 0,
+      });
+    }
+
+    const shapedRows = await getCoordinatorDashboardRacmRows(scope);
+
+    return res.status(200).json({
+      success: true,
+      data: shapedRows,
+      count: shapedRows.length,
+    });
+  } catch (error) {
+    console.error('Company coordinator dashboard RACMs error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to fetch dashboard RACMs',
+    });
+  }
+}
+
+async function generateKeyManualAiInsightsRun(req, res) {
+  const lockClient = await pool.connect();
+  let createdRunId = null;
+
+  try {
+    const locked = await tryAcquireGlobalAiModelLock(lockClient);
+    if (!locked) {
+      return res.status(409).json({
+        success: false,
+        message: 'Model is busy, try after some moments',
+      });
+    }
+
+    const scope = await getCoordinatorDashboardScope(req);
+    if (!scope.companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is required',
+      });
+    }
+
+    const dashboardRows = await getCoordinatorDashboardRacmRows(scope);
+    const filteredControls = filterKeyManualControls(dashboardRows);
+
+    if (filteredControls.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No Key + Manual Controls found for the current filters',
+      });
+    }
+
+    const run = await prisma.keyManualAiInsightsRunTable.create({
+      data: {
+        companyIdentifier: scope.companyIdentifier,
+        modelName: OLLAMA_MODEL,
+        promptVersion: KEY_MANUAL_AI_PROMPT_VERSION,
+        status: 'in_progress',
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    createdRunId = run.id;
+
+    const rowDataToCreate = [];
+
+    for (const row of filteredControls) {
+      const businessProcess = String(row?.business_process || '').trim() || 'Unspecified Business Process';
+      const llmInputControl = shapeControlForAi(row);
+      const llmResult = await requestControlSummary({
+        companyIdentifier: scope.companyIdentifier,
+        businessProcess,
+        control: llmInputControl,
+      });
+
+      if (String(llmResult.controlNumber || '').trim() !== String(row?.control_number || '').trim()) {
+        throw new Error(
+          `Ollama returned control ${llmResult.controlNumber} for input ${row?.control_number}`
+        );
+      }
+
+      rowDataToCreate.push({
+        runId: createdRunId,
+        companyIdentifier: scope.companyIdentifier,
+        formId: row.form_id ? String(row.form_id).trim() : null,
+        controlNumber: String(llmResult.controlNumber || '').trim(),
+        businessProcess: businessProcess || null,
+        rationalisationOpportunity: String(llmResult.rationalisationOpportunity || '').trim(),
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (rowDataToCreate.length > 0) {
+        await tx.keyManualAiInsightsRowData.createMany({
+          data: rowDataToCreate,
+        });
+      }
+
+      await tx.keyManualAiInsightsRunTable.update({
+        where: { id: createdRunId },
+        data: { status: 'completed' },
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'AI summary generated successfully',
+      data: {
+        run_id: String(createdRunId),
+        control_count: filteredControls.length,
+        stored_row_count: rowDataToCreate.length,
+        model_name: OLLAMA_MODEL,
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator generate key manual AI insights error:', error);
+
+    const errorMessage = String(error?.message || '').trim();
+    const clientMessage = errorMessage
+      ? errorMessage
+      : 'Failed to generate AI summary';
+
+    if (createdRunId != null) {
+      try {
+        await prisma.keyManualAiInsightsRunTable.update({
+          where: { id: createdRunId },
+          data: { status: 'failed' },
+        });
+      } catch (updateError) {
+        console.error('Failed to mark AI insights run as failed:', updateError);
+      }
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: clientMessage,
+    });
+  } finally {
+    try {
+      await releaseGlobalAiModelLock(lockClient);
+    } catch (unlockError) {
+      console.error('Failed to release AI model lock:', unlockError);
+    }
+    lockClient.release();
+  }
+}
+
+async function getKeyManualAiInsightsAvailability(req, res) {
+  try {
+    const reachable = await isOllamaReachable();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        reachable,
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator key manual AI insights availability error:', error);
+    return res.status(200).json({
+      success: true,
+      data: {
+        reachable: false,
+      },
+    });
+  }
+}
+
+async function getKeyManualAiInsightsRun(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is required',
+      });
+    }
+
+    const requestedRunId = String(req.query?.run_id || '').trim();
+    let parsedRunId = null;
+    if (requestedRunId) {
+      try {
+        parsedRunId = BigInt(requestedRunId);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid run id',
+        });
+      }
+    }
+
+    const runs = await prisma.keyManualAiInsightsRunTable.findMany({
+      where: {
+        companyIdentifier,
+      },
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      include: {
+        _count: {
+          select: {
+            rows: true,
+          },
+        },
+      },
+    });
+
+    if (runs.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          runs: [],
+          run: null,
+          rows: [],
+        },
+      });
+    }
+
+    const selectedRunId = parsedRunId ?? runs[0].id;
+    const run = await prisma.keyManualAiInsightsRunTable.findFirst({
+      where: {
+        id: selectedRunId,
+        companyIdentifier,
+      },
+      include: {
+        rows: {
+          orderBy: [
+            { businessProcess: 'asc' },
+            { controlNumber: 'asc' },
+          ],
+        },
+      },
+    });
+
+    if (!run) {
+      return res.status(404).json({
+        success: false,
+        message: 'AI insights run not found for this company',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        runs: runs.map((item) => ({
+          id: String(item.id),
+          company_identifier: item.companyIdentifier,
+          model_name: item.modelName,
+          status: item.status,
+          created_at: item.createdAt,
+          row_count: item._count.rows,
+        })),
+        run: {
+          id: String(run.id),
+          company_identifier: run.companyIdentifier,
+          model_name: run.modelName,
+          status: run.status,
+          created_at: run.createdAt,
+          row_count: run.rows.length,
+        },
+        rows: run.rows.map((row) => ({
+          id: String(row.id),
+          run_id: String(row.runId),
+          company_identifier: row.companyIdentifier,
+          form_id: row.formId,
+          control_number: row.controlNumber,
+          business_process: row.businessProcess,
+          rationalisation_opportunity: row.rationalisationOpportunity,
+          created_at: row.createdAt,
+          updated_at: row.updatedAt,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator key manual AI insights run error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch AI insights run',
+    });
+  }
+}
+
+async function deleteKeyManualAiInsightsRun(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is required',
+      });
+    }
+
+    const requestedRunId = String(req.params?.run_id || '').trim();
+    if (!requestedRunId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Run id is required',
+      });
+    }
+
+    let parsedRunId = null;
+    try {
+      parsedRunId = BigInt(requestedRunId);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid run id',
+      });
+    }
+
+    const existingRun = await prisma.keyManualAiInsightsRunTable.findFirst({
+      where: {
+        id: parsedRunId,
+        companyIdentifier,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existingRun) {
+      return res.status(404).json({
+        success: false,
+        message: 'AI insights run not found for this company',
+      });
+    }
+
+    await prisma.keyManualAiInsightsRunTable.delete({
+      where: {
+        id: parsedRunId,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'AI insights run deleted successfully',
+      data: {
+        run_id: requestedRunId,
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator delete key manual AI insights run error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete AI insights run',
     });
   }
 }
@@ -1365,6 +1840,7 @@ async function updateUnitAssignment(req, res) {
 
   try {
     const companyIdentifier = req.user.company_identifier;
+    const requesterEmail = normalizeEmail(req.user?.email_id);
     const unitId = req.params.unit_id && String(req.params.unit_id).trim()
       ? String(req.params.unit_id).trim()
       : '';
@@ -1420,6 +1896,21 @@ async function updateUnitAssignment(req, res) {
       return res.status(404).json({
         success: false,
         message: 'Unit not found',
+      });
+    }
+
+    const currentAssignedEmail = normalizeEmail(unitResult.rows[0]?.[config.columnName]);
+    const isReplacingOwnCoordinatorAssignment =
+      config.role === 'company_co' &&
+      requesterEmail &&
+      currentAssignedEmail === requesterEmail &&
+      emailId !== requesterEmail;
+
+    if (isReplacingOwnCoordinatorAssignment) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'You cannot replace your own company coordinator assignment. Assign another coordinator only for units not currently mapped to you.',
       });
     }
 
@@ -2787,6 +3278,11 @@ module.exports = {
   getDashboardKeyControlStats,
   getDashboardNatureStats,
   getDashboardControlTypeStats,
+  getDashboardRacms,
+  getKeyManualAiInsightsAvailability,
+  getKeyManualAiInsightsRun,
+  generateKeyManualAiInsightsRun,
+  deleteKeyManualAiInsightsRun,
   getUnitManagement,
   createUnitCoordinator,
   createUnitApprover,

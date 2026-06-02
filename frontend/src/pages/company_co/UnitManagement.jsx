@@ -342,6 +342,15 @@ function UnitManagement() {
 
     const selectedUnitId = String(assignmentDialog.unit.unit_id || '').trim()
     const isExternalUnit = selectedUnitId !== '' && !mappedUnitIdSet.has(selectedUnitId)
+    const isOwnCoordinatorUnit = assignmentDialog.role === 'company_co' && !isExternalUnit
+
+    if (isOwnCoordinatorUnit) {
+      setAssignmentDialog((prev) => ({
+        ...prev,
+        error: 'You cannot replace your own company coordinator assignment.',
+      }))
+      return
+    }
 
     if (isExternalUnit && !assignmentDialog.confirmExternalAssignment) {
       setAssignmentDialog((prev) => ({
@@ -403,6 +412,11 @@ function UnitManagement() {
   const selectedAssignmentUnitId = String(assignmentDialog.unit?.unit_id || '').trim()
   const isAssignmentOutsideMappedUnits =
     selectedAssignmentUnitId !== '' && !mappedUnitIdSet.has(selectedAssignmentUnitId)
+  const isOwnCoordinatorAssignment =
+    assignmentDialog.role === 'company_co' && !isAssignmentOutsideMappedUnits
+  const selectedAssignmentUnitName = String(
+    assignmentDialog.unit?.unit_name || assignmentDialog.unit?.unit_id || 'this unit'
+  ).trim()
   const shellCardSx = {
     borderRadius: 3,
     border: '1px solid',
@@ -438,7 +452,7 @@ function UnitManagement() {
     color: 'text.secondary',
     backgroundColor: TABLE_HEADER_BG,
   }
-  const assignButtonLabel = assignMode ? 'Select Unit To Reassign' : 'Reassign Mapping'
+  const assignButtonLabel = assignMode ? 'Select Unit To Reassign' : 'Assign'
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, py: 2 }}>
@@ -524,13 +538,12 @@ function UnitManagement() {
             >
               <Box sx={sectionHeaderSx}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0, flex: 1 }}>
-                  <BadgeRoundedIcon sx={{ color: 'primary.main' }} />
                   <Box sx={{ minWidth: 0 }}>
                     <Typography sx={{ fontWeight: 850, color: 'text.primary' }}>
                       Unit Master
                     </Typography>
                     <Typography sx={{ mt: 0.4, color: 'text.secondary', fontSize: '0.9rem', lineHeight: 1.6 }}>
-                      Review coordinator and approver ownership for each unit. Use reassignment only when a mapping needs to change.
+                      Review coordinator and approver ownership for each unit.
                     </Typography>
                   </Box>
                 </Box>
@@ -800,9 +813,14 @@ function UnitManagement() {
           <Typography color="text.secondary" sx={{ lineHeight: 1.5 }}>
             {assignmentDialog.unit?.unit_name || 'Selected unit'}
           </Typography>
+          {isOwnCoordinatorAssignment ? (
+            <Alert severity="error">
+              You cannot replace your own company coordinator assignment for this unit.
+            </Alert>
+          ) : null}
           {isAssignmentOutsideMappedUnits ? (
             <Alert severity="warning">
-              This unit is not currently mapped to your coordinator account. Continue only if you intentionally want to change assignment for another unit.
+              User won&apos;t be able to access {selectedAssignmentUnitName}&apos;s controls.
             </Alert>
           ) : null}
           <FormControl fullWidth required disabled={assignmentDialog.submitting}>
@@ -817,7 +835,11 @@ function UnitManagement() {
               <MenuItem value="approver">Approver</MenuItem>
             </Select>
           </FormControl>
-          <FormControl fullWidth required disabled={assignmentDialog.submitting || assignmentOptions.length === 0}>
+          <FormControl
+            fullWidth
+            required
+            disabled={assignmentDialog.submitting || assignmentOptions.length === 0 || isOwnCoordinatorAssignment}
+          >
             <InputLabel id="assignment-email-label">Email ID</InputLabel>
             <Select
               labelId="assignment-email-label"
@@ -901,6 +923,7 @@ function UnitManagement() {
             onClick={handleUpdateAssignment}
             disabled={
               assignmentDialog.submitting ||
+              isOwnCoordinatorAssignment ||
               assignmentOptions.length === 0 ||
               (isAssignmentOutsideMappedUnits && !assignmentDialog.confirmExternalAssignment)
             }

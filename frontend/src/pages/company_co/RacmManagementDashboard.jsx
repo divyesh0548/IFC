@@ -105,6 +105,8 @@ function RacmManagementDashboard() {
   const [creatingMissingUsers, setCreatingMissingUsers] = useState(false)
   const [setActiveClassifying, setSetActiveClassifying] = useState(false)
   const [actionRequiredAlertDismissed, setActionRequiredAlertDismissed] = useState(false)
+  const [pendingChangeRequestAlertDismissed, setPendingChangeRequestAlertDismissed] = useState(false)
+  const [pendingChangeRequestDialogOpen, setPendingChangeRequestDialogOpen] = useState(false)
   const userRoleChecksRef = useRef({})
   const { businessProcessOptions } = useBusinessProcesses()
 
@@ -250,6 +252,8 @@ function RacmManagementDashboard() {
     return normalized.charAt(0).toUpperCase() + normalized.slice(1)
   }
 
+  const pendingChangeRequestForms = forms.filter((form) => Boolean(form?.pending_changes))
+
   const fetchForms = async () => {
     if (!companyIdentifier) return
     
@@ -343,7 +347,7 @@ function RacmManagementDashboard() {
     if (deleteMode || setActiveMode || replicateMode || setDueDateMode || (e && e.target.type === 'checkbox')) {
       return
     }
-    navigate(`/company_co/form/${formId}`)
+    window.open(`/company_co/form/${encodeURIComponent(formId)}`, '_blank', 'noopener,noreferrer')
   }
 
   const handleSetDueDateModeToggle = () => {
@@ -1286,6 +1290,12 @@ function RacmManagementDashboard() {
     }
   }, [actionRequiredCount])
 
+  useEffect(() => {
+    if (pendingChangeRequestForms.length > 0) {
+      setPendingChangeRequestAlertDismissed(false)
+    }
+  }, [pendingChangeRequestForms.length])
+
   const showUnitColumn = coordinatorUnits.length > 1
   const showUnitFilter = coordinatorUnits.length > 1
 
@@ -1530,6 +1540,29 @@ function RacmManagementDashboard() {
             sx={{ mb: 3, alignItems: 'center' }}
           >
             Action Required - {actionRequiredCount} RACMs are found ineffective
+          </Alert>
+        ) : null}
+
+        {!loading && pendingChangeRequestForms.length > 0 && !pendingChangeRequestAlertDismissed ? (
+          <Alert
+            severity="warning"
+            onClose={() => setPendingChangeRequestAlertDismissed(true)}
+            onClick={() => setPendingChangeRequestDialogOpen(true)}
+            sx={{
+              mb: 3,
+              alignItems: 'center',
+              cursor: 'pointer',
+              '& .MuiAlert-message': {
+                width: '100%',
+              },
+            }}
+          >
+            <Typography sx={{ fontWeight: 700 }}>
+              Warning - {pendingChangeRequestForms.length} RACMs have pending change requests
+            </Typography>
+            <Typography variant="body2">
+              Click to view the RACM list.
+            </Typography>
           </Alert>
         ) : null}
 
@@ -3288,6 +3321,103 @@ function RacmManagementDashboard() {
                 {bulkUpdating ? 'Setting...' : 'Set Active Other RACM(s)'}
               </Button>
             )}
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
+          open={pendingChangeRequestDialogOpen}
+          onClose={() => setPendingChangeRequestDialogOpen(false)}
+          fullWidth
+          maxWidth="md"
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              minWidth: { xs: '90%', sm: '560px' },
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+                : '0 8px 32px rgba(0, 0, 0, 0.12)',
+            },
+          }}
+        >
+          <DialogTitle
+            sx={{
+              pb: 2.5,
+              pt: 3,
+              px: 3,
+              fontWeight: 600,
+              fontSize: '1.25rem',
+              color: theme.palette.text.primary,
+            }}
+          >
+            Pending Change Requests
+          </DialogTitle>
+          <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
+            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mb: 2 }}>
+              Click any RACM below to open its details in a new page.
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              {pendingChangeRequestForms.map((form) => (
+                <Box
+                  key={`pending-change-dialog-${form.form_id}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => window.open(`/company_co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      window.open(`/company_co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')
+                    }
+                  }}
+                  sx={{
+                    p: 1.75,
+                    borderRadius: 1.5,
+                    border: `1px solid ${theme.palette.divider}`,
+                    backgroundColor: theme.palette.background.paper,
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s, border-color 0.2s',
+                    '&:hover, &:focus-visible': {
+                      backgroundColor: TABLE_ROW_HOVER_BG,
+                      borderColor: alpha(theme.palette.warning.main, 0.45),
+                      outline: 'none',
+                    },
+                  }}
+                >
+                  <Typography sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+                    {form.control_number || form.form_id}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.25 }}>
+                    {[form.business_process, form.sub_process, form.financial_year].filter(Boolean).join(' | ') || form.form_id}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </DialogContent>
+          <DialogActions
+            sx={{
+              px: 3,
+              pb: 3,
+              pt: 2.5,
+              gap: 1.5,
+              borderTop: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            <Button
+              onClick={() => setPendingChangeRequestDialogOpen(false)}
+              variant="outlined"
+              sx={{
+                textTransform: 'none',
+                px: 3,
+                py: 1,
+                minWidth: '100px',
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.23)'
+                  : 'rgba(0, 0, 0, 0.23)',
+                color: theme.palette.text.primary,
+              }}
+            >
+              Close
+            </Button>
           </DialogActions>
         </Dialog>
 

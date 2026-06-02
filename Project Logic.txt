@@ -28,7 +28,7 @@ Once approver approves or reject user will be able to see the fields listed abov
 
 If Rejected by approver, user will be able to re-upload document and write remarks again. And re-send for approval. 
 
-Company coordinator will have to upload an excel sheet with some data for each control_form. Program will detect header of that excel and ask coordinator to select a primary column. After that script will select some random rows as sample. Each control-form has a column value control-frequency. So based on that number of rows will be decided. Now these rows will be shown to user as an example.
+Company coordinator will have to upload an excel sheet with some data for each control_form. Program will detect header of that excel and ask coordinator to select a primary column. After that script will select some random rows as sample. Each control-form has a column value control-frequency. So based on that number of rows will be decided. Now these rows will be shown to user as an example. Control frequency is mendatory field, if that column is not detected then controls will not be inserted.
 
 
 When RACM is approved after rejection then the document uploaded by user and reason give by approver for rejection will be saved in control_form_history table. (Old document which was rejected will be saved in history)
@@ -48,6 +48,13 @@ New Unit based IFC Testing model.
 5. One RACM will only belong to one Unit of the company.
 
 
+
+
+
+
+Potential issues in the portal.
+
+1. How we will fetch values of Completeness, Existence & Occurrence, Valuation & Allocation, Rights and Obligations and Presentation and Disclosure. RACM of parag includes all of them into one column. RACM of toracid write Yes and for no they keep it empty. RACM of GFL put a tick mark in individual columns.
 
 
 

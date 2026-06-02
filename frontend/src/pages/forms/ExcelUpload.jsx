@@ -30,12 +30,14 @@ import dayjs from 'dayjs'
 import { parseRacmExcelFromArrayBuffer } from '../../utils/racmExcelParse'
 import {
   findDetectedControlFrequencyHeader,
-  validateControlFrequencyColumnValues,
+  getControlFrequencyValidationDetails,
 } from '../../utils/controlFrequencyValidation'
 import { RACM_BULK_IMPORT_SESSION_KEY } from '../../racmFormDetailFields'
 import { useUnsavedChangesWarning } from '../../utils/useUnsavedChangesWarning'
 import { apiUrl } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
+import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
+import ControlFrequencyValueMapDialog from '../../components/racm/ControlFrequencyValueMapDialog'
 
 const MAX_BULK_IMPORT_ROWS = 5000
 const DUPLICATE_CONTROL_NUMBER_MESSAGE = 'Duplicate Control Number already exists for this company'
@@ -62,6 +64,13 @@ function ExcelUpload() {
   const [pendingImport, setPendingImport] = useState(null)
   const [duplicateControlNumberNotice, setDuplicateControlNumberNotice] = useState('')
   const { businessProcessOptions, loading: businessProcessesLoading } = useBusinessProcesses()
+  const { controlFrequencyOptions, loading: controlFrequencyOptionsLoading } = useControlFrequencyOptions()
+  const [controlFrequencyMappingDialogState, setControlFrequencyMappingDialogState] = useState({
+    open: false,
+    invalidValues: [],
+    ctx: null,
+    selections: {},
+  })
   const accentColor = theme.palette.primary.main
   const accentSoft = alpha(accentColor, theme.palette.mode === 'dark' ? 0.18 : 0.12)
   const accentBorder = alpha(accentColor, theme.palette.mode === 'dark' ? 0.22 : 0.14)
@@ -240,7 +249,11 @@ function ExcelUpload() {
   }
 
   const runBulkImport = async (ctx, options = {}) => {
-    const { column_mapping: columnMapping, formEvent } = options
+    const {
+      column_mapping: columnMapping,
+      control_frequency_value_mapping: controlFrequencyValueMapping,
+      formEvent,
+    } = options
     const {
       rows,
       businessProcess: bp,
@@ -265,6 +278,13 @@ function ExcelUpload() {
       }
       if (columnMapping && typeof columnMapping === 'object' && Object.keys(columnMapping).length > 0) {
         payload.column_mapping = columnMapping
+      }
+      if (
+        controlFrequencyValueMapping &&
+        typeof controlFrequencyValueMapping === 'object' &&
+        Object.keys(controlFrequencyValueMapping).length > 0
+      ) {
+        payload.control_frequency_value_mapping = controlFrequencyValueMapping
       }
 
       const response = await fetch(apiUrl('/api/control-forms/bulk-import-rows'), {
@@ -360,18 +380,6 @@ function ExcelUpload() {
       return
     }
 
-    const detectedControlFrequencyHeader = findDetectedControlFrequencyHeader(rows)
-    if (detectedControlFrequencyHeader) {
-      const controlFrequencyValidation = validateControlFrequencyColumnValues(
-        rows,
-        detectedControlFrequencyHeader
-      )
-      if (!controlFrequencyValidation.ok) {
-        toast.error(controlFrequencyValidation.message)
-        return
-      }
-    }
-
     setPendingImport({
       rows,
       businessProcess,
@@ -403,11 +411,25 @@ function ExcelUpload() {
       return
     }
 
-    const controlFrequencyValidation = validateControlFrequencyColumnValues(
+    const controlFrequencyValidation = getControlFrequencyValidationDetails(
       pendingImport.rows,
       detectedControlFrequencyHeader
     )
     if (!controlFrequencyValidation.ok) {
+      if (controlFrequencyValidation.reason === 'invalid_value') {
+        setMappingDialogOpen(false)
+        setControlFrequencyMappingDialogState({
+          open: true,
+          invalidValues: controlFrequencyValidation.invalidValues,
+          ctx: {
+            importCtx: pendingImport,
+          },
+          selections: Object.fromEntries(
+            controlFrequencyValidation.invalidValues.map((value) => [value, ''])
+          ),
+        })
+        return
+      }
       toast.error(controlFrequencyValidation.message)
       return
     }
@@ -447,6 +469,24 @@ function ExcelUpload() {
     setMappingDialogOpen(false)
     setPendingImport(null)
     navigate('/company_co/upload-excel/column-map')
+  }
+
+  const handleControlFrequencyMappingCancel = () => {
+    setControlFrequencyMappingDialogState({
+      open: false,
+      invalidValues: [],
+      ctx: null,
+      selections: {},
+    })
+  }
+
+  const handleControlFrequencyMappingConfirm = async (mapping) => {
+    const ctx = controlFrequencyMappingDialogState.ctx
+    handleControlFrequencyMappingCancel()
+    if (!ctx?.importCtx) return
+    await runBulkImport(ctx.importCtx, {
+      control_frequency_value_mapping: mapping,
+    })
   }
 
   return (
@@ -1196,6 +1236,21 @@ function ExcelUpload() {
           </Button>
         </DialogActions>
       </Dialog>
+      <ControlFrequencyValueMapDialog
+        open={controlFrequencyMappingDialogState.open}
+        invalidValues={controlFrequencyMappingDialogState.invalidValues}
+        options={controlFrequencyOptions}
+        selections={controlFrequencyMappingDialogState.selections}
+        loading={loading || controlFrequencyOptionsLoading}
+        onCancel={handleControlFrequencyMappingCancel}
+        onSelectionsChange={(selections) =>
+          setControlFrequencyMappingDialogState((prev) => ({
+            ...prev,
+            selections,
+          }))
+        }
+        onConfirm={handleControlFrequencyMappingConfirm}
+      />
       </Box>
   )
 }

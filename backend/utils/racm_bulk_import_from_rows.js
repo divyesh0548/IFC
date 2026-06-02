@@ -434,6 +434,50 @@ function validateBulkImportControlFrequencies(transformedData) {
   };
 }
 
+function applyControlFrequencyValueMapping(transformedData, controlFrequencyValueMapping) {
+  if (
+    !controlFrequencyValueMapping ||
+    typeof controlFrequencyValueMapping !== 'object' ||
+    Array.isArray(controlFrequencyValueMapping)
+  ) {
+    return Array.isArray(transformedData) ? transformedData.map((row) => ({ ...row })) : [];
+  }
+
+  const exactMapping = new Map();
+  const normalizedMapping = new Map();
+
+  for (const [rawKey, rawValue] of Object.entries(controlFrequencyValueMapping)) {
+    const source = String(rawKey || '').trim();
+    const target = String(rawValue || '').trim();
+    if (!source || !target) continue;
+    exactMapping.set(source, target);
+    normalizedMapping.set(normalizeControlFrequencyValue(source), target);
+  }
+
+  return (Array.isArray(transformedData) ? transformedData : []).map((row) => {
+    const nextRow = { ...row };
+    const rawValue = nextRow.control_frequency;
+    const trimmedValue = rawValue !== null && rawValue !== undefined ? String(rawValue).trim() : '';
+
+    if (!trimmedValue) {
+      return nextRow;
+    }
+
+    const exactMatch = exactMapping.get(trimmedValue);
+    if (exactMatch) {
+      nextRow.control_frequency = exactMatch;
+      return nextRow;
+    }
+
+    const normalizedMatch = normalizedMapping.get(normalizeControlFrequencyValue(trimmedValue));
+    if (normalizedMatch) {
+      nextRow.control_frequency = normalizedMatch;
+    }
+
+    return nextRow;
+  });
+}
+
 /**
  * Insert RACM rows from already-transformed DB-shaped rows (same rules as process_excel_files).
  * Caller manages transaction (BEGIN/COMMIT/ROLLBACK).
@@ -540,6 +584,7 @@ async function insertRacmRowsFromTransformedData(client, options) {
 }
 
 module.exports = {
+  applyControlFrequencyValueMapping,
   prepareBulkImportRows,
   transformExcelData,
   transformExcelDataWithColumnMapping,

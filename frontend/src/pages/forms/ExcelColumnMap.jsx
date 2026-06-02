@@ -24,7 +24,9 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { useUnsavedChangesWarning } from '../../utils/useUnsavedChangesWarning'
 import { apiUrl } from '../../config/api'
-import { validateControlFrequencyColumnValues } from '../../utils/controlFrequencyValidation'
+import { getControlFrequencyValidationDetails } from '../../utils/controlFrequencyValidation'
+import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
+import ControlFrequencyValueMapDialog from '../../components/racm/ControlFrequencyValueMapDialog'
 
 const AUTO = '__auto__'
 const SKIP = '__skip__'
@@ -64,7 +66,7 @@ function detectDbColumnFromHeader(excelHeader, mappingConfig) {
   const normalized = String(excelHeader)
     .trim()
     .toLowerCase()
-    .replace(/[\/()&-]/g, ' ')
+    .replace(/[/()&-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
@@ -238,6 +240,13 @@ function ExcelColumnMap() {
   const [selections, setSelections] = useState(null)
   const [mappingConfig, setMappingConfig] = useState(null)
   const [duplicateControlNumberNotice, setDuplicateControlNumberNotice] = useState('')
+  const { controlFrequencyOptions, loading: controlFrequencyOptionsLoading } = useControlFrequencyOptions()
+  const [controlFrequencyMappingDialogState, setControlFrequencyMappingDialogState] = useState({
+    open: false,
+    invalidValues: [],
+    submitContext: null,
+    selections: {},
+  })
   const initialSelectionsRef = useRef(null)
   useSyncGlobalLoading(initializing || loading)
   const headers = useMemo(() => (payload ? collectHeaders(payload.rows) : []), [payload])
@@ -376,20 +385,37 @@ function ExcelColumnMap() {
       (header) => mappedFieldByHeader[header] === 'control_frequency'
     )
     if (!controlFrequencyHeader) {
-      toast.error('Map one Excel column to Control Frequency before importing.')
+      toast.error('Mapping of Control Frequency column is mandatory. Please map it before importing.')
       return
     }
 
-    const controlFrequencyValidation = validateControlFrequencyColumnValues(
+    const controlFrequencyValidation = getControlFrequencyValidationDetails(
       payload.rows,
       controlFrequencyHeader
     )
     if (!controlFrequencyValidation.ok) {
+      if (controlFrequencyValidation.reason === 'invalid_value') {
+        setControlFrequencyMappingDialogState({
+          open: true,
+          invalidValues: controlFrequencyValidation.invalidValues,
+          submitContext: {
+            column_mapping: buildColumnMapping(headers, selections),
+          },
+          selections: Object.fromEntries(
+            controlFrequencyValidation.invalidValues.map((value) => [value, ''])
+          ),
+        })
+        return
+      }
       toast.error(controlFrequencyValidation.message)
       return
     }
 
     const column_mapping = buildColumnMapping(headers, selections)
+    await submitImport(column_mapping)
+  }
+
+  const submitImport = async (column_mapping, controlFrequencyValueMapping = null) => {
     const body = {
       businessProcess: payload.businessProcess,
       financialYear: payload.financialYear,
@@ -400,6 +426,13 @@ function ExcelColumnMap() {
     if (payload.due_date && payload.reminder_frequency) {
       body.due_date = payload.due_date
       body.reminder_frequency = payload.reminder_frequency
+    }
+    if (
+      controlFrequencyValueMapping &&
+      typeof controlFrequencyValueMapping === 'object' &&
+      Object.keys(controlFrequencyValueMapping).length > 0
+    ) {
+      body.control_frequency_value_mapping = controlFrequencyValueMapping
     }
 
     setLoading(true)
@@ -441,6 +474,22 @@ function ExcelColumnMap() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleControlFrequencyMappingCancel = () => {
+    setControlFrequencyMappingDialogState({
+      open: false,
+      invalidValues: [],
+      submitContext: null,
+      selections: {},
+    })
+  }
+
+  const handleControlFrequencyMappingConfirm = async (mapping) => {
+    const submitContext = controlFrequencyMappingDialogState.submitContext
+    handleControlFrequencyMappingCancel()
+    if (!submitContext?.column_mapping) return
+    await submitImport(submitContext.column_mapping, mapping)
   }
 
   if (!payload) {
@@ -787,6 +836,21 @@ function ExcelColumnMap() {
           Cancel
         </Button>
       </Box>
+      <ControlFrequencyValueMapDialog
+        open={controlFrequencyMappingDialogState.open}
+        invalidValues={controlFrequencyMappingDialogState.invalidValues}
+        options={controlFrequencyOptions}
+        selections={controlFrequencyMappingDialogState.selections}
+        loading={loading || controlFrequencyOptionsLoading}
+        onCancel={handleControlFrequencyMappingCancel}
+        onSelectionsChange={(selections) =>
+          setControlFrequencyMappingDialogState((prev) => ({
+            ...prev,
+            selections,
+          }))
+        }
+        onConfirm={handleControlFrequencyMappingConfirm}
+      />
     </Box>
   )
 }

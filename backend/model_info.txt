@@ -1,0 +1,13 @@
+Mistral = 7B Parameter, Size 4.5GB
+
+Llama3.1 = 8B Parameter, Size 4.9GB
+
+Wizardlm2 = 7B Parameter, Size 4.1GB
+
+Qwen3.5 = 9B Parameter, Size 6.6GB
+
+Gpt-oss = 20B Parameter, Size 14GB
+
+
+Approximate time = 5-7 Mins using 7B model for total 16 RACMs.
+Approximate RAM Usage = 6.5 GB

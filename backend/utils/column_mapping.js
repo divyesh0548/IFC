@@ -2,16 +2,11 @@
 const simpleColumnMapping = {
   'control number': 'control_number',
   'control name': 'standard_control_description',
-  'sub process': 'sub_process',
-  'sub-process': 'sub_process',
   'risk': 'risk_description',
   'risk heat': 'risk_heat',
   'whether fraud risk': 'whether_fraud_risks_exist',
   'whether fraud risks': 'whether_fraud_risks_exist',
   'whether fraud risks exist': 'whether_fraud_risks_exist',
-  'completeness': 'completeness',
-  'existence occurrence': 'existence_occurrence',
-  'valuation allocation': 'valuation_and_allocation',
   'control objective': 'control_objective',
   'ipe reference': 'ipe_reference',
   'application name': 'application_name',
@@ -71,6 +66,12 @@ const columnPatterns = [
     priority: 1
   },
   {
+    keywords: ['sub', 'process'],
+    dbColumn: 'sub_process',
+    priority: 1,
+    requireAllKeywords: true
+  },
+  {
     keywords: ['account', 'balance', 'disclosure'],
     dbColumn: 'area',
     priority: 1
@@ -123,6 +124,23 @@ const columnPatterns = [
     keywords: ['audit', 'evidence', 'accuracy', 'completeness'],
     dbColumn: 'audit_evidence_accuracy',
     priority: 1
+  },
+  {
+    keywords: ['completeness'],
+    dbColumn: 'completeness',
+    priority: 1
+  },
+  {
+    keywords: ['existence'],
+    dbColumn: 'existence_occurrence',
+    priority: 1,
+    requireAllKeywords: true
+  },
+  {
+    keywords: ['valuation', 'allocation'],
+    dbColumn: 'valuation_and_allocation',
+    priority: 1,
+    requireAllKeywords: true
   },
   {
     keywords: ['nature', 'preventive', 'detective'],

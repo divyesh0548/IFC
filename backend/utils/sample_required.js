@@ -165,6 +165,21 @@ function normalizeControlFrequencyValue(controlFrequency) {
     .trim();
 }
 
+const SUPPORTED_CONTROL_FREQUENCY_CATEGORIES = [
+  { value: 'Yearly', sampleSize: 1 },
+  { value: 'Half Yearly', sampleSize: 2 },
+  { value: 'Quarterly', sampleSize: 4 },
+  { value: 'Monthly', sampleSize: 5 },
+  { value: 'Weekly', sampleSize: 8 },
+  { value: 'Fortnightly', sampleSize: 4 },
+  { value: 'As & When Needed', sampleSize: 5 },
+  { value: 'Recurring & Periodic', sampleSize: 40 },
+];
+
+function getSupportedControlFrequencyCategories() {
+  return SUPPORTED_CONTROL_FREQUENCY_CATEGORIES.map((item) => ({ ...item }));
+}
+
 function getSampleSizeByFrequency(controlFrequency) {
   if (!controlFrequency) {
     return null;
@@ -187,7 +202,7 @@ function getSampleSizeByFrequency(controlFrequency) {
   }
 
   if (normalizedFreq === 'monthly') {
-    return 3;
+    return 5;
   }
 
   if (normalizedFreq === 'weekly') {
@@ -366,7 +381,7 @@ function calculateSampleRequired(controlFrequency, createdAt) {
   }
 
   // For 'monthly' frequency
-  // Select any 3 months randomly from the last 12 months before created_at
+  // Select any 5 months randomly from the last 12 months before created_at
   if (frequency === 'monthly' || frequency.includes('month')) {
     console.log('[sample_required] Processing monthly frequency');
     const createdYear = createdDate.getFullYear();
@@ -387,10 +402,10 @@ function calculateSampleRequired(controlFrequency, createdAt) {
 
     console.log('[sample_required] Available months (last 12):', availableMonths.map(m => `${m.year}-${String(m.month + 1).padStart(2, '0')}`));
 
-    // Randomly select 3 months
+    // Randomly select 5 months
     const selectedMonths = [];
     const shuffledMonths = [...availableMonths].sort(() => Math.random() - 0.5); // Shuffle array
-    for (let i = 0; i < 3 && i < shuffledMonths.length; i++) {
+    for (let i = 0; i < 5 && i < shuffledMonths.length; i++) {
       selectedMonths.push(shuffledMonths[i]);
     }
 
@@ -402,7 +417,7 @@ function calculateSampleRequired(controlFrequency, createdAt) {
       return a.month - b.month;
     });
 
-    console.log('[sample_required] Selected 3 random months:', selectedMonths.map(m => `${m.year}-${String(m.month + 1).padStart(2, '0')}`));
+    console.log('[sample_required] Selected 5 random months:', selectedMonths.map(m => `${m.year}-${String(m.month + 1).padStart(2, '0')}`));
 
     // Format each month interval: first weekday to last weekday
     const intervals = selectedMonths.map((monthInfo) => {
@@ -665,5 +680,6 @@ module.exports = {
   calculateSampleRequired,
   getSampleSizeByFrequency,
   normalizeControlFrequencyValue,
-  isSupportedControlFrequency
+  isSupportedControlFrequency,
+  getSupportedControlFrequencyCategories,
 };

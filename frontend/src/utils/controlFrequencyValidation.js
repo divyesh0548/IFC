@@ -1,7 +1,7 @@
 function normalizeText(value) {
   return String(value || '')
     .toLowerCase()
-    .replace(/[\/()&-]/g, ' ')
+    .replace(/[/()&-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -124,4 +124,8 @@ export function validateControlFrequencyColumnValues(rows, headerName) {
     message: '',
     invalidValues: [],
   }
+}
+
+export function getControlFrequencyValidationDetails(rows, headerName) {
+  return validateControlFrequencyColumnValues(rows, headerName)
 }

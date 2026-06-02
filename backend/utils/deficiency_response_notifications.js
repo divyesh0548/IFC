@@ -1,5 +1,6 @@
 const { pool } = require('./db');
 const { sendEmail } = require('./send_email');
+const { getCcEmailsForRacm } = require('./racm_cc_recipients');
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -91,6 +92,22 @@ function buildCcEmailList(...emails) {
   return ccList;
 }
 
+async function getCommunicationMatrixCcEmails(form, excludeEmails = []) {
+  const excludeSet = new Set(
+    excludeEmails
+      .map((email) => normalizeEmail(email))
+      .filter(Boolean)
+  );
+
+  const ccEmails = await getCcEmailsForRacm({
+    companyIdentifier: form?.company_identifier,
+    businessProcess: form?.business_process,
+    unitId: form?.unit_id,
+  });
+
+  return ccEmails.filter((email) => !excludeSet.has(normalizeEmail(email)));
+}
+
 function formatResponseTypeLabel(responseType) {
   return String(responseType || '').trim() === 'compensatory_racm'
     ? 'Compensatory RACM'
@@ -141,9 +158,11 @@ async function notifyDeficiencyResponseSubmitted({
   emailBody += '\nPlease review the deficiency response in the IFC system.\n\n';
   emailBody += 'Best regards,\nIFC System';
 
+  const communicationMatrixCcEmails = await getCommunicationMatrixCcEmails(form, [approverEmail]);
   const ccEmails = buildCcEmailList(
     form?.control_owner,
-    coordinatorEmail
+    coordinatorEmail,
+    ...communicationMatrixCcEmails
   ).filter((email) => email !== normalizeEmail(approverEmail));
   const emailSent = await sendEmail(
     approverEmail,
@@ -217,7 +236,11 @@ async function notifyDeficiencyResponseReviewed({
 
   emailBody += 'Best regards,\nIFC System';
 
-  const ccEmails = counterpartEmail ? [counterpartEmail] : [];
+  const communicationMatrixCcEmails = await getCommunicationMatrixCcEmails(form, [submittedByEmail]);
+  const ccEmails = buildCcEmailList(
+    counterpartEmail,
+    ...communicationMatrixCcEmails
+  ).filter((email) => email !== normalizeEmail(submittedByEmail));
   const emailSent = await sendEmail(
     submittedByEmail,
     subject,

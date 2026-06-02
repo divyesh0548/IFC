@@ -44,6 +44,8 @@ const CommunicationMatrix = lazy(() => import('./pages/company_co/CommunicationM
 const CompanyCoordinatorBusinessProcessManagement = lazy(() => import('./pages/company_co/BusinessProcessManagement'))
 const Company_co_home = lazy(() => import('./pages/company_co/Company_co_home'))
 const CreateUser = lazy(() => import('./pages/company_co/CreateUser'))
+const UnclassifiedControls = lazy(() => import('./pages/company_co/UnclassifiedControls'))
+const KeyManualAiInsightsSummary = lazy(() => import('./pages/company_co/KeyManualAiInsightsSummary'))
 
 const ApproverHome = lazy(() => import('./pages/approver/ApproverHome'))
 const ApproverDashboard = lazy(() => import('./pages/approver/ApproverDashboard'))
@@ -287,6 +289,8 @@ function App() {
               <Route path="home" element={<Company_co_home />} />
               <Route path="dashboard" element={<Company_Co_dashboard />} />
               <Route path="racm-dashboard" element={<Company_Co_dashboard />} />
+              <Route path="unclassified-controls" element={<UnclassifiedControls />} />
+              <Route path="key-manual-ai-insights" element={<KeyManualAiInsightsSummary />} />
               <Route path="racm-management" element={<RacmManagementDashboard />} />
               <Route path="communication-matrix" element={<CommunicationMatrix />} />
               <Route path="business-processes" element={<CompanyCoordinatorBusinessProcessManagement />} />

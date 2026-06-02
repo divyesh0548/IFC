@@ -56,7 +56,7 @@ Company: Sharp and Tannan Associates
 
 Your temporary login credentials:
 Email: divyesh.parmar@sharpandtannan.com
-Temporary Password: 98d911c508f5ac24
+Temporary Password: af388412b41135ff
 
 IMPORTANT: Please login using these credentials and update your password immediately for security purposes.
 

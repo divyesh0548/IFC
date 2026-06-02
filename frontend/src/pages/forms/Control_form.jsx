@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useTheme } from '@mui/material/styles'
+import { useNavigate } from 'react-router-dom'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
@@ -8,6 +9,7 @@ import { apiUrl } from '../../config/api'
 
 function Control_form() {
   const theme = useTheme()
+  const navigate = useNavigate()
   
   const [formData, setFormData] = useState({
     descriptionOfControl: '',
@@ -85,11 +87,7 @@ function Control_form() {
       
       setSuccess('Form submitted successfully!')
       console.log('Form Data:', formData)
-      
-      // Clear success message after 5 seconds
-      setTimeout(() => {
-        setSuccess('')
-      }, 5000)
+      navigate('/company_co/racm-management')
     } catch (err) {
       console.error('Form submission error:', err)
       setError('Failed to submit form. Please try again.')
