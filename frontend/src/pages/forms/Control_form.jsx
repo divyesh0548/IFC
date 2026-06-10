@@ -1,15 +1,14 @@
 import React, { useState } from 'react'
 import { useTheme } from '@mui/material/styles'
-import { useNavigate } from 'react-router-dom'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import { apiUrl } from '../../config/api'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function Control_form() {
   const theme = useTheme()
-  const navigate = useNavigate()
   
   const [formData, setFormData] = useState({
     descriptionOfControl: '',
@@ -43,11 +42,14 @@ function Control_form() {
     rights_and_obligation: false,
     valuation_and_allocation: false,
     presentation_and_disclosure: false,
+    due_date: '',
+    reminder_frequency: '',
   })
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  useSyncGlobalLoading(loading)
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -72,6 +74,14 @@ function Control_form() {
     setLoading(true)
 
     try {
+      const dueDateValue = String(formData.due_date || '').trim()
+      const reminderFrequencyValue = String(formData.reminder_frequency || '').trim()
+      if ((dueDateValue && !reminderFrequencyValue) || (!dueDateValue && reminderFrequencyValue)) {
+        setError('Please fill both Due Date and Reminder Frequency (or keep both empty).')
+        setLoading(false)
+        return
+      }
+
       // TODO: Implement API call to save form data
       // const response = await fetch(apiUrl('/api/control-form'), {
       //   method: 'POST',
@@ -87,7 +97,6 @@ function Control_form() {
       
       setSuccess('Form submitted successfully!')
       console.log('Form Data:', formData)
-      navigate('/company_co/racm-management')
     } catch (err) {
       console.error('Form submission error:', err)
       setError('Failed to submit form. Please try again.')
@@ -122,7 +131,9 @@ function Control_form() {
       checksPerformed: '',
       effectiveOrNotEffective: '',
       done: '',
-      findings: ''
+      findings: '',
+      due_date: '',
+      reminder_frequency: '',
     })
     setError('')
     setSuccess('')
@@ -424,6 +435,68 @@ function Control_form() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
                     placeholder="Enter relevant data elements"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* Reminder Settings Section */}
+            <div className="border-b border-gray-300 pb-4">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-secondary">Reminder Settings</h2>
+                  <p className="text-sm text-gray-500 mt-1">Optional</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  size="small"
+                  disabled={loading || (!formData.due_date && !formData.reminder_frequency)}
+                  onClick={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      due_date: '',
+                      reminder_frequency: '',
+                    }))
+                  }
+                  sx={{ textTransform: 'none' }}
+                >
+                  Reset
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="due_date" className="block text-sm font-medium text-secondary mb-2">
+                    Due Date
+                  </label>
+                  <input
+                    type="date"
+                    id="due_date"
+                    name="due_date"
+                    value={formData.due_date}
+                    min={new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                    onChange={handleChange}
+                    disabled={loading}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="reminder_frequency" className="block text-sm font-medium text-secondary mb-2">
+                    Reminder Frequency
+                  </label>
+                  <select
+                    id="reminder_frequency"
+                    name="reminder_frequency"
+                    value={formData.reminder_frequency}
+                    onChange={handleChange}
+                    disabled={loading}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
+                  >
+                    <option value="">Select reminder frequency</option>
+                    <option value="Daily">Daily</option>
+                    <option value="Weekly">Weekly</option>
+                    <option value="Monthly">Monthly</option>
+                  </select>
                 </div>
               </div>
             </div>

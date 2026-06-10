@@ -11,6 +11,7 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
+import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { apiUrl } from '../../config/api'
 
@@ -61,6 +62,14 @@ function Company_co_home() {
       description: 'Review unit mappings for coordinators and approvers across the company.',
       path: '/company_co/unit-management',
       icon: <ApartmentRoundedIcon sx={{ fontSize: 38 }} />,
+      accent: sharedTileAccent,
+    },
+    {
+      eyebrow: 'Communication',
+      title: 'RACM Communication',
+      description: 'Manage common and process-specific communication contacts for RACM workflows.',
+      path: '/company_co/racm-communication',
+      icon: <MarkEmailReadRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },
     {

@@ -9,6 +9,7 @@ import RoleBasedProtectedRoute from './components/RoleBasedProtectedRoute'
 import { Toaster } from 'react-hot-toast'
 import { GlobalLoadingProvider, useGlobalLoading } from './contexts/GlobalLoadingContext'
 import { apiUrl } from './config/api'
+import { installGlobalAuthSessionHandler } from './utils/authSession'
 
 const Home = lazy(() => import('./pages/Home'))
 const Login = lazy(() => import('./pages/Login'))
@@ -163,7 +164,7 @@ function RouteFallbackRedirect() {
       }
 
       if (!cancelled) {
-        setRedirectPath('/login')
+        setRedirectPath('/')
       }
     }
 
@@ -182,6 +183,10 @@ function RouteFallbackRedirect() {
 }
 
 function App() {
+  useEffect(() => {
+    installGlobalAuthSessionHandler()
+  }, [])
+
   return (
     <GlobalLoadingProvider>
       <GlobalLoadingStrip />
@@ -292,7 +297,7 @@ function App() {
               <Route path="unclassified-controls" element={<UnclassifiedControls />} />
               <Route path="key-manual-ai-insights" element={<KeyManualAiInsightsSummary />} />
               <Route path="racm-management" element={<RacmManagementDashboard />} />
-              <Route path="communication-matrix" element={<CommunicationMatrix />} />
+              <Route path="racm-communication" element={<CommunicationMatrix />} />
               <Route path="business-processes" element={<CompanyCoordinatorBusinessProcessManagement />} />
               <Route path="racm-assignment" element={<RacmAssignment />} />
               <Route path="user-management" element={<UserManagement />} />

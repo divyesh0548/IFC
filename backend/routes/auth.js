@@ -4,7 +4,16 @@ const { pool } = require('../utils/db');
 const { logAuditEvent } = require('../utils/auditLog');
 const { sendEmail } = require('../utils/send_email');
 const { encryptToken, decryptToken, generateTempPassword } = require('../utils/auth_utility');
-const { getEmailFromAuthCookies } = require('../modules/auth/auth.middleware');
+const {
+  clearCookiesAndRespondAuthError,
+  getEmailFromAuthCookies,
+} = require('../modules/auth/auth.middleware');
+const {
+  clearAuthCookies,
+  getAuthCookieOptions,
+  getAuthSessionDurationHours,
+  getAuthSessionMaxAgeMs,
+} = require('../modules/auth/auth.cookies');
 const { hashPassword, verifyPassword, isPasswordHash, getPasswordPepper } = require('../utils/password');
 
 const router = express.Router();
@@ -12,6 +21,9 @@ const router = express.Router();
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
+
+const AUTH_SESSION_DURATION_HOURS = getAuthSessionDurationHours();
+const AUTH_SESSION_MAX_AGE_MS = getAuthSessionMaxAgeMs();
 
 function isDatabaseConnectionError(error) {
   return (
@@ -143,45 +155,19 @@ router.post('/login', async (req, res) => {
     };
 
     const jwtToken = jwt.sign(tokenPayload, jwtSecret, {
-      expiresIn: '24h' // Token expires in 24 hours
+      expiresIn: `${AUTH_SESSION_DURATION_HOURS}h`
     });
 
     // Add extra encryption layer to JWT token
     const encryptedToken = encryptToken(jwtToken);
 
-    // Clear all existing auth tokens (to prevent dual login)
-    res.clearCookie('userAuthToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
-    res.clearCookie('authToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
-    res.clearCookie('auditorAuthToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
-    res.clearCookie('approverAuthToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
+    clearAuthCookies(res);
 
     // Set httpOnly cookie with the encrypted token (unified cookie name)
     res.cookie('authToken', encryptedToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
-      sameSite: 'lax', // CSRF protection
-      path: '/', // Available to all paths
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      ...getAuthCookieOptions(),
+      maxAge: AUTH_SESSION_MAX_AGE_MS,
+      expires: new Date(Date.now() + AUTH_SESSION_MAX_AGE_MS),
     });
 
     await logAuditEvent('Logged In', user.email_id);
@@ -214,10 +200,7 @@ router.get('/verify', async (req, res) => {
     const token = req.cookies.authToken;
     
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'No token provided'
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'No token provided');
     }
 
     // Decrypt the token
@@ -238,10 +221,7 @@ router.get('/verify', async (req, res) => {
     const userResult = await queryUserByEmailForAuth(decoded.email_id);
     
     if (userResult.rows.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found'
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'User not found');
     }
     
     const user = userResult.rows[0];
@@ -276,17 +256,11 @@ router.get('/verify', async (req, res) => {
     }
 
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired token'
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Invalid or expired token');
     }
     
     console.error('Token verification error:', error);
-    res.status(401).json({
-      success: false,
-      message: 'Token verification failed'
-    });
+    return clearCookiesAndRespondAuthError(res, 401, 'Token verification failed');
   }
 });
 
@@ -342,10 +316,7 @@ router.get('/profile', async (req, res) => {
 
     const emailId = getEmailFromAuthCookies(req);
     if (!emailId) {
-      return res.status(401).json({
-        success: false,
-        message: 'No token provided',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'No token provided');
     }
 
     const profileQuery = `
@@ -410,10 +381,7 @@ router.put('/profile', async (req, res) => {
 
     const emailId = getEmailFromAuthCookies(req);
     if (!emailId) {
-      return res.status(401).json({
-        success: false,
-        message: 'No token provided',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'No token provided');
     }
 
     const empNameRaw = req.body?.emp_name;
@@ -508,31 +476,7 @@ router.post('/logout', async (req, res) => {
       await logAuditEvent('Logged Out', userEmail);
     }
 
-    // Clear all auth cookies
-    res.clearCookie('authToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
-    res.clearCookie('userAuthToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
-    res.clearCookie('auditorAuthToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
-    res.clearCookie('approverAuthToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
+    clearAuthCookies(res);
 
     res.status(200).json({
       success: true,
@@ -541,30 +485,7 @@ router.post('/logout', async (req, res) => {
   } catch (error) {
     console.error('Logout error:', error);
     // Still clear cookies and return success even if logging fails
-    res.clearCookie('authToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
-    res.clearCookie('userAuthToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
-    res.clearCookie('auditorAuthToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
-    res.clearCookie('approverAuthToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    });
+    clearAuthCookies(res);
     res.status(200).json({
       success: true,
       message: 'Logged out successfully'
@@ -651,17 +572,11 @@ router.post('/update-password', async (req, res) => {
 
     const sessionEmail = getEmailFromAuthCookies(req);
     if (!sessionEmail) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Authentication required');
     }
 
     if (normalizeEmail(sessionEmail) !== normalizeEmail(email_id)) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication session does not match this user'
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Authentication session does not match this user');
     }
 
     // Verify current password (or temp password)
@@ -669,10 +584,7 @@ router.post('/update-password', async (req, res) => {
     const verifyResult = await pool.query(verifyQuery, [normalizeEmail(sessionEmail)]);
 
     if (verifyResult.rows.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid current password'
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Invalid current password');
     }
 
     const user = verifyResult.rows[0];

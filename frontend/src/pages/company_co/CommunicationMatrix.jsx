@@ -30,6 +30,11 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { toast } from 'react-hot-toast'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import {
+  PAGE_SUBHEADER_TEXT_SX,
+  TABLE_HEADER_BG,
+  TABLE_ROW_HOVER_BG,
+} from '../../uiConstants'
 
 const addDialogDefaults = {
   open: false,
@@ -240,77 +245,137 @@ function CommunicationMatrix() {
   }
 
   const tableBorderColor = alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.16 : 0.2)
+  const filterControlSx = { minWidth: { xs: '100%', sm: 240 } }
+  const actionButtonSx = { textTransform: 'none', fontWeight: 700 }
+  const bodyCellSx = {
+    py: 1.55,
+    px: 2.25,
+    borderBottom: `1px solid ${tableBorderColor}`,
+    verticalAlign: 'top',
+  }
+  const headCellSx = {
+    ...bodyCellSx,
+    py: 1.7,
+    fontSize: '0.92rem',
+    fontWeight: 800,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    color: 'text.secondary',
+    backgroundColor: TABLE_HEADER_BG,
+  }
 
   return (
     <Box sx={{ px: 0, py: 2 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'stretch', sm: 'center' }, gap: 2, mb: 2, flexDirection: { xs: 'column', sm: 'row' } }}>
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>
-          Communication Matrix
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <FormControl size="small" sx={{ minWidth: 240 }}>
-            <InputLabel id="business-process-filter-label">Business Process</InputLabel>
-            <Select
-              labelId="business-process-filter-label"
-              value={businessProcessFilter}
-              label="Business Process"
-              onChange={(event) => setBusinessProcessFilter(event.target.value)}
-              disabled={loading}
-            >
-              <MenuItem value="all">All Business Processes</MenuItem>
-              {businessProcesses.map((process) => (
-                <MenuItem key={process} value={process}>
-                  {process}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <Button
-            variant="contained"
-            color="secondary"
-            startIcon={<AddIcon />}
-            onClick={handleOpenAddDialog}
-            disabled={loading || deleting || mappedUnits.length === 0}
-            sx={{ textTransform: 'none', fontWeight: 600 }}
-          >
-            Add
-          </Button>
-          <Button
-            variant={deleteMode ? 'contained' : 'outlined'}
-            color="error"
-            startIcon={<DeleteOutlineIcon />}
-            onClick={() => {
-              if (deleteMode) {
-                handleDeleteClick()
-              } else {
-                handleDeleteModeToggle()
-              }
-            }}
-            disabled={loading || deleting || entries.length === 0 || (deleteMode && selectedEntryIds.size === 0)}
-            sx={{ textTransform: 'none', fontWeight: 600 }}
-          >
-            {deleteMode
-              ? (selectedEntryIds.size > 0 ? `Delete (${selectedEntryIds.size})` : 'Delete')
-              : 'Delete'}
-          </Button>
-        </Box>
-      </Box>
-
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      <Paper sx={{ p: 3, borderRadius: 2 }} onClick={handleListContainerClick}>
+      <Paper
+        elevation={0}
+        sx={{ overflow: 'visible', backgroundColor: 'transparent', boxShadow: 'none', borderRadius: 0 }}
+        onClick={handleListContainerClick}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: { xs: 'stretch', md: 'flex-start' },
+            gap: 2,
+            px: { xs: 0, sm: 0.5 },
+            py: 2.25,
+            flexDirection: { xs: 'column', md: 'row' },
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            mb: 2,
+          }}
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              component="h1"
+              sx={{
+                fontSize: { xs: '1.45rem', sm: '1.7rem' },
+                fontWeight: 850,
+                color: 'text.primary',
+                lineHeight: 1.15,
+              }}
+            >
+              Communication CC List
+            </Typography>
+            <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, mt: 0.75, maxWidth: 760 }}>
+              Emails added for a business process are included in the CC list on all emails sent for that business process.
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', flexWrap: 'wrap', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+            <FormControl size="small" sx={filterControlSx}>
+              <InputLabel id="business-process-filter-label">Business Process</InputLabel>
+              <Select
+                labelId="business-process-filter-label"
+                value={businessProcessFilter}
+                label="Business Process"
+                onChange={(event) => setBusinessProcessFilter(event.target.value)}
+                disabled={loading}
+              >
+                <MenuItem value="all">All Business Processes</MenuItem>
+                {businessProcesses.map((process) => (
+                  <MenuItem key={process} value={process}>
+                    {process}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={<AddIcon />}
+              onClick={handleOpenAddDialog}
+              disabled={loading || deleting || mappedUnits.length === 0}
+              sx={actionButtonSx}
+            >
+              Add
+            </Button>
+            <Button
+              variant={deleteMode ? 'contained' : 'outlined'}
+              color="error"
+              startIcon={<DeleteOutlineIcon />}
+              onClick={() => {
+                if (deleteMode) {
+                  handleDeleteClick()
+                } else {
+                  handleDeleteModeToggle()
+                }
+              }}
+              disabled={loading || deleting || entries.length === 0 || (deleteMode && selectedEntryIds.size === 0)}
+              sx={actionButtonSx}
+            >
+              {deleteMode
+                ? (selectedEntryIds.size > 0 ? `Delete (${selectedEntryIds.size})` : 'Delete')
+                : 'Delete'}
+            </Button>
+          </Box>
+        </Box>
+
         {loading ? (
-          <Box sx={{ py: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.2 }}>
+          <Box sx={{ py: 5, px: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.2 }}>
             <CircularProgress size={24} />
             <Typography color="text.secondary">Loading communication matrix...</Typography>
           </Box>
         ) : (
-          <TableContainer sx={{ border: `1px solid ${tableBorderColor}`, borderRadius: 1 }}>
-            <Table sx={{ minWidth: 720 }}>
+          <TableContainer
+            sx={{
+              border: `1px solid ${tableBorderColor}`,
+              borderRadius: 1.5,
+              overflow: 'hidden',
+            }}
+          >
+            <Table
+              sx={{
+                minWidth: 720,
+                borderCollapse: 'separate',
+                borderSpacing: 0,
+              }}
+            >
               <TableHead>
-                <TableRow sx={{ backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.06 : 0.12) }}>
+                <TableRow>
                   {deleteMode ? (
-                    <TableCell sx={{ width: 54, py: 1.6 }}>
+                    <TableCell sx={{ ...headCellSx, width: 54, px: 2 }}>
                       <Checkbox
                         checked={entries.length > 0 && selectedEntryIds.size === entries.length}
                         indeterminate={selectedEntryIds.size > 0 && selectedEntryIds.size < entries.length}
@@ -325,23 +390,35 @@ function CommunicationMatrix() {
                       />
                     </TableCell>
                   ) : null}
-                  <TableCell sx={{ fontWeight: 700, py: 1.6 }}>Business Process</TableCell>
-                  <TableCell sx={{ fontWeight: 700, py: 1.6 }}>Email ID</TableCell>
-                  <TableCell sx={{ fontWeight: 700, py: 1.6 }}>Unit</TableCell>
+                  <TableCell sx={headCellSx}>Business Process</TableCell>
+                  <TableCell sx={headCellSx}>Email ID</TableCell>
+                  <TableCell sx={headCellSx}>Unit</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {entries.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={deleteMode ? 4 : 3} sx={{ py: 3 }}>
+                    <TableCell colSpan={deleteMode ? 4 : 3} sx={{ py: 4, px: 2.25, borderBottom: 0 }}>
                       <Typography color="text.secondary">No communication emails found.</Typography>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  entries.map((entry) => (
-                    <TableRow key={`${entry.id}-${entry.email_id}-${entry.business_process}-${entry.unit_id}`}>
+                  entries.map((entry, index) => (
+                    <TableRow
+                      key={`${entry.id}-${entry.email_id}-${entry.business_process}-${entry.unit_id}`}
+                      hover
+                      sx={{
+                        '&:hover': {
+                          backgroundColor: TABLE_ROW_HOVER_BG,
+                        },
+                        '&:last-of-type td': { borderBottom: 0 },
+                        '& td': {
+                          borderBottom: index === entries.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
+                        },
+                      }}
+                    >
                       {deleteMode ? (
-                        <TableCell sx={{ py: 1.5 }}>
+                        <TableCell sx={{ ...bodyCellSx, px: 2 }}>
                           <Checkbox
                             checked={selectedEntryIds.has(Number(entry.id))}
                             onChange={(event) => {
@@ -357,9 +434,9 @@ function CommunicationMatrix() {
                           />
                         </TableCell>
                       ) : null}
-                      <TableCell sx={{ py: 1.5 }}>{entry.business_process || '-'}</TableCell>
-                      <TableCell sx={{ py: 1.5 }}>{entry.email_id || '-'}</TableCell>
-                      <TableCell sx={{ py: 1.5 }}>{entry.unit_name || entry.unit_id || '-'}</TableCell>
+                      <TableCell sx={bodyCellSx}>{entry.business_process || '-'}</TableCell>
+                      <TableCell sx={bodyCellSx}>{entry.email_id || '-'}</TableCell>
+                      <TableCell sx={bodyCellSx}>{entry.unit_name || entry.unit_id || '-'}</TableCell>
                     </TableRow>
                   ))
                 )}

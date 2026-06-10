@@ -18,6 +18,10 @@ const {
   tryAcquireGlobalAiModelLock,
   releaseGlobalAiModelLock,
 } = require('../../utils/ai_model_lock');
+const {
+  getMobileValidationError,
+  normalizeMobileDigits,
+} = require('../../utils/mobile_validation');
 
 const KEY_MANUAL_AI_PROMPT_VERSION = 'v1';
 
@@ -360,7 +364,8 @@ async function createCompanyUser(client, coordinator, payload = {}) {
   const empName = payload.emp_name && payload.emp_name.trim() ? payload.emp_name.trim() : null;
   const designation = payload.designation && payload.designation.trim() ? payload.designation.trim() : null;
   const department = payload.department && payload.department.trim() ? payload.department.trim() : null;
-  const mobile = payload.mobile && payload.mobile.trim() ? payload.mobile.trim() : null;
+  const mobileDigits = normalizeMobileDigits(payload.mobile);
+  const mobile = mobileDigits || null;
   const unitId = payload.unit_id && String(payload.unit_id).trim() ? String(payload.unit_id).trim() : null;
 
   if (!emailId) {
@@ -375,10 +380,13 @@ async function createCompanyUser(client, coordinator, payload = {}) {
     throw error;
   }
 
-  if (mobile && !/^[0-9]{10}$/.test(mobile)) {
-    const error = new Error('Mobile number must be 10 digits');
-    error.statusCode = 400;
-    throw error;
+  if (mobile) {
+    const mobileError = getMobileValidationError(mobile);
+    if (mobileError) {
+      const error = new Error(mobileError);
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   const companyIdentifier = coordinator.company_identifier || null;
@@ -2004,7 +2012,7 @@ async function createUser(req, res) {
     const empName = String(emp_name || '').trim() || null;
     const userDesignation = String(designation || '').trim() || null;
     const userDepartment = String(department || '').trim() || null;
-    const userMobile = String(mobile || '').trim() || null;
+    const userMobile = normalizeMobileDigits(mobile) || null;
     const unitId = String(unit_id || '').trim() || null;
     const companyIdentifier = coordinator.company_identifier || null;
 
@@ -2022,11 +2030,14 @@ async function createUser(req, res) {
       });
     }
 
-    if (userMobile && !/^[0-9]{10}$/.test(userMobile)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Mobile number must be 10 digits',
-      });
+    if (userMobile) {
+      const mobileError = getMobileValidationError(userMobile);
+      if (mobileError) {
+        return res.status(400).json({
+          success: false,
+          message: mobileError,
+        });
+      }
     }
 
     if (unitId && !companyIdentifier) {
@@ -2233,6 +2244,19 @@ async function createUsersBulk(req, res) {
         return;
       }
 
+      const mobileDigits = normalizeMobileDigits(row?.mobile);
+      if (mobileDigits) {
+        const mobileError = getMobileValidationError(mobileDigits);
+        if (mobileError) {
+          skippedRows.push({
+            rowNumber,
+            email_id: emailId,
+            reason: mobileError,
+          });
+          return;
+        }
+      }
+
       uploadRows.push({
         rowNumber,
         payload: {
@@ -2240,10 +2264,7 @@ async function createUsersBulk(req, res) {
           emp_name: row?.emp_name || null,
           department: row?.department || null,
           designation: row?.designation || null,
-          mobile: (() => {
-            const onlyDigits = String(row?.mobile || '').replace(/\D/g, '');
-            return onlyDigits.length === 10 ? onlyDigits : null;
-          })(),
+          mobile: mobileDigits || null,
           unit_id: selectedUnitId,
         },
       });
@@ -2321,12 +2342,20 @@ async function createUsersBulk(req, res) {
       }
 
       const emailId = normalizeEmail(item.payload?.email_id);
-      const mobileValue = String(item.payload?.mobile || '').trim() || null;
+      const mobileValue = normalizeMobileDigits(item.payload?.mobile) || null;
 
-      if (mobileValue && !/^[0-9]{10}$/.test(mobileValue)) {
-        const error = new Error('Mobile number must be 10 digits');
-        error.statusCode = 400;
-        throw error;
+      if (mobileValue) {
+        const mobileError = getMobileValidationError(mobileValue);
+        if (mobileError) {
+          if (item.rowNumber != null) {
+            skippedRows.push({
+              rowNumber: item.rowNumber,
+              email_id: emailId,
+              reason: mobileError,
+            });
+          }
+          continue;
+        }
       }
 
       if (existingEmailSet.has(emailId)) {

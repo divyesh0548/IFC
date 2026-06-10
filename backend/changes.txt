@@ -23,3 +23,10 @@ Sapan sir said to display number of RACMs in sample required excel.
 Version 2:
 
 Company/Unit wise different RACM schema. Coordinator will define the schema and according to that RACMs will be uploaded and created. Coordinator will also have rights to edit the RACM.
+
+
+
+From all IFC, create a table with risk description, Business Process and sub-porcess. Using AI refine them and remove duplicates and use that Risk categories to test whether an IFC is testing that risk or not.
+
+
+Get the RACM from Mayank sir which he uploaded and faced issues of missing columns.

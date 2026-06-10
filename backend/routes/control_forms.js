@@ -10,6 +10,7 @@ const { sendEmail } = require('../utils/send_email');
 const { getCcEmailsForRacm } = require('../utils/racm_cc_recipients');
 const { decryptToken } = require('../utils/auth_utility');
 const { verifyUserAuth } = require('../modules/auth/auth.middleware');
+const { clearAuthCookies } = require('../modules/auth/auth.cookies');
 const { logAuditEvent, EXCEL_BULK_RACM_UPLOAD_ACTION } = require('../utils/auditLog');
 const {
   createOrResubmitDeficiencyResponse,
@@ -141,7 +142,26 @@ function parseActiveFilter(value) {
   return undefined;
 }
 
-async function getControlFormsForList(req, options = {}) {
+const CONTROL_FORMS_LIST_FROM = `
+  FROM control_forms cf
+  LEFT JOIN company_unit_master cum
+    ON cum.company_identifier = cf.company_identifier
+   AND cum.unit_id = cf.unit_id
+  LEFT JOIN ifc_users u
+    ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
+   AND u.company_identifier = cf.company_identifier
+   AND NULLIF(TRIM(u.unit_id), '') = NULLIF(TRIM(cf.unit_id), '')
+   AND u.role = 'user'
+`;
+
+const CONTROL_FORMS_LIST_SELECT = `
+  SELECT
+    cf.*,
+    NULLIF(TRIM(cum.unit_name), '') AS unit_name,
+    NULLIF(TRIM(u.emp_name), '') AS control_owner_name
+`;
+
+function appendControlFormsListFilters(req, options, queryParts) {
   const { assignmentEligibleOnly = false } = options;
   const {
     assignment,
@@ -154,35 +174,20 @@ async function getControlFormsForList(req, options = {}) {
     cycle,
     sub_process,
     unit_id,
+    conclusion,
+    pending_changes,
   } = req.query;
 
-  let query = `
-    SELECT
-      cf.*,
-      NULLIF(TRIM(cum.unit_name), '') AS unit_name,
-      NULLIF(TRIM(u.emp_name), '') AS control_owner_name
-    FROM control_forms cf
-    LEFT JOIN company_unit_master cum
-      ON cum.company_identifier = cf.company_identifier
-     AND cum.unit_id = cf.unit_id
-    LEFT JOIN ifc_users u
-      ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
-     AND u.company_identifier = cf.company_identifier
-     AND NULLIF(TRIM(u.unit_id), '') = NULLIF(TRIM(cf.unit_id), '')
-     AND u.role = 'user'
-    WHERE 1=1
-  `;
-  const queryParams = [];
-  let paramIndex = 1;
+  let { whereClause, queryParams, paramIndex } = queryParts;
 
   if (req.user.role === 'company_co') {
     const coordinatorCompanyIdentifier = req.user.company_identifier;
     if (coordinatorCompanyIdentifier) {
-      query += ` AND cf.company_identifier = $${paramIndex}`;
+      whereClause += ` AND cf.company_identifier = $${paramIndex}`;
       queryParams.push(coordinatorCompanyIdentifier);
-      paramIndex++;
+      paramIndex += 1;
     }
-    query += `
+    whereClause += `
       AND EXISTS (
         SELECT 1
         FROM company_unit_master coordinator_units
@@ -192,78 +197,107 @@ async function getControlFormsForList(req, options = {}) {
       )
     `;
     queryParams.push(req.user.email_id);
-    paramIndex++;
+    paramIndex += 1;
   } else if (company_identifier) {
-    query += ` AND cf.company_identifier = $${paramIndex}`;
+    whereClause += ` AND cf.company_identifier = $${paramIndex}`;
     queryParams.push(company_identifier);
-    paramIndex++;
+    paramIndex += 1;
   }
 
   if (unit_id) {
-    query += ` AND cf.unit_id = $${paramIndex}`;
+    whereClause += ` AND cf.unit_id = $${paramIndex}`;
     queryParams.push(String(unit_id).trim());
-    paramIndex++;
+    paramIndex += 1;
   }
 
   if (control_owner) {
-    query += ` AND LOWER(TRIM(cf.control_owner)) = LOWER(TRIM($${paramIndex}))`;
+    whereClause += ` AND LOWER(TRIM(cf.control_owner)) = LOWER(TRIM($${paramIndex}))`;
     queryParams.push(control_owner.trim());
-    paramIndex++;
+    paramIndex += 1;
   }
 
   if (business_process) {
-    query += ` AND cf.business_process IS NOT NULL AND LOWER(TRIM(cf.business_process)) = $${paramIndex}`;
+    whereClause += ` AND cf.business_process IS NOT NULL AND LOWER(TRIM(cf.business_process)) = $${paramIndex}`;
     queryParams.push(business_process.trim().toLowerCase());
-    paramIndex++;
+    paramIndex += 1;
   }
 
   if (active !== undefined) {
     const activeFilter = parseActiveFilter(active);
     if (activeFilter === true) {
-      query += ` AND cf.active = TRUE`;
+      whereClause += ' AND cf.active = TRUE';
     } else if (activeFilter === false) {
-      query += ` AND COALESCE(cf.active, FALSE) = FALSE`;
+      whereClause += ' AND COALESCE(cf.active, FALSE) = FALSE';
     }
   }
 
   if (status) {
-    if (status === 'pending') {
-      query += ` AND (cf.status IS NULL OR cf.status = '' OR cf.status = 'null')`;
-    } else if (status === 'sent for approval') {
-      query += ` AND cf.status = $${paramIndex}`;
+    const normalizedStatus = String(status).trim().toLowerCase();
+    if (normalizedStatus === 'pending') {
+      whereClause += ` AND (
+        cf.status IS NULL
+        OR cf.status = ''
+        OR cf.status = 'null'
+        OR LOWER(TRIM(cf.status)) = 'sent for approval'
+      )`;
+    } else if (normalizedStatus === 'sent for approval') {
+      whereClause += ` AND cf.status = $${paramIndex}`;
       queryParams.push('sent for approval');
-      paramIndex++;
-    } else if (status === 'approved') {
-      query += ` AND cf.status = $${paramIndex}`;
+      paramIndex += 1;
+    } else if (normalizedStatus === 'approved') {
+      whereClause += ` AND cf.status = $${paramIndex}`;
       queryParams.push('Approved');
-      paramIndex++;
-    } else if (status === 'rejected') {
-      query += ` AND cf.status = $${paramIndex}`;
+      paramIndex += 1;
+    } else if (normalizedStatus === 'rejected') {
+      whereClause += ` AND cf.status = $${paramIndex}`;
       queryParams.push('Rejected');
-      paramIndex++;
+      paramIndex += 1;
     }
   }
 
   if (financial_year) {
-    query += ` AND cf.financial_year IS NOT NULL AND TRIM(cf.financial_year) = $${paramIndex}`;
+    whereClause += ` AND cf.financial_year IS NOT NULL AND TRIM(cf.financial_year) = $${paramIndex}`;
     queryParams.push(financial_year.trim());
-    paramIndex++;
+    paramIndex += 1;
   }
 
   if (sub_process) {
-    query += ` AND cf.sub_process IS NOT NULL AND TRIM(cf.sub_process) = $${paramIndex}`;
+    whereClause += ` AND cf.sub_process IS NOT NULL AND TRIM(cf.sub_process) = $${paramIndex}`;
     queryParams.push(sub_process.trim());
-    paramIndex++;
+    paramIndex += 1;
   }
 
   if (cycle) {
-    query += ` AND cf.cycle IS NOT NULL AND TRIM(cf.cycle) = $${paramIndex}`;
+    whereClause += ` AND cf.cycle IS NOT NULL AND TRIM(cf.cycle) = $${paramIndex}`;
     queryParams.push(cycle.trim());
-    paramIndex++;
+    paramIndex += 1;
+  }
+
+  if (conclusion) {
+    const normalizedConclusion = String(conclusion).trim();
+    if (normalizedConclusion.toLowerCase() === 'none') {
+      whereClause += ` AND (
+        cf.control_design_conclusion IS NULL
+        OR TRIM(cf.control_design_conclusion) = ''
+      )`;
+    } else {
+      whereClause += ` AND LOWER(TRIM(cf.control_design_conclusion)) = LOWER(TRIM($${paramIndex}))`;
+      queryParams.push(normalizedConclusion);
+      paramIndex += 1;
+    }
+  }
+
+  if (pending_changes !== undefined) {
+    const pendingChangesFilter = parseActiveFilter(pending_changes);
+    if (pendingChangesFilter === true) {
+      whereClause += ' AND COALESCE(cf.pending_changes, FALSE) = TRUE';
+    } else if (pendingChangesFilter === false) {
+      whereClause += ' AND COALESCE(cf.pending_changes, FALSE) = FALSE';
+    }
   }
 
   if (assignment === 'assigned') {
-    query += `
+    whereClause += `
       AND EXISTS (
         SELECT 1
         FROM ifc_users valid_owner
@@ -274,7 +308,7 @@ async function getControlFormsForList(req, options = {}) {
       )
     `;
   } else if (assignment === 'unassigned') {
-    query += `
+    whereClause += `
       AND NOT EXISTS (
         SELECT 1
         FROM ifc_users valid_owner
@@ -287,17 +321,88 @@ async function getControlFormsForList(req, options = {}) {
   }
 
   if (assignmentEligibleOnly) {
-    query += `
+    whereClause += `
       AND cf.due_date IS NOT NULL
       AND NULLIF(TRIM(COALESCE(cf.reminder_frequency, '')), '') IS NOT NULL
     `;
   }
 
-  query += ' ORDER BY cf.created_at DESC';
+  return { whereClause, queryParams, paramIndex };
+}
 
-  const result = await pool.query(query, queryParams);
-  await attachControlFormDocuments(pool, result.rows);
-  return result.rows;
+function buildControlFormsListQueryParts(req, options = {}) {
+  const queryParts = {
+    whereClause: ' WHERE 1=1',
+    queryParams: [],
+    paramIndex: 1,
+  };
+  return appendControlFormsListFilters(req, options, queryParts);
+}
+
+async function getControlFormsForList(req, options = {}) {
+  const { whereClause, queryParams } = buildControlFormsListQueryParts(req, options);
+  const orderByClause = ' ORDER BY cf.created_at DESC';
+  const shouldPaginate = req.query.page !== undefined || req.query.page_size !== undefined;
+
+  if (!shouldPaginate) {
+    const query = `${CONTROL_FORMS_LIST_SELECT}${CONTROL_FORMS_LIST_FROM}${whereClause}${orderByClause}`;
+    const result = await pool.query(query, queryParams);
+    await attachControlFormDocuments(pool, result.rows);
+    return result.rows;
+  }
+
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.page_size, 10) || 10));
+  const offset = (page - 1) * pageSize;
+  const limitParamIndex = queryParams.length + 1;
+  const offsetParamIndex = queryParams.length + 2;
+
+  const countQuery = `SELECT COUNT(*)::int AS total${CONTROL_FORMS_LIST_FROM}${whereClause}`;
+  const summaryQuery = `
+    SELECT
+      COUNT(*) FILTER (WHERE COALESCE(cf.deficiency_action_status, FALSE) = TRUE)::int AS action_required_count,
+      COUNT(*) FILTER (WHERE COALESCE(cf.pending_changes, FALSE) = TRUE)::int AS pending_change_request_count
+    ${CONTROL_FORMS_LIST_FROM}${whereClause}
+  `;
+  const conclusionOptionsQuery = `
+    SELECT DISTINCT
+      CASE
+        WHEN cf.control_design_conclusion IS NULL OR TRIM(cf.control_design_conclusion) = '' THEN 'None'
+        ELSE INITCAP(TRIM(cf.control_design_conclusion))
+      END AS conclusion_label
+    ${CONTROL_FORMS_LIST_FROM}${whereClause}
+    ORDER BY conclusion_label
+  `;
+  const dataQuery = `${CONTROL_FORMS_LIST_SELECT}${CONTROL_FORMS_LIST_FROM}${whereClause}${orderByClause} LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`;
+
+  const [countResult, summaryResult, conclusionOptionsResult, dataResult] = await Promise.all([
+    pool.query(countQuery, queryParams),
+    pool.query(summaryQuery, queryParams),
+    pool.query(conclusionOptionsQuery, queryParams),
+    pool.query(dataQuery, [...queryParams, pageSize, offset]),
+  ]);
+
+  await attachControlFormDocuments(pool, dataResult.rows);
+
+  const summaryRow = summaryResult.rows[0] || {};
+  return {
+    rows: dataResult.rows,
+    total: Number(countResult.rows[0]?.total || 0),
+    page,
+    page_size: pageSize,
+    summary: {
+      action_required_count: Number(summaryRow.action_required_count || 0),
+      pending_change_request_count: Number(summaryRow.pending_change_request_count || 0),
+      conclusion_options: conclusionOptionsResult.rows
+        .map((row) => String(row.conclusion_label || '').trim())
+        .filter(Boolean)
+        .sort((a, b) => {
+          if (a === 'None') return 1;
+          if (b === 'None') return -1;
+          return a.localeCompare(b);
+        }),
+    },
+  };
 }
 
 function buildControlFormStatusEmail(status, businessProcess, processOwnerName, coordinatorName, coordinatorCompanyName, dueDate, formId) {
@@ -950,6 +1055,7 @@ async function verifyAuth(req, res, next) {
     
     if (!token) {
       console.error('❌ No token found in cookies');
+      clearAuthCookies(res);
       return res.status(401).json({
         success: false,
         message: 'Authentication required'
@@ -963,6 +1069,7 @@ async function verifyAuth(req, res, next) {
       decoded = jwt.verify(decryptToken(token), jwtSecret);
     } catch (error) {
       console.error('❌ Invalid or expired token:', error.message);
+      clearAuthCookies(res);
       return res.status(401).json({
         success: false,
         message: 'Invalid or expired token'
@@ -973,6 +1080,7 @@ async function verifyAuth(req, res, next) {
     const userResult = await queryAuthenticatedUser(decoded.email_id);
     
     if (userResult.rows.length === 0) {
+      clearAuthCookies(res);
       return res.status(401).json({
         success: false,
         message: 'User not found'
@@ -994,6 +1102,7 @@ async function verifyAuth(req, res, next) {
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
       console.error('❌ Invalid or expired token:', error.message);
+      clearAuthCookies(res);
       return res.status(401).json({
         success: false,
         message: 'Invalid or expired token'
@@ -1001,6 +1110,7 @@ async function verifyAuth(req, res, next) {
     }
     
     console.error('❌ Authentication user lookup failed:', error.message);
+    clearAuthCookies(res);
     return res.status(isDatabaseConnectionError(error) ? 503 : 500).json({
       success: false,
       message: isDatabaseConnectionError(error)
@@ -1369,12 +1479,24 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
 router.get('/', verifyAuth, async (req, res) => {
   try {
     console.log('RACM GET request filters:', req.query);
-    const rows = await getControlFormsForList(req);
+    const result = await getControlFormsForList(req);
+    const isPaginated = result && !Array.isArray(result);
+
+    if (isPaginated) {
+      return res.status(200).json({
+        success: true,
+        data: result.rows,
+        count: result.total,
+        page: result.page,
+        page_size: result.page_size,
+        summary: result.summary,
+      });
+    }
 
     res.status(200).json({
       success: true,
-      data: rows,
-      count: rows.length
+      data: result,
+      count: result.length
     });
   } catch (error) {
     console.error('Error fetching RACM records:', error);

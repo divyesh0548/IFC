@@ -14,11 +14,17 @@ import IconButton from '@mui/material/IconButton'
 import Checkbox from '@mui/material/Checkbox'
 import Autocomplete from '@mui/material/Autocomplete'
 import InputAdornment from '@mui/material/InputAdornment'
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import ChecklistRoundedIcon from '@mui/icons-material/ChecklistRounded'
 import { toast } from 'react-hot-toast'
+import dayjs from 'dayjs'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 const ASSIGNABLE_USER_INITIAL_LIMIT = 5
 const ASSIGNABLE_USER_SEARCH_LIMIT = 50
@@ -51,6 +57,7 @@ function CreateControlForm() {
     duplicate: false,
     available: false,
   })
+  useSyncGlobalLoading(loading)
 
   const fetchAssignableUsers = useCallback(
     async ({ q = '', limit = ASSIGNABLE_USER_INITIAL_LIMIT } = {}) => {
@@ -127,7 +134,9 @@ function CreateControlForm() {
     existence_occurrence: false,
     rights_and_obligation: false,
     valuation_and_allocation: false,
-    presentation_and_disclosure: false
+    presentation_and_disclosure: false,
+    due_date: '',
+    reminder_frequency: '',
   })
 
   const dropdownOptions = {
@@ -152,6 +161,23 @@ function CreateControlForm() {
 
   const [dropdownSelections, setDropdownSelections] = useState({})
   const [otherValues, setOtherValues] = useState({})
+  const hasReminderValues =
+    String(formData.due_date || '').trim() !== '' ||
+    String(formData.reminder_frequency || '').trim() !== ''
+
+  const getTomorrowDateString = () => {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().split('T')[0]
+  }
+
+  const handleResetReminderSettings = () => {
+    setFormData((prev) => ({
+      ...prev,
+      due_date: '',
+      reminder_frequency: '',
+    }))
+  }
 
   useEffect(() => {
     // Fetch user's company_identifier
@@ -416,6 +442,13 @@ function CreateControlForm() {
       return
     }
 
+    const dueDateValue = String(formData.due_date || '').trim()
+    const reminderFrequencyValue = String(formData.reminder_frequency || '').trim()
+    if ((dueDateValue && !reminderFrequencyValue) || (!dueDateValue && reminderFrequencyValue)) {
+      toast.error('Please fill both Due Date and Reminder Frequency (or keep both empty).')
+      return
+    }
+
     if (controlNumberMeta.duplicate) {
       toast.error('Control Number already exists. Please choose another one.')
       return
@@ -440,7 +473,6 @@ function CreateControlForm() {
 
       if (response.ok && data.success) {
         toast.success('RACM created successfully')
-        navigate('/company_co/dashboard')
       } else if (response.status === 409) {
         toast.error(data.message || 'Duplicate RACM already exists.')
       } else {
@@ -1042,6 +1074,106 @@ function CreateControlForm() {
                   })}
               </Box>
             </Box>
+
+            {/* Reminder settings section */}
+            <Paper
+              elevation={0}
+              sx={{
+                p: { xs: 2, sm: 2.2 },
+                mb: 3,
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor:
+                  theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.07)'
+                    : theme.palette.divider,
+                backgroundColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.025)'
+                  : '#f8fafc',
+              }}
+            >
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 1.1,
+                  rowGap: 1,
+                  mb: 1.8,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.1, flex: 1, minWidth: 0 }}>
+                  <ChecklistRoundedIcon sx={{ fontSize: 20, color: theme.palette.text.secondary }} />
+                  <Typography sx={{ fontSize: '1rem', fontWeight: 800, color: theme.palette.text.primary }}>
+                    Reminder settings
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.86rem', color: theme.palette.text.secondary }}>
+                    Optional
+                  </Typography>
+                </Box>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  size="small"
+                  onClick={handleResetReminderSettings}
+                  disabled={loading || !hasReminderValues}
+                  sx={{
+                    textTransform: 'none',
+                    borderRadius: 2,
+                    ml: { xs: 'auto', sm: 0 },
+                  }}
+                >
+                  Reset
+                </Button>
+              </Box>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+                  gap: 2,
+                }}
+              >
+                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                  <DatePicker
+                    label="Due Date"
+                    value={formData.due_date ? dayjs(formData.due_date) : null}
+                    onChange={(newValue) => {
+                      if (!newValue || !newValue.isValid()) {
+                        setFormData((prev) => ({ ...prev, due_date: '' }))
+                        return
+                      }
+                      setFormData((prev) => ({ ...prev, due_date: newValue.format('YYYY-MM-DD') }))
+                    }}
+                    minDate={dayjs(getTomorrowDateString())}
+                    disabled={loading}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                      },
+                    }}
+                  />
+                </LocalizationProvider>
+
+                <FormControl fullWidth disabled={loading} variant="outlined">
+                  <InputLabel id="manual-reminder-frequency-label">Reminder Frequency</InputLabel>
+                  <Select
+                    labelId="manual-reminder-frequency-label"
+                    value={formData.reminder_frequency}
+                    label="Reminder Frequency"
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        reminder_frequency: e.target.value,
+                      }))
+                    }
+                  >
+                    <MenuItem value="Daily">Daily</MenuItem>
+                    <MenuItem value="Weekly">Weekly</MenuItem>
+                    <MenuItem value="Monthly">Monthly</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+            </Paper>
 
             {/* Submit Button */}
             <Box sx={{ display: 'flex', gap: 2, mt: 4, flexWrap: 'wrap' }}>

@@ -17,8 +17,9 @@ import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
 import { toast } from 'react-hot-toast'
-import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
 function CreateUser() {
   const theme = useTheme()
@@ -87,11 +88,6 @@ function CreateUser() {
     return emailRegex.test(emailValue)
   }
 
-  const validateMobile = (mobileValue) => {
-    const mobileRegex = /^[0-9]{10}$/
-    return mobileRegex.test(mobileValue)
-  }
-
   const resetForm = () => {
     setEmail('')
     setEmpCode('')
@@ -128,10 +124,10 @@ function CreateUser() {
       return
     }
 
-    if (mobile.trim() && !validateMobile(mobile.trim())) {
-      const errorMsg = 'Mobile number must be 10 digits'
-      setError(errorMsg)
-      toast.error(errorMsg)
+    const mobileValidationError = mobile.trim() ? getMobileValidationError(mobile.trim()) : null
+    if (mobileValidationError) {
+      setError(mobileValidationError)
+      toast.error(mobileValidationError)
       return
     }
 
@@ -150,7 +146,7 @@ function CreateUser() {
           emp_name: empName.trim() || null,
           designation: designation.trim() || null,
           department: department.trim() || null,
-          mobile: mobile.trim() || null,
+          mobile: normalizeMobileDigits(mobile) || null,
           unit_id: unitId,
         }),
       })
@@ -374,8 +370,11 @@ function CreateUser() {
                       value={mobile}
                       onChange={(e) => setMobile(e.target.value)}
                       disabled={loading}
-                      error={!!mobile && !validateMobile(mobile)}
-                      helperText={mobile && !validateMobile(mobile) ? 'Mobile number must be 10 digits' : 'Optional. Enter digits only.'}
+                      error={!!mobile && !!getMobileValidationError(mobile)}
+                      helperText={
+                        (mobile && getMobileValidationError(mobile)) ||
+                        'Optional. Enter a valid 10-digit mobile number.'
+                      }
                       fullWidth
                       inputProps={{
                         maxLength: 10,

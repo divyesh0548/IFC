@@ -1,4 +1,17 @@
-import { alpha, createTheme } from '@mui/material/styles'
+import { alpha, createTheme, darken } from '@mui/material/styles'
+
+/**
+ * Global corner radius — edit only here to update the whole app.
+ * - `unit` drives MUI `sx` numbers (e.g. borderRadius: 2 → unit × 2 px).
+ * - Named keys are used for component overrides (buttons, inputs, surfaces).
+ */
+export const APP_SHAPE = {
+  unit: 2,
+  button: 3,
+  input: 3,
+  surface: 4,
+  dialog: 4,
+}
 
 export const BLUE_THEME_TOKENS = {
   light: {
@@ -54,176 +67,307 @@ export const BLUE_GRADIENTS = {
   darkHero: `linear-gradient(145deg, ${alpha(BLUE_THEME_TOKENS.dark.heroGradientStart, 0.9)} 0%, ${alpha(BLUE_THEME_TOKENS.dark.paper, 0.94)} 52%, ${alpha(BLUE_THEME_TOKENS.dark.heroGradientEnd, 0.96)} 100%)`,
 }
 
-const preview = BLUE_THEME_TOKENS.light
+const NAVBAR_BG_DARK = '#030303'
+const NAVBAR_BG_LIGHT = BLUE_THEME_TOKENS.light.navbarBg
 
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {
-      main: preview.primary,
-      light: preview.primarySoft,
-      dark: preview.primaryDeep,
-      contrastText: '#ffffff',
-    },
-    secondary: {
-      main: preview.surfaceStrong,
-      light: preview.surface,
-      dark: preview.primary,
-      contrastText: preview.text,
-    },
-    background: {
-      default: preview.background,
-      paper: preview.paper,
-    },
-    text: {
-      primary: preview.text,
-      secondary: preview.textMuted,
-      disabled: '#8a97a6',
-    },
-    divider: preview.divider,
-    blueTheme: BLUE_THEME_TOKENS,
-  },
-  typography: {
-    fontFamily: [
-      '"Archivo"',
-      '-apple-system',
-      'BlinkMacSystemFont',
-      '"Segoe UI"',
-      'Roboto',
-      '"Helvetica Neue"',
-      'Arial',
-      'sans-serif',
-    ].join(','),
-    fontWeightRegular: 500,
-    fontWeightMedium: 600,
-    fontWeightBold: 800,
-    customSizes: {
-      bigHeader: '2rem',
-      header: '1.5rem',
-      medium: '1rem',
-      small: '0.75rem',
-    },
-    h1: {
-      fontWeight: 800,
-      letterSpacing: '-0.03em',
-      lineHeight: 1.05,
-      fontSize: 'clamp(2.2rem, 4vw, 3.3rem)',
-    },
-    h2: {
-      fontWeight: 800,
-      letterSpacing: '-0.03em',
-      lineHeight: 1.12,
-      fontSize: 'clamp(1.9rem, 3.2vw, 2.6rem)',
-    },
-    h3: {
-      fontWeight: 800,
-      letterSpacing: '-0.025em',
-      lineHeight: 1.18,
-      fontSize: 'clamp(1.6rem, 2.6vw, 2.1rem)',
-    },
-    h4: {
-      fontWeight: 800,
-      letterSpacing: '-0.02em',
-      lineHeight: 1.22,
-      fontSize: '1.55rem',
-    },
-    h5: {
-      fontWeight: 800,
-      letterSpacing: '-0.01em',
-      lineHeight: 1.28,
-      fontSize: '1.25rem',
-    },
-    h6: {
-      fontWeight: 800,
-      letterSpacing: '-0.005em',
-      lineHeight: 1.32,
-      fontSize: '1.1rem',
-    },
-    body1: {
-      fontSize: '1rem',
-      lineHeight: 1.9,
-      fontWeight: 500,
-      letterSpacing: '-0.005em',
-    },
-    body2: {
-      fontSize: '0.9375rem',
-      lineHeight: 1.8,
-      fontWeight: 500,
-      letterSpacing: '-0.005em',
-    },
-    caption: {
-      fontSize: '0.75rem',
-      letterSpacing: '0.02em',
-    },
-    subtitle1: {
-      fontWeight: 700,
-      letterSpacing: '-0.01em',
-      lineHeight: 1.5,
-    },
-    subtitle2: {
-      fontWeight: 700,
-      letterSpacing: '0.06em',
-      textTransform: 'uppercase',
-      fontSize: '0.8rem',
-    },
-  },
-  components: {
-    MuiButton: {
-      styleOverrides: {
-        root: {
-          textTransform: 'none',
-          borderRadius: 8,
-        },
-        containedPrimary: {
-          backgroundColor: preview.primary,
-          color: '#ffffff',
-          '&:hover': {
-            backgroundColor: preview.primaryDeep,
-          },
-        },
-        containedSecondary: {
-          backgroundColor: preview.primary,
-          color: '#ffffff',
-          '&:hover': {
-            backgroundColor: preview.primaryDeep,
-            color: '#ffffff',
-          },
-        },
-        outlinedPrimary: {
-          borderColor: alpha(preview.primary, 0.35),
-          color: preview.text,
-          '&:hover': {
-            borderColor: preview.primary,
-            backgroundColor: alpha(preview.primary, 0.06),
-          },
-        },
-        outlinedSecondary: {
-          borderColor: alpha(preview.text, 0.18),
-          color: preview.text,
-          '&:hover': {
-            borderColor: alpha(preview.text, 0.28),
-            backgroundColor: alpha(preview.text, 0.04),
-          },
-        },
+const radiusComponentOverrides = {
+  MuiButton: {
+    styleOverrides: {
+      root: {
+        textTransform: 'none',
+        borderRadius: APP_SHAPE.button,
       },
     },
-    MuiAppBar: {
-      styleOverrides: {
-        root: {
-          backgroundColor: preview.navbarBg,
-          color: preview.navbarFg,
-        },
+  },
+  MuiPaper: {
+    styleOverrides: {
+      root: {
+        borderRadius: APP_SHAPE.surface,
+      },
+      rounded: {
+        borderRadius: APP_SHAPE.surface,
       },
     },
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundColor: preview.paper,
+  },
+  MuiCard: {
+    styleOverrides: {
+      root: {
+        borderRadius: APP_SHAPE.surface,
+      },
+    },
+  },
+  MuiDialog: {
+    styleOverrides: {
+      paper: {
+        borderRadius: APP_SHAPE.dialog,
+      },
+    },
+  },
+  MuiAlert: {
+    styleOverrides: {
+      root: {
+        borderRadius: APP_SHAPE.surface,
+      },
+    },
+  },
+  MuiOutlinedInput: {
+    styleOverrides: {
+      root: {
+        borderRadius: APP_SHAPE.input,
+      },
+    },
+  },
+  MuiTextField: {
+    defaultProps: {
+      slotProps: {
+        input: {
+          sx: { borderRadius: APP_SHAPE.input },
         },
       },
     },
   },
-})
+  MuiChip: {
+    styleOverrides: {
+      root: {
+        borderRadius: APP_SHAPE.input,
+      },
+    },
+  },
+  MuiMenu: {
+    styleOverrides: {
+      paper: {
+        borderRadius: APP_SHAPE.surface,
+      },
+    },
+  },
+  MuiPopover: {
+    styleOverrides: {
+      paper: {
+        borderRadius: APP_SHAPE.surface,
+      },
+    },
+  },
+  MuiAutocomplete: {
+    styleOverrides: {
+      paper: {
+        borderRadius: APP_SHAPE.surface,
+      },
+      listbox: {
+        borderRadius: APP_SHAPE.surface,
+      },
+    },
+  },
+}
 
-export default theme
+export function createAppTheme(mode = 'light') {
+  const isDark = mode === 'dark'
+  const paletteSet = isDark ? BLUE_THEME_TOKENS.dark : BLUE_THEME_TOKENS.light
 
+  return createTheme({
+    shape: {
+      borderRadius: APP_SHAPE.unit,
+    },
+    palette: {
+      mode,
+      divider: paletteSet.divider,
+      primary: {
+        main: paletteSet.primary,
+        light: paletteSet.primarySoft,
+        dark: paletteSet.primaryDeep,
+        contrastText: isDark ? paletteSet.background : '#ffffff',
+      },
+      secondary: {
+        main: paletteSet.surfaceStrong,
+        light: paletteSet.surface,
+        dark: paletteSet.primary,
+        contrastText: paletteSet.text,
+      },
+      background: {
+        default: paletteSet.background,
+        paper: paletteSet.paper,
+      },
+      text: {
+        primary: paletteSet.text,
+        secondary: paletteSet.textMuted,
+        disabled: isDark ? '#7f8fa1' : '#8a97a6',
+      },
+      appBar: {
+        bg: paletteSet.appBarBg,
+        fg: paletteSet.appBarFg,
+      },
+      navbar: {
+        bg: isDark ? NAVBAR_BG_DARK : NAVBAR_BG_LIGHT,
+        fg: isDark ? NAVBAR_BG_LIGHT : NAVBAR_BG_DARK,
+        bottomBorder: paletteSet.navbarBorder,
+      },
+      gradients: {
+        hero: isDark ? BLUE_GRADIENTS.darkHero : BLUE_GRADIENTS.lightHero,
+      },
+      blueTheme: BLUE_THEME_TOKENS,
+    },
+    typography: {
+      fontFamily: [
+        '"Lexend"',
+        '-apple-system',
+        'BlinkMacSystemFont',
+        '"Segoe UI"',
+        'Roboto',
+        '"Helvetica Neue"',
+        'Arial',
+        'sans-serif',
+      ].join(','),
+      fontWeightRegular: 500,
+      fontWeightMedium: 600,
+      fontWeightBold: 800,
+      customSizes: {
+        bigHeader: '2rem',
+        header: '1.5rem',
+        medium: '1rem',
+        small: '0.75rem',
+      },
+      h1: {
+        fontFamily: '"Aldrich", sans-serif',
+        fontWeight: 400,
+        color: paletteSet.text,
+        fontSize: '2rem',
+      },
+      h2: {
+        fontFamily: '"Aldrich", sans-serif',
+        fontWeight: 400,
+        color: paletteSet.text,
+        fontSize: '2rem',
+      },
+      h3: {
+        fontFamily: '"Aldrich", sans-serif',
+        fontWeight: 400,
+        color: paletteSet.text,
+        fontSize: '2rem',
+      },
+      h4: {
+        fontFamily: '"Lexend", sans-serif',
+        fontWeight: 600,
+        color: paletteSet.text,
+        fontSize: '1.5rem',
+      },
+      h5: {
+        fontFamily: '"Lexend", sans-serif',
+        fontWeight: 600,
+        color: paletteSet.text,
+        fontSize: '1.5rem',
+      },
+      h6: {
+        fontFamily: '"Lexend", sans-serif',
+        fontWeight: 600,
+        color: paletteSet.text,
+        fontSize: '1.5rem',
+      },
+      body1: {
+        fontSize: '1rem',
+        fontWeight: 500,
+        letterSpacing: '-0.005em',
+        lineHeight: 1.8,
+      },
+      body2: {
+        fontSize: '0.9375rem',
+        fontWeight: 500,
+        letterSpacing: '-0.005em',
+        lineHeight: 1.75,
+      },
+      caption: {
+        fontSize: '0.75rem',
+      },
+    },
+    components: {
+      ...radiusComponentOverrides,
+      MuiCssBaseline: {
+        styleOverrides: {
+          body: ({ theme }) => ({
+            backgroundColor: theme.palette.background.default,
+          }),
+        },
+      },
+      MuiButton: {
+        styleOverrides: {
+          ...radiusComponentOverrides.MuiButton.styleOverrides,
+          containedPrimary: ({ theme }) => ({
+            backgroundColor: theme.palette.primary.main,
+            color:
+              theme.palette.mode === 'dark'
+                ? theme.palette.background.default
+                : theme.palette.primary.contrastText,
+            '&:hover': {
+              backgroundColor:
+                theme.palette.mode === 'dark'
+                  ? darken(theme.palette.primary.main, 0.12)
+                  : darken(theme.palette.primary.main, 0.2),
+              color:
+                theme.palette.mode === 'dark'
+                  ? theme.palette.background.default
+                  : theme.palette.primary.contrastText,
+            },
+          }),
+          containedSecondary: ({ theme }) => ({
+            backgroundColor: theme.palette.primary.main,
+            color:
+              theme.palette.mode === 'dark'
+                ? theme.palette.background.default
+                : theme.palette.common.white,
+            '&:hover': {
+              backgroundColor:
+                theme.palette.mode === 'dark'
+                  ? darken(theme.palette.primary.main, 0.12)
+                  : darken(theme.palette.primary.main, 0.16),
+              color:
+                theme.palette.mode === 'dark'
+                  ? theme.palette.background.default
+                  : theme.palette.common.white,
+            },
+          }),
+          outlinedPrimary: ({ theme }) => ({
+            borderColor: alpha(theme.palette.primary.main, 0.35),
+            color: theme.palette.text.primary,
+            '&:hover': {
+              borderColor: theme.palette.primary.main,
+              backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
+            },
+          }),
+          outlinedSecondary: ({ theme }) => ({
+            borderColor: alpha(theme.palette.text.primary, 0.18),
+            color: theme.palette.text.primary,
+            '&:hover': {
+              borderColor: alpha(theme.palette.text.primary, 0.28),
+              backgroundColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.08 : 0.04),
+            },
+          }),
+        },
+      },
+      MuiAppBar: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            backgroundColor: theme.palette.appBar.bg,
+            color: theme.palette.appBar.fg,
+          }),
+        },
+      },
+      MuiPaper: {
+        styleOverrides: {
+          ...radiusComponentOverrides.MuiPaper.styleOverrides,
+          root: ({ theme }) => ({
+            backgroundColor: theme.palette.background.paper,
+            borderRadius: APP_SHAPE.surface,
+          }),
+        },
+      },
+      MuiDrawer: {
+        styleOverrides: {
+          paper: ({ theme }) => ({
+            backgroundColor: theme.palette.background.default,
+            borderRight: `1px solid ${theme.palette.divider}`,
+          }),
+        },
+      },
+    },
+  })
+}
+
+export default createAppTheme('light')

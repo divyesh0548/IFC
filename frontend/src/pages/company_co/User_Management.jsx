@@ -44,6 +44,8 @@ import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
 import * as XLSX from 'xlsx'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import { TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
+import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
 const bulkUploadDialogDefaults = {
   open: false,
@@ -99,11 +101,6 @@ function UserManagement() {
   const validateEmail = (emailValue) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     return emailRegex.test(emailValue)
-  }
-
-  const validateMobile = (mobileValue) => {
-    const mobileRegex = /^[0-9]{10}$/
-    return mobileRegex.test(mobileValue)
   }
 
   const resetForm = () => {
@@ -364,7 +361,11 @@ function UserManagement() {
     const isDialog = target.closest?.('.MuiDialog-root')
 
     const clickedButton = target.closest?.('button')
-    const isDeleteButton = Boolean(clickedButton && clickedButton.textContent?.includes('Delete'))
+    const isDeleteButton = Boolean(
+      clickedButton &&
+        (clickedButton.textContent?.includes('Delete') ||
+          clickedButton.getAttribute('aria-label')?.toLowerCase().includes('delete'))
+    )
 
     if (isCheckbox || isDialog || isDeleteButton) return
 
@@ -397,10 +398,10 @@ function UserManagement() {
       return
     }
 
-    if (mobile.trim() && !validateMobile(mobile.trim())) {
-      const errorMsg = 'Mobile number must be 10 digits'
-      setError(errorMsg)
-      toast.error(errorMsg)
+    const mobileValidationError = mobile.trim() ? getMobileValidationError(mobile.trim()) : null
+    if (mobileValidationError) {
+      setError(mobileValidationError)
+      toast.error(mobileValidationError)
       return
     }
 
@@ -419,7 +420,7 @@ function UserManagement() {
           emp_name: empName.trim() || null,
           designation: designation.trim() || null,
           department: department.trim() || null,
-          mobile: mobile.trim() || null,
+          mobile: normalizeMobileDigits(mobile) || null,
         }),
       })
 
@@ -505,15 +506,36 @@ function UserManagement() {
       }
 
       const jsonRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' })
-      const parsedRows = jsonRows.map((row) => ({
-        emp_name: String(row['Name'] || '').trim(),
-        email_id: String(row['Email ID'] || '').trim(),
-        department: String(row['Department'] || '').trim(),
-        designation: String(row['Designation'] || '').trim(),
-        mobile: String(row['Mobile'] || '')
-          .replace(/[^0-9]/g, '')
-          .trim(),
-      }))
+      const parsedRows = []
+      const invalidMobileRows = []
+
+      jsonRows.forEach((row, index) => {
+        const mobileDigits = normalizeMobileDigits(row['Mobile'])
+        const mobileError = mobileDigits ? getMobileValidationError(mobileDigits) : null
+
+        if (mobileError) {
+          invalidMobileRows.push(index + 2)
+          return
+        }
+
+        parsedRows.push({
+          emp_name: String(row['Name'] || '').trim(),
+          email_id: String(row['Email ID'] || '').trim(),
+          department: String(row['Department'] || '').trim(),
+          designation: String(row['Designation'] || '').trim(),
+          mobile: mobileDigits,
+        })
+      })
+
+      if (invalidMobileRows.length > 0) {
+        setBulkUploadRows([])
+        setBulkUploadDialog((prev) => ({
+          ...prev,
+          fileName: file.name,
+          error: `Invalid mobile number on row(s): ${invalidMobileRows.join(', ')}`,
+        }))
+        return
+      }
 
       setBulkUploadRows(parsedRows)
       setBulkUploadDialog((prev) => ({
@@ -548,6 +570,18 @@ function UserManagement() {
 
     if (bulkUploadRows.length === 0) {
       setBulkUploadDialog((prev) => ({ ...prev, error: 'Upload a valid excel file first' }))
+      return
+    }
+
+    const invalidBulkMobileRows = bulkUploadRows
+      .map((row, index) => ({ row, rowNumber: index + 2 }))
+      .filter(({ row }) => row.mobile && getMobileValidationError(row.mobile))
+
+    if (invalidBulkMobileRows.length > 0) {
+      setBulkUploadDialog((prev) => ({
+        ...prev,
+        error: `Invalid mobile number on row(s): ${invalidBulkMobileRows.map((item) => item.rowNumber).join(', ')}`,
+      }))
       return
     }
 
@@ -842,8 +876,11 @@ function UserManagement() {
                         value={mobile}
                         onChange={(e) => setMobile(e.target.value)}
                         disabled={loading}
-                        error={!!mobile && !validateMobile(mobile)}
-                        helperText={mobile && !validateMobile(mobile) ? 'Mobile number must be 10 digits' : 'Optional. Enter digits only.'}
+                        error={!!mobile && !!getMobileValidationError(mobile)}
+                        helperText={
+                          (mobile && getMobileValidationError(mobile)) ||
+                          'Optional. Enter a valid 10-digit mobile number.'
+                        }
                         fullWidth
                         inputProps={{
                           maxLength: 10,
@@ -909,74 +946,66 @@ function UserManagement() {
       </Box>
     )
   }
+  const tableBorderColor = alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.16 : 0.2)
+  const filterControlSx = { minWidth: { xs: '100%', sm: 240 } }
+  const actionButtonSx = { textTransform: 'none', fontWeight: 700 }
+  const bodyCellSx = {
+    py: 1.55,
+    px: 2.25,
+    borderBottom: `1px solid ${tableBorderColor}`,
+    verticalAlign: 'top',
+  }
+  const headCellSx = {
+    ...bodyCellSx,
+    py: 1.7,
+    fontSize: '0.92rem',
+    fontWeight: 800,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    color: 'text.secondary',
+    backgroundColor: TABLE_HEADER_BG,
+  }
+
   return (
-    <Box sx={{ px: 0, py: 2 }}>
-      <Box
+    <Box sx={{ px: 0, py: 0, width: '100%' }}>
+      <Paper
+        elevation={0}
+        onClick={handleListContainerClick}
         sx={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          gap: 2,
-          flexWrap: 'wrap',
-          mb: 2,
+          overflow: 'visible',
+          backgroundColor: 'transparent',
+          boxShadow: 'none',
+          borderRadius: 0,
         }}
       >
-        <Button
-          variant="outlined"
-          startIcon={<UploadFileRoundedIcon />}
-          onClick={handleOpenBulkUploadDialog}
-          disabled={usersLoading || mappedUnits.length === 0 || deletingUsers}
-          sx={{ textTransform: 'none', fontWeight: 600 }}
-        >
-          Bulk User Upload
-        </Button>
-        <Button
-          variant="outlined"
-          startIcon={<DownloadRoundedIcon />}
-          onClick={handleExportUsers}
-          disabled={usersLoading || filteredUsers.length === 0}
-          sx={{ textTransform: 'none', fontWeight: 600 }}
-        >
-          Export Excel
-        </Button>
-        <Button
-          variant={deleteMode ? 'contained' : 'outlined'}
-          color="error"
-          startIcon={<DeleteIcon />}
-          onClick={() => {
-            if (deleteMode) {
-              if (selectedUserEmails.size > 0) {
-                handleDeleteClick()
-              }
-            } else {
-              handleDeleteModeToggle()
-            }
-          }}
-          disabled={usersLoading || filteredUsers.length === 0 || deletingUsers || (deleteMode && selectedUserEmails.size === 0)}
-          sx={{ textTransform: 'none', fontWeight: 600 }}
-        >
-          {deleteMode
-            ? (selectedUserEmails.size > 0 ? `Delete (${selectedUserEmails.size})` : 'Delete')
-            : 'Delete'}
-        </Button>
-      </Box>
-
-      <Paper sx={{ p: 3, borderRadius: 2 }} onClick={handleListContainerClick}>
         <Box
           sx={{
             display: 'flex',
             justifyContent: 'space-between',
-            alignItems: 'center',
-            mb: 2,
             gap: 2,
             flexWrap: 'wrap',
+            alignItems: { xs: 'stretch', md: 'flex-start' },
+            px: { xs: 0, sm: 0.5 },
+            py: 2.25,
+            flexDirection: { xs: 'column', md: 'row' },
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            mb: 2,
           }}
         >
-          <Typography variant="h5" sx={{ fontWeight: 700 }}>
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: { xs: '1.45rem', sm: '1.7rem' },
+              fontWeight: 850,
+              color: 'text.primary',
+              lineHeight: 1.15,
+            }}
+          >
             User Management
           </Typography>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 220 } }}>
+          <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', alignItems: 'center', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+            <FormControl size="small" sx={filterControlSx}>
               <InputLabel id="unit-filter-label">Unit</InputLabel>
               <Select
                 labelId="unit-filter-label"
@@ -994,7 +1023,7 @@ function UserManagement() {
                 ))}
               </Select>
             </FormControl>
-            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 220 } }}>
+            <FormControl size="small" sx={filterControlSx}>
               <InputLabel id="role-filter-label">Role</InputLabel>
               <Select
                 labelId="role-filter-label"
@@ -1013,20 +1042,60 @@ function UserManagement() {
               </Select>
             </FormControl>
             <Button
+              variant="outlined"
+              startIcon={<UploadFileRoundedIcon />}
+              onClick={handleOpenBulkUploadDialog}
+              disabled={usersLoading || mappedUnits.length === 0 || deletingUsers}
+              sx={actionButtonSx}
+            >
+              Bulk Upload
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<DownloadRoundedIcon />}
+              onClick={handleExportUsers}
+              disabled={usersLoading || filteredUsers.length === 0}
+              sx={actionButtonSx}
+            >
+              Export
+            </Button>
+            <Button
+              variant={deleteMode ? 'contained' : 'outlined'}
+              color="error"
+              onClick={() => {
+                if (deleteMode) {
+                  if (selectedUserEmails.size > 0) {
+                    handleDeleteClick()
+                  }
+                } else {
+                  handleDeleteModeToggle()
+                }
+              }}
+              disabled={usersLoading || filteredUsers.length === 0 || deletingUsers || (deleteMode && selectedUserEmails.size === 0)}
+              aria-label={
+                deleteMode && selectedUserEmails.size > 0
+                  ? `Delete ${selectedUserEmails.size} selected users`
+                  : 'Delete users'
+              }
+              sx={{ ...actionButtonSx, minWidth: 0, px: 1.25 }}
+            >
+              <DeleteIcon />
+            </Button>
+            <Button
               variant="contained"
               color="secondary"
-              startIcon={<AddIcon />}
               onClick={() => navigate('/company_co/create-user')}
-              sx={{ textTransform: 'none', fontWeight: 600 }}
+              aria-label="Create user"
+              sx={{ ...actionButtonSx, minWidth: 0, px: 1.25 }}
             >
-              Create User
+              <AddIcon />
             </Button>
             {showBulkLogsButton && (
               <Button
                 variant="contained"
                 color="info"
                 onClick={() => setBulkLogsDialogOpen(true)}
-                sx={{ textTransform: 'none', fontWeight: 600 }}
+                sx={actionButtonSx}
               >
                 Logs !
               </Button>
@@ -1035,68 +1104,76 @@ function UserManagement() {
         </Box>
 
         {usersError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity="error" sx={{ borderRadius: 0, m: 0 }}>
             {usersError}
           </Alert>
         )}
 
         <TableContainer
-          component={Paper}
-          elevation={0}
-          sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}
+          component={Box}
+          sx={{
+            border: `1px solid ${tableBorderColor}`,
+            borderRadius: 1.5,
+            overflow: 'hidden',
+          }}
         >
           <Table
             size="medium"
             sx={{
               minWidth: 950,
-              borderCollapse: 'collapse',
-              '& .MuiTableCell-root': {
-                borderBottom: `1px solid ${theme.palette.divider}`,
-              },
+              borderCollapse: 'separate',
+              borderSpacing: 0,
             }}
           >
             <TableHead>
-              <TableRow
-                sx={{
-                  '& .MuiTableCell-root': {
-                    backgroundColor: theme.palette.action.hover,
-                  },
-                }}
-              >
-                {deleteMode ? <TableCell sx={{ py: 2, px: 3, width: 54 }} /> : null}
-                <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Employee Name</TableCell>
-                <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Email ID</TableCell>
-                <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Role</TableCell>
-                <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Unit</TableCell>
-                <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Department</TableCell>
-                <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Designation</TableCell>
-                <TableCell sx={{ py: 2, px: 3, fontSize: '1rem', fontWeight: 700 }}>Mobile</TableCell>
+              <TableRow>
+                {deleteMode ? <TableCell sx={{ ...headCellSx, width: 54, px: 2 }} /> : null}
+                <TableCell sx={headCellSx}>Name</TableCell>
+                <TableCell sx={headCellSx}>Email ID</TableCell>
+                <TableCell sx={headCellSx}>Role</TableCell>
+                <TableCell sx={headCellSx}>Unit</TableCell>
+                <TableCell sx={headCellSx}>Department</TableCell>
+                <TableCell sx={headCellSx}>Designation</TableCell>
+                <TableCell sx={headCellSx}>Mobile</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {usersLoading ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5, borderBottom: 0 }}>
                     <CircularProgress size={26} />
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5, borderBottom: 0 }}>
                     No users found for your company.
                   </TableCell>
                 </TableRow>
               ) : filteredUsers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5, borderBottom: 0 }}>
                     No users found for the selected filters.
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredUsers.map((user, idx) => (
-                  <TableRow key={`${user.email_id}-${idx}`}>
+                  <TableRow
+                    key={`${user.email_id}-${idx}`}
+                    hover
+                    sx={{
+                      '&:hover': {
+                        backgroundColor: TABLE_ROW_HOVER_BG,
+                      },
+                      '&:last-of-type td': { borderBottom: 0 },
+                      '& td': {
+                        borderBottom:
+                          idx === filteredUsers.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
+                      },
+                    }}
+                  >
                     {deleteMode ? (
-                      <TableCell sx={{ py: 1.8, px: 3, width: 54 }}>
+                      <TableCell sx={{ ...bodyCellSx, px: 2, width: 54 }}>
                         <Checkbox
                           checked={selectedUserEmails.has(user.email_id)}
                           disabled={user.role !== 'user'}
@@ -1105,15 +1182,15 @@ function UserManagement() {
                         />
                       </TableCell>
                     ) : null}
-                    <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>
+                    <TableCell sx={bodyCellSx}>
                       {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (Company Coordinator)' : ''}` : ''}
                     </TableCell>
-                    <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.email_id || '-'}</TableCell>
-                    <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{formatRoleLabel(user.role)}</TableCell>
-                    <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.unit_name || user.unit_id || '-'}</TableCell>
-                    <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.department || '-'}</TableCell>
-                    <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.designation || '-'}</TableCell>
-                    <TableCell sx={{ py: 1.8, px: 3, fontSize: '0.9rem' }}>{user.mobile || '-'}</TableCell>
+                    <TableCell sx={bodyCellSx}>{user.email_id || '-'}</TableCell>
+                    <TableCell sx={bodyCellSx}>{formatRoleLabel(user.role)}</TableCell>
+                    <TableCell sx={bodyCellSx}>{user.unit_name || user.unit_id || '-'}</TableCell>
+                    <TableCell sx={bodyCellSx}>{user.department || '-'}</TableCell>
+                    <TableCell sx={bodyCellSx}>{user.designation || '-'}</TableCell>
+                    <TableCell sx={bodyCellSx}>{user.mobile || '-'}</TableCell>
                   </TableRow>
                 ))
               )}

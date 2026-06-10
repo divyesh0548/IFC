@@ -1,6 +1,15 @@
 const jwt = require('jsonwebtoken');
 const { decryptToken } = require('../../utils/auth_utility');
 const { pool } = require('../../utils/db');
+const { clearAuthCookies } = require('./auth.cookies');
+
+function clearCookiesAndRespondAuthError(res, statusCode, message) {
+  clearAuthCookies(res);
+  return res.status(statusCode).json({
+    success: false,
+    message,
+  });
+}
 
 /**
  * Resolve `email_id` from encrypted JWT cookies (unified `authToken` plus legacy names).
@@ -82,10 +91,7 @@ async function verifyCompanyCoordinator(req, res, next) {
     const token = req.cookies.authToken || req.cookies.userAuthToken;
 
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Authentication required');
     }
 
     const jwtSecret = process.env.JWT_SECRET;
@@ -95,10 +101,7 @@ async function verifyCompanyCoordinator(req, res, next) {
     const userResult = await pool.query(userQuery, [decoded.email_id]);
 
     if (userResult.rows.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'User not found');
     }
 
     const user = userResult.rows[0];
@@ -123,17 +126,11 @@ async function verifyCompanyCoordinator(req, res, next) {
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
       console.error('❌ Invalid or expired token:', error.message);
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired token',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Invalid or expired token');
     }
 
     console.error('❌ Token verification failed:', error.message);
-    return res.status(401).json({
-      success: false,
-      message: 'Token verification failed',
-    });
+    return clearCookiesAndRespondAuthError(res, 401, 'Token verification failed');
   }
 }
 
@@ -143,10 +140,7 @@ async function verifyApproverAuth(req, res, next) {
     const token = req.cookies.authToken || req.cookies.approverAuthToken;
 
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Authentication required');
     }
 
     const decryptedToken = decryptToken(token);
@@ -165,10 +159,7 @@ async function verifyApproverAuth(req, res, next) {
     const userResult = await pool.query(userQuery, [decoded.email_id]);
 
     if (userResult.rows.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'User not found');
     }
 
     const user = userResult.rows[0];
@@ -202,17 +193,11 @@ async function verifyApproverAuth(req, res, next) {
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired token',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Invalid or expired token');
     }
 
     console.error('Approver authentication error:', error);
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication failed',
-    });
+    return clearCookiesAndRespondAuthError(res, 401, 'Authentication failed');
   }
 }
 
@@ -222,10 +207,7 @@ async function verifyUserAuth(req, res, next) {
     const token = req.cookies.authToken || req.cookies.userAuthToken;
 
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Authentication required');
     }
 
     const jwtSecret = process.env.JWT_SECRET;
@@ -241,10 +223,7 @@ async function verifyUserAuth(req, res, next) {
     const userResult = await pool.query(userQuery, [decoded.email_id]);
 
     if (userResult.rows.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'User not found');
     }
 
     const user = userResult.rows[0];
@@ -265,16 +244,10 @@ async function verifyUserAuth(req, res, next) {
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired token',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Invalid or expired token');
     }
     console.error('User authentication error:', error);
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication failed',
-    });
+    return clearCookiesAndRespondAuthError(res, 401, 'Authentication failed');
   }
 }
 
@@ -284,10 +257,7 @@ async function verifySiteadminAuth(req, res, next) {
     const token = req.cookies.authToken || req.cookies.siteadminAuthToken;
 
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Authentication required');
     }
 
     const jwtSecret = process.env.JWT_SECRET;
@@ -303,10 +273,7 @@ async function verifySiteadminAuth(req, res, next) {
     const userResult = await pool.query(userQuery, [decoded.email_id]);
 
     if (userResult.rows.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'User not found');
     }
 
     const user = userResult.rows[0];
@@ -327,16 +294,10 @@ async function verifySiteadminAuth(req, res, next) {
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired token',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Invalid or expired token');
     }
     console.error('Siteadmin authentication error:', error);
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication failed',
-    });
+    return clearCookiesAndRespondAuthError(res, 401, 'Authentication failed');
   }
 }
 
@@ -346,10 +307,7 @@ async function verifyAuditorAuth(req, res, next) {
     const token = req.cookies.authToken || req.cookies.auditorAuthToken;
 
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Authentication required');
     }
 
     const jwtSecret = process.env.JWT_SECRET;
@@ -365,10 +323,7 @@ async function verifyAuditorAuth(req, res, next) {
     const userResult = await pool.query(userQuery, [decoded.email_id]);
 
     if (userResult.rows.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'User not found');
     }
 
     const user = userResult.rows[0];
@@ -389,16 +344,10 @@ async function verifyAuditorAuth(req, res, next) {
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired token',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Invalid or expired token');
     }
     console.error('Auditor authentication error:', error);
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication failed',
-    });
+    return clearCookiesAndRespondAuthError(res, 401, 'Authentication failed');
   }
 }
 
@@ -408,10 +357,7 @@ async function verifyAuthenticatedUser(req, res, next) {
     const user = await getAuthenticatedUserFromAnyCookie(req);
 
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-      });
+      return clearCookiesAndRespondAuthError(res, 401, 'Authentication required');
     }
 
     if (['company_co', 'approver'].includes(String(user.role || '').trim().toLowerCase())) {
@@ -427,14 +373,12 @@ async function verifyAuthenticatedUser(req, res, next) {
     next();
   } catch (error) {
     console.error('Authenticated user verification error:', error);
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication failed',
-    });
+    return clearCookiesAndRespondAuthError(res, 401, 'Authentication failed');
   }
 }
 
 module.exports = {
+  clearCookiesAndRespondAuthError,
   getEmailFromAuthCookies,
   verifyCompanyCoordinator,
   verifyApproverAuth,

@@ -20,6 +20,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
 import TextField from '@mui/material/TextField'
+import TablePagination from '@mui/material/TablePagination'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { toast } from 'react-hot-toast'
 import dayjs from 'dayjs'
@@ -36,6 +37,9 @@ import {
 } from '../../uiConstants'
 
 /** Display order for Set Active selection notice (single-RACM list); missing-user line last. */
+const DEFAULT_ROWS_PER_PAGE = 10
+const ROWS_PER_PAGE_OPTIONS = [10, 25, 50]
+
 const SET_ACTIVE_SINGLE_NOTICE_LINE_ORDER = [
   'RACM assignment is pending (empty Process Owner).',
   'Process Owner role is not "user".',
@@ -56,6 +60,13 @@ function RacmManagementDashboard() {
   const navigate = useNavigate()
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
   const [forms, setForms] = useState([])
+  const [page, setPage] = useState(0)
+  const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
+  const [totalCount, setTotalCount] = useState(0)
+  const [actionRequiredCount, setActionRequiredCount] = useState(0)
+  const [pendingChangeRequestCount, setPendingChangeRequestCount] = useState(0)
+  const [pendingChangeRequestForms, setPendingChangeRequestForms] = useState([])
+  const [pendingChangeRequestFormsLoading, setPendingChangeRequestFormsLoading] = useState(false)
   const [filterActive, setFilterActive] = useState('all') // 'all', 'active', 'inactive'
   const [filterStatus, setFilterStatus] = useState('all') // 'all', 'Approved', 'Rejected', 'Pending'
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
@@ -141,11 +152,17 @@ function RacmManagementDashboard() {
   }, [])
 
   useEffect(() => {
-    // Fetch forms when company_identifier is available
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterActive, filterStatus, filterBusinessProcess, filterFinancialYear, filterUnit, filterConclusion])
+  }, [companyIdentifier, filterActive, filterStatus, filterBusinessProcess, filterFinancialYear, filterUnit, filterConclusion, page, rowsPerPage])
+
+  useEffect(() => {
+    if (!pendingChangeRequestDialogOpen || !companyIdentifier) {
+      return
+    }
+    fetchPendingChangeRequestForms()
+  }, [pendingChangeRequestDialogOpen, companyIdentifier])
 
   useEffect(() => {
     const fetchCoordinatorUnits = async () => {
@@ -252,38 +269,88 @@ function RacmManagementDashboard() {
     return normalized.charAt(0).toUpperCase() + normalized.slice(1)
   }
 
-  const pendingChangeRequestForms = forms.filter((form) => Boolean(form?.pending_changes))
+  const buildFormsListUrl = ({ includePagination = true, extraParams = {} } = {}) => {
+    const params = new URLSearchParams({
+      company_identifier: companyIdentifier,
+    })
+
+    if (includePagination) {
+      params.set('page', String(page + 1))
+      params.set('page_size', String(rowsPerPage))
+    }
+
+    if (filterActive === 'active') {
+      params.set('active', 'true')
+    } else if (filterActive === 'inactive') {
+      params.set('active', 'false')
+    }
+
+    if (filterStatus !== 'all') {
+      params.set('status', filterStatus === 'Pending' ? 'pending' : filterStatus.toLowerCase())
+    }
+
+    if (filterBusinessProcess !== 'all') {
+      params.set('business_process', filterBusinessProcess)
+    }
+
+    if (filterFinancialYear !== 'all') {
+      params.set('financial_year', filterFinancialYear)
+    }
+
+    if (filterUnit !== 'all') {
+      params.set('unit_id', filterUnit)
+    }
+
+    if (filterConclusion !== 'all') {
+      params.set('conclusion', filterConclusion)
+    }
+
+    Object.entries(extraParams).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        params.set(key, String(value))
+      }
+    })
+
+    return `${API_BASE_URL}/api/control-forms?${params.toString()}`
+  }
+
+  const fetchPendingChangeRequestForms = async () => {
+    if (!companyIdentifier) return
+
+    setPendingChangeRequestFormsLoading(true)
+    try {
+      const params = new URLSearchParams({
+        company_identifier: companyIdentifier,
+        pending_changes: 'true',
+        page: '1',
+        page_size: '500',
+      })
+      const url = `${API_BASE_URL}/api/control-forms?${params.toString()}`
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setPendingChangeRequestForms(Array.isArray(data.data) ? data.data : [])
+      } else {
+        setPendingChangeRequestForms([])
+      }
+    } catch (error) {
+      console.error('Error fetching pending change request RACMs:', error)
+      setPendingChangeRequestForms([])
+    } finally {
+      setPendingChangeRequestFormsLoading(false)
+    }
+  }
 
   const fetchForms = async () => {
     if (!companyIdentifier) return
     
     setLoading(true)
     try {
-      let url = `${API_BASE_URL}/api/control-forms?company_identifier=${encodeURIComponent(companyIdentifier)}`
-      
-      if (filterActive === 'active') {
-        url += '&active=true'
-      } else if (filterActive === 'inactive') {
-        url += '&active=false'
-      }
-      
-      if (filterStatus !== 'all' && filterStatus !== 'Pending') {
-        // Backend expects lowercase status values: 'approved', 'rejected', etc.
-        url += `&status=${encodeURIComponent(filterStatus.toLowerCase())}`
-      }
-      
-      if (filterBusinessProcess !== 'all') {
-        url += `&business_process=${encodeURIComponent(filterBusinessProcess)}`
-      }
-
-      if (filterFinancialYear !== 'all') {
-        url += `&financial_year=${encodeURIComponent(filterFinancialYear)}`
-      }
-
-      if (filterUnit !== 'all') {
-        url += `&unit_id=${encodeURIComponent(filterUnit)}`
-      }
-      
+      const url = buildFormsListUrl()
       const response = await fetch(url, {
         method: 'GET',
         credentials: 'include',
@@ -292,51 +359,44 @@ function RacmManagementDashboard() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        // Filter for Pending status on client side if needed
-        let filteredData = data.data
-        if (filterStatus === 'Pending') {
-          filteredData = data.data.filter(form => {
-            const status = form.status || ''
-            return !status || status === '' || status.toLowerCase() === 'sent for approval'
-          })
+        const nextForms = Array.isArray(data.data) ? data.data : []
+        const nextTotal = Number(data.count || 0)
+        const nextPage = Math.max(0, Number(data.page || 1) - 1)
+
+        if (nextTotal > 0 && nextForms.length === 0 && nextPage > 0) {
+          setPage(nextPage - 1)
+          return
         }
-        if (filterConclusion !== 'all') {
-          filteredData = filteredData.filter((form) => formatConclusion(form.control_design_conclusion) === filterConclusion)
-        }
-        
-        // Sort forms by created_at timestamp (newest first)
-        const sortedForms = [...filteredData].sort((a, b) => {
-          const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
-          const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
-          return dateB - dateA // Descending order (newest first)
-        })
-        setForms(sortedForms)
+
+        setForms(nextForms)
+        setTotalCount(nextTotal)
+        setActionRequiredCount(Number(data.summary?.action_required_count || 0))
+        setPendingChangeRequestCount(Number(data.summary?.pending_change_request_count || 0))
         setConclusionOptions(
-          [...new Set(
-            (data.data || []).map((form) => formatConclusion(form.control_design_conclusion))
-          )].sort((a, b) => {
-            if (a === 'None') return 1
-            if (b === 'None') return -1
-            return a.localeCompare(b)
-          })
+          Array.isArray(data.summary?.conclusion_options) ? data.summary.conclusion_options : []
         )
 
-        // Keep cached financial year options updated with any newly seen values
-        const latestYears = extractUniqueFinancialYears(data.data)
+        const latestYears = extractUniqueFinancialYears(nextForms)
         if (latestYears.length > 0) {
           const mergedYears = [...new Set([...(financialYearOptions || []), ...latestYears])]
           if (mergedYears.length !== financialYearOptions.length) {
             setFinancialYearOptions(mergedYears)
-            if (companyIdentifier) {
-              localStorage.setItem(getFinancialYearStorageKey(companyIdentifier), JSON.stringify(mergedYears))
-            }
+            localStorage.setItem(getFinancialYearStorageKey(companyIdentifier), JSON.stringify(mergedYears))
           }
         }
       } else {
         console.error('Error fetching forms:', data.message)
+        setForms([])
+        setTotalCount(0)
+        setActionRequiredCount(0)
+        setPendingChangeRequestCount(0)
       }
     } catch (error) {
       console.error('Error fetching forms:', error)
+      setForms([])
+      setTotalCount(0)
+      setActionRequiredCount(0)
+      setPendingChangeRequestCount(0)
     } finally {
       setLoading(false)
     }
@@ -1278,11 +1338,8 @@ function RacmManagementDashboard() {
   // Handle Activity filter change (independent of Status filter)
   const handleActivityChange = (value) => {
     setFilterActive(value)
+    setPage(0)
   }
-
-  const actionRequiredCount = (forms || []).filter((form) =>
-    Boolean(form?.deficiency_action_status)
-  ).length
 
   useEffect(() => {
     if (actionRequiredCount > 0) {
@@ -1291,10 +1348,10 @@ function RacmManagementDashboard() {
   }, [actionRequiredCount])
 
   useEffect(() => {
-    if (pendingChangeRequestForms.length > 0) {
+    if (pendingChangeRequestCount > 0) {
       setPendingChangeRequestAlertDismissed(false)
     }
-  }, [pendingChangeRequestForms.length])
+  }, [pendingChangeRequestCount])
 
   const showUnitColumn = coordinatorUnits.length > 1
   const showUnitFilter = coordinatorUnits.length > 1
@@ -1350,20 +1407,6 @@ function RacmManagementDashboard() {
         }}
       >
         <Button
-          onClick={() => navigate('/company_co/communication-matrix')}
-          disabled={!companyIdentifier || deleteMode || setActiveMode || setDueDateMode || replicateMode}
-          variant="outlined"
-          color="secondary"
-          size="small"
-          sx={{
-            ...toolbarBtnBase,
-            '&:hover': { boxShadow: 'none' },
-          }}
-        >
-          Communication
-        </Button>
-
-        <Button
           onClick={() => navigate('/company_co/create-form')}
           disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
           variant="contained"
@@ -1393,7 +1436,7 @@ function RacmManagementDashboard() {
           }}
           disabled={
             loading ||
-            forms.length === 0 ||
+            totalCount === 0 ||
             allFormsActive ||
             setDueDateMode ||
             deleteMode ||
@@ -1428,7 +1471,7 @@ function RacmManagementDashboard() {
           }}
           disabled={
             loading ||
-            forms.length === 0 ||
+            totalCount === 0 ||
             setActiveMode ||
             deleteMode ||
             replicateMode ||
@@ -1461,7 +1504,7 @@ function RacmManagementDashboard() {
           }}
           disabled={
             loading ||
-            forms.length === 0 ||
+            totalCount === 0 ||
             setActiveMode ||
             setDueDateMode ||
             deleteMode ||
@@ -1494,7 +1537,7 @@ function RacmManagementDashboard() {
           }}
           disabled={
             loading ||
-            forms.length === 0 ||
+            totalCount === 0 ||
             setActiveMode ||
             setDueDateMode ||
             replicateMode ||
@@ -1543,7 +1586,7 @@ function RacmManagementDashboard() {
           </Alert>
         ) : null}
 
-        {!loading && pendingChangeRequestForms.length > 0 && !pendingChangeRequestAlertDismissed ? (
+        {!loading && pendingChangeRequestCount > 0 && !pendingChangeRequestAlertDismissed ? (
           <Alert
             severity="warning"
             onClose={() => setPendingChangeRequestAlertDismissed(true)}
@@ -1558,7 +1601,7 @@ function RacmManagementDashboard() {
             }}
           >
             <Typography sx={{ fontWeight: 700 }}>
-              Warning - {pendingChangeRequestForms.length} RACMs have pending change requests
+              Warning - {pendingChangeRequestCount} RACMs have pending change requests
             </Typography>
             <Typography variant="body2">
               Click to view the RACM list.
@@ -1632,7 +1675,10 @@ function RacmManagementDashboard() {
                     id="unit-filter"
                     value={filterUnit}
                     label="Unit"
-                    onChange={(e) => setFilterUnit(e.target.value)}
+                    onChange={(e) => {
+                      setFilterUnit(e.target.value)
+                      setPage(0)
+                    }}
                   >
                     <MenuItem value="all">All</MenuItem>
                     {coordinatorUnits.map((unit) => (
@@ -1676,7 +1722,10 @@ function RacmManagementDashboard() {
                   id="business-process-filter"
                   value={filterBusinessProcess}
                   label="Business Process"
-                  onChange={(e) => setFilterBusinessProcess(e.target.value)}
+                  onChange={(e) => {
+                    setFilterBusinessProcess(e.target.value)
+                    setPage(0)
+                  }}
                 >
                   <MenuItem value="all">All</MenuItem>
                   {businessProcessOptions.map((option) => (
@@ -1719,7 +1768,10 @@ function RacmManagementDashboard() {
                   id="financial-year-filter"
                   value={filterFinancialYear}
                   label="Financial Year"
-                  onChange={(e) => setFilterFinancialYear(e.target.value)}
+                  onChange={(e) => {
+                    setFilterFinancialYear(e.target.value)
+                    setPage(0)
+                  }}
                 >
                   <MenuItem value="all">All</MenuItem>
                   {financialYearOptions.map((option) => (
@@ -1802,7 +1854,10 @@ function RacmManagementDashboard() {
                   id="status-filter"
                   value={filterStatus}
                   label="Status"
-                  onChange={(e) => setFilterStatus(e.target.value)}
+                  onChange={(e) => {
+                    setFilterStatus(e.target.value)
+                    setPage(0)
+                  }}
                 >
                   <MenuItem value="all">All</MenuItem>
                   <MenuItem value="Approved">Approved</MenuItem>
@@ -1841,7 +1896,10 @@ function RacmManagementDashboard() {
                   id="conclusion-filter"
                   value={filterConclusion}
                   label="Conclusion"
-                  onChange={(e) => setFilterConclusion(e.target.value)}
+                  onChange={(e) => {
+                    setFilterConclusion(e.target.value)
+                    setPage(0)
+                  }}
                 >
                   <MenuItem value="all">All</MenuItem>
                   {conclusionOptions.map((option) => (
@@ -1858,7 +1916,7 @@ function RacmManagementDashboard() {
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography color="text.secondary">Loading forms...</Typography>
             </Box>
-          ) : forms.length === 0 ? (
+          ) : totalCount === 0 ? (
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography color="text.secondary">No forms found.</Typography>
             </Box>
@@ -2342,6 +2400,25 @@ function RacmManagementDashboard() {
                 </Box>
               </Box>
             </Box>
+            <TablePagination
+              component="div"
+              count={totalCount}
+              page={page}
+              onPageChange={(_, newPage) => setPage(newPage)}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={(event) => {
+                setRowsPerPage(parseInt(event.target.value, 10))
+                setPage(0)
+              }}
+              rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
+              sx={{
+                borderTop: `1px solid ${theme.palette.divider}`,
+                mt: 0.5,
+                '& .MuiTablePagination-toolbar': {
+                  px: { xs: 0.5, sm: 1 },
+                },
+              }}
+            />
             </Box>
           )}
         </Paper>
@@ -3355,6 +3432,11 @@ function RacmManagementDashboard() {
             <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mb: 2 }}>
               Click any RACM below to open its details in a new page.
             </Typography>
+            {pendingChangeRequestFormsLoading ? (
+              <Typography color="text.secondary">Loading RACMs with pending change requests...</Typography>
+            ) : pendingChangeRequestForms.length === 0 ? (
+              <Typography color="text.secondary">No pending change requests found.</Typography>
+            ) : null}
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
               {pendingChangeRequestForms.map((form) => (
                 <Box
