@@ -13,6 +13,31 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
+
+#Excel files
+*.xlsx
+*.csv
+*.xls
+*.xls*
+
+
+#Compressed files
+*.rar
+*.zip
+*.7z
+
+#Python files
+**__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+*.pyz
+
+
 # ======================
 # Environment variables
 # ======================

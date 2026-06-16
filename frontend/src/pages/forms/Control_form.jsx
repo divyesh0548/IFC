@@ -1,11 +1,16 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
-import FormControlLabel from '@mui/material/FormControlLabel'
+import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import InputLabel from '@mui/material/InputLabel'
+import MenuItem from '@mui/material/MenuItem'
+import Select from '@mui/material/Select'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
 
 function Control_form() {
   const theme = useTheme()
@@ -25,7 +30,9 @@ function Control_form() {
     typeOfControl: '',
     natureOfControl: '',
     typeOfRiskMitigationMethod: '',
+    unit_id: '',
     processOwner: '',
+    processOwnerUser: null,
     reviewerProcessSupervisor: '',
     controlFrequency: '',
     basisOfSampling: '',
@@ -49,13 +56,51 @@ function Control_form() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [unitOptions, setUnitOptions] = useState([])
   useSyncGlobalLoading(loading)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchUnits = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+
+        if (!cancelled && response.ok && data.success) {
+          const units = Array.isArray(data.data?.currentCoordinatorUnits)
+            ? data.data.currentCoordinatorUnits
+            : []
+          setUnitOptions(units)
+          setFormData((prev) => ({
+            ...prev,
+            unit_id: prev.unit_id || units[0]?.unit_id || '',
+          }))
+        }
+      } catch (fetchError) {
+        console.error('Error fetching coordinator units:', fetchError)
+        if (!cancelled) {
+          setUnitOptions([])
+        }
+      }
+    }
+
+    fetchUnits()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: value,
+      ...(name === 'unit_id' ? { processOwner: '', processOwnerUser: null } : {}),
     }))
   }
 
@@ -121,7 +166,9 @@ function Control_form() {
       typeOfControl: '',
       natureOfControl: '',
       typeOfRiskMitigationMethod: '',
+      unit_id: unitOptions[0]?.unit_id || '',
       processOwner: '',
+      processOwnerUser: null,
       reviewerProcessSupervisor: '',
       controlFrequency: '',
       basisOfSampling: '',
@@ -210,18 +257,48 @@ function Control_form() {
                 </div>
 
                 <div>
-                  <label htmlFor="processOwner" className="block text-sm font-medium text-secondary mb-2">
-                    Process owner
-                  </label>
-                  <input
-                    type="text"
-                    id="processOwner"
-                    name="processOwner"
-                    value={formData.processOwner}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
-                    placeholder="Enter process owner"
-                  />
+                  <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                    <InputLabel id="control-form-unit-label">Unit</InputLabel>
+                    <Select
+                      labelId="control-form-unit-label"
+                      id="unit_id"
+                      name="unit_id"
+                      value={formData.unit_id}
+                      label="Unit"
+                      onChange={handleChange}
+                    >
+                      {unitOptions.map((unit) => (
+                        <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                          {unit.unit_name || unit.unit_id}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </div>
+
+                <div>
+                  <Box sx={{ mb: 2 }}>
+                    <UnitUserSearchAutocomplete
+                      unitId={formData.unit_id}
+                      value={formData.processOwnerUser}
+                      onChange={(user) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          processOwnerUser: user,
+                          processOwner: user?.email_id?.trim() || '',
+                        }))
+                      }}
+                      prefetch
+                      inDialog={false}
+                      label="Process owner"
+                      placeholder="Search by name or email..."
+                      disabled={!formData.unit_id}
+                      helperText={
+                        formData.processOwner ||
+                        (formData.unit_id ? 'Select a user from this unit' : 'Select a unit first')
+                      }
+                    />
+                  </Box>
                 </div>
 
                 <div>

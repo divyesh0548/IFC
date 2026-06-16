@@ -62,4 +62,4 @@ Try to summarize for each business process too.
 
 
 
-Make a detailed sheet which explains each steps of the project. Make separate pages.
+In Capex IFC of Rubamin there is a control frequency which is "Once in 3 year".

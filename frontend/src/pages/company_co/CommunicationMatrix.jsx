@@ -31,6 +31,7 @@ import { toast } from 'react-hot-toast'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import {
+  DASHBOARD_PAGE_OUTER_SX,
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
@@ -265,7 +266,7 @@ function CommunicationMatrix() {
   }
 
   return (
-    <Box sx={{ px: 0, py: 2 }}>
+    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
       <Paper

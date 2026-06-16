@@ -41,12 +41,14 @@ const ExcelColumnMap = lazy(() => import('./pages/forms/ExcelColumnMap'))
 const FormDetail = lazy(() => import('./pages/company_co/FormDetail'))
 const CreateControlForm = lazy(() => import('./pages/company_co/CreateControlForm'))
 const RacmManagementDashboard = lazy(() => import('./pages/company_co/RacmManagementDashboard'))
+const RacmUserDocuments = lazy(() => import('./pages/company_co/RacmUserDocuments'))
 const CommunicationMatrix = lazy(() => import('./pages/company_co/CommunicationMatrix'))
 const CompanyCoordinatorBusinessProcessManagement = lazy(() => import('./pages/company_co/BusinessProcessManagement'))
 const Company_co_home = lazy(() => import('./pages/company_co/Company_co_home'))
 const CreateUser = lazy(() => import('./pages/company_co/CreateUser'))
 const UnclassifiedControls = lazy(() => import('./pages/company_co/UnclassifiedControls'))
 const KeyManualAiInsightsSummary = lazy(() => import('./pages/company_co/KeyManualAiInsightsSummary'))
+const RiskAnalysis = lazy(() => import('./pages/company_co/RiskAnalysis'))
 
 const ApproverHome = lazy(() => import('./pages/approver/ApproverHome'))
 const ApproverDashboard = lazy(() => import('./pages/approver/ApproverDashboard'))
@@ -296,7 +298,9 @@ function App() {
               <Route path="racm-dashboard" element={<Company_Co_dashboard />} />
               <Route path="unclassified-controls" element={<UnclassifiedControls />} />
               <Route path="key-manual-ai-insights" element={<KeyManualAiInsightsSummary />} />
+              <Route path="risk-analysis" element={<RiskAnalysis />} />
               <Route path="racm-management" element={<RacmManagementDashboard />} />
+              <Route path="racm-user-documents" element={<RacmUserDocuments />} />
               <Route path="racm-communication" element={<CommunicationMatrix />} />
               <Route path="business-processes" element={<CompanyCoordinatorBusinessProcessManagement />} />
               <Route path="racm-assignment" element={<RacmAssignment />} />

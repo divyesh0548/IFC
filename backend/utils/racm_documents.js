@@ -1,3 +1,49 @@
+function sanitizeS3PathSegment(value, fallback = 'unknown') {
+  const cleaned = String(value ?? '')
+    .trim()
+    .replace(/[/\\]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-zA-Z0-9._ -]/g, '')
+    .trim();
+
+  return cleaned || fallback;
+}
+
+function buildUserDocumentS3FolderPath({ companyName, unitName, businessProcess, formId }) {
+  const companySegment = sanitizeS3PathSegment(companyName, 'unknown-company');
+  const unitSegment = sanitizeS3PathSegment(unitName, 'unknown-unit');
+  const processSegment = sanitizeS3PathSegment(businessProcess, 'unknown-process');
+  const formSegment = sanitizeS3PathSegment(formId, 'unknown-form');
+
+  return `${companySegment}/${unitSegment}/${processSegment}/${formSegment}`;
+}
+
+async function getControlFormUserDocumentContext(db, formId) {
+  const normalizedFormId = formId == null ? '' : String(formId).trim();
+  if (!normalizedFormId) return null;
+
+  const result = await db.query(
+    `
+      SELECT
+        cf.form_id,
+        cf.business_process,
+        COALESCE(NULLIF(TRIM(c.company_name), ''), cf.company_identifier) AS company_name,
+        COALESCE(NULLIF(TRIM(cum.unit_name), ''), cf.unit_id) AS unit_name
+      FROM control_forms cf
+      LEFT JOIN companies c
+        ON c.company_identifier = cf.company_identifier
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = cf.company_identifier
+       AND cum.unit_id = cf.unit_id
+      WHERE cf.form_id = $1
+      LIMIT 1
+    `,
+    [normalizedFormId]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function getControlFormDocumentRows(db, formIds) {
   const ids = Array.from(
     new Set(
@@ -128,8 +174,11 @@ async function insertSampleDocument(db, formId, docUrl) {
 
 module.exports = {
   attachControlFormDocuments,
+  buildUserDocumentS3FolderPath,
   getControlFormDocumentRows,
+  getControlFormUserDocumentContext,
   getLatestUserDocument,
   insertSampleDocument,
   insertUserDocument,
+  sanitizeS3PathSegment,
 };

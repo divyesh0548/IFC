@@ -32,10 +32,10 @@ export function getSampleSizeByControlFrequency(value) {
   if (normalizedValue === 'fortnightly' || normalizedValue.includes('fortnight')) return 4
 
   if (
+    normalizedValue === 'as and when' ||
     normalizedValue === 'as and when needed' ||
     normalizedValue === 'as and when required' ||
-    (hasWords(normalizedValue, 'as', 'when') &&
-      (normalizedValue.includes('needed') || normalizedValue.includes('required'))) ||
+    hasWords(normalizedValue, 'as', 'when') ||
     normalizedValue === 'on event' ||
     normalizedValue === 'on going' ||
     normalizedValue === 'ongoing' ||

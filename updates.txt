@@ -1,0 +1,1 @@
+We need to apply a different stratagy for risk analysis of the RACMs. Risk description and sub-porcess extracted from excel file do not explain much. They are very short and AI.

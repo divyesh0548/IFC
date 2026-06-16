@@ -1,47 +1,3 @@
-====================================== User Creation ===============================
-
-Subject : Welcome to IFC - Let's get started
-
-Body : 
-
-Hi {username},
-
-Hope you're having a good week!
-
-I am {comapny_coordinator} at XYZ company organization. We have been engaged to carry out an internal financial control review. This is a yearly exercise. If you have not participated before, we’ve put together a short introductory video (just a few minutes) to get you up to speed. You can watch it here: [Video Link]
-
-Here is a brief overview of Internal Financial Controls.
-
-Internal financial controls are the everyday steps we take to keep our financial information accurate and safe. IFC testing checks whether those steps are working.
-
-The control flow is as follows: You upload evidence that you've performed the control. Our tester reviews it and passes or fails the control based on whether it is working effectively. That's it!
-
-Your evidence is the proof that shows our controls are doing their job.
-
-Here are your login credentials. (This is a temporary password, please change it after logging in.)
-
-Email ID: user1xyz@gmail.com
-Password: 619c0cf05d5b51fd
-Portal: http://localhost:5173
-
-Thanks & Regards,
-{comapny_coordinator}
-Sharp and Tannan Associates
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ================================== Company Coordinator Creation ===================================
@@ -52,6 +8,7 @@ Body :
 Dear Company Coordinator,
 
 Your account has been created successfully.
+
 Company: Sharp and Tannan Associates
 
 Your temporary login credentials:
@@ -78,39 +35,59 @@ IFC System
 
 
 
-================================= RACM Asignment ====================================
 
-Subject : Your IFC testing for Capital Expenditure is ready
+
+================================== Approver Creation ===================================
+Subject : Welcome to Sharp and Tannan Associates - Your Temporary Login Credentials
 
 Body : 
 
-Hi {username},
+Dear Approver,
 
-Hope you're having a good week!
+Your account has been created successfully.
 
-I'm reaching out because your Internal Financial Controls assignment for Capital Expenditure is now ready in the system. Nothing complicated; we just need your help to keep things moving.
+Company: Sharp and Tannan Associates
 
-Here's what we need from you:
+Your temporary login credentials:
+Email: test2_approver@gmail.com
+Temporary Password: c4925ce436ff2331
 
-1. You'll see the risk and control matrix from last year. Take a quick look through from here (View of the Risk & Control key issues) especially the risks we identified and the controls we put in place. You'll also spot the evidence that was submitted last year, which should give you a good sense of what we're looking for. (You will be able to download the evidence that was submitted last year.)
+IMPORTANT: Please login using these credentials and update your password immediately for security purposes.
 
-2. Upload the evidence for this year's testing against each control. The period and the amount of samples can be viewed in the RACM detail page.
+Login URL: http://localhost:5173/user/login
 
-What happens next?
+After logging in, you will be prompted to update your temporary password to a permanent one.
 
-Once you submit your evidence, our tester will review it to check if the control is operating effectively. They'll either pass or fail the control based on what they see. So the clearer your evidence, the smoother that review goes!
+Best regards,
+IFC System
 
-Deadline: 28th May, 2026
 
-Portal: http://localhost:5173
 
-Just shout if you hit any snags or have questions or you have any feedback on the performance of the controls or have noted any significant breaches; I'm happy to help.
 
-Thanks for cooperating.
+
+
+
+
+
+
+
+======================================== Company Unit Assignment Email to approver/coordinator =================================
+
+Subject : Unit Assignment Notification - Sharp and Tannan Associates
+
+Dear Sir/Madam,
+
+This is to formally inform you that you have been assigned as a Approver to the Test Unit-1 unit for the company Sharp and Tannan Associates.
+
+You are requested to take note of this assignment and proceed with your responsibilities accordingly.
 
 Regards,
-{comapny_coordinator}
 Sharp and Tannan Associates
+
+
+
+
+
 
 
 
@@ -169,7 +146,7 @@ Body :
 
 Dear {Process Owner},
 
-This is a reminder that your RACM (Risk and Control Matrix) is pending.
+This is a reminder that your RACM (Risk and Control Matrix) is pending for submission.
 
 Business Process: Financial Statement Closure Process
 Control: Testing of process owner on excel file upload. Also reminder frequency
@@ -235,19 +212,21 @@ Sharp and Tannan Associates
 
 Subject : Internal Financial Controls - RACM Approved
 
-Dear Control Owner,
+Dear user2,
 
-Your RACM has been approved.
+Your RACM has been rejected.
 
 Reason/Comments from Approver:
-Accepting under deviation.
+Need more documents.
 
 Form Details:
-- Business Process: Financial Statement Closure Process
-- Sub Process: Cash/ Bank (Existence)
-- Description: Prepaid working data is prepared by the Manchar Team and Palamaner Team at their respective ends and shared for review.
+- Business Process: Capital Expenditure
+- Sub Process: Trade receivables [Existence; Rights and Obligations; Completeness; Valuation and Allocation]
+- Description: To ensure every bank transaction is recorded, daily reconciliation activity between Bank statement and General Ledger is carried out by accounts person and BRS is prepared at month end & Same is reviewed by Senior accounts person
 
-You can review the feedback above, uploade the necessary documents for it, and resubmit the RACM for approval.
+You can review the feedback above, upload the necessary documents for it, and resubmit the RACM for approval.
+
+Thank you for using the IFC system.
 
 Best regards,
 Sharp and Tannan Associates
@@ -266,17 +245,110 @@ Sharp and Tannan Associates
 
 
 
+=============================== Deficiency Response Submission from Porcess Owner ============================
+
+Subject : Internal Financial Controls - Deficiency Response Submitted
+
+Dear Approver,
+
+A deficiency response has been submitted for your review.
+
+Response Details:
+- Submitted By: divyesh.parmar@sharpandtannan.com
+- Response Type: Compensatory RACM
+- Business Process: Human Resources and Payroll
+- Financial Year: 2025-26
+- Unit Name: Vadodara Unit
+
+Please review the deficiency response in the IFC system.
+
+Best regards,
+IFC System
 
 
-======================================== Company Unit Assignment Email to approver/coordinator =================================
 
-Subject : Unit Assignment Notification - Sharp and Tannan Associates
 
-Dear Sir/Madam,
 
-This is to formally inform you that you have been assigned as a Approver to the Test Unit-1 unit for the company Sharp and Tannan Associates.
 
-You are requested to take note of this assignment and proceed with your responsibilities accordingly.
 
-Regards,
-Sharp and Tannan Associates
+
+
+
+
+
+============================== Deficiency Response Result(Approved) from Approver ============================
+
+Subject = Internal Financial Controls - Deficiency Response Approved
+
+Dear User,
+
+Your deficiency response has been approved.
+
+Response Details:
+- Submitted By: divyesh.parmar@sharpandtannan.com
+- Response Type: Compensatory RACM
+- Review Decision: Effective
+- Business Process: Human Resources and Payroll
+- Financial Year: 2025-26
+- Unit Name: Vadodara Unit
+
+Approver Comment:
+Good.
+
+No further action is required on this deficiency response.
+
+Best regards,
+IFC System
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+============================== Deficiency Response Result(Rejected) from Approver ============================
+
+Subject = Internal Financial Controls - Deficiency Response Rejected
+
+Dear User,
+
+Your deficiency response has been rejected.
+
+Response Details:
+- Submitted By: divyesh.parmar@sharpandtannan.com
+- Response Type: Mitigation Plan
+- Review Decision: rejected
+- Business Process: Human Resources and Payroll
+- Financial Year: 2025-26
+- Unit Name: Vadodara Unit
+
+Approver Comment:
+Provide compensatory RACM, because this explaination is irrelevent.
+
+Please review the approver feedback and resubmit the deficiency response in the IFC system.
+
+Best regards,
+IFC System
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

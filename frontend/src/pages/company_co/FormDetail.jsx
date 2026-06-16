@@ -18,7 +18,6 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
-import Autocomplete from '@mui/material/Autocomplete';
 import Checkbox from '@mui/material/Checkbox';
 import Radio from '@mui/material/Radio';
 import RadioGroup from '@mui/material/RadioGroup';
@@ -37,15 +36,18 @@ import DeleteRoundedIcon from '@mui/icons-material/DeleteRounded';
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
-import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
+import {
+  FORM_DETAIL_MAX_WIDTH,
+} from '../../uiConstants'
+import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
+import { fetchUnitUsers } from '../../components/company_co/unitUserSearch'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
 import { formatIndianDateTime } from '../../lib/dateTime'
 import { apiUrl, API_BASE_URL } from '../../config/api'
+import { formatDisplayName } from '../../utils/displayName'
 
-const ASSIGNABLE_USER_INITIAL_LIMIT = 5
-const ASSIGNABLE_USER_SEARCH_LIMIT = 50
 const DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
 
 function getDefaultDeficiencyResponseForm() {
@@ -78,30 +80,6 @@ function buildDeficiencyResponseFormState(data, fallbackResponseType = 'mitigati
         ? String(data.deficiency_response.due_date).slice(0, 10)
         : '',
   }
-}
-
-function mergeAssignableUserIntoOptions(options, selectedEmail) {
-  const email = (selectedEmail || '').trim()
-  if (!email) return options
-  const lower = email.toLowerCase()
-  if (options.some((u) => (u.email_id || '').trim().toLowerCase() === lower)) {
-    return options
-  }
-  return [...options, { email_id: email, emp_name: '' }]
-}
-
-function formatNameFromEmail(email) {
-  const raw = String(email || '').trim().toLowerCase()
-  if (!raw) return ''
-  const localPart = raw.split('@')[0] || ''
-  const parts = localPart
-    .split('.')
-    .map((part) => part.trim())
-    .filter(Boolean)
-  if (parts.length === 0) return ''
-  return parts
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
 }
 
 function FormDetail() {
@@ -139,14 +117,9 @@ function FormDetail() {
   const [savingSchedule, setSavingSchedule] = useState(false)
   const fileInputRef = useRef(null)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
-  const [companyUsers, setCompanyUsers] = useState([])
-  const [usersLoading, setUsersLoading] = useState(false)
-  const [performerUserOptions, setPerformerUserOptions] = useState([])
-  const [performerUsersLoading, setPerformerUsersLoading] = useState(false)
-  const performerSearchDebounceRef = useRef(null)
   const [selectedUser, setSelectedUser] = useState(null)
-  const [userSearchText, setUserSearchText] = useState('')
   const [processOwnerName, setProcessOwnerName] = useState('-')
+  const [performerDisplayName, setPerformerDisplayName] = useState('-')
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [auditLogLoading, setAuditLogLoading] = useState(false)
@@ -183,7 +156,6 @@ function FormDetail() {
     replicating ||
     creatingUser ||
     savingSchedule ||
-    usersLoading ||
     activeChangeRequestLoading ||
     reviewSaving ||
     changeRequestHistoryLoading ||
@@ -654,90 +626,20 @@ function FormDetail() {
     }
   }
 
-  const fetchCompanyUsers = async () => {
-    setUsersLoading(true)
-    try {
-      const response = await fetch(apiUrl('/api/company-co/users'), {
-        method: 'GET',
-        credentials: 'include',
-      })
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        setCompanyUsers(Array.isArray(data.users) ? data.users : [])
-      } else {
-        setCompanyUsers([])
-      }
-    } catch (error) {
-      console.error('Error fetching company users:', error)
-      setCompanyUsers([])
-    } finally {
-      setUsersLoading(false)
-    }
-  }
-
-  const fetchPerformerAssignableUsers = useCallback(async ({ q = '', limit = ASSIGNABLE_USER_INITIAL_LIMIT } = {}) => {
-    setPerformerUsersLoading(true)
-    try {
-      const params = new URLSearchParams({
-        role: 'user',
-        limit: String(limit),
-      })
-      const trimmedQ = String(q || '').trim()
-      if (trimmedQ) {
-        params.set('q', trimmedQ)
-      }
-      const response = await fetch(
-        `${API_BASE_URL}/api/company-co/users?${params.toString()}`,
-        {
-          method: 'GET',
-          credentials: 'include',
-        }
-      )
-      const data = await response.json()
-      if (response.ok && data.success) {
-        setPerformerUserOptions(Array.isArray(data.users) ? data.users : [])
-      } else {
-        setPerformerUserOptions([])
-      }
-    } catch (error) {
-      console.error('Error fetching users for control performer:', error)
-      setPerformerUserOptions([])
-    } finally {
-      setPerformerUsersLoading(false)
-    }
-  }, [])
-
-  const assignableUsers = companyUsers.filter((user) => {
-    const formCompany = (formData?.company_identifier || '').trim()
-    const userCompany = (user.company_identifier || '').trim()
-    const formUnitId = (formData?.unit_id || '').trim()
-    const userUnitId = (user.unit_id || '').trim()
-    const isSameCompany = !userCompany || userCompany === formCompany
-    const isSameUnit = formUnitId && userUnitId && userUnitId === formUnitId
-    return isSameCompany && isSameUnit && user.role === 'user'
-  })
-
-  const handleOpenAssignmentDialog = async () => {
+  const handleOpenAssignmentDialog = () => {
     if (Boolean(formData?.active)) {
       toast.error('RACM assignment cannot be changed once RACM is Active')
       return
     }
 
     setSelectedUser(null)
-    setUserSearchText('')
     setAssignmentDialogOpen(true)
-
-    if (companyUsers.length === 0) {
-      await fetchCompanyUsers()
-    }
   }
 
   const handleCloseAssignmentDialog = () => {
     if (updating) return
     setAssignmentDialogOpen(false)
     setSelectedUser(null)
-    setUserSearchText('')
   }
 
   const handleUpdateAssignment = async () => {
@@ -796,45 +698,40 @@ function FormDetail() {
     }
   }
 
-  // Ensure company users are loaded for control_owner / control_performer name lookup
   useEffect(() => {
-    const needNames =
-      (formData?.control_owner && String(formData.control_owner).trim() !== '') ||
-      (formData?.control_performer && String(formData.control_performer).trim() !== '')
-    if (needNames && companyUsers.length === 0) {
-      fetchCompanyUsers()
-    }
-  }, [formData?.control_owner, formData?.control_performer]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!isEditMode) return
-    fetchPerformerAssignableUsers({ q: '', limit: ASSIGNABLE_USER_INITIAL_LIMIT })
-  }, [isEditMode, fetchPerformerAssignableUsers])
-
-  useEffect(() => {
-    return () => {
-      if (performerSearchDebounceRef.current) {
-        clearTimeout(performerSearchDebounceRef.current)
-      }
-    }
-  }, [])
-
-  // Derive process owner display name from company users using email_id
-  useEffect(() => {
-    const email = (formData?.control_owner || '').trim().toLowerCase()
+    const email = (formData?.control_owner || '').trim()
     if (!email) {
       setProcessOwnerName('-')
       return
     }
-    const match = companyUsers.find(
-      (user) => (user.email_id || '').trim().toLowerCase() === email
-    )
-    if (match && match.emp_name) {
-      setProcessOwnerName(match.emp_name)
-    } else {
-      setProcessOwnerName('-')
+    const apiName = (formData?.control_owner_name || '').trim()
+    setProcessOwnerName(formatDisplayName(apiName || email, '-'))
+  }, [formData?.control_owner, formData?.control_owner_name])
+
+  useEffect(() => {
+    const email = (formData?.control_performer || '').trim()
+    const unitId = (formData?.unit_id || '').trim()
+    if (!email) {
+      setPerformerDisplayName('-')
+      return
     }
-  }, [formData?.control_owner, companyUsers])
+
+    let cancelled = false
+    fetchUnitUsers({ unitId, q: email, limit: 10 }).then((users) => {
+      if (cancelled) return
+      const lowerEmail = email.toLowerCase()
+      const match = users.find(
+        (user) => (user.email_id || '').trim().toLowerCase() === lowerEmail
+      )
+      setPerformerDisplayName(
+        formatDisplayName(match?.emp_name?.trim() || email, '-')
+      )
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [formData?.control_performer, formData?.unit_id])
 
   const handleSaveChanges = async () => {
     // Check status again before saving
@@ -3085,92 +2982,25 @@ function FormDetail() {
                             {key === 'control_performer'
                               ? (() => {
                                   const selectedEmail = (editableFields.control_performer || '').trim()
-                                  const optionsForField = mergeAssignableUserIntoOptions(
-                                    performerUserOptions,
-                                    selectedEmail
-                                  )
-                                  const selectedUser = selectedEmail
-                                    ? optionsForField.find(
-                                        (u) =>
-                                          (u.email_id || '').trim().toLowerCase() ===
-                                          selectedEmail.toLowerCase()
-                                      ) ?? { email_id: selectedEmail, emp_name: '' }
+                                  const selectedPerformerUser = selectedEmail
+                                    ? { email_id: selectedEmail, emp_name: '' }
                                     : null
                                   return (
-                                    <Autocomplete
-                                      id="control_performer_edit"
-                                      options={optionsForField}
-                                      loading={performerUsersLoading}
-                                      value={selectedUser}
-                                      onChange={(_, newValue) => {
+                                    <UnitUserSearchAutocomplete
+                                      unitId={formData?.unit_id}
+                                      value={selectedPerformerUser}
+                                      onChange={(newValue) => {
                                         handleFieldChange(
                                           'control_performer',
                                           newValue?.email_id?.trim() || ''
                                         )
                                       }}
-                                      onInputChange={(_, newInputValue, reason) => {
-                                        if (reason === 'reset') return
-                                        if (reason === 'clear') {
-                                          fetchPerformerAssignableUsers({
-                                            q: '',
-                                            limit: ASSIGNABLE_USER_INITIAL_LIMIT,
-                                          })
-                                          return
-                                        }
-                                        if (performerSearchDebounceRef.current) {
-                                          clearTimeout(performerSearchDebounceRef.current)
-                                        }
-                                        performerSearchDebounceRef.current = setTimeout(() => {
-                                          const q = newInputValue.trim()
-                                          fetchPerformerAssignableUsers({
-                                            q,
-                                            limit: q
-                                              ? ASSIGNABLE_USER_SEARCH_LIMIT
-                                              : ASSIGNABLE_USER_INITIAL_LIMIT,
-                                          })
-                                        }, 300)
-                                      }}
-                                      onOpen={() => {
-                                        if (performerUserOptions.length === 0) {
-                                          fetchPerformerAssignableUsers({
-                                            q: '',
-                                            limit: ASSIGNABLE_USER_INITIAL_LIMIT,
-                                          })
-                                        }
-                                      }}
-                                      getOptionLabel={(option) =>
-                                        option?.emp_name?.trim() || option?.email_id || ''
-                                      }
-                                      isOptionEqualToValue={(option, value) =>
-                                        (option?.email_id || '').trim().toLowerCase() ===
-                                        (value?.email_id || '').trim().toLowerCase()
-                                      }
-                                      filterOptions={(options) => options}
-                                      freeSolo={false}
-                                      clearOnEscape
-                                      disableClearable={false}
-                                      renderOption={(props, option) => (
-                                        <Box component="li" {...props}>
-                                          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                                            <Typography variant="body2">
-                                              {option.emp_name || '-'}
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                              {option.email_id || '-'}
-                                            </Typography>
-                                          </Box>
-                                        </Box>
-                                      )}
-                                      renderInput={(params) => (
-                                        <TextField
-                                          {...params}
-                                          label={label}
-                                          placeholder="Search by name or email…"
-                                          variant="outlined"
-                                          disabled={saving}
-                                        />
-                                      )}
+                                      prefetch={isEditMode}
+                                      inDialog={false}
+                                      label={label}
+                                      placeholder="Search by name or email…"
                                       disabled={saving}
+                                      textFieldProps={{ variant: 'outlined' }}
                                     />
                                   )
                                 })()
@@ -3269,14 +3099,9 @@ function FormDetail() {
                                     fontSize: '0.8rem',
                                   }}
                                 >
-                                  {(() => {
-                                    const m = companyUsers.find(
-                                      (u) =>
-                                        (u.email_id || '').trim().toLowerCase() ===
-                                        String(value || '').trim().toLowerCase()
-                                    )
-                                    return m?.emp_name ? `Name: ${m.emp_name}` : 'Name: -'
-                                  })()}
+                                  {performerDisplayName && performerDisplayName !== '-'
+                                    ? `Name: ${performerDisplayName}`
+                                    : 'Name: -'}
                                 </Typography>
                               </Box>
                             ) : key === 'sample_required' ? (
@@ -4453,57 +4278,24 @@ function FormDetail() {
               <Box sx={{ ...popupRowSx, mb: 2 }}>
                 <Typography variant="body2" component="span" sx={popupLabelSx}>Current Process Owner Name:</Typography>
                 <Typography variant="body2" component="span">
-                  {popupValue(formData.control_owner_name || formatNameFromEmail(formData.control_owner))}
+                  {popupValue(formatDisplayName(formData.control_owner_name || formData.control_owner, ''))}
                 </Typography>
               </Box>
 
-              <Autocomplete
-                options={assignableUsers}
-                loading={usersLoading}
+              <UnitUserSearchAutocomplete
+                unitId={formData?.unit_id}
                 value={selectedUser}
-                inputValue={userSearchText}
-                onInputChange={(_, newInputValue) => {
-                  if (!isActive) setUserSearchText(newInputValue)
-                }}
-                onChange={(_, newValue) => {
+                onChange={(newValue) => {
                   if (!isActive) setSelectedUser(newValue)
                 }}
+                excludeEmails={[formData?.control_owner]}
+                prefetch={assignmentDialogOpen}
                 disabled={isActive}
-                getOptionLabel={(option) =>
-                  option?.emp_name?.trim() || formatNameFromEmail(option?.email_id) || option?.email_id || ''
+                helperText={
+                  selectedUser?.email_id ||
+                  `Users from ${(formData?.unit_name || formData?.unit_id || 'this unit').toString().trim() || 'this unit'} only`
                 }
-                isOptionEqualToValue={(option, value) => option.email_id === value.email_id}
-                filterOptions={(options, state) => {
-                  const input = state.inputValue.trim().toLowerCase()
-                  if (!input) return options
-                  return options.filter((user) =>
-                    (user.emp_name || '').toLowerCase().includes(input)
-                  )
-                }}
-                renderOption={(props, option) => (
-                  <Box component="li" {...props}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                      <Typography variant="body2">
-                        {option?.emp_name?.trim() || formatNameFromEmail(option?.email_id) || '-'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {option.email_id || '-'}
-                      </Typography>
-                    </Box>
-                  </Box>
-                )}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Search Username"
-                    placeholder="Type username..."
-                  />
-                )}
               />
-
-              <Typography variant="caption" color="text.secondary">
-                {selectedUser?.email_id || ' '}
-              </Typography>
               <Typography
                 variant="caption"
                 sx={{

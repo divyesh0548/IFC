@@ -11,6 +11,9 @@ router.get('/dashboard/key-controls', verifyCompanyCoordinator, controller.getDa
 router.get('/dashboard/nature-of-control', verifyCompanyCoordinator, controller.getDashboardNatureStats);
 router.get('/dashboard/control-type', verifyCompanyCoordinator, controller.getDashboardControlTypeStats);
 router.get('/dashboard/racms', verifyCompanyCoordinator, controller.getDashboardRacms);
+router.get('/risk-analysis/availability', verifyCompanyCoordinator, controller.getRiskAnalysisAvailability);
+router.get('/risk-analysis/control/:control_number', verifyCompanyCoordinator, controller.getRiskAnalysisByControl);
+router.post('/risk-analysis/control/:control_number/generate', verifyCompanyCoordinator, controller.generateRiskAnalysisByControl);
 router.get('/ai-insights/key-manual-summary/availability', verifyCompanyCoordinator, controller.getKeyManualAiInsightsAvailability);
 router.get('/ai-insights/key-manual-summary', verifyCompanyCoordinator, controller.getKeyManualAiInsightsRun);
 router.post('/ai-insights/key-manual-summary/generate', verifyCompanyCoordinator, controller.generateKeyManualAiInsightsRun);

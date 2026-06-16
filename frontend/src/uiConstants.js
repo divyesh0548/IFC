@@ -18,7 +18,40 @@ export const FILTER_BOX_MIN_WIDTH = {
   sm: FILTER_DROPDOWN_MIN_WIDTH_SM,
 }
 
-// Shared typography style for the small explanatory line under page headers.
+// Autocomplete inside MUI Dialog needs a higher popper z-index than the modal surface.
+export const DIALOG_AUTOCOMPLETE_SLOT_PROPS = {
+  popper: {
+    sx: { zIndex: (theme) => theme.zIndex.modal + 1 },
+  },
+}
+
+// Vertical gap between navbar, back-to-home, and page content in DashboardLayout
+export const DASHBOARD_SECTION_GAP = 3
+
+// Standard outer wrapper for dashboard list pages (top spacing comes from DashboardLayout)
+export const DASHBOARD_PAGE_OUTER_SX = {
+  width: '100%',
+  minWidth: 0,
+  maxWidth: '100%',
+  mx: 'auto',
+  px: 0,
+  pb: 4,
+  boxSizing: 'border-box',
+}
+
+// Full-width dashboard content surfaces (Paper, table shells, etc.)
+export const DASHBOARD_PAPER_SX = {
+  width: '100%',
+  minWidth: 0,
+  boxSizing: 'border-box',
+}
+
+// Horizontal scroll container for wide dashboard tables
+export const DASHBOARD_TABLE_WRAP_SX = {
+  width: '100%',
+  minWidth: 0,
+  overflowX: 'auto',
+}
 // Example: “Analyze and monitor RACM for your company.”
 export const PAGE_SUBHEADER_TEXT_SX = {
   color: 'text.secondary',

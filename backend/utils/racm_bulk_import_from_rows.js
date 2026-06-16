@@ -269,6 +269,9 @@ const SERVER_FILLED_DB_COLUMNS = new Set([
   'created_at',
   'sample_doc',
   'reminder_datetime',
+  'reminder_to_approver_datetime',
+  'ineffective_reminder_datetime',
+  'deficiency_review_reminder_datetime',
   'approval_status_change_timestamp',
   'control_design_procs',
   'control_design_conclusion',
@@ -301,6 +304,7 @@ const INSERT_COLUMNS = [
   'form_id',
   'company_identifier',
   'unit_id',
+  'active',
   'business_process',
   'financial_year',
   'sample_required',
@@ -537,6 +541,7 @@ async function insertRacmRowsFromTransformedData(client, options) {
         if (col === 'reminder_frequency') return fileReminderFrequency || null;
         if (col === 'sample_required') return sampleRequired;
         if (col === 'sample_size') return sampleSize !== null ? String(sampleSize) : null;
+        if (col === 'active') return false;
         if (
           col === 'completeness' ||
           col === 'existence_occurrence' ||

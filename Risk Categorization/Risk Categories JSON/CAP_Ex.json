@@ -1,0 +1,382 @@
+{
+  "business_process": "Capital Expenditure",
+  "business_process_code": "CAPEX",
+  "sub_processes": [
+    {
+      "sub_process": "Standard Operating Procedures and DOA",
+      "risks": [
+        "Non - Standard Procedures followed."
+      ]
+    },
+    {
+      "sub_process": "Estimation of requirements & Approval of budget",
+      "risks": [
+        "Non estimation of correct requirements of assets to be purchased during the year may result incorrect budget provisions / unauthorized purchases been made."
+      ]
+    },
+    {
+      "sub_process": "Unauthorized purchase of Fixed Asset",
+      "risks": [
+        "Unauthorized purchase of Fixed Asset",
+        "Unauthorised expenditure against defined budget"
+      ]
+    },
+    {
+      "sub_process": "Authorisation",
+      "risks": [
+        "Unauthorized access to Fixed Asset module"
+      ]
+    },
+    {
+      "sub_process": "GL Account Assignment",
+      "risks": [
+        "Incorrect assignment of GL and capitalisation of assets"
+      ]
+    },
+    {
+      "sub_process": "Balance in Asset master",
+      "risks": [
+        "Incorrect balance in fixed asset register"
+      ]
+    },
+    {
+      "sub_process": "Incorrect Capitalisation of Fixed Assets",
+      "risks": [
+        "The capitalization of fixed assets may be without actual receipt / acceptance of the same",
+        "All the assets which have been put to use may not be capitalized in the books of accounts"
+      ]
+    },
+    {
+      "sub_process": "Allocation of Asset numbers",
+      "risks": [
+        "Asset numbers may not be allotted to all the assets",
+        "Asset numbers & Bar-Code may not be mentioned for all the Physical Assets."
+      ]
+    },
+    {
+      "sub_process": "Treatment of incidental / non-capital expenses",
+      "risks": [
+        "Incidental expenses may not be capitalized",
+        "Expenditures of a non-capital nature (e.g., repairs and maintenance) have been incorrectly capitalised."
+      ]
+    },
+    {
+      "sub_process": "Treatment of insurance spares",
+      "risks": [
+        "Risk that Insurance spares are not identified and capitalised"
+      ]
+    },
+    {
+      "sub_process": "Calculate and record depreciation",
+      "risks": [
+        "Depreciation charges are inaccurately calculated and recorded.",
+        "Depreciation rates are inaccurately recorded"
+      ]
+    },
+    {
+      "sub_process": "Review of Useful life of asset",
+      "risks": [
+        "No Periodical review of useful life of assets"
+      ]
+    },
+    {
+      "sub_process": "Transfer of Asset",
+      "risks": [
+        "Inter Unit movement may not be tracked"
+      ]
+    },
+    {
+      "sub_process": "Physical verification of asset",
+      "risks": [
+        "Lack of assurance over physical location of assets as reported in books of accounts.",
+        "Losses due to inadequate control over physical location of the assets"
+      ]
+    },
+    {
+      "sub_process": "Disposal of asset",
+      "risks": [
+        "Inappropriate accounting treatment to the FA disposed",
+        "Accumulated depreciation may not be reversed on disposal of assets",
+        "Assets are disposed at inappropriate rates",
+        "Risks for incorrect invoicing at the time of sale",
+        "Unapproved / incorrect disposal of assets"
+      ]
+    },
+    {
+      "sub_process": "Requisition made for Capital Assets",
+      "risks": [
+        "Unauthorized capital purchase requisition"
+      ]
+    },
+    {
+      "sub_process": "Creation and amendment of capital PO",
+      "risks": [
+        "Fake / unauthorised purchase Order (PO) creation",
+        "Incorrect capital purchase order w.r.t.. rate, quantity and taxes etc."
+      ]
+    },
+    {
+      "sub_process": "GRN (Goods Receipt Note) preparation",
+      "risks": [
+        "Incorrect or Incomplete preparation of GRN (Goods Receipt Note)",
+        "GRN (Goods Receipt Note) prepared for faulty / defective material"
+      ]
+    },
+    {
+      "sub_process": "Invoice booking",
+      "risks": [
+        "Invoice processed without authorisation / confirmation"
+      ]
+    },
+    {
+      "sub_process": "Payment processing",
+      "risks": [
+        "Unauthorized payment to vendors"
+      ]
+    },
+    {
+      "sub_process": "Capitalization of assets",
+      "risks": [
+        "Unauthorised / incorrect capitalisation of assets",
+        "All the assets which have been put to use may not be capitalized in the books of accounts",
+        "Expenditures of a non-capital nature incorrectly capitalised",
+        "Unauthorised / incorrect creation and modification of FAR",
+        "Asset numbers may not be mentioned for all the assets in the Fixed Asset Register."
+      ]
+    },
+    {
+      "sub_process": "Depreciation",
+      "risks": [
+        "Assets overvalued / undervalued due to incorrect depreciation / amortisation",
+        "Inaccurate depreciation calculation and accounting"
+      ]
+    },
+    {
+      "sub_process": "Fixed Assets Physical Verification",
+      "risks": [
+        "Fictitious assets - Physical assets not matching with assets recorded in books"
+      ]
+    },
+    {
+      "sub_process": "Fixed Assets Useful Life",
+      "risks": [
+        "Incorrect / Inadequate useful life defined for Fixed Assets"
+      ]
+    },
+    {
+      "sub_process": "Capex Budget approval",
+      "risks": [
+        "Unauthorised capital expenditure."
+      ]
+    },
+    {
+      "sub_process": "Capex projects creations",
+      "risks": [
+        "Unauthorised Fixed asset purchase."
+      ]
+    },
+    {
+      "sub_process": "Budget allocation",
+      "risks": [
+        "Incorrect allocation of funds for CAPEX.",
+        "Unauthorised expenditure against defined budget"
+      ]
+    },
+    {
+      "sub_process": "Purchase Requisition",
+      "risks": [
+        "Unauthorised expenditure against defined budget."
+      ]
+    },
+    {
+      "sub_process": "Purchase Order",
+      "risks": [
+        "Unauthorised creation of PO"
+      ]
+    },
+    {
+      "sub_process": "Good Receipt Note",
+      "risks": [
+        "Delay in creation of the GRN.",
+        "Recording of fictitious GRN (Assets records updated without physically receiving material) or recording of GRN by unauthorized individuals.",
+        "Recording of fictitious GRN (Inventory records updated without physically receiving material) or recording of GRN by unauthorized individuals.",
+        "Fixed Assets received may not be accurately captured in the system.",
+        "Fixed assets may be recorded without actual receipt",
+        "GRN (Goods Receipt Note) prepared for faulty / defective material."
+      ]
+    },
+    {
+      "sub_process": "Asset master",
+      "risks": [
+        "Incorrect asset master"
+      ]
+    },
+    {
+      "sub_process": "Cost to CWIP (Asset under construction)",
+      "risks": [
+        "Incorrect Settlement of the cost to capitalisation."
+      ]
+    },
+    {
+      "sub_process": "Classification of assets",
+      "risks": [
+        "Incorrect classification and use of depreciation key."
+      ]
+    },
+    {
+      "sub_process": "Useful life review",
+      "risks": [
+        "Non-compliance with companies act in regards to depreciation recorded."
+      ]
+    },
+    {
+      "sub_process": "Posting of depreciation in books",
+      "risks": [
+        "Incorrect Depreciation calculation."
+      ]
+    },
+    {
+      "sub_process": "Depreciation of intangibles",
+      "risks": [
+        "Incorrect amortisation of intangible assets."
+      ]
+    },
+    {
+      "sub_process": "Fixed Asset Register Maintenance",
+      "risks": [
+        "Depreciation rates may not be correctly updated / created in the fixed asset register.",
+        "Fixed Asset register may not be correctly updated."
+      ]
+    },
+    {
+      "sub_process": "Physical verification of Fixed Assets",
+      "risks": [
+        "Fictitious assets - Physical assets not matching with assets recorded in books."
+      ]
+    },
+    {
+      "sub_process": "Tagging of an asset",
+      "risks": [
+        "Fictitious assets - Physical assets not matching with assets recorded in books."
+      ]
+    },
+    {
+      "sub_process": "Identification of assets for disposal / retirement",
+      "risks": [
+        "Unapproved / incorrect disposal of assets."
+      ]
+    },
+    {
+      "sub_process": "Impairment of the Assets",
+      "risks": [
+        "Impairment indicators may exist for fixed assets, but are not known to management. On-compliance with the Accounting standard 28."
+      ]
+    },
+    {
+      "sub_process": "Calculation of Payback & IRR at the time of planning",
+      "risks": [
+        "Inaccurate payback period is calculated for capex investment",
+        "Inaccurate Assumptions are used for in payback calculation",
+        "Inaccurate IRR is calculated for capex Investment"
+      ]
+    },
+    {
+      "sub_process": "Planning of Capex",
+      "risks": [
+        "Inadequate capex Planning",
+        "Unauthorized changes in Capex Plan"
+      ]
+    },
+    {
+      "sub_process": "Project Timelines",
+      "risks": [
+        "Delays and Project Extensions",
+        "Unauthorized delay and project extension"
+      ]
+    },
+    {
+      "sub_process": "Budgeting and Approval",
+      "risks": [
+        "Incorrect budget provisions",
+        "Incorrect budget updated in the SAP",
+        "Actual expense of Capex exceeds the budget"
+      ]
+    },
+    {
+      "sub_process": "Procurement Process",
+      "risks": [
+        "Procurement delays or mismatch with technical requirements.",
+        "Procurement delays or suboptimal sourcing.",
+        "Approval of unsuitable proposals or tracking issues.",
+        "Unverified or technically unsuitable vendor selection may lead to quality issues, cost overruns, or project delays.",
+        "Selection of suboptimal vendor, affecting quality, cost, or service."
+      ]
+    },
+    {
+      "sub_process": "Asset Capitalization & CWIP Monitoring",
+      "risks": [
+        "Unauthorised and inaccurate receipt of fixed assets",
+        "Delay or errors in asset coding and MIGO processing may lead to inaccurate asset records",
+        "Inaccurate recording and classification of fixed assets",
+        "Inaccurate capitalization and impact financial reporting.",
+        "CWIP is not monitored for timely capitalization",
+        "Inaccurate capitalization of fixed assets",
+        "Inaccurate fixed asset accounting"
+      ]
+    },
+    {
+      "sub_process": "Fixed Asset Register Management",
+      "risks": [
+        "Inaccurate addition to the fixed asset master",
+        "Incorrect useful life / Rate of depreaction is mentioned in FAR",
+        "Fixed assets are not tagged"
+      ]
+    },
+    {
+      "sub_process": "Payback Monitoring",
+      "risks": [
+        "No monetoring of Payback",
+        "No monetoring of significant deviations of Capex Outcomes"
+      ]
+    },
+    {
+      "sub_process": "Physical Verification",
+      "risks": [
+        "Fixed assets not physically verified by 3rd Party (External Party)"
+      ]
+    },
+    {
+      "sub_process": "Asset Disposals & Transfers",
+      "risks": [
+        "Unauthorized disposal of fixed assets",
+        "Assets are disposed at inappropriate rates",
+        "Unauthorized transfer of fixed assets",
+        "Unauthorized removal of assets out of company's premises"
+      ]
+    },
+    {
+      "sub_process": "Asset Impairment",
+      "risks": [
+        "Inaccurate impairment of fixed assets"
+      ]
+    },
+    {
+      "sub_process": "Asset Insurance",
+      "risks": [
+        "All asset are not adequately insured"
+      ]
+    },
+    {
+      "sub_process": "Capitalization of Intangible assets",
+      "risks": [
+        "Inaccurate capitalization of intangible assets"
+      ]
+    },
+    {
+      "sub_process": "Borrowing Cost",
+      "risks": [
+        "Inaccurate project costing and non-compliance with accounting standards."
+      ]
+    }
+  ]
+}

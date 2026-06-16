@@ -11,6 +11,8 @@ import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Alert from '@mui/material/Alert'
 import {
+  DASHBOARD_PAGE_OUTER_SX,
+  DASHBOARD_PAPER_SX,
   FILTER_BOX_MIN_WIDTH,
   PAGE_SUBHEADER_TEXT_SX,
   STATUS_BADGE_PILL_SX,
@@ -245,11 +247,12 @@ function User_dashboard() {
   })
 
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
+    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
         {/* Forms Section */}
-        <Paper 
+        <Paper
           elevation={3}
           sx={{
+            ...DASHBOARD_PAPER_SX,
             p: 3,
             backgroundColor: theme.palette.background.paper,
             borderRadius: 2,

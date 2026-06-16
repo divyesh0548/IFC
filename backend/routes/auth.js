@@ -15,6 +15,10 @@ const {
   getAuthSessionMaxAgeMs,
 } = require('../modules/auth/auth.cookies');
 const { hashPassword, verifyPassword, isPasswordHash, getPasswordPepper } = require('../utils/password');
+const {
+  getMobileValidationError,
+  normalizeMobileDigits,
+} = require('../utils/mobile_validation');
 
 const router = express.Router();
 
@@ -392,7 +396,8 @@ router.put('/profile', async (req, res) => {
     const emp_name = empNameRaw !== undefined ? String(empNameRaw).trim() : null;
     const designation = designationRaw !== undefined ? String(designationRaw).trim() : null;
     const department = departmentRaw !== undefined ? String(departmentRaw).trim() : null;
-    const mobile = mobileRaw !== undefined ? String(mobileRaw).trim() : null;
+    const mobileDigits = mobileRaw !== undefined ? normalizeMobileDigits(mobileRaw) : null;
+    const mobile = mobileDigits || null;
 
     if (emp_name !== null && emp_name.length === 0) {
       return res.status(400).json({
@@ -401,11 +406,14 @@ router.put('/profile', async (req, res) => {
       });
     }
 
-    if (mobile !== null && mobile.length > 0 && !/^[0-9]{10}$/.test(mobile)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Mobile number must be 10 digits',
-      });
+    if (mobile) {
+      const mobileError = getMobileValidationError(mobile);
+      if (mobileError) {
+        return res.status(400).json({
+          success: false,
+          message: mobileError,
+        });
+      }
     }
 
     const updateQuery = `
@@ -423,7 +431,7 @@ router.put('/profile', async (req, res) => {
       emp_name,
       designation && designation.length > 0 ? designation : null,
       department && department.length > 0 ? department : null,
-      mobile && mobile.length > 0 ? mobile : null,
+      mobile,
       emailId,
     ]);
 

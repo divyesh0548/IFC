@@ -33,6 +33,9 @@ const ignoredControlFormImportColumns = new Set([
   'due_date',
   'reminder_frequency',
   'reminder_datetime',
+  'reminder_to_approver_datetime',
+  'ineffective_reminder_datetime',
+  'deficiency_review_reminder_datetime',
   'approval_status_change_timestamp',
   'financial_year',
 ]);
@@ -98,7 +101,7 @@ const columnPatterns = [
     priority: 1
   },
   {
-    keywords: ['standard', 'control', 'description'],
+    keywords: [ 'control', 'description'],
     dbColumn: 'standard_control_description',
     priority: 1,
     // Prevent partial matches like "Control Description" from incorrectly mapping here.

@@ -15,6 +15,7 @@ import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import { formatDisplayName } from '../../utils/displayName'
 
 const COMPANY_DETAIL_LABELS = {
   company_name: 'Company Name',
@@ -100,7 +101,7 @@ function ApproverHome() {
     fetchHomeStats()
   }, [])
 
-  const displayName = stats.approver_name?.trim() || 'Approver'
+  const displayName = formatDisplayName(stats.approver_name, 'Approver')
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
   const mappedUnits = Array.isArray(stats.mapped_units) ? stats.mapped_units : []
   const companyDetailsPayload = stats.company_details && typeof stats.company_details === 'object'

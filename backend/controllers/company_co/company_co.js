@@ -1,7 +1,12 @@
 const crypto = require('crypto');
 const { pool } = require('../../utils/db');
 const { prisma } = require('../../lib/prisma');
-const { requestControlSummary, OLLAMA_MODEL, isOllamaReachable } = require('../../llm_racm_summary/ollama_client');
+const { requestControlSummary, OLLAMA_MODEL, isOllamaReachable } = require('../../ai_summary/key_manual_summary/ollama_client');
+const { requestRiskAnalysis } = require('../../ai_summary/risk_analysis/ollama_client');
+const {
+  loadRiskAnalysisMasterByBusinessProcess,
+  listRiskAnalysisBusinessProcesses,
+} = require('../../ai_summary/risk_analysis/risk_analysis_master');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
 const { encryptTempPassword, sendUserCreationEmail } = require('../../utils/login_email');
 const { sendEmail } = require('../../utils/send_email');
@@ -336,6 +341,18 @@ function filterKeyManualControls(rows) {
   ));
 }
 
+function isEntityLevelControlsBusinessProcess(value) {
+  return String(value || '').trim().toLowerCase() === 'entity level controls';
+}
+
+function countEntityLevelControls(rows) {
+  return (rows || []).filter((row) => isEntityLevelControlsBusinessProcess(row?.business_process)).length;
+}
+
+function excludeEntityLevelControls(rows) {
+  return (rows || []).filter((row) => !isEntityLevelControlsBusinessProcess(row?.business_process));
+}
+
 function shapeControlForAi(row) {
   return {
     controlNumber: String(row?.control_number || '').trim(),
@@ -354,6 +371,334 @@ function shapeControlForAi(row) {
     controlReliesOnIpe: String(row?.control_relies_on_ipe || '').trim(),
     applicationName: String(row?.application_name || '').trim(),
   };
+}
+
+function shapeControlForRiskAnalysis(row) {
+  return {
+    controlNumber: String(row?.control_number || '').trim(),
+    businessProcess: String(row?.business_process || '').trim(),
+    subProcess: String(row?.sub_process || '').trim(),
+    riskDescription: String(row?.risk_description || '').trim(),
+    controlObjective: String(row?.control_objective || '').trim(),
+    standardControlDescription: String(row?.standard_control_description || '').trim(),
+  };
+}
+
+async function getRiskAnalysisControlRow(companyIdentifier, controlNumber, coordinatorEmail) {
+  const normalizedCompanyIdentifier = String(companyIdentifier || '').trim();
+  const normalizedControlNumber = String(controlNumber || '').trim();
+  const normalizedCoordinatorEmail = normalizeEmail(coordinatorEmail);
+  if (!normalizedCompanyIdentifier || !normalizedControlNumber) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        cf.form_id,
+        cf.company_identifier,
+        cf.business_process,
+        cf.sub_process,
+        cf.risk_description,
+        cf.control_objective,
+        cf.standard_control_description,
+        cf.control_number
+      FROM control_forms cf
+      WHERE cf.company_identifier = $1
+        AND cf.control_number = $2
+        AND EXISTS (
+          SELECT 1
+          FROM company_unit_master cum
+          WHERE cum.company_identifier = cf.company_identifier
+            AND cum.unit_id = cf.unit_id
+            AND LOWER(TRIM(COALESCE(cum.coordinator_email_id, ''))) = $3
+        )
+      LIMIT 1
+    `,
+    [normalizedCompanyIdentifier, normalizedControlNumber, normalizedCoordinatorEmail]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function getStoredRiskAnalysis(companyIdentifier, formId) {
+  const normalizedCompanyIdentifier = String(companyIdentifier || '').trim();
+  const normalizedFormId = String(formId || '').trim();
+  if (!normalizedCompanyIdentifier || !normalizedFormId) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        id,
+        company_identifier,
+        form_id,
+        business_process,
+        sub_process,
+        model_name,
+        matched_sub_process,
+        match_confidence,
+        coverage_status,
+        response_json,
+        created_at,
+        updated_at
+      FROM risk_analysis
+      WHERE company_identifier = $1
+        AND form_id = $2
+      LIMIT 1
+    `,
+    [normalizedCompanyIdentifier, normalizedFormId]
+  );
+
+  return result.rows[0] || null;
+}
+
+function serializeRiskAnalysisRow(row) {
+  if (!row) return null;
+
+  return {
+    id: String(row.id),
+    company_identifier: row.company_identifier,
+    form_id: row.form_id,
+    business_process: row.business_process,
+    sub_process: row.sub_process,
+    model_name: row.model_name,
+    matched_sub_process: row.matched_sub_process,
+    match_confidence: row.match_confidence,
+    coverage_status: row.coverage_status,
+    response_json: row.response_json,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+async function getRiskAnalysisAvailability(req, res) {
+  try {
+    const reachable = await isOllamaReachable();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        reachable,
+        availableBusinessProcesses: listRiskAnalysisBusinessProcesses(),
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator risk analysis availability error:', error);
+    return res.status(200).json({
+      success: true,
+      data: {
+        reachable: false,
+        availableBusinessProcesses: listRiskAnalysisBusinessProcesses(),
+      },
+    });
+  }
+}
+
+async function getRiskAnalysisByControl(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const controlNumber = String(req.params?.control_number || '').trim();
+
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is required',
+      });
+    }
+
+    if (!controlNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Control number is required',
+      });
+    }
+
+    const controlRow = await getRiskAnalysisControlRow(companyIdentifier, controlNumber, req.user?.email_id);
+
+    if (!controlRow) {
+      return res.status(404).json({
+        success: false,
+        message: 'Control not found for this company',
+      });
+    }
+
+    const storedAnalysis = await getStoredRiskAnalysis(companyIdentifier, controlRow.form_id);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        control: {
+          form_id: controlRow.form_id,
+          company_identifier: controlRow.company_identifier,
+          business_process: controlRow.business_process,
+          sub_process: controlRow.sub_process,
+          risk_description: controlRow.risk_description,
+          control_objective: controlRow.control_objective,
+          standard_control_description: controlRow.standard_control_description,
+          control_number: controlRow.control_number,
+        },
+        analysis: serializeRiskAnalysisRow(storedAnalysis),
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator get risk analysis error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch risk analysis',
+    });
+  }
+}
+
+async function generateRiskAnalysisByControl(req, res) {
+  const lockClient = await pool.connect();
+
+  try {
+    const locked = await tryAcquireGlobalAiModelLock(lockClient);
+    if (!locked) {
+      return res.status(409).json({
+        success: false,
+        message: 'Model is busy, try after some moments',
+      });
+    }
+
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const controlNumber = String(req.params?.control_number || '').trim();
+
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is required',
+      });
+    }
+
+    if (!controlNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Control number is required',
+      });
+    }
+
+    const controlRow = await getRiskAnalysisControlRow(companyIdentifier, controlNumber, req.user?.email_id);
+    if (!controlRow) {
+      return res.status(404).json({
+        success: false,
+        message: 'Control not found for this company',
+      });
+    }
+
+    const businessProcess = String(controlRow.business_process || '').trim();
+    if (!businessProcess) {
+      return res.status(400).json({
+        success: false,
+        message: 'Business process is required for risk analysis',
+      });
+    }
+
+    const { master } = loadRiskAnalysisMasterByBusinessProcess(businessProcess);
+    const candidateSubProcesses = (Array.isArray(master?.sub_processes) ? master.sub_processes : [])
+      .map((entry) => ({
+        subProcess: String(entry?.sub_process || '').trim(),
+        risks: Array.isArray(entry?.risks) ? entry.risks.map((risk) => String(risk || '').trim()).filter(Boolean) : [],
+      }))
+      .filter((entry) => entry.subProcess && entry.risks.length > 0);
+
+    if (candidateSubProcesses.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No candidate sub-processes found in the risk analysis master file',
+      });
+    }
+
+    const llmResult = await requestRiskAnalysis({
+      companyIdentifier,
+      businessProcess,
+      control: shapeControlForRiskAnalysis({
+        control_number: controlRow.control_number,
+        business_process: controlRow.business_process,
+        sub_process: controlRow.sub_process,
+        risk_description: controlRow.risk_description,
+        control_objective: controlRow.control_objective,
+        standard_control_description: controlRow.standard_control_description,
+      }),
+      candidateSubProcesses,
+    });
+
+    const upsertResult = await pool.query(
+      `
+        INSERT INTO risk_analysis (
+          company_identifier,
+          form_id,
+          business_process,
+          sub_process,
+          model_name,
+          matched_sub_process,
+          match_confidence,
+          coverage_status,
+          response_json
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+        ON CONFLICT (company_identifier, form_id)
+        DO UPDATE SET
+          business_process = EXCLUDED.business_process,
+          sub_process = EXCLUDED.sub_process,
+          model_name = EXCLUDED.model_name,
+          matched_sub_process = EXCLUDED.matched_sub_process,
+          match_confidence = EXCLUDED.match_confidence,
+          coverage_status = EXCLUDED.coverage_status,
+          response_json = EXCLUDED.response_json,
+          updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)
+        RETURNING
+          id,
+          company_identifier,
+          form_id,
+          business_process,
+          sub_process,
+          model_name,
+          matched_sub_process,
+          match_confidence,
+          coverage_status,
+          response_json,
+          created_at,
+          updated_at
+      `,
+      [
+        companyIdentifier,
+        controlRow.form_id ? String(controlRow.form_id).trim() : null,
+        businessProcess,
+        String(controlRow.sub_process || '').trim() || null,
+        OLLAMA_MODEL,
+        llmResult.matchedSubProcess,
+        llmResult.matchConfidence,
+        llmResult.coverageStatus,
+        JSON.stringify(llmResult),
+      ]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Risk analysis generated successfully',
+      data: {
+        analysis: serializeRiskAnalysisRow(upsertResult.rows[0] || null),
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator generate risk analysis error:', error);
+    const errorCode = String(error?.code || 'INTERNAL_SERVER_ERROR').trim() || 'INTERNAL_SERVER_ERROR';
+    return res.status(Number(error?.statusCode || 500)).json({
+      success: false,
+      message: error?.message || 'Failed to generate risk analysis',
+      code: errorCode,
+    });
+  } finally {
+    try {
+      await releaseGlobalAiModelLock(lockClient);
+    } catch (unlockError) {
+      console.error('Failed to release AI model lock:', unlockError);
+    }
+    lockClient.release();
+  }
 }
 
 async function createCompanyUser(client, coordinator, payload = {}) {
@@ -600,6 +945,7 @@ async function getUsers(req, res) {
 
     const roleParam = req.query.role != null ? String(req.query.role).trim() : '';
     const qRaw = req.query.q != null ? String(req.query.q).trim() : '';
+    const unitIdRaw = req.query.unit_id != null ? String(req.query.unit_id).trim() : '';
     const limitRaw = req.query.limit;
 
     let query = `
@@ -680,6 +1026,12 @@ async function getUsers(req, res) {
       paramIndex++;
     }
 
+    if (unitIdRaw) {
+      query += ` AND LOWER(TRIM(COALESCE(u.unit_id, ''))) = LOWER(TRIM($${paramIndex}))`;
+      params.push(unitIdRaw);
+      paramIndex++;
+    }
+
     if (qRaw) {
       query += ` AND (
         LOWER(COALESCE(u.emp_name, '')) LIKE $${paramIndex}
@@ -704,6 +1056,12 @@ async function getUsers(req, res) {
     }
 
     const usersResult = await pool.query(query, params);
+
+    console.log(
+      `[company-co/users] company=${companyIdentifier} role=${roleParam || 'all'} unit_id=${unitIdRaw || 'all'} q=${qRaw || ''} fetched=${usersResult.rows.length} user(s)`
+    );
+
+    console.log(usersResult.rows);
 
     return res.status(200).json({
       success: true,
@@ -1148,12 +1506,14 @@ async function generateKeyManualAiInsightsRun(req, res) {
     }
 
     const dashboardRows = await getCoordinatorDashboardRacmRows(scope);
-    const filteredControls = filterKeyManualControls(dashboardRows);
+    const manualKeyControls = filterKeyManualControls(dashboardRows);
+    const excludedEntityLevelCount = countEntityLevelControls(manualKeyControls);
+    const filteredControls = excludeEntityLevelControls(manualKeyControls);
 
     if (filteredControls.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'No Key + Manual Controls found for the current filters',
+        message: 'No eligible Key + Manual Controls found after excluding Entity Level Controls',
       });
     }
 
@@ -1217,6 +1577,7 @@ async function generateKeyManualAiInsightsRun(req, res) {
       data: {
         run_id: String(createdRunId),
         control_count: filteredControls.length,
+        excluded_entity_level_count: excludedEntityLevelCount,
         stored_row_count: rowDataToCreate.length,
         model_name: OLLAMA_MODEL,
       },
@@ -1228,6 +1589,7 @@ async function generateKeyManualAiInsightsRun(req, res) {
     const clientMessage = errorMessage
       ? errorMessage
       : 'Failed to generate AI summary';
+    const errorCode = String(error?.code || 'INTERNAL_SERVER_ERROR').trim() || 'INTERNAL_SERVER_ERROR';
 
     if (createdRunId != null) {
       try {
@@ -1243,6 +1605,7 @@ async function generateKeyManualAiInsightsRun(req, res) {
     return res.status(500).json({
       success: false,
       message: clientMessage,
+      code: errorCode,
     });
   } finally {
     try {
@@ -1277,13 +1640,17 @@ async function getKeyManualAiInsightsAvailability(req, res) {
 
 async function getKeyManualAiInsightsRun(req, res) {
   try {
-    const companyIdentifier = String(req.user?.company_identifier || '').trim();
-    if (!companyIdentifier) {
+    const scope = await getCoordinatorDashboardScope(req);
+    if (!scope.companyIdentifier) {
       return res.status(400).json({
         success: false,
         message: 'Company identifier is required',
       });
     }
+
+    const dashboardRows = await getCoordinatorDashboardRacmRows(scope);
+    const manualKeyControls = filterKeyManualControls(dashboardRows);
+    const excludedEntityLevelCount = countEntityLevelControls(manualKeyControls);
 
     const requestedRunId = String(req.query?.run_id || '').trim();
     let parsedRunId = null;
@@ -1300,7 +1667,7 @@ async function getKeyManualAiInsightsRun(req, res) {
 
     const runs = await prisma.keyManualAiInsightsRunTable.findMany({
       where: {
-        companyIdentifier,
+        companyIdentifier: scope.companyIdentifier,
       },
       orderBy: [
         { createdAt: 'desc' },
@@ -1322,6 +1689,7 @@ async function getKeyManualAiInsightsRun(req, res) {
           runs: [],
           run: null,
           rows: [],
+          excluded_entity_level_count: excludedEntityLevelCount,
         },
       });
     }
@@ -1330,7 +1698,7 @@ async function getKeyManualAiInsightsRun(req, res) {
     const run = await prisma.keyManualAiInsightsRunTable.findFirst({
       where: {
         id: selectedRunId,
-        companyIdentifier,
+        companyIdentifier: scope.companyIdentifier,
       },
       include: {
         rows: {
@@ -1368,6 +1736,7 @@ async function getKeyManualAiInsightsRun(req, res) {
           created_at: run.createdAt,
           row_count: run.rows.length,
         },
+        excluded_entity_level_count: excludedEntityLevelCount,
         rows: run.rows.map((row) => ({
           id: String(row.id),
           run_id: String(row.runId),
@@ -3308,6 +3677,9 @@ module.exports = {
   getDashboardNatureStats,
   getDashboardControlTypeStats,
   getDashboardRacms,
+  getRiskAnalysisAvailability,
+  getRiskAnalysisByControl,
+  generateRiskAnalysisByControl,
   getKeyManualAiInsightsAvailability,
   getKeyManualAiInsightsRun,
   generateKeyManualAiInsightsRun,

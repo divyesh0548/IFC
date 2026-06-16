@@ -12,7 +12,6 @@ import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import IconButton from '@mui/material/IconButton'
 import Checkbox from '@mui/material/Checkbox'
-import Autocomplete from '@mui/material/Autocomplete'
 import InputAdornment from '@mui/material/InputAdornment'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -25,20 +24,7 @@ import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-
-const ASSIGNABLE_USER_INITIAL_LIMIT = 5
-const ASSIGNABLE_USER_SEARCH_LIMIT = 50
-
-/** Ensures the current selection is present in options (avoids MUI warnings when the list was refetched). Same user may be both owner and performer — no exclusion. */
-function mergeAssignableUserIntoOptions(options, selectedEmail) {
-  const email = (selectedEmail || '').trim()
-  if (!email) return options
-  const lower = email.toLowerCase()
-  if (options.some((u) => (u.email_id || '').trim().toLowerCase() === lower)) {
-    return options
-  }
-  return [...options, { email_id: email, emp_name: '' }]
-}
+import RacmUserAssignmentSection from '../../components/company_co/RacmUserAssignmentSection'
 
 function CreateControlForm() {
   const theme = useTheme()
@@ -46,9 +32,6 @@ function CreateControlForm() {
   const [loading, setLoading] = useState(false)
   const [companyIdentifier, setCompanyIdentifier] = useState('')
   const [unitOptions, setUnitOptions] = useState([])
-  const [ownerOptions, setOwnerOptions] = useState([])
-  const [usersLoading, setUsersLoading] = useState(false)
-  const assignableUserSearchDebounceRef = useRef(null)
   const controlNumberDebounceRef = useRef(null)
   const { businessProcessOptions, loading: businessProcessesLoading } = useBusinessProcesses()
   const [controlNumberMeta, setControlNumberMeta] = useState({
@@ -58,42 +41,6 @@ function CreateControlForm() {
     available: false,
   })
   useSyncGlobalLoading(loading)
-
-  const fetchAssignableUsers = useCallback(
-    async ({ q = '', limit = ASSIGNABLE_USER_INITIAL_LIMIT } = {}) => {
-      if (!companyIdentifier) return
-      setUsersLoading(true)
-      try {
-        const params = new URLSearchParams({
-          role: 'user',
-          limit: String(limit),
-        })
-        const trimmedQ = String(q || '').trim()
-        if (trimmedQ) {
-          params.set('q', trimmedQ)
-        }
-        const response = await fetch(
-          `${API_BASE_URL}/api/company-co/users?${params.toString()}`,
-          {
-            method: 'GET',
-            credentials: 'include',
-          }
-        )
-        const data = await response.json()
-        if (response.ok && data.success) {
-          setOwnerOptions(Array.isArray(data.users) ? data.users : [])
-        } else {
-          setOwnerOptions([])
-        }
-      } catch (error) {
-        console.error('Error fetching company users:', error)
-        setOwnerOptions([])
-      } finally {
-        setUsersLoading(false)
-      }
-    },
-    [companyIdentifier]
-  )
 
   // Financial year options - dynamically based on current year
   // Example: if current year is 2026 -> [ '2025-26', '2026-27' ]
@@ -202,11 +149,6 @@ function CreateControlForm() {
   }, [])
 
   useEffect(() => {
-    if (!companyIdentifier) return
-    fetchAssignableUsers({ q: '', limit: ASSIGNABLE_USER_INITIAL_LIMIT })
-  }, [companyIdentifier, fetchAssignableUsers])
-
-  useEffect(() => {
     let cancelled = false
 
     const fetchUnits = async () => {
@@ -244,9 +186,6 @@ function CreateControlForm() {
 
   useEffect(() => {
     return () => {
-      if (assignableUserSearchDebounceRef.current) {
-        clearTimeout(assignableUserSearchDebounceRef.current)
-      }
       if (controlNumberDebounceRef.current) {
         clearTimeout(controlNumberDebounceRef.current)
       }
@@ -542,93 +481,8 @@ function CreateControlForm() {
     'key_control',
     'application_name',
     'control_frequency',
-    'control_performer',
-    'control_owner',
     'whether_fraud_risks_exist',
   ]
-
-  const renderAssignableUserAutocomplete = (fieldId, labelText) => {
-    const selectedEmail = (formData[fieldId] || '').trim()
-    const optionsForField = mergeAssignableUserIntoOptions(ownerOptions, selectedEmail)
-    const selectedUser = selectedEmail
-      ? optionsForField.find(
-          (u) => (u.email_id || '').trim().toLowerCase() === selectedEmail.toLowerCase()
-        ) ?? { email_id: selectedEmail, emp_name: '' }
-      : null
-
-    return (
-      <Autocomplete
-        key={fieldId}
-        id={fieldId}
-        options={optionsForField}
-        loading={usersLoading}
-        value={selectedUser}
-        onChange={(_, newValue) => {
-          setFormData((prev) => ({
-            ...prev,
-            [fieldId]: newValue?.email_id?.trim() || '',
-          }))
-        }}
-        onInputChange={(_, newInputValue, reason) => {
-          if (reason === 'reset') return
-          if (reason === 'clear') {
-            fetchAssignableUsers({
-              q: '',
-              limit: ASSIGNABLE_USER_INITIAL_LIMIT,
-            })
-            return
-          }
-          if (assignableUserSearchDebounceRef.current) {
-            clearTimeout(assignableUserSearchDebounceRef.current)
-          }
-          assignableUserSearchDebounceRef.current = setTimeout(() => {
-            const q = newInputValue.trim()
-            fetchAssignableUsers({
-              q,
-              limit: q ? ASSIGNABLE_USER_SEARCH_LIMIT : ASSIGNABLE_USER_INITIAL_LIMIT,
-            })
-          }, 300)
-        }}
-        onOpen={() => {
-          if (ownerOptions.length === 0) {
-            fetchAssignableUsers({
-              q: '',
-              limit: ASSIGNABLE_USER_INITIAL_LIMIT,
-            })
-          }
-        }}
-        getOptionLabel={(option) => option?.emp_name?.trim() || option?.email_id || ''}
-        isOptionEqualToValue={(option, value) =>
-          (option?.email_id || '').trim().toLowerCase() ===
-          (value?.email_id || '').trim().toLowerCase()
-        }
-        filterOptions={(options) => options}
-        freeSolo={false}
-        clearOnEscape
-        disableClearable={false}
-        renderOption={(props, option) => (
-          <Box component="li" {...props}>
-            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-              <Typography variant="body2">{option.emp_name || '-'}</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {option.email_id || '-'}
-              </Typography>
-            </Box>
-          </Box>
-        )}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            label={labelText}
-            placeholder="Search by name or email…"
-            variant="outlined"
-            disabled={loading}
-          />
-        )}
-        disabled={loading}
-      />
-    )
-  }
 
   return (
     <Box 
@@ -969,10 +823,6 @@ function CreateControlForm() {
                     const isMultiline = multilineFields.includes(field)
                     const isConfiguredDropdown = Object.prototype.hasOwnProperty.call(dropdownOptions, field)
 
-                    if (field === 'control_performer' || field === 'control_owner') {
-                      return renderAssignableUserAutocomplete(field, label)
-                    }
-
                     if (isConfiguredDropdown) {
                       const options = dropdownOptions[field]
                       const selectedValue = dropdownSelections[field] || (options.includes(value) ? value : '')
@@ -1074,6 +924,19 @@ function CreateControlForm() {
                   })}
               </Box>
             </Box>
+
+            <RacmUserAssignmentSection
+              unitId={formData.unit_id}
+              controlOwner={formData.control_owner}
+              controlPerformer={formData.control_performer}
+              onControlOwnerChange={(email) =>
+                setFormData((prev) => ({ ...prev, control_owner: email }))
+              }
+              onControlPerformerChange={(email) =>
+                setFormData((prev) => ({ ...prev, control_performer: email }))
+              }
+              loading={loading}
+            />
 
             {/* Reminder settings section */}
             <Paper

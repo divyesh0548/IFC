@@ -5,12 +5,19 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
-import { PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
 import {
   createUnclassifiedSummaryRows,
   countUnclassifiedControls,
+  getFieldValue,
+  getUnclassifiedFlags,
+  matchesDashboardFilters,
 } from './dashboardClassificationUtils'
 
 const SUMMARY_COLUMN_MIN_WIDTH = 160
@@ -22,6 +29,7 @@ function UnclassifiedControls() {
   const location = useLocation()
   const [loading, setLoading] = useState(true)
   const [forms, setForms] = useState([])
+  const [selectedDialog, setSelectedDialog] = useState(null)
   useSyncGlobalLoading(loading)
 
   useEffect(() => {
@@ -65,8 +73,70 @@ function UnclassifiedControls() {
     .sort((left, right) => left.businessProcess.localeCompare(right.businessProcess))
   const totalUnclassifiedControls = countUnclassifiedControls(forms)
 
+  const getDialogForms = (businessProcess, categoryKey) => (
+    (forms || []).filter((form) => {
+      if (!matchesDashboardFilters(form)) {
+        return false
+      }
+
+      const flags = getUnclassifiedFlags(form)
+      if (!flags.isUnclassified) {
+        return false
+      }
+
+      if (businessProcess !== 'Total') {
+        const currentBusinessProcess = String(getFieldValue(form, 'business_process', 'businessProcess') || '').trim() || 'Unassigned'
+        if (currentBusinessProcess !== businessProcess) {
+          return false
+        }
+      }
+
+      if (categoryKey === 'total') {
+        return true
+      }
+
+      if (categoryKey === 'key') {
+        return flags.key
+      }
+
+      if (categoryKey === 'nature') {
+        return flags.nature
+      }
+
+      if (categoryKey === 'type') {
+        return flags.type
+      }
+
+      return false
+    })
+  )
+
+  const handleCellClick = (businessProcess, categoryKey, dialogTitle) => {
+    const matchingForms = getDialogForms(businessProcess, categoryKey)
+    setSelectedDialog({
+      businessProcess,
+      categoryKey,
+      dialogTitle,
+      forms: matchingForms,
+    })
+  }
+
+  const openControlForm = (formId) => {
+    const normalizedFormId = String(formId || '').trim()
+    if (!normalizedFormId) return
+    window.open(`/company_co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
+  }
+
+  const tableColumns = [
+    { key: 'businessProcess', label: 'Business Process' },
+    { key: 'totalUnclassifiedControls', label: 'Total Unclassified Controls', dialogKey: 'total' },
+    { key: 'keyNonKeyControls', label: 'Key / Non-Key Controls', dialogKey: 'key' },
+    { key: 'preventiveDetectiveControls', label: 'Preventive / Detective Controls', dialogKey: 'nature' },
+    { key: 'automatedManualControls', label: 'Automated / Manual Controls', dialogKey: 'type' },
+  ]
+
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
+    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Box
         sx={{
           display: 'flex',
@@ -95,6 +165,7 @@ function UnclassifiedControls() {
       <Paper
         elevation={3}
         sx={{
+          ...DASHBOARD_PAPER_SX,
           borderRadius: 3,
           overflow: 'hidden',
           border: `1px solid ${theme.palette.divider}`,
@@ -126,15 +197,9 @@ function UnclassifiedControls() {
                 backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : theme.palette.grey[100],
               }}
             >
-              {[
-                'Business Process',
-                'Total Unclassified Controls',
-                'Key / Non-Key Controls',
-                'Preventive / Detective Controls',
-                'Automated / Manual Controls',
-              ].map((column) => (
+              {tableColumns.map((column) => (
                 <Box
-                  key={column}
+                  key={column.key}
                   sx={{
                     px: 2,
                     py: 1.75,
@@ -145,7 +210,7 @@ function UnclassifiedControls() {
                   }}
                 >
                   <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-                    {column}
+                    {column.label}
                   </Typography>
                 </Box>
               ))}
@@ -179,19 +244,30 @@ function UnclassifiedControls() {
                           : theme.palette.grey[50],
                     }}
                   >
-                    {[
-                      row.businessProcess,
-                      row.totalUnclassifiedControls,
-                      row.keyNonKeyControls,
-                      row.preventiveDetectiveControls,
-                      row.automatedManualControls,
-                    ].map((value, valueIndex) => (
+                    {tableColumns.map((column, valueIndex) => {
+                      const value = row[column.key]
+                      const isClickable = Boolean(column.dialogKey)
+                      return (
                       <Box
-                        key={`${row.businessProcess}-${valueIndex}`}
+                        key={`${row.businessProcess}-${column.key}`}
+                        component={isClickable ? 'button' : 'div'}
+                        type={isClickable ? 'button' : undefined}
+                        onClick={isClickable ? () => handleCellClick(row.businessProcess, column.dialogKey, column.label) : undefined}
                         sx={{
                           px: 2,
                           py: 1.75,
                           borderRight: `1px solid ${theme.palette.divider}`,
+                          borderTop: 'none',
+                          borderLeft: 'none',
+                          borderBottom: 'none',
+                          background: 'transparent',
+                          cursor: isClickable ? 'pointer' : 'default',
+                          textAlign: 'left',
+                          width: '100%',
+                          font: 'inherit',
+                          '&:hover': isClickable ? {
+                            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(59,130,246,0.10)' : 'rgba(59,130,246,0.06)',
+                          } : undefined,
                           '&:last-of-type': {
                             borderRight: 'none',
                           },
@@ -203,12 +279,15 @@ function UnclassifiedControls() {
                             color: theme.palette.text.primary,
                             fontWeight: valueIndex === 0 ? 600 : 500,
                             whiteSpace: valueIndex === 0 ? 'normal' : 'nowrap',
+                            textDecoration: isClickable ? 'underline' : 'none',
+                            textUnderlineOffset: isClickable ? '3px' : undefined,
                           }}
                         >
                           {value}
                         </Typography>
                       </Box>
-                    ))}
+                      )
+                    })}
                   </Box>
                 ))}
                 <Box
@@ -221,18 +300,32 @@ function UnclassifiedControls() {
                   }}
                 >
                   {[
-                    'Total',
-                    totalUnclassifiedControls,
-                    summaryRows.reduce((sum, row) => sum + row.keyNonKeyControls, 0),
-                    summaryRows.reduce((sum, row) => sum + row.preventiveDetectiveControls, 0),
-                    summaryRows.reduce((sum, row) => sum + row.automatedManualControls, 0),
-                  ].map((value, valueIndex) => (
+                    { key: 'businessProcess', value: 'Total' },
+                    { key: 'totalUnclassifiedControls', value: totalUnclassifiedControls, dialogKey: 'total', label: 'Total Unclassified Controls' },
+                    { key: 'keyNonKeyControls', value: summaryRows.reduce((sum, row) => sum + row.keyNonKeyControls, 0), dialogKey: 'key', label: 'Key / Non-Key Controls' },
+                    { key: 'preventiveDetectiveControls', value: summaryRows.reduce((sum, row) => sum + row.preventiveDetectiveControls, 0), dialogKey: 'nature', label: 'Preventive / Detective Controls' },
+                    { key: 'automatedManualControls', value: summaryRows.reduce((sum, row) => sum + row.automatedManualControls, 0), dialogKey: 'type', label: 'Automated / Manual Controls' },
+                  ].map((item, valueIndex) => (
                     <Box
-                      key={`total-${valueIndex}`}
+                      key={`total-${item.key}`}
+                      component={item.dialogKey ? 'button' : 'div'}
+                      type={item.dialogKey ? 'button' : undefined}
+                      onClick={item.dialogKey ? () => handleCellClick('Total', item.dialogKey, item.label) : undefined}
                       sx={{
                         px: 2,
                         py: 1.9,
                         borderRight: `1px solid ${theme.palette.divider}`,
+                        borderTop: 'none',
+                        borderLeft: 'none',
+                        borderBottom: 'none',
+                        background: 'transparent',
+                        cursor: item.dialogKey ? 'pointer' : 'default',
+                        textAlign: 'left',
+                        width: '100%',
+                        font: 'inherit',
+                        '&:hover': item.dialogKey ? {
+                          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(59,130,246,0.10)' : 'rgba(59,130,246,0.06)',
+                        } : undefined,
                         '&:last-of-type': {
                           borderRight: 'none',
                         },
@@ -244,9 +337,11 @@ function UnclassifiedControls() {
                           color: theme.palette.text.primary,
                           fontWeight: 700,
                           whiteSpace: valueIndex === 0 ? 'normal' : 'nowrap',
+                          textDecoration: item.dialogKey ? 'underline' : 'none',
+                          textUnderlineOffset: item.dialogKey ? '3px' : undefined,
                         }}
                       >
-                        {value}
+                        {item.value}
                       </Typography>
                     </Box>
                   ))}
@@ -256,6 +351,52 @@ function UnclassifiedControls() {
           </Box>
         </Box>
       </Paper>
+
+      <Dialog
+        open={Boolean(selectedDialog)}
+        onClose={() => setSelectedDialog(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {selectedDialog ? `${selectedDialog.dialogTitle} - ${selectedDialog.businessProcess}` : 'Unclassified Controls'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {selectedDialog?.forms?.length ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                Click a control number to open the control form in a new window.
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {selectedDialog.forms.map((form) => {
+                  const formId = getFieldValue(form, 'form_id', 'formId')
+                  const controlNumber = String(getFieldValue(form, 'control_number', 'controlNumber') || '').trim() || 'Unassigned'
+
+                  return (
+                    <Button
+                      key={`${String(formId || '')}-${controlNumber}`}
+                      variant="outlined"
+                      onClick={() => openControlForm(formId)}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      {controlNumber}
+                    </Button>
+                  )
+                })}
+              </Box>
+            </Box>
+          ) : (
+            <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+              No unclassified controls found for this selection.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={() => setSelectedDialog(null)}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

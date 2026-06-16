@@ -16,7 +16,7 @@ import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import { toast } from 'react-hot-toast'
 import { useThemeMode } from '../contexts/ThemeContext'
-import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
 import { apiUrl } from '../config/api'
 
 const ROLE_HOME_ROUTES = {
@@ -309,20 +309,22 @@ function UpdatePassword() {
                 placeholder="Temporary password from email"
                 fullWidth
                 sx={filledFieldSx(theme)}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton
-                        aria-label="toggle current password visibility"
-                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                        onMouseDown={(e) => e.preventDefault()}
-                        edge="end"
-                        disabled={loading}
-                      >
-                        {showCurrentPassword ? <VisibilityOff /> : <Visibility />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
+                slotProps={{
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          aria-label="toggle current password visibility"
+                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                          onMouseDown={(e) => e.preventDefault()}
+                          edge="end"
+                          disabled={loading}
+                        >
+                          {showCurrentPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  },
                 }}
               />
 
@@ -338,20 +340,22 @@ function UpdatePassword() {
                 placeholder="Choose a new password"
                 fullWidth
                 sx={filledFieldSx(theme)}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton
-                        aria-label="toggle new password visibility"
-                        onClick={() => setShowNewPassword(!showNewPassword)}
-                        onMouseDown={(e) => e.preventDefault()}
-                        edge="end"
-                        disabled={loading}
-                      >
-                        {showNewPassword ? <VisibilityOff /> : <Visibility />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
+                slotProps={{
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          aria-label="toggle new password visibility"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          onMouseDown={(e) => e.preventDefault()}
+                          edge="end"
+                          disabled={loading}
+                        >
+                          {showNewPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  },
                 }}
               />
 
@@ -367,20 +371,22 @@ function UpdatePassword() {
                 placeholder="Re-enter new password"
                 fullWidth
                 sx={filledFieldSx(theme)}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton
-                        aria-label="toggle confirm password visibility"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        onMouseDown={(e) => e.preventDefault()}
-                        edge="end"
-                        disabled={loading}
-                      >
-                        {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
+                slotProps={{
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          aria-label="toggle confirm password visibility"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          onMouseDown={(e) => e.preventDefault()}
+                          edge="end"
+                          disabled={loading}
+                        >
+                          {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  },
                 }}
               />
             </Box>

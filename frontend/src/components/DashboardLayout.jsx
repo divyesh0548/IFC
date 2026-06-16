@@ -26,7 +26,7 @@ import DarkModeIcon from '@mui/icons-material/DarkMode'
 import { useThemeMode } from '../contexts/ThemeContext'
 import { toast } from 'react-hot-toast'
 import { STORAGE_KEYS, clearCachedUserProfile, clearCompanyFinancialYearOptionsCache } from '../storageKeys'
-import { MAIN_CONTENT_MAX_WIDTH } from '../uiConstants'
+import { MAIN_CONTENT_MAX_WIDTH, DASHBOARD_SECTION_GAP } from '../uiConstants'
 import { apiUrl } from '../config/api'
 
 const getHomePath = (pathname) => {
@@ -389,45 +389,56 @@ function DashboardLayout() {
         sx={{
           flexGrow: 1,
           px: boundaryPaddingX,
-          py: 3,
+          pb: DASHBOARD_SECTION_GAP,
           width: '100%',
           maxWidth: isFullWidthPage ? 'none' : MAIN_CONTENT_MAX_WIDTH,
           mx: isFullWidthPage ? 0 : 'auto',
-          // Let the global body background show through
           backgroundColor: 'transparent',
           minHeight: '100vh',
         }}
       >
         <Toolbar />
-        {!isAtHome && (
-          <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 3 }}>
-            <Button
-              variant="text"
-              startIcon={<HomeRoundedIcon />}
-              onClick={() => navigate(homePath)}
-              sx={{
-                textTransform: 'none',
-                fontWeight: 600,
-                color: theme.palette.text.primary,
-                backgroundColor: theme.palette.background.paper,
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 2,
-                px: 2,
-                py: 0.75,
-                '&:hover': {
-                  backgroundColor:
-                    theme.palette.mode === 'dark'
-                      ? 'rgba(255, 255, 255, 0.08)'
-                      : 'rgba(0, 0, 0, 0.04)',
-                },
-              }}
-            >
-              Back to Home
-            </Button>
-          </Box>
-        )}
-        <Outlet />
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: DASHBOARD_SECTION_GAP,
+            pt: DASHBOARD_SECTION_GAP,
+            width: '100%',
+            minWidth: 0,
+            alignItems: 'stretch',
+          }}
+        >
+          {!isAtHome && (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+              <Button
+                variant="text"
+                startIcon={<HomeRoundedIcon />}
+                onClick={() => navigate(homePath)}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  color: theme.palette.text.primary,
+                  backgroundColor: theme.palette.background.paper,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  px: 2,
+                  py: 0.75,
+                  '&:hover': {
+                    backgroundColor:
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.04)',
+                  },
+                }}
+              >
+                Back to Home
+              </Button>
+            </Box>
+          )}
+          <Outlet />
+        </Box>
       </Box>
     </Box>
   )

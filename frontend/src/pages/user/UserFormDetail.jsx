@@ -36,20 +36,7 @@ import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailF
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatIndianDateTime } from '../../lib/dateTime'
 import { apiUrl, API_BASE_URL } from '../../config/api'
-
-function formatNameFromEmail(email) {
-  const raw = String(email || '').trim().toLowerCase()
-  if (!raw) return ''
-  const localPart = raw.split('@')[0] || ''
-  const parts = localPart
-    .split('.')
-    .map((part) => part.trim())
-    .filter(Boolean)
-  if (parts.length === 0) return ''
-  return parts
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
+import { formatDisplayName } from '../../utils/displayName'
 
 const REQUEST_CHANGE_FIELD_KEYS = [
   'area',
@@ -86,6 +73,7 @@ const REQUEST_CHANGE_BOOLEAN_FIELDS = new Set([
 ])
 
 const DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
+const USER_DOCUMENT_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 
 const REQUEST_CHANGE_DROPDOWN_OPTIONS = {
   risk_heat: ['High', 'Low', 'Medium'],
@@ -345,12 +333,24 @@ function UserFormDetail() {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
 
+    const validFiles = files.filter((file) => file.size <= USER_DOCUMENT_MAX_FILE_SIZE_BYTES)
+    const invalidFiles = files.filter((file) => file.size > USER_DOCUMENT_MAX_FILE_SIZE_BYTES)
+
+    if (invalidFiles.length > 0) {
+      toast.error('Each uploaded document must be 50 MB or smaller')
+    }
+
+    if (validFiles.length === 0) {
+      e.target.value = ''
+      return
+    }
+
     setSelectedFiles((currentFiles) => {
       const existingKeys = new Set(
         currentFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`)
       )
       const nextFiles = [...currentFiles]
-      files.forEach((file) => {
+      validFiles.forEach((file) => {
         const key = `${file.name}-${file.size}-${file.lastModified}`
         if (!existingKeys.has(key)) {
           nextFiles.push(file)
@@ -1665,13 +1665,12 @@ function UserFormDetail() {
                         overflowWrap: 'anywhere',
                       }}
                     >
-                      {String(
+                      {formatDisplayName(
                         formData?.approver_name ||
                           formData?.approver_display_name ||
-                          formatNameFromEmail(formData?.approver_email_id) ||
-                          formData?.approver_email_id ||
-                          ''
-                      ).trim() || '-'}
+                          formData?.approver_email_id,
+                        ''
+                      ) || '-'}
                     </Typography>
                   </Box>
 
@@ -1975,7 +1974,7 @@ function UserFormDetail() {
                         'valuation_and_allocation',
                         'rights_and_obligation',
                         'presentation_and_disclosure',
-                        // handled in Approval section
+                        // handled in Submission section
                         'doc_uploaded_by_user',
                         'remarks_by_user',
                       ].includes(key)
@@ -2051,7 +2050,6 @@ function UserFormDetail() {
               </CardContent>
             </Card>
 
-            {/* Grouped Approver Fields - Display only if at least one has a value */}
             <Card
               sx={{
                 borderRadius: 3,
@@ -2079,7 +2077,7 @@ function UserFormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  Documents
+                  Submission
                 </Typography>
                 <Box
                   sx={{
@@ -2348,39 +2346,8 @@ function UserFormDetail() {
                     </Box>
                   </Box>
                 </Box>
-              </CardContent>
-            </Card>
 
-            <Card
-              sx={{
-                borderRadius: 3,
-                boxShadow: theme.palette.mode === 'dark'
-                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
-                border: '1px solid',
-                borderColor: theme.palette.mode === 'dark'
-                  ? 'rgba(255, 255, 255, 0.12)'
-                  : 'rgba(0, 0, 0, 0.08)',
-                overflow: 'hidden',
-              }}
-            >
-              <CardContent sx={{ p: 4 }}>
-                <Typography
-                  variant="h6"
-                  component="h3"
-                  sx={{
-                    fontWeight: 700,
-                    mb: 3,
-                    color: 'text.primary',
-                    fontSize: '1.25rem',
-                    pb: 2,
-                    borderBottom: '2px solid',
-                    borderColor: 'divider',
-                  }}
-                >
-                  Approval
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 2 }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 4, pt: 1 }}>
                   {hasGroupedFieldValue ? (
                     <Box>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>

@@ -7,8 +7,11 @@ const cookieParser = require('cookie-parser');
 dotenv.config();
 
 const { runReminderEmails } = require('./scripts/reminder_emails');
+const { runApproverReminderEmails } = require('./scripts/approver_reminder_emails');
+const { runIneffectiveReminderEmails } = require('./scripts/ineffective_reminder_emails');
 const { runPendingLoginEmails } = require('./scripts/login_email_sender');
 const { runPendingRacmActiveUserEmails } = require('./scripts/racm_active_user_email_sender');
+const { runPendingRacmInactiveUserEmails } = require('./scripts/racm_inactive_user_email_sender');
 const { runBootstrap } = require('./config/bootstrap');
 require('./utils/db'); // Load shared pool (timezone set there)
 
@@ -109,13 +112,33 @@ app.get('/health', (req, res) => {
 });
 
 
-// Reminder emails for control_forms (runs every 1 minute)
+// Reminder emails for pending RACM submission (runs every 1 minute) 
 console.log('Starting reminder emails scheduler (runs every 1 minute)...');
 setInterval(async () => {
   try {
     await runReminderEmails();
   } catch (error) {
     console.error('Error in reminder emails job:', error);
+  }
+}, 60 * 1000);
+
+// Reminder emails for approvers on RACMs sent for approval (runs every 1 minute)
+console.log('Starting approver reminder emails scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await runApproverReminderEmails();
+  } catch (error) {
+    console.error('Error in approver reminder emails job:', error);
+  }
+}, 60 * 1000);
+
+// Reminder emails for process owners on ineffective RACMs (runs every 1 minute)
+console.log('Starting ineffective RACM reminder emails scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await runIneffectiveReminderEmails();
+  } catch (error) {
+    console.error('Error in ineffective reminder emails job:', error);
   }
 }, 60 * 1000);
 
@@ -129,13 +152,23 @@ setInterval(async () => {
   }
 }, 60 * 1000);
 
-// Active RACM assignment emails for process owners (runs every 1 minute)
+// Active RACM assignment emails for process owners 
 console.log('Starting active RACM user email scheduler (runs every 1 minute)...');
 setInterval(async () => {
   try {
     await runPendingRacmActiveUserEmails();
   } catch (error) {
     console.error('Error in active RACM user email job:', error);
+  }
+}, 60 * 1000);
+
+// Inactive RACM notification emails for process owners
+console.log('Starting inactive RACM user email scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await runPendingRacmInactiveUserEmails();
+  } catch (error) {
+    console.error('Error in inactive RACM user email job:', error);
   }
 }, 60 * 1000);
 

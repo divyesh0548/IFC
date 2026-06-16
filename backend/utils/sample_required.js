@@ -214,9 +214,10 @@ function getSampleSizeByFrequency(controlFrequency) {
   }
 
   if (
+    normalizedFreq === 'as and when' ||
     (normalizedFreq === 'as and when needed') ||
     (normalizedFreq === 'as and when required') ||
-    (hasWords('as', 'when') && (normalizedFreq.includes('needed') || normalizedFreq.includes('required'))) ||
+    hasWords('as', 'when') ||
     (normalizedFreq === 'on event') ||
     (normalizedFreq === 'on going') ||
     (normalizedFreq === 'ongoing')
@@ -508,6 +509,7 @@ function calculateSampleRequired(controlFrequency, createdAt) {
   // For 'as & when needed' frequency (handle both "&" and "and" variations)
   // Pick 5 random dates (weekdays only) from last 6 months
   if (
+    normalizedFreq === 'as and when' ||
     normalizedFreq === 'as and when needed' ||
     normalizedFreq === 'as and when required' ||
     normalizedFreq === 'on event' ||
@@ -515,8 +517,7 @@ function calculateSampleRequired(controlFrequency, createdAt) {
     normalizedFreq === 'ongoing' ||
     (
       normalizedFreq.includes('as') &&
-      normalizedFreq.includes('when') &&
-      (normalizedFreq.includes('needed') || normalizedFreq.includes('required'))
+      normalizedFreq.includes('when')
     ) ||
     (normalizedFreq.includes('on') && normalizedFreq.includes('going'))
   ) {

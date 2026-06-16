@@ -1,0 +1,167 @@
+{
+  "business_process": "",
+  "business_process_code": "",
+  "companies_included": [],
+  "risk_combinations": [
+    {
+      "sub_process": "Calculation of Payback & IRR at the time of planning",
+      "risk_description": "Inaccurate payback period is calculated for capex investment"
+    },
+    {
+      "sub_process": "Calculation of Payback & IRR at the time of planning",
+      "risk_description": "Inaccurate Assumptions are used for in payback calculation"
+    },
+    {
+      "sub_process": "Calculation of Payback & IRR at the time of planning",
+      "risk_description": "Inaccurate IRR is calculated for capex Investment"
+    },
+    {
+      "sub_process": "Planning of Capex",
+      "risk_description": "Inadequate capex Planning"
+    },
+    {
+      "sub_process": "Planning of Capex",
+      "risk_description": "Unauthorized changes in Capex Plan"
+    },
+    {
+      "sub_process": "Project Timelines",
+      "risk_description": "Delays and Project Extensions"
+    },
+    {
+      "sub_process": "Project Timelines",
+      "risk_description": "Unauthorized delay and project extension"
+    },
+    {
+      "sub_process": "Budgeting and Approval",
+      "risk_description": "Incorrect budget provisions"
+    },
+    {
+      "sub_process": "Budgeting and Approval",
+      "risk_description": "Incorrect budget updated in the SAP"
+    },
+    {
+      "sub_process": "Budgeting and Approval",
+      "risk_description": "Actual expense of Capex exceeds the budget"
+    },
+    {
+      "sub_process": "Procurement Process",
+      "risk_description": "Procurement delays or mismatch with technical requirements."
+    },
+    {
+      "sub_process": "Procurement Process",
+      "risk_description": "Procurement delays or suboptimal sourcing."
+    },
+    {
+      "sub_process": "Procurement Process",
+      "risk_description": "Approval of unsuitable proposals or tracking issues."
+    },
+    {
+      "sub_process": "Procurement Process",
+      "risk_description": "Unverified or technically unsuitable vendor selection may lead to quality issues, cost overruns, or project delays."
+    },
+    {
+      "sub_process": "Procurement Process",
+      "risk_description": "Selection of suboptimal vendor, affecting quality, cost, or service."
+    },
+    {
+      "sub_process": "Asset Capitalization & CWIP Monitoring",
+      "risk_description": "Unauthorised and inaccurate receipt of fixed assets"
+    },
+    {
+      "sub_process": "Asset Capitalization & CWIP Monitoring",
+      "risk_description": "Delay or errors in asset coding and MIGO processing may lead to inaccurate asset records"
+    },
+    {
+      "sub_process": "Asset Capitalization & CWIP Monitoring",
+      "risk_description": "Inaccurate recording and classification of fixed assets"
+    },
+    {
+      "sub_process": "Asset Capitalization & CWIP Monitoring",
+      "risk_description": "Inaccurate capitalization and impact financial reporting."
+    },
+    {
+      "sub_process": "Asset Capitalization & CWIP Monitoring",
+      "risk_description": "CWIP is not monitored for timely capitalization"
+    },
+    {
+      "sub_process": "Asset Capitalization & CWIP Monitoring",
+      "risk_description": "Inaccurate capitalization of fixed assets"
+    },
+    {
+      "sub_process": "Asset Capitalization & CWIP Monitoring",
+      "risk_description": "Inaccurate fixed asset accounting"
+    },
+    {
+      "sub_process": "Fixed Asset Register Management",
+      "risk_description": "Inaccurate addition to the fixed asset master"
+    },
+    {
+      "sub_process": "Fixed Asset Register Management",
+      "risk_description": "Incorrect useful life / Rate of depreaction is mentioned in FAR"
+    },
+    {
+      "sub_process": "Fixed Asset Register Management",
+      "risk_description": "Fixed assets are not tagged"
+    },
+    {
+      "sub_process": "Depreciation",
+      "risk_description": "Inaccurate depreciation calculation and accounting"
+    },
+    {
+      "sub_process": "Depreciation",
+      "risk_description": "Inaccurate depreciation calculation and accounting"
+    },
+    {
+      "sub_process": "Payback Monitoring",
+      "risk_description": "No monetoring of Payback"
+    },
+    {
+      "sub_process": "Payback Monitoring",
+      "risk_description": "No monetoring of Payback"
+    },
+    {
+      "sub_process": "Payback Monitoring",
+      "risk_description": "No monetoring of significant deviations of Capex Outcomes"
+    },
+    {
+      "sub_process": "Physical Verification",
+      "risk_description": "Fixed assets not physically verified by 3rd Party (External Party)"
+    },
+    {
+      "sub_process": "Asset Disposals & Transfers",
+      "risk_description": "Unauthorized disposal of fixed assets"
+    },
+    {
+      "sub_process": "Asset Disposals & Transfers",
+      "risk_description": "Assets are disposed at inappropriate rates"
+    },
+    {
+      "sub_process": "Asset Disposals & Transfers",
+      "risk_description": "Unauthorized transfer of fixed assets"
+    },
+    {
+      "sub_process": "Asset Disposals & Transfers",
+      "risk_description": "Unauthorized removal of assets out of company's premises"
+    },
+    {
+      "sub_process": "Asset Impairment",
+      "risk_description": "Inaccurate impairment of fixed assets"
+    },
+    {
+      "sub_process": "Asset Insurance",
+      "risk_description": "All asset are not adequately insured"
+    },
+    {
+      "sub_process": "Capitalization of Intangible assets",
+      "risk_description": "Inaccurate capitalization of intangible assets"
+    },
+    {
+      "sub_process": "Borrowing Cost",
+      "risk_description": "Inaccurate project costing and non-compliance with accounting standards."
+    },
+    {
+      "sub_process": "Standard Operating Procedures and DOA",
+      "risk_description": "Non - Standard Procedures followed."
+    }
+  ]
+}

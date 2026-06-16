@@ -1,11 +1,11 @@
 const path = require('path');
 const dotenv = require('dotenv');
 
-dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+dotenv.config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
-const { prisma } = require('../lib/prisma');
+const { prisma } = require('../../lib/prisma');
 const { requestControlSummary } = require('./ollama_client');
-const { isKeyControlValue } = require('../utils/key_control_classification');
+const { isKeyControlValue } = require('../../utils/key_control_classification');
 
 function normalizeValue(value) {
   return String(value || '').trim().toLowerCase();
@@ -15,6 +15,10 @@ function isManualKeyControl(row) {
   const controlTypeMa = normalizeValue(row.controlTypeMa);
 
   return isKeyControlValue(row.keyControl) && controlTypeMa === 'manual';
+}
+
+function isEntityLevelControlsBusinessProcess(value) {
+  return normalizeValue(value) === 'entity level controls';
 }
 
 function toLlMInputRow(row) {
@@ -77,7 +81,7 @@ async function main() {
   const companyIdentifier = String(process.argv[2] || '').trim();
 
   if (!companyIdentifier) {
-    console.error('Usage: node llm_racm_summary/generate_company_racm_rationalisation.js <company_identifier>');
+    console.error('Usage: node backend/ai_summary/key_manual_summary/generate_company_racm_rationalisation.js <company_identifier>');
     process.exitCode = 1;
     return;
   }
@@ -85,14 +89,17 @@ async function main() {
   console.log(`Fetching RACMs for company_identifier=${companyIdentifier}`);
 
   const allRows = await fetchCompanyControlForms(companyIdentifier);
-  const filteredRows = allRows.filter(isManualKeyControl);
+  const manualKeyRows = allRows.filter(isManualKeyControl);
+  const excludedEntityLevelCount = manualKeyRows.filter((row) => isEntityLevelControlsBusinessProcess(row.businessProcess)).length;
+  const filteredRows = manualKeyRows.filter((row) => !isEntityLevelControlsBusinessProcess(row.businessProcess));
 
   if (filteredRows.length === 0) {
-  console.log('No manual + key controls found for the provided company_identifier.');
+    console.log('No eligible manual + key controls found after excluding Entity Level Controls.');
     return;
   }
 
   console.log(`Found ${filteredRows.length} matching manual + key controls.`);
+  console.log(`Excluded ${excludedEntityLevelCount} Entity Level Controls from AI summary generation.`);
 
   for (const row of filteredRows) {
     const businessProcess = String(row.businessProcess || '').trim() || 'Unspecified Business Process';

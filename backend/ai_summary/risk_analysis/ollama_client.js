@@ -1,7 +1,7 @@
 const http = require('http');
 const https = require('https');
 const { URL } = require('url');
-const { rationalisationSummarySchema, parseStructuredSummary } = require('./summary_schema');
+const { riskAnalysisResponseSchema, parseRiskAnalysisResponse } = require('./risk_analysis_schema');
 
 const OLLAMA_URL = process.env.OLLAMA_CHAT_URL;
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL;
@@ -14,37 +14,41 @@ const OLLAMA_REQUEST_TIMEOUT_MS = Number.isFinite(parsedOllamaTimeoutMs) && pars
   ? parsedOllamaTimeoutMs
   : DEFAULT_OLLAMA_TIMEOUT_MS;
 const OLLAMA_THINK = resolveOllamaThinkSetting(process.env.OLLAMA_THINK, OLLAMA_MODEL);
-// Previous Ollama options kept for reference:
-// const OLLAMA_MODEL_OPTIONS = {
-//   temperature: 0,
-//   max_tokens: 1000,
-//   top_p: 0.9,
-// };
 const OLLAMA_MODEL_OPTIONS = {
   temperature: 0,
   num_predict: 180,
   top_p: 0.9,
 };
 
-function buildSingleControlPrompt({ companyIdentifier, businessProcess, control }) {
+function buildRiskAnalysisPrompt({ companyIdentifier, businessProcess, control, candidateSubProcesses }) {
   return [
     `You are reviewing one RACM for company_identifier=${companyIdentifier}.`,
     `The business process cycle is "${businessProcess}".`,
-    'Only use the RACM row provided below.',
-    'Do not invent any controls or fields that are not present in the input.',
-    'Generate one concise Rationalisation Opportunity for this control.',
-    'For each control, provide:',
-    '1. A short, actionable summary of the rationalisation opportunity.',
-    '2. Highlight risks if not rationalised.',
-    '3. Suggest alternative approaches or improvements where applicable.',
-    '4. Use varied sentence structures — avoid repetitive phrasing like "Consider implementing/automating". Make the summaries natural, professional, and credible.',
-    '5. Output strictly in JSON, structured as:',
+    'Your job has two steps:',
+    '1. Select the most appropriate candidate sub-process from the provided list by comparing it with the control sub-process.',
+    '2. Compare the control risk coverage against the risks listed for the selected candidate sub-process.',
+    'Use only the control data and candidate list provided below.',
+    'Do not invent risks, sub-processes, or control details that are not present in the input.',
+    'Return strictly valid JSON matching the schema below.',
+    'If the control does not test a listed risk, include that risk in missingRisks and add one concise pointer in missingRiskPointers.',
+    'Use short, factual pointers that explain what aspect is not being tested by the RACM.',
+    'Rephrase every pointer into simple business language. Do not copy exact sentences, exact phrases, or long wording from the input control or candidate risks.',
+    'Each pointer must describe a distinct gap. Do not repeat the same point with small wording changes.',
+    'STRICT WARNING: missingRiskPointers must not contain duplicate or near-duplicate pointers. If two risks lead to the same gap, combine them into one clear pointer instead of repeating it.',
+    'Keep each pointer specific, plain, and easy to read.',
+    'Do not return the input control number, control sub-process, covered risks, or general notes.',
     '',
-    `Schema: ${JSON.stringify(rationalisationSummarySchema)}`,
+    `Schema: ${JSON.stringify(riskAnalysisResponseSchema)}`,
     '',
-    'Use the exact input controlNumber value in the output.',
     `Input control: ${JSON.stringify(control)}`,
+    `Candidate sub-processes: ${JSON.stringify(candidateSubProcesses)}`,
   ].join('\n');
+}
+
+function createOllamaError(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
 }
 
 function getOllamaUrl() {
@@ -59,17 +63,11 @@ function getOllamaUrl() {
   }
 }
 
-function getOllamaReachabilityUrl() {
-  const ollamaUrl = getOllamaUrl();
-  return new URL('/api/tags', ollamaUrl);
-}
-
 function resolveOllamaThinkSetting(rawValue, modelName) {
   const normalized = String(rawValue || '').trim().toLowerCase();
   if (normalized === 'true') return true;
   if (normalized === 'false') return false;
 
-  // qwen3.5 exposes a thinking mode that adds large latency for this endpoint.
   if (/^qwen3\.5(?::|$)/i.test(String(modelName || '').trim())) {
     return false;
   }
@@ -127,58 +125,7 @@ function postJson(url, payload) {
   });
 }
 
-function requestText(url, options = {}) {
-  const client = url.protocol === 'https:' ? https : http;
-  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
-    ? options.timeoutMs
-    : 5000;
-
-  return new Promise((resolve, reject) => {
-    const request = client.request(
-      url,
-      {
-        method: 'GET',
-      },
-      (response) => {
-        const chunks = [];
-
-        response.on('data', (chunk) => {
-          chunks.push(chunk);
-        });
-
-        response.on('end', () => {
-          const rawBody = Buffer.concat(chunks).toString('utf8');
-          resolve({
-            ok: response.statusCode >= 200 && response.statusCode < 300,
-            status: response.statusCode || 0,
-            text: rawBody,
-          });
-        });
-      }
-    );
-
-    request.setTimeout(timeoutMs, () => {
-      request.destroy(new Error(`Ollama reachability check timed out after ${timeoutMs}ms.`));
-    });
-
-    request.on('error', (error) => {
-      reject(error);
-    });
-
-    request.end();
-  });
-}
-
-async function isOllamaReachable() {
-  try {
-    const response = await requestText(getOllamaReachabilityUrl(), { timeoutMs: 5000 });
-    return response.ok;
-  } catch (error) {
-    return false;
-  }
-}
-
-async function requestControlSummary({ companyIdentifier, businessProcess, control }) {
+async function requestRiskAnalysis({ companyIdentifier, businessProcess, control, candidateSubProcesses }) {
   if (!OLLAMA_MODEL) {
     throw new Error('OLLAMA_MODEL is not configured.');
   }
@@ -186,19 +133,19 @@ async function requestControlSummary({ companyIdentifier, businessProcess, contr
   const payload = {
     model: OLLAMA_MODEL,
     stream: false,
-    format: rationalisationSummarySchema,
-    options: OLLAMA_MODEL_OPTIONS,
-    // Previous payload behavior kept for reference:
-    // qwen3.5 was previously called without a `think` flag, which allowed
-    // the model to enter its reasoning mode and caused very slow responses.
+    format: riskAnalysisResponseSchema,
+    options: {
+      ...OLLAMA_MODEL_OPTIONS,
+      num_predict: 500,
+    },
     messages: [
       {
         role: 'system',
-        content: 'You are an internal controls specialist. Return only valid JSON matching the schema.',
+        content: 'You are an internal controls risk specialist. Return only valid JSON matching the schema. Rewrite findings in simple language and never return duplicate or near-duplicate pointers.',
       },
       {
         role: 'user',
-        content: buildSingleControlPrompt({ companyIdentifier, businessProcess, control }),
+        content: buildRiskAnalysisPrompt({ companyIdentifier, businessProcess, control, candidateSubProcesses }),
       },
     ],
   };
@@ -218,20 +165,23 @@ async function requestControlSummary({ companyIdentifier, businessProcess, contr
   try {
     data = JSON.parse(response.text);
   } catch (error) {
-    throw new Error(`Ollama returned invalid JSON response: ${error.message}`);
+    throw createOllamaError(`Ollama returned invalid JSON response: ${error.message}`, 'OLLAMA_INVALID_JSON_RESPONSE');
   }
+
   const content = String(data?.message?.content || '').trim();
-
   if (!content) {
-    throw new Error('Ollama response content is empty.');
+    throw createOllamaError('Ollama response content is empty.', 'OLLAMA_EMPTY_RESPONSE');
   }
 
-  return parseStructuredSummary(content);
+  try {
+    return parseRiskAnalysisResponse(content);
+  } catch (error) {
+    throw createOllamaError(error.message, 'OLLAMA_INVALID_STRUCTURED_RESPONSE');
+  }
 }
 
 module.exports = {
   OLLAMA_MODEL,
   OLLAMA_MODEL_OPTIONS,
-  isOllamaReachable,
-  requestControlSummary,
+  requestRiskAnalysis,
 };

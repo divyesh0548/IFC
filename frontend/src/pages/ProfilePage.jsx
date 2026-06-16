@@ -10,8 +10,9 @@ import Button from '@mui/material/Button'
 import { toast } from 'react-hot-toast'
 import { MAIN_CONTENT_MAX_WIDTH, PAGE_SUBHEADER_TEXT_SX } from '../uiConstants'
 import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
-import { readCachedUserProfile, writeCachedUserProfile } from '../storageKeys'
+import { readCachedUserProfile, writeCachedUserProfile } from '../storageKeys'
 import { apiUrl } from '../config/api'
+import { getMobileValidationError, normalizeMobileDigits } from '../utils/mobileValidation'
 
 const FIELDS = [
   { key: 'emp_name', label: 'Employee name' },
@@ -102,7 +103,17 @@ function ProfilePage() {
     setEditForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  const mobileValidationError = editForm.mobile.trim()
+    ? getMobileValidationError(editForm.mobile)
+    : null
+
   const handleSave = async () => {
+    const mobileError = editForm.mobile.trim() ? getMobileValidationError(editForm.mobile) : null
+    if (mobileError) {
+      toast.error(mobileError)
+      return
+    }
+
     setSaving(true)
     try {
       const response = await fetch(apiUrl('/api/auth/profile'), {
@@ -113,7 +124,7 @@ function ProfilePage() {
           emp_name: editForm.emp_name,
           designation: editForm.designation,
           department: editForm.department,
-          mobile: editForm.mobile,
+          mobile: normalizeMobileDigits(editForm.mobile) || null,
         }),
       })
       const data = await response.json()
@@ -241,9 +252,17 @@ function ProfilePage() {
                 <TextField
                   size="small"
                   fullWidth
+                  type={field.key === 'phone' ? 'tel' : 'text'}
                   value={field.key === 'phone' ? editForm.mobile : editForm[field.key]}
                   onChange={(e) => handleEditChange(field.key === 'phone' ? 'mobile' : field.key, e.target.value)}
                   disabled={saving}
+                  error={field.key === 'phone' && !!mobileValidationError}
+                  helperText={
+                    field.key === 'phone'
+                      ? mobileValidationError || 'Optional. Enter a valid 10-digit mobile number.'
+                      : undefined
+                  }
+                  inputProps={field.key === 'phone' ? { maxLength: 10 } : undefined}
                 />
               ) : (
                 <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.primary', wordBreak: 'break-word' }}>

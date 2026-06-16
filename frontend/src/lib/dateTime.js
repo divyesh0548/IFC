@@ -1,3 +1,6 @@
+// Backend stores reminder/control timestamps in UTC (timestamp without time zone).
+// Use formatIndianDateTime* helpers below when displaying them in the UI.
+
 export function parseDateValue(value) {
   if (!value) return null
   const raw = String(value).trim()

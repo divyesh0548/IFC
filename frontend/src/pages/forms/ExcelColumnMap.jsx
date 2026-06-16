@@ -185,40 +185,6 @@ function findDuplicateFieldMappings(headers, selections, autoDetectedByHeader, m
   return { ok: true }
 }
 
-/** Excel column that supplies process owner emails after mapping. */
-function resolveProcessOwnerHeader(headers, selections) {
-  for (const h of headers) {
-    if (selections[h] === 'control_owner') return h
-  }
-  for (const h of headers) {
-    const sel = selections[h]
-    if (sel === SKIP) continue
-    if (sel !== AUTO && sel && sel !== 'control_owner') continue
-    if (normalizeHeader(h) === 'process owner') return h
-  }
-  return null
-}
-
-function validateProcessOwnerEmails(rows, processOwnerHeader) {
-  if (!processOwnerHeader) return { ok: true }
-  const nonEmpty = [
-    ...new Set(
-      rows
-        .map((r) => String(r[processOwnerHeader] ?? '').trim())
-        .filter((v) => v !== '')
-    ),
-  ]
-  if (nonEmpty.length === 0) {
-    return { ok: true, warnEmpty: true }
-  }
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  const invalid = nonEmpty.filter((v) => !emailRegex.test(v))
-  if (invalid.length > 0) {
-    return { ok: false, error: 'Process Owner / mapped owner column must contain valid email addresses.' }
-  }
-  return { ok: true }
-}
-
 function buildColumnMapping(headers, selections) {
   const out = {}
   for (const h of headers) {
@@ -369,16 +335,6 @@ function ExcelColumnMap() {
       const cols = dup.excelHeaders.map((c) => `"${c}"`).join(', ')
       toast.error(`${dup.fieldLabel} cannot map to more than one Excel column (${cols}).`)
       return
-    }
-
-    const poHeader = resolveProcessOwnerHeader(headers, selections)
-    const poCheck = validateProcessOwnerEmails(payload.rows, poHeader)
-    if (!poCheck.ok) {
-      toast.error(poCheck.error || 'Invalid Process Owner data.')
-      return
-    }
-    if (poCheck.warnEmpty) {
-      toast('Process Owner column is empty.', { icon: '⚠️' })
     }
 
     const controlFrequencyHeader = headers.find(

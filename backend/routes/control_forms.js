@@ -8,6 +8,7 @@ const { prisma } = require('../lib/prisma');
 const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
 const { sendEmail } = require('../utils/send_email');
 const { getCcEmailsForRacm } = require('../utils/racm_cc_recipients');
+const { buildRacmInactiveUserEmail } = require('../utils/racm_status_user_email');
 const { decryptToken } = require('../utils/auth_utility');
 const { verifyUserAuth } = require('../modules/auth/auth.middleware');
 const { clearAuthCookies } = require('../modules/auth/auth.cookies');
@@ -28,7 +29,9 @@ const {
 } = require('../utils/sample_required');
 const {
   attachControlFormDocuments,
+  buildUserDocumentS3FolderPath,
   getControlFormDocumentRows,
+  getControlFormUserDocumentContext,
   insertSampleDocument,
   insertUserDocument,
 } = require('../utils/racm_documents');
@@ -41,6 +44,13 @@ const {
   getMissingRacmRequiredFields,
   formatMissingRacmRequiredFields,
 } = require('../utils/racm_required_fields');
+const {
+  CONTROLS_REMINDER_JOIN_SQL,
+  CONTROLS_REMINDER_SELECT_SQL,
+  resetReminderDatetimeForForms,
+  seedReminderToApproverDatetime,
+  mapControlsReminderToApi,
+} = require('../utils/controls_reminder');
 
 console.log('✅ control_forms.js module loaded successfully');
 
@@ -142,8 +152,20 @@ function parseActiveFilter(value) {
   return undefined;
 }
 
+const VALID_RACM_ASSIGNMENT_EXISTS_SQL = `
+  EXISTS (
+    SELECT 1
+    FROM ifc_users valid_owner
+    WHERE LOWER(TRIM(valid_owner.email_id)) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
+      AND valid_owner.company_identifier = cf.company_identifier
+      AND NULLIF(TRIM(valid_owner.unit_id), '') = NULLIF(TRIM(cf.unit_id), '')
+      AND valid_owner.role = 'user'
+  )
+`;
+
 const CONTROL_FORMS_LIST_FROM = `
   FROM control_forms cf
+  ${CONTROLS_REMINDER_JOIN_SQL}
   LEFT JOIN company_unit_master cum
     ON cum.company_identifier = cf.company_identifier
    AND cum.unit_id = cf.unit_id
@@ -157,6 +179,7 @@ const CONTROL_FORMS_LIST_FROM = `
 const CONTROL_FORMS_LIST_SELECT = `
   SELECT
     cf.*,
+    ${CONTROLS_REMINDER_SELECT_SQL},
     NULLIF(TRIM(cum.unit_name), '') AS unit_name,
     NULLIF(TRIM(u.emp_name), '') AS control_owner_name
 `;
@@ -176,6 +199,7 @@ function appendControlFormsListFilters(req, options, queryParts) {
     unit_id,
     conclusion,
     pending_changes,
+    active_or_valid_assignment,
   } = req.query;
 
   let { whereClause, queryParams, paramIndex } = queryParts;
@@ -297,27 +321,13 @@ function appendControlFormsListFilters(req, options, queryParts) {
   }
 
   if (assignment === 'assigned') {
-    whereClause += `
-      AND EXISTS (
-        SELECT 1
-        FROM ifc_users valid_owner
-        WHERE LOWER(TRIM(valid_owner.email_id)) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
-          AND valid_owner.company_identifier = cf.company_identifier
-          AND NULLIF(TRIM(valid_owner.unit_id), '') = NULLIF(TRIM(cf.unit_id), '')
-          AND valid_owner.role = 'user'
-      )
-    `;
+    whereClause += ` AND ${VALID_RACM_ASSIGNMENT_EXISTS_SQL}`;
   } else if (assignment === 'unassigned') {
-    whereClause += `
-      AND NOT EXISTS (
-        SELECT 1
-        FROM ifc_users valid_owner
-        WHERE LOWER(TRIM(valid_owner.email_id)) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
-          AND valid_owner.company_identifier = cf.company_identifier
-          AND NULLIF(TRIM(valid_owner.unit_id), '') = NULLIF(TRIM(cf.unit_id), '')
-          AND valid_owner.role = 'user'
-      )
-    `;
+    whereClause += ` AND NOT ${VALID_RACM_ASSIGNMENT_EXISTS_SQL}`;
+  }
+
+  if (parseActiveFilter(active_or_valid_assignment) === true) {
+    whereClause += ` AND (cf.active = TRUE OR ${VALID_RACM_ASSIGNMENT_EXISTS_SQL})`;
   }
 
   if (assignmentEligibleOnly) {
@@ -446,10 +456,12 @@ ${coordinatorCompanyDisplayName}
         `
       };
     case 'Inactive':
-      // Reserved for future inactive-specific email content.
-      return {
-        shouldSend: false
-      };
+      return buildRacmInactiveUserEmail({
+        businessProcess,
+        processOwnerName: recipientName,
+        coordinatorName: coordinatorDisplayName,
+        coordinatorCompanyName: coordinatorCompanyDisplayName,
+      });
     default:
       return {
         shouldSend: false
@@ -1657,6 +1669,7 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
     const query = `
       SELECT
         cf.*,
+        ${CONTROLS_REMINDER_SELECT_SQL},
         cum.unit_name,
         NULLIF(TRIM(owner.emp_name), '') AS control_owner_name,
         cum.approver_email_id,
@@ -1664,6 +1677,7 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
         approver.temp_login AS approver_temp_login,
         COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(cum.approver_email_id), '')) AS approver_display_name
       FROM control_forms cf
+      ${CONTROLS_REMINDER_JOIN_SQL}
       LEFT JOIN company_unit_master cum
         ON cum.unit_id = cf.unit_id
        AND cum.company_identifier = cf.company_identifier
@@ -1892,9 +1906,17 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     data.userMailSent = false;
   }
   if (!(isRacmAssignmentOperation && active !== undefined) && active !== undefined) {
-    data.active = normalizeActiveInput(active);
-    if (normalizeActiveInput(active) !== currentActiveStatus) {
+    const normalizedActive = normalizeActiveInput(active);
+    data.active = normalizedActive;
+    if (normalizedActive !== currentActiveStatus) {
       data.userMailSent = false;
+      if (currentActiveStatus === true && normalizedActive === false) {
+        if (String(currentForm.controlOwner || '').trim()) {
+          data.inactiveMailPending = true;
+        }
+      } else if (normalizedActive === true) {
+        data.inactiveMailPending = false;
+      }
     }
   }
   if (status === 'sent for approval' && currentForm.status === 'Rejected' && String(currentForm.reasonByApprover || '').trim() !== '') {
@@ -1927,6 +1949,11 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     }
 
     await prisma.$transaction(async (tx) => {
+      // Seed approver reminder timestamp before status changes (same transaction).
+      if (isNowSentForApprovalRequest && !wasSentForApproval) {
+        await seedReminderToApproverDatetime(tx, normalizedFormId);
+      }
+
       if (Object.keys(cleanedUpdateData).length > 0) {
         await tx.controlForm.update({
           where: { formId: normalizedFormId },
@@ -1942,9 +1969,17 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
         if (active !== undefined) {
           const normalizedActive = normalizeActiveInput(active);
           if (normalizedActive !== currentActiveStatus) {
+            const assignmentActiveData = { active: normalizedActive, userMailSent: false };
+            if (currentActiveStatus === true && normalizedActive === false) {
+              if (String(currentForm.controlOwner || assignmentEmail || '').trim()) {
+                assignmentActiveData.inactiveMailPending = true;
+              }
+            } else if (normalizedActive === true) {
+              assignmentActiveData.inactiveMailPending = false;
+            }
             await tx.controlForm.update({
               where: { formId: normalizedFormId },
-              data: { active: normalizedActive, userMailSent: false },
+              data: assignmentActiveData,
             });
           }
         }
@@ -2004,10 +2039,14 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
     }
 
-    const form = await prisma.controlForm.findUnique({ where: { formId: normalizedFormId } });
+    const form = await prisma.controlForm.findUnique({
+      where: { formId: normalizedFormId },
+      include: { controlsReminder: true },
+    });
     if (!form) {
       return res.status(404).json({ success: false, message: 'RACM not found' });
     }
+    const reminderFields = mapControlsReminderToApi(form.controlsReminder);
     const sampleDocs = await prisma.sampleDoc.findMany({ where: { formId: normalizedFormId }, orderBy: { id: 'asc' } });
     const userDocs = await prisma.docUploadedByUser.findMany({ where: { formId: normalizedFormId }, orderBy: { id: 'asc' } });
     const updatedRow = {
@@ -2055,7 +2094,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       control_type_ma: form.controlTypeMa,
       due_date: form.dueDate,
       reminder_frequency: form.reminderFrequency,
-      reminder_datetime: form.reminderDatetime,
+      ...reminderFields,
       sent_for_approval_timestamp: form.sentForApprovalTimestamp,
       approval_status_change_timestamp: form.approvalStatusChangeTs,
       user_mail_sent: form.userMailSent,
@@ -2249,6 +2288,7 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
       `
         SELECT
           cf.*,
+          ${CONTROLS_REMINDER_SELECT_SQL},
           cum.unit_name,
           NULLIF(TRIM(owner.emp_name), '') AS control_owner_name,
           cum.approver_email_id,
@@ -2256,6 +2296,7 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
           approver.temp_login AS approver_temp_login,
           COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(cum.approver_email_id), '')) AS approver_display_name
         FROM control_forms cf
+        ${CONTROLS_REMINDER_JOIN_SQL}
         LEFT JOIN company_unit_master cum
           ON cum.unit_id = cf.unit_id
          AND cum.company_identifier = cf.company_identifier
@@ -3278,9 +3319,9 @@ router.post('/bulk-set-due-date', verifyAuth, async (req, res) => {
       data: {
         dueDate: dueDateValue,
         reminderFrequency,
-        reminderDatetime: null,
       },
     });
+    await resetReminderDatetimeForForms(eligibleFormIds);
 
     return res.status(200).json({
       success: true,
@@ -3902,6 +3943,21 @@ router.post(
       });
     }
 
+    const docContext = await getControlFormUserDocumentContext(pool, form_id);
+    if (!docContext) {
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found',
+      });
+    }
+
+    const userDocumentFolderPath = buildUserDocumentS3FolderPath({
+      companyName: docContext.company_name,
+      unitName: docContext.unit_name,
+      businessProcess: docContext.business_process,
+      formId: docContext.form_id,
+    });
+
     const uploadedDocs = [];
 
     for (const file of files) {
@@ -3910,7 +3966,7 @@ router.post(
 
       // Upload file to S3
       console.log(`Uploading user document to S3: ${fileName}`);
-      const s3Key = await uploadFileToS3(fileBuffer, fileName, `IFC/user_docs/${form_id}`, {
+      const s3Key = await uploadFileToS3(fileBuffer, fileName, userDocumentFolderPath, {
         preserveFileName: true,
       });
       console.log(`User document uploaded to S3 with key: ${s3Key}`);

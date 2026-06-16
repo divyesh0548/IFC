@@ -19,23 +19,10 @@ import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
+import { formatDisplayName } from '../../utils/displayName'
 
 function normalizeStatus(status) {
   return String(status || '').trim().toLowerCase()
-}
-
-function formatNameFromEmail(email) {
-  const raw = String(email || '').trim().toLowerCase()
-  if (!raw) return ''
-  const localPart = raw.split('@')[0] || ''
-  const parts = localPart
-    .split('.')
-    .map((part) => part.trim())
-    .filter(Boolean)
-  if (parts.length === 0) return ''
-  return parts
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
 }
 
 const COMPANY_DETAIL_LABELS = {
@@ -174,11 +161,7 @@ function UserHome() {
     )
   }, [forms])
 
-  const displayName =
-    profile?.emp_name?.trim() ||
-    formatNameFromEmail(profile?.email_id) ||
-    profile?.email_id ||
-    'User'
+  const displayName = formatDisplayName(profile?.emp_name?.trim() || profile?.email_id, 'User')
   const unitDisplay = profile?.unit_name || profile?.unit_id || '-'
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
   const companyDetailRows = Object.entries(profile?.company_details || {})

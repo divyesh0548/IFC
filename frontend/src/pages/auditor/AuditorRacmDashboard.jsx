@@ -12,6 +12,8 @@ import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
 import Alert from '@mui/material/Alert'
 import {
+  DASHBOARD_PAGE_OUTER_SX,
+  DASHBOARD_PAPER_SX,
   FILTER_BOX_MIN_WIDTH,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
@@ -289,10 +291,11 @@ function AuditorRacmDashboard() {
   }
 
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
+    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Paper
         elevation={3}
         sx={{
+          ...DASHBOARD_PAPER_SX,
           p: 3,
           backgroundColor: theme.palette.background.paper,
           borderRadius: 2,

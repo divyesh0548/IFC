@@ -414,9 +414,6 @@ function UnitManagement() {
     selectedAssignmentUnitId !== '' && !mappedUnitIdSet.has(selectedAssignmentUnitId)
   const isOwnCoordinatorAssignment =
     assignmentDialog.role === 'company_co' && !isAssignmentOutsideMappedUnits
-  const selectedAssignmentUnitName = String(
-    assignmentDialog.unit?.unit_name || assignmentDialog.unit?.unit_id || 'this unit'
-  ).trim()
   const shellCardSx = {
     borderRadius: 3,
     border: '1px solid',
@@ -816,11 +813,6 @@ function UnitManagement() {
           {isOwnCoordinatorAssignment ? (
             <Alert severity="error">
               You cannot replace your own company coordinator assignment for this unit.
-            </Alert>
-          ) : null}
-          {isAssignmentOutsideMappedUnits ? (
-            <Alert severity="warning">
-              User won&apos;t be able to access {selectedAssignmentUnitName}&apos;s controls.
             </Alert>
           ) : null}
           <FormControl fullWidth required disabled={assignmentDialog.submitting}>

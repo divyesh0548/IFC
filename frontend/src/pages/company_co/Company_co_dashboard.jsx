@@ -13,6 +13,8 @@ import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import { PieChart } from '@mui/x-charts/PieChart'
 import {
+  DASHBOARD_PAGE_OUTER_SX,
+  DASHBOARD_PAPER_SX,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
 } from '../../uiConstants'
@@ -177,10 +179,10 @@ function Company_Co_dashboard() {
   const [mappedUnits, setMappedUnits] = useState([])
   const [unclassifiedAlertDismissed, setUnclassifiedAlertDismissed] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [statsLoading, setStatsLoading] = useState(true)
+  const [chartStatsLoading, setChartStatsLoading] = useState(true)
   const [businessProcessSummaryLoading, setBusinessProcessSummaryLoading] = useState(true)
   const [allRacms, setAllRacms] = useState([])
-  useSyncGlobalLoading(loading || statsLoading || businessProcessSummaryLoading)
+  useSyncGlobalLoading(loading || chartStatsLoading || businessProcessSummaryLoading)
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -285,8 +287,8 @@ function Company_Co_dashboard() {
   useEffect(() => {
     if (!companyIdentifier) return
 
-    const fetchDashboardStats = async () => {
-      setStatsLoading(true)
+    const fetchChartStats = async () => {
+      setChartStatsLoading(true)
       try {
         const search = buildDashboardQueryString()
         const suffix = search ? `?${search}` : ''
@@ -310,10 +312,11 @@ function Company_Co_dashboard() {
           !natureResponse.ok || !natureData?.success ||
           !typeResponse.ok || !typeData?.success
         ) {
-          throw new Error('Failed to fetch RACM dashboard stats')
+          throw new Error('Failed to fetch RACM chart stats')
         }
 
-        setDashboardStats({
+        setDashboardStats((prev) => ({
+          ...prev,
           totalRacms: Number(summaryData.data?.totalRacms || 0),
           keyControls: Number(keyData.data?.keyControls || 0),
           nonKeyControls: Number(keyData.data?.nonKeyControls || 0),
@@ -329,16 +332,33 @@ function Company_Co_dashboard() {
           semiAutomated: Number(typeData.data?.semiAutomated || 0),
           typeNotClassified: Number(typeData.data?.notClassified || 0),
           typeUnclassifiedValues: Array.isArray(typeData.data?.unclassifiedValues) ? typeData.data.unclassifiedValues : [],
-        })
+        }))
       } catch (error) {
-        console.error('Error fetching RACM dashboard stats:', error)
-        setDashboardStats(EMPTY_STATS)
+        console.error('Error fetching RACM chart stats:', error)
+        setDashboardStats((prev) => ({
+          ...prev,
+          totalRacms: 0,
+          keyControls: 0,
+          nonKeyControls: 0,
+          keyNotClassified: 0,
+          keyUnclassifiedValues: [],
+          preventive: 0,
+          detective: 0,
+          corrective: 0,
+          natureNotClassified: 0,
+          natureUnclassifiedValues: [],
+          manual: 0,
+          automated: 0,
+          semiAutomated: 0,
+          typeNotClassified: 0,
+          typeUnclassifiedValues: [],
+        }))
       } finally {
-        setStatsLoading(false)
+        setChartStatsLoading(false)
       }
     }
 
-    fetchDashboardStats()
+    fetchChartStats()
   }, [
     companyIdentifier,
     filterActive,
@@ -357,9 +377,7 @@ function Company_Co_dashboard() {
     const fetchAllRacms = async () => {
       setBusinessProcessSummaryLoading(true)
       try {
-        const search = buildDashboardQueryString()
-        const suffix = search ? `?${search}` : ''
-        const response = await fetch(apiUrl(`/api/company-co/dashboard/racms${suffix}`), {
+        const response = await fetch(apiUrl('/api/company-co/dashboard/racms'), {
           credentials: 'include',
         })
         const data = await response.json()
@@ -388,15 +406,7 @@ function Company_Co_dashboard() {
     return () => {
       cancelled = true
     }
-  }, [
-    companyIdentifier,
-    filterActive,
-    filterApprovalStatus,
-    filterBusinessProcess,
-    filterFinancialYear,
-    filterUnit,
-    filterConclusion,
-  ])
+  }, [companyIdentifier])
 
   const shouldShowUnitMapping = mappedUnits.length > 0
 
@@ -422,36 +432,24 @@ function Company_Co_dashboard() {
     }
   }, [filterUnit, normalizedMappedUnits, shouldShowUnitMapping])
 
-  const businessProcessSummaryRows = Array.from(createBusinessProcessSummaryRows(allRacms, {
+  const dashboardFilters = {
     active: filterActive,
     businessProcess: filterBusinessProcess,
     financialYear: filterFinancialYear,
     approvalStatus: filterApprovalStatus,
     unit: filterUnit,
     conclusion: filterConclusion,
-  }).values())
+  }
+
+  const businessProcessSummaryRows = Array.from(createBusinessProcessSummaryRows(allRacms).values())
     .sort((left, right) => left.businessProcess.localeCompare(right.businessProcess))
   const businessProcessOptions = [...new Set(
     (allRacms || [])
       .map((form) => String(getFieldValue(form, 'business_process', 'businessProcess') || '').trim())
       .filter(Boolean)
   )].sort((left, right) => left.localeCompare(right))
-  const controlCombinationCounts = countControlsByCombination(allRacms, {
-    active: filterActive,
-    businessProcess: filterBusinessProcess,
-    financialYear: filterFinancialYear,
-    approvalStatus: filterApprovalStatus,
-    unit: filterUnit,
-    conclusion: filterConclusion,
-  })
-  const unclassifiedControlsCount = countUnclassifiedControls(allRacms, {
-    active: filterActive,
-    businessProcess: filterBusinessProcess,
-    financialYear: filterFinancialYear,
-    approvalStatus: filterApprovalStatus,
-    unit: filterUnit,
-    conclusion: filterConclusion,
-  })
+  const controlCombinationCounts = countControlsByCombination(allRacms)
+  const unclassifiedControlsCount = countUnclassifiedControls(allRacms, dashboardFilters)
   const highRiskColumnBackground = theme.palette.mode === 'dark'
     ? 'rgba(239, 68, 68, 0.16)'
     : 'rgba(239, 68, 68, 0.10)'
@@ -495,6 +493,7 @@ function Company_Co_dashboard() {
     <Paper
       elevation={3}
       sx={{
+        ...DASHBOARD_PAPER_SX,
         borderRadius: 3,
         overflow: 'hidden',
         height: '100%',
@@ -575,7 +574,7 @@ function Company_Co_dashboard() {
                 color: theme.palette.text.secondary,
               }}
             >
-              <Typography variant="body2">No classified RACMs</Typography>
+              <Typography variant="body2">No controls to display</Typography>
             </Box>
           )}
         </Box>
@@ -625,7 +624,7 @@ function Company_Co_dashboard() {
               <Typography
                 variant="body2"
                 sx={{ fontWeight: 700, color: theme.palette.text.primary, textAlign: 'right', whiteSpace: 'nowrap' }}
-              >{statsLoading ? '...' : item.value}</Typography>
+              >{chartStatsLoading ? '...' : item.value}</Typography>
             </Box>
           ))}
         </Box>
@@ -635,7 +634,7 @@ function Company_Co_dashboard() {
   }
 
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
+    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Box
         sx={{
           display: 'flex',
@@ -685,7 +684,7 @@ function Company_Co_dashboard() {
             Total Controls
           </Typography>
           <Typography variant="h4" sx={{ mt: 0.5, fontWeight: 800, color: theme.palette.text.primary }}>
-            {statsLoading ? '...' : dashboardStats.totalRacms}
+            {chartStatsLoading ? '...' : dashboardStats.totalRacms}
           </Typography>
         </Box>
 
@@ -807,7 +806,7 @@ function Company_Co_dashboard() {
         </Box>
       </Box>
 
-      {!unclassifiedAlertDismissed && (statsLoading || businessProcessSummaryLoading || unclassifiedControlsCount > 0) ? (
+      {!unclassifiedAlertDismissed && !businessProcessSummaryLoading && unclassifiedControlsCount > 0 ? (
         <Alert
           severity="error"
           onClose={(event) => {
@@ -824,9 +823,7 @@ function Company_Co_dashboard() {
           }}
           onClick={() => navigate(`/company_co/unclassified-controls${buildDashboardQueryString() ? `?${buildDashboardQueryString()}` : ''}`)}
         >
-          {statsLoading || businessProcessSummaryLoading
-            ? 'Found ... unclassified controls. Click to open the unclassified controls view.'
-            : `Found ${unclassifiedControlsCount} unclassified controls. Click to open the unclassified controls view.`}
+          {`Found ${unclassifiedControlsCount} unclassified control${unclassifiedControlsCount === 1 ? '' : 's'}. Click to open the unclassified controls view.`}
         </Alert>
       ) : null}
 
@@ -895,7 +892,7 @@ function Company_Co_dashboard() {
             backgroundColor: 'transparent',
             valueColor: theme.palette.text.primary,
             linkLabel: 'View AI summary',
-            onClick: () => navigate(`/company_co/key-manual-ai-insights${buildDashboardQueryString() ? `?${buildDashboardQueryString()}` : ''}`),
+            onClick: () => navigate('/company_co/key-manual-ai-insights'),
           },
           {
             label: 'Key + Automated Controls',
@@ -914,6 +911,7 @@ function Company_Co_dashboard() {
             key={item.label}
             elevation={3}
             sx={{
+              ...DASHBOARD_PAPER_SX,
               px: 3,
               py: 2.5,
               borderRadius: 3,
@@ -962,6 +960,7 @@ function Company_Co_dashboard() {
       <Paper
         elevation={3}
         sx={{
+          ...DASHBOARD_PAPER_SX,
           borderRadius: 3,
           overflow: 'hidden',
           border: `1px solid ${theme.palette.divider}`,
@@ -979,10 +978,10 @@ function Company_Co_dashboard() {
           }}
         >
           <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-            Summary of Controls per Business Cycle
+            Summary of Controls
           </Typography>
           <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
-            Counts reflect the current applied filters.
+            Company-wide counts across all RACMs (not affected by dashboard filters).
           </Typography>
         </Box>
 
@@ -1098,6 +1097,59 @@ function Company_Co_dashboard() {
               ))
             )}
           </Box>
+        </Box>
+      </Paper>
+
+      <Paper
+        elevation={3}
+        sx={{
+          ...DASHBOARD_PAPER_SX,
+          mt: 3,
+          borderRadius: 3,
+          border: `1px solid ${theme.palette.divider}`,
+          boxShadow: theme.palette.mode === 'dark'
+            ? '0 10px 28px rgba(0, 0, 0, 0.28)'
+            : '0 12px 30px rgba(15, 23, 42, 0.08)',
+          overflow: 'hidden',
+        }}
+      >
+        <Box
+          sx={{
+            px: 3,
+            py: 3,
+            display: 'flex',
+            flexDirection: { xs: 'column', md: 'row' },
+            alignItems: { xs: 'flex-start', md: 'center' },
+            justifyContent: 'space-between',
+            gap: 2,
+          }}
+        >
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+              Risk Analysis
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
+              Open the risk analysis view to review controls by business process and financial year.
+            </Typography>
+          </Box>
+          <Link
+            component="button"
+            type="button"
+            underline="hover"
+            onClick={() => navigate('/company_co/risk-analysis')}
+            sx={{
+              p: 0,
+              border: 'none',
+              background: 'none',
+              color: theme.palette.primary.main,
+              fontWeight: 700,
+              fontSize: '0.95rem',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            Open Risk Analysis ->
+          </Link>
         </Box>
       </Paper>
 

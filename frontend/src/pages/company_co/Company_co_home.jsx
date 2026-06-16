@@ -14,24 +14,7 @@ import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { apiUrl } from '../../config/api'
-
-function formatCoordinatorName(value) {
-  const raw = String(value || '').trim()
-  if (!raw) return 'User'
-
-  if (!raw.includes('@')) {
-    return raw
-  }
-
-  const localPart = raw.split('@')[0] || ''
-  const words = localPart
-    .split('.')
-    .map((part) => String(part || '').trim())
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-
-  return words.length > 0 ? words.join(' ') : 'User'
-}
+import { formatDisplayName } from '../../utils/displayName'
 
 function Company_co_home() {
   const theme = useTheme()
@@ -49,6 +32,14 @@ function Company_co_home() {
 
   const tiles = [
     {
+      eyebrow: 'Units',
+      title: 'Unit Management',
+      description: 'Review unit mappings for coordinators and approvers across the company.',
+      path: '/company_co/unit-management',
+      icon: <ApartmentRoundedIcon sx={{ fontSize: 38 }} />,
+      accent: sharedTileAccent,
+    },
+    {
       eyebrow: 'User',
       title: 'User Management',
       description: 'Create and maintain user accounts, permissions, and access roles.',
@@ -57,11 +48,11 @@ function Company_co_home() {
       accent: sharedTileAccent,
     },
     {
-      eyebrow: 'Units',
-      title: 'Unit Management',
-      description: 'Review unit mappings for coordinators and approvers across the company.',
-      path: '/company_co/unit-management',
-      icon: <ApartmentRoundedIcon sx={{ fontSize: 38 }} />,
+      eyebrow: 'Process Master',
+      title: 'Business Process Management',
+      description: 'View common business processes and add company specific process names and codes.',
+      path: '/company_co/business-processes',
+      icon: <AccountTreeRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },
     {
@@ -73,14 +64,6 @@ function Company_co_home() {
       accent: sharedTileAccent,
     },
     {
-      eyebrow: 'Management',
-      title: 'RACM Management',
-      description: 'Monitor RACM lifecycle, updates, and activation readiness.',
-      path: '/company_co/racm-management',
-      icon: <FactCheckRoundedIcon sx={{ fontSize: 38 }} />,
-      accent: sharedTileAccent,
-    },
-    {
       eyebrow: 'Bulk Upload',
       title: 'RACM Upload',
       description: 'Upload RACMs in bulk using standardized Excel templates.',
@@ -89,19 +72,19 @@ function Company_co_home() {
       accent: sharedTileAccent,
     },
     {
+      eyebrow: 'Management',
+      title: 'RACM Management',
+      description: 'Monitor RACM lifecycle, updates, and activation readiness.',
+      path: '/company_co/racm-management',
+      icon: <FactCheckRoundedIcon sx={{ fontSize: 38 }} />,
+      accent: sharedTileAccent,
+    },
+    {
       eyebrow: 'Assignment',
       title: 'RACM Assignment Management',
       description: 'Assign RACMs to process owners and manage assignment status.',
       path: '/company_co/racm-assignment',
       icon: <AssignmentTurnedInRoundedIcon sx={{ fontSize: 38 }} />,
-      accent: sharedTileAccent,
-    },
-    {
-      eyebrow: 'Process Master',
-      title: 'Business Process Management',
-      description: 'View common business processes and add company specific process names and codes.',
-      path: '/company_co/business-processes',
-      icon: <AccountTreeRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },
     {
@@ -127,7 +110,7 @@ function Company_co_home() {
         }
 
         const homeStats = result.data || {}
-        setUsername(formatCoordinatorName(homeStats.coordinatorName || 'User'))
+        setUsername(formatDisplayName(homeStats.coordinatorName, 'User'))
         setCoordinatorUnits(Array.isArray(homeStats.coordinatorUnits) ? homeStats.coordinatorUnits : [])
 
         setStats({
@@ -138,7 +121,7 @@ function Company_co_home() {
         })
       } catch (error) {
         console.error('Failed to fetch company coordinator home data:', error)
-        setUsername(formatCoordinatorName('User'))
+        setUsername(formatDisplayName('', 'User'))
         setCoordinatorUnits([])
         setStats({
           totalUsers: 0,

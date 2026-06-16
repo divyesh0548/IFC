@@ -13,6 +13,8 @@ import MenuItem from '@mui/material/MenuItem'
 import Switch from '@mui/material/Switch'
 import Alert from '@mui/material/Alert'
 import {
+  DASHBOARD_PAGE_OUTER_SX,
+  DASHBOARD_PAPER_SX,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
@@ -269,7 +271,11 @@ function ApproverDashboard() {
   }
 
   const handleFormClick = (formId) => {
-    navigate(`/approver/form/${formId}`)
+    window.open(
+      `/approver/form/${encodeURIComponent(formId)}`,
+      '_blank',
+      'noopener,noreferrer'
+    )
   }
 
   const formsToDisplay = forms.filter((form) => {
@@ -342,15 +348,15 @@ function ApproverDashboard() {
 
   const APPROVER_TABLE_COL_PX = {
     idx: 72,
-    businessProcess: 200,
+    businessProcess: 170,
     subProcess: 200,
     standardControl: 290,
     unit: 180,
     financialYear: 140,
     processOwner: 160,
-    conclusion: 190,
+    conclusion: 160,
     approval: 130,
-    sentForApprovalAt: 170,
+    sentForApprovalAt: 210,
   }
   const approverTableColWidthsOrdered = [
     APPROVER_TABLE_COL_PX.idx,
@@ -405,18 +411,11 @@ function ApproverDashboard() {
   }
 
   return (
-    <Box
-      sx={{
-        maxWidth: '100%',
-        mx: 'auto',
-        px: 0,
-        pt: 0.5,
-        pb: 4,
-      }}
-    >
+    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Paper
         elevation={3}
         sx={{
+          ...DASHBOARD_PAPER_SX,
           p: 3,
           backgroundColor: theme.palette.background.paper,
           borderRadius: 2,

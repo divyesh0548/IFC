@@ -10,6 +10,10 @@ const {
   getCoordinatorEmailForUnit,
   notifyDeficiencyResponseReviewed,
 } = require('../../utils/deficiency_response_notifications');
+const {
+  seedIneffectiveReminderDatetime,
+  isNotEffectiveConclusion,
+} = require('../../utils/controls_reminder');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -281,7 +285,7 @@ async function getHomeStats(req, res) {
     res.status(200).json({
       success: true,
       data: {
-        approver_name: approverResult.rows[0]?.emp_name || '',
+        approver_name: approverResult.rows[0]?.emp_name || approverEmail || '',
         company_name: companyDetails.company_name || '',
         company_identifier: companyRow.company_identifier || firstMappedUnit.company_identifier || '',
         company_details: companyDetails,
@@ -400,7 +404,7 @@ async function approveForm(req, res) {
       });
     }
 
-    if (status === 'Approved' && designConclusion === 'Not Effective' && !deficiencyDescription) {
+    if (status === 'Approved' && isNotEffectiveConclusion(designConclusion) && !deficiencyDescription) {
       return res.status(400).json({
         success: false,
         message: 'Description of Deficiency in Control Design is required when conclusion is Not Effective.',
@@ -438,7 +442,7 @@ async function approveForm(req, res) {
       updateValues.push(design_deficiency_desc !== undefined ? deficiencyDescription || null : null);
       paramIndex++;
 
-      if (status === 'Approved' && designConclusion === 'Not Effective') {
+      if (status === 'Approved' && isNotEffectiveConclusion(designConclusion)) {
         updateFields.push(`deficiency_action_status = $${paramIndex}`);
         updateValues.push(true);
         paramIndex++;
@@ -458,6 +462,10 @@ async function approveForm(req, res) {
         'approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\')',
         'updated_at = CURRENT_TIMESTAMP'
       );
+
+      if (status === 'Approved' && isNotEffectiveConclusion(designConclusion)) {
+        await seedIneffectiveReminderDatetime(client, form_id);
+      }
 
       updateValues.push(form_id);
       updateValues.push(approver.email_id);
@@ -1018,6 +1026,7 @@ async function reviewDeficiencyResponse(req, res) {
           [form_id, reviewDecision]
         );
       } else {
+        await seedIneffectiveReminderDatetime(client, form_id);
         await client.query(
           `
             UPDATE control_forms

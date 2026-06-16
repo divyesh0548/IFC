@@ -28,6 +28,9 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { 
+  DASHBOARD_PAGE_OUTER_SX,
+  DASHBOARD_PAPER_SX,
+  DASHBOARD_TABLE_WRAP_SX,
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
@@ -1395,7 +1398,7 @@ function RacmManagementDashboard() {
     boxShadow: 'none',
   }
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
+    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Box
         sx={{
           display: 'flex',
@@ -1421,6 +1424,23 @@ function RacmManagementDashboard() {
           }}
         >
           Create RACM Manually
+        </Button>
+
+        <Button
+          onClick={() => navigate('/company_co/racm-user-documents')}
+          disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
+          variant="contained"
+          color="secondary"
+          size="small"
+          sx={{
+            ...toolbarBtnBase,
+            '&:hover': { boxShadow: 'none' },
+            '&:disabled': {
+              bgcolor: alpha(theme.palette.action.disabledBackground, 0.5),
+            },
+          }}
+        >
+          View Documents
         </Button>
 
         <Button
@@ -1571,6 +1591,7 @@ function RacmManagementDashboard() {
       <Paper
         elevation={3}
         sx={{
+          ...DASHBOARD_PAPER_SX,
           p: 3,
           backgroundColor: theme.palette.background.paper,
           borderRadius: 2,
@@ -1952,11 +1973,13 @@ function RacmManagementDashboard() {
                   }}
                 />
               </Box>
-            <Box sx={{ overflowX: 'auto' }}>
+            <Box sx={DASHBOARD_TABLE_WRAP_SX}>
               <Box
                 component="table"
                 sx={{
-                  minWidth: '100%',
+                  width: '100%',
+                  minWidth: 1560,
+                  tableLayout: 'fixed',
                   borderCollapse: 'collapse',
                   '& th, & td': {
                     borderBottom: `1px solid ${theme.palette.divider}`,

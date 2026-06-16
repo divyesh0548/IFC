@@ -10,6 +10,10 @@ import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Chip from '@mui/material/Chip'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
 import { useTheme } from '@mui/material/styles'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import PsychologyAltRoundedIcon from '@mui/icons-material/PsychologyAltRounded'
@@ -18,7 +22,7 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
+import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { toast } from 'react-hot-toast'
 
 function formatDateTime(value) {
@@ -41,25 +45,25 @@ function getStatusChipSx(theme, status) {
 
   if (normalizedStatus === 'completed' || normalizedStatus === 'success') {
     return {
-      color: '#166534',
-      borderColor: 'rgba(34,197,94,0.32)',
-      backgroundColor: 'rgba(34,197,94,0.14)',
+      color: theme.palette.mode === 'dark' ? '#dcfce7' : '#166534',
+      borderColor: theme.palette.mode === 'dark' ? 'rgba(74,222,128,0.52)' : 'rgba(34,197,94,0.32)',
+      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(20,83,45,0.72)' : 'rgba(34,197,94,0.14)',
     }
   }
 
   if (normalizedStatus === 'in_progress' || normalizedStatus === 'in progress') {
     return {
-      color: '#1d4ed8',
-      borderColor: 'rgba(59,130,246,0.32)',
-      backgroundColor: 'rgba(59,130,246,0.14)',
+      color: theme.palette.mode === 'dark' ? '#dbeafe' : '#1d4ed8',
+      borderColor: theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.52)' : 'rgba(59,130,246,0.32)',
+      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(30,64,175,0.72)' : 'rgba(59,130,246,0.14)',
     }
   }
 
   if (normalizedStatus === 'failed') {
     return {
-      color: '#b91c1c',
-      borderColor: 'rgba(239,68,68,0.32)',
-      backgroundColor: 'rgba(239,68,68,0.14)',
+      color: theme.palette.mode === 'dark' ? '#fee2e2' : '#b91c1c',
+      borderColor: theme.palette.mode === 'dark' ? 'rgba(248,113,113,0.56)' : 'rgba(239,68,68,0.32)',
+      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(127,29,29,0.78)' : 'rgba(239,68,68,0.14)',
     }
   }
 
@@ -84,6 +88,15 @@ function openRacmDetail(formId) {
   window.open(`/company_co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
 }
 
+function formatServerErrorToast(errorCode) {
+  const normalizedErrorCode = String(errorCode || '').trim() || 'UNKNOWN_ERROR'
+  return `Error occured on server (${normalizedErrorCode})`
+}
+
+function formatRunSummaryFieldLabel(label) {
+  return `${label}:`
+}
+
 function KeyManualAiInsightsSummary() {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -94,6 +107,8 @@ function KeyManualAiInsightsSummary() {
   const [runs, setRuns] = useState([])
   const [run, setRun] = useState(null)
   const [rows, setRows] = useState([])
+  const [excludedEntityLevelCount, setExcludedEntityLevelCount] = useState(0)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   useSyncGlobalLoading(loading)
 
@@ -119,6 +134,7 @@ function KeyManualAiInsightsSummary() {
           setRuns(Array.isArray(data.data?.runs) ? data.data.runs : [])
           setRun(data.data?.run || null)
           setRows(Array.isArray(data.data?.rows) ? data.data.rows : [])
+          setExcludedEntityLevelCount(Number(data.data?.excluded_entity_level_count || 0))
         }
       } catch (error) {
         console.error('Error fetching key manual AI insights summary:', error)
@@ -126,6 +142,7 @@ function KeyManualAiInsightsSummary() {
           setRuns([])
           setRun(null)
           setRows([])
+          setExcludedEntityLevelCount(0)
           setErrorMessage(error.message || 'Failed to fetch AI insights summary')
         }
       } finally {
@@ -186,18 +203,20 @@ function KeyManualAiInsightsSummary() {
       const data = await response.json()
 
       if (!response.ok || !data?.success) {
-        throw new Error(data?.message || 'Failed to generate AI summary')
+        const error = new Error(data?.message || 'Failed to generate AI summary')
+        error.serverCode = String(data?.code || '').trim()
+        throw error
       }
 
       const updatedParams = new URLSearchParams(searchParams)
       updatedParams.set('run_id', String(data.data?.run_id || '').trim())
       setSearchParams(updatedParams)
       toast.success(
-        `AI summary generated for ${Number(data.data?.control_count || 0)} controls using ${data.data?.model_name || 'the configured model'}.`
+        `AI summary generated for ${Number(data.data?.control_count || 0)} controls using ${data.data?.model_name || 'the configured model'}. Excluded Entity Level Controls: ${Number(data.data?.excluded_entity_level_count || 0)}.`
       )
     } catch (error) {
       console.error('Error generating AI summary:', error)
-      toast.error(error.message || 'Failed to generate AI summary')
+      toast.error(formatServerErrorToast(error?.serverCode))
     } finally {
       setGenerating(false)
     }
@@ -206,9 +225,6 @@ function KeyManualAiInsightsSummary() {
   const handleDeleteRun = async () => {
     const currentRunId = String(run?.id || '').trim()
     if (!currentRunId) return
-
-    const confirmed = window.confirm(`Delete AI insights run ${currentRunId}? This will also remove all stored insight rows for this run.`)
-    if (!confirmed) return
 
     setDeleting(true)
     try {
@@ -238,11 +254,12 @@ function KeyManualAiInsightsSummary() {
       toast.error(error.message || 'Failed to delete AI insights run')
     } finally {
       setDeleting(false)
+      setDeleteDialogOpen(false)
     }
   }
 
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', px: 0, py: 4 }}>
+    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Box
         sx={{
           display: 'flex',
@@ -292,7 +309,7 @@ function KeyManualAiInsightsSummary() {
             High Risk Manual Key Control Summary
           </Typography>
           <Typography variant="body2" sx={PAGE_SUBHEADER_TEXT_SX}>
-            All manual and key controls are included in high risk category.
+            Entity Level Controls are excluded from AI insight generation because they are not treated as high risk controls in this category.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
@@ -317,8 +334,38 @@ function KeyManualAiInsightsSummary() {
       ) : null}
 
       <Paper
+        elevation={0}
+        sx={{
+          ...DASHBOARD_PAPER_SX,
+          p: 2.25,
+          mb: 3,
+          borderRadius: 3,
+          border: `1px solid ${theme.palette.divider}`,
+          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(251,191,36,0.08)' : 'rgba(251,191,36,0.12)',
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
+          <Chip
+            label={`${excludedEntityLevelCount} Entity Level Controls excluded`}
+            size="small"
+            variant="outlined"
+            sx={{
+              fontWeight: 700,
+              color: theme.palette.mode === 'dark' ? '#fef3c7' : '#92400e',
+              borderColor: theme.palette.mode === 'dark' ? 'rgba(251,191,36,0.4)' : 'rgba(217,119,6,0.28)',
+              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.55)',
+            }}
+          />
+          <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+            These controls are shown as a count only and are not included in AI rationalisation insights for this category.
+          </Typography>
+        </Box>
+      </Paper>
+
+      <Paper
         elevation={3}
         sx={{
+          ...DASHBOARD_PAPER_SX,
           p: 3,
           mb: 3,
           borderRadius: 3,
@@ -418,7 +465,7 @@ function KeyManualAiInsightsSummary() {
             variant="outlined"
             color="error"
             startIcon={<DeleteOutlineRoundedIcon />}
-            onClick={handleDeleteRun}
+            onClick={() => setDeleteDialogOpen(true)}
             disabled={!run || deleting}
             sx={{ minWidth: { xs: '100%', sm: 140 }, whiteSpace: 'nowrap' }}
           >
@@ -427,10 +474,101 @@ function KeyManualAiInsightsSummary() {
         </Box>
       </Paper>
 
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={deleting ? undefined : () => setDeleteDialogOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            border: `1px solid ${theme.palette.divider}`,
+            background: theme.palette.mode === 'dark'
+              ? 'linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.96) 100%)'
+              : 'linear-gradient(180deg, rgba(255,255,255,0.99) 0%, rgba(248,250,252,0.98) 100%)',
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, pb: 1 }}>
+          Delete AI Insights Run
+        </DialogTitle>
+        <DialogContent sx={{ pt: '8px !important' }}>
+          <Typography variant="body2" sx={{ mb: 2, color: theme.palette.text.secondary }}>
+            This will permanently remove the selected run and all stored insight rows linked to it.
+          </Typography>
+
+          {run ? (
+            <Box
+              sx={{
+                borderRadius: 2.5,
+                border: `1px solid ${theme.palette.divider}`,
+                backgroundColor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.08)' : 'rgba(15,23,42,0.03)',
+                p: 2,
+                display: 'grid',
+                gap: 1.25,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+                <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+                  {formatRunSummaryFieldLabel('Run ID')} {run.id}
+                </Typography>
+                <Chip
+                  label={formatStatusLabel(run.status)}
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    fontWeight: 700,
+                    height: 26,
+                    ...getStatusChipSx(theme, run.status),
+                  }}
+                />
+              </Box>
+              <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
+                <Box component="span" sx={{ fontWeight: 700 }}>
+                  {formatRunSummaryFieldLabel('Model')}
+                </Box>{' '}
+                {formatModelName(run.model_name)}
+              </Typography>
+              <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
+                <Box component="span" sx={{ fontWeight: 700 }}>
+                  {formatRunSummaryFieldLabel('Created')}
+                </Box>{' '}
+                {formatDateTime(run.created_at)}
+              </Typography>
+              <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
+                <Box component="span" sx={{ fontWeight: 700 }}>
+                  {formatRunSummaryFieldLabel('Stored Controls')}
+                </Box>{' '}
+                {Number(run.row_count || 0)}
+              </Typography>
+            </Box>
+          ) : null}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 0.5 }}>
+          <Button
+            onClick={() => setDeleteDialogOpen(false)}
+            disabled={deleting}
+            variant="text"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDeleteRun}
+            disabled={!run || deleting}
+            variant="contained"
+            color="error"
+            startIcon={<DeleteOutlineRoundedIcon />}
+          >
+            {deleting ? 'Deleting…' : 'Delete Run'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {run ? (
         <Paper
           elevation={3}
           sx={{
+            ...DASHBOARD_PAPER_SX,
             p: 2.5,
             mb: 3,
             borderRadius: 3,
@@ -470,6 +608,7 @@ function KeyManualAiInsightsSummary() {
       <Paper
         elevation={3}
         sx={{
+          ...DASHBOARD_PAPER_SX,
           borderRadius: 3,
           overflow: 'hidden',
           border: `1px solid ${theme.palette.divider}`,

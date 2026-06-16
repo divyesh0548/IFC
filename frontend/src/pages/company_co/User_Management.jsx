@@ -44,7 +44,7 @@ import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
 import * as XLSX from 'xlsx'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
-import { TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
+import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
 const bulkUploadDialogDefaults = {
@@ -967,11 +967,12 @@ function UserManagement() {
   }
 
   return (
-    <Box sx={{ px: 0, py: 0, width: '100%' }}>
+    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Paper
         elevation={0}
         onClick={handleListContainerClick}
         sx={{
+          ...DASHBOARD_PAPER_SX,
           overflow: 'visible',
           backgroundColor: 'transparent',
           boxShadow: 'none',

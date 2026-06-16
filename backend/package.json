@@ -15,8 +15,6 @@
     "studio": "prisma studio --browser none --port 5555",
     "prisma:studio": "prisma studio --browser none --port 5555",
     "migrate:hash-passwords": "node scripts/hash_existing_passwords.js",
-    "util:decrypt-password-hash": "node scripts/decrypt_password_hash.js",
-    "util:encrypt-password-hash": "node scripts/encrypt_password_hash.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
