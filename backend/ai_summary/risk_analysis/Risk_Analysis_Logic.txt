@@ -1,0 +1,42 @@
+Columns considered for generating AI insights.
+===================
+controlNumber
+businessProcess
+subProcess
+riskDescription
+controlObjective
+standardControlDescription
+=======================
+
+
+Above columns and candidate-subProcess is sent to LLM fot generating risk analysis. LLM looks into provided sub-porcess list and selects matching cadidate from them. After that risks listed in that cadidate subProcess are considered for fiding mising risks.
+
+
+
+
+Steps to Improve:
+1. Enrich the master JSON
+
+Example : 
+
+{
+  "sub_process": "Purchase Requisition",
+  "description": "Initiation of capital purchase need by business/user department before procurement starts.",
+  "business_purpose": "To ensure capex demand is valid, justified, and within approved planning.",
+  "keywords": ["requisition", "indent", "request", "capex request"],
+  "synonyms": ["purchase request", "material request", "asset requisition"],
+  "risk_themes": ["unauthorized request", "budget overrun", "incorrect requirement"],
+  "risks": [...]
+}
+
+2. Use 2 stage processing. 1) Identify subProcess 2)comapre RACM against matched sub-process.
+
+3. Send only top 3-5 candidates instead of whole JSON for fiding best sub-process. Use fuzzy string match, synonym match, etc.
+
+4. Provide more RACM fields like Process Walkthrough.
+
+5. Base JSON has overlapping names, summarize them.
+
+6. risks in JSON are too short and duplicated. Write them clearly.
+
+

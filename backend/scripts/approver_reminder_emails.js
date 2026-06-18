@@ -18,6 +18,7 @@ const {
   formatReminderTimestampForLog,
   formatDueDateForEmail,
 } = require('../utils/controls_reminder');
+const { UNIT_RESPONSIBILITY_TYPES } = require('../utils/unit_responsibilities');
 
 function isValidEmail(value) {
   const email = String(value || '').trim();
@@ -36,7 +37,7 @@ async function fetchFormsDueForApproverReminder(client) {
       cf.sub_process,
       cf.due_date,
       cr.reminder_to_approver_datetime,
-      cum.approver_email_id,
+      approver_map.user_email_id AS approver_email_id,
       NULLIF(TRIM(approver.emp_name), '') AS approver_name,
       c.company_name
     FROM control_forms cf
@@ -45,8 +46,12 @@ async function fetchFormsDueForApproverReminder(client) {
     LEFT JOIN company_unit_master cum
       ON cum.company_identifier = cf.company_identifier
      AND cum.unit_id = cf.unit_id
+    LEFT JOIN company_unit_responsibilities approver_map
+      ON approver_map.company_identifier = cf.company_identifier
+     AND approver_map.unit_id = cf.unit_id
+     AND approver_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
     LEFT JOIN ifc_users approver
-      ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(cum.approver_email_id, '')))
+      ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.user_email_id, '')))
     LEFT JOIN companies c
       ON c.company_identifier = cf.company_identifier
     WHERE cf.active = TRUE

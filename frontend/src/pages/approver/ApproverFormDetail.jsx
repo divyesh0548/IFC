@@ -959,7 +959,7 @@ function ApproverFormDetail() {
                     </Typography>
                   </Box>
 
-                  {/* Company */}
+                  {/* Financial Year */}
                   <Box
                     sx={{
                       p: 2,
@@ -981,7 +981,7 @@ function ApproverFormDetail() {
                         letterSpacing: '0.5px',
                       }}
                     >
-                      Company
+                      Financial Year
                     </Typography>
                     <Typography
                       variant="body2"
@@ -992,7 +992,7 @@ function ApproverFormDetail() {
                         lineHeight: 1.5,
                       }}
                     >
-                      {(formData?.company_name && String(formData.company_name).trim()) || '-'}
+                      {(formData?.financial_year && String(formData.financial_year).trim()) || '-'}
                     </Typography>
                   </Box>
 
@@ -1670,7 +1670,7 @@ function ApproverFormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  Documents
+                  Documents and Remarks
                 </Typography>
                 <Box
                   sx={{
@@ -1958,85 +1958,71 @@ function ApproverFormDetail() {
                       {showApproveFlowFields ? (
                         <Box
                           sx={{
-                            p: 2.5,
-                            borderRadius: 2,
-                            border: '1px solid',
-                            borderColor: theme.palette.mode === 'dark'
-                              ? 'rgba(255, 255, 255, 0.08)'
-                              : 'rgba(0, 0, 0, 0.06)',
-                            backgroundColor: theme.palette.mode === 'dark'
-                              ? 'rgba(255, 255, 255, 0.02)'
-                              : 'rgba(0, 0, 0, 0.015)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2.5,
                           }}
                         >
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 3,
-                            }}
-                          >
-                            {groupedApproverFields
-                              .filter((key) => key !== 'design_deficiency_desc' || showDesignDeficiencyField)
-                              .map((key) => {
-                                const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-                                const value = formData[key]
-                                const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
-                                const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
-                                const isRequired = key === 'control_design_procs'
-                                  || key === 'control_design_conclusion'
-                                  || (key === 'design_deficiency_desc' && selectedDesignConclusion === 'Not Effective')
+                          {groupedApproverFields
+                            .filter((key) => key !== 'design_deficiency_desc' || showDesignDeficiencyField)
+                            .map((key) => {
+                              const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                              const value = formData[key]
+                              const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
+                              const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+                              const isRequired = key === 'control_design_procs'
+                                || key === 'control_design_conclusion'
+                                || (key === 'design_deficiency_desc' && selectedDesignConclusion === 'Not Effective')
 
-                                return (
-                                  <Box
-                                    key={key}
-                                    sx={{ p: 0, border: 'none', borderRadius: 0 }}
-                                  >
-                                    {key === 'control_design_conclusion' ? (
-                                      <FormControl fullWidth required={isRequired}>
-                                        <InputLabel id={`${key}-label`}>{label}</InputLabel>
-                                        <Select
-                                          labelId={`${key}-label`}
-                                          value={editableFields[key] || ''}
-                                          label={label}
-                                          onChange={(e) => handleFieldChange(key, e.target.value)}
-                                        >
-                                          <MenuItem value="Effective">Effective</MenuItem>
-                                          <MenuItem value="Not Effective">Not Effective</MenuItem>
-                                          <MenuItem value="Accepted under deviation">Accepted under deviation</MenuItem>
-                                        </Select>
-                                      </FormControl>
-                                    ) : (
-                                      <TextField
-                                        label={label}
-                                        variant="outlined"
+                              return (
+                                <Box
+                                  key={key}
+                                  sx={{ p: 0, border: 'none', borderRadius: 0 }}
+                                >
+                                  {key === 'control_design_conclusion' ? (
+                                    <FormControl fullWidth required={isRequired}>
+                                      <InputLabel id={`${key}-label`}>{label}</InputLabel>
+                                      <Select
+                                        labelId={`${key}-label`}
                                         value={editableFields[key] || ''}
+                                        label={label}
                                         onChange={(e) => handleFieldChange(key, e.target.value)}
-                                        fullWidth
-                                        required={isRequired}
-                                        multiline={isTextArea}
-                                        rows={isTextArea ? 4 : 1}
-                                      />
-                                    )}
-                                    {!isPending ? (
-                                      <Typography
-                                        variant="body2"
-                                        component="dd"
-                                        sx={{
-                                          color: isEmpty ? 'text.disabled' : 'text.secondary',
-                                          wordBreak: 'break-word',
-                                          lineHeight: 1.6,
-                                          fontSize: theme.typography.customSizes.medium,
-                                          whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
-                                        }}
                                       >
-                                        {isEmpty ? '-' : String(value)}
-                                      </Typography>
-                                    ) : null}
-                                  </Box>
-                                )
-                              })}
-                          </Box>
+                                        <MenuItem value="Effective">Effective</MenuItem>
+                                        <MenuItem value="Not Effective">Not Effective</MenuItem>
+                                        <MenuItem value="Accepted under deviation">Accepted under deviation</MenuItem>
+                                      </Select>
+                                    </FormControl>
+                                  ) : (
+                                    <TextField
+                                      label={label}
+                                      variant="outlined"
+                                      value={editableFields[key] || ''}
+                                      onChange={(e) => handleFieldChange(key, e.target.value)}
+                                      fullWidth
+                                      required={isRequired}
+                                      multiline={isTextArea}
+                                      rows={isTextArea ? 4 : 1}
+                                    />
+                                  )}
+                                  {!isPending ? (
+                                    <Typography
+                                      variant="body2"
+                                      component="dd"
+                                      sx={{
+                                        color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                        wordBreak: 'break-word',
+                                        lineHeight: 1.6,
+                                        fontSize: theme.typography.customSizes.medium,
+                                        whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                                      }}
+                                    >
+                                      {isEmpty ? '-' : String(value)}
+                                    </Typography>
+                                  ) : null}
+                                </Box>
+                              )
+                            })}
                         </Box>
                       ) : null}
 

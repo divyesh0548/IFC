@@ -19,6 +19,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import { toast } from 'react-hot-toast'
 import { apiUrl } from '../../config/api'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
 function BusinessProcessManagement() {
@@ -30,6 +31,7 @@ function BusinessProcessManagement() {
     business_process: '',
     business_process_code: '',
   })
+  useSyncGlobalLoading(loading || saving)
 
   const sortedRows = useMemo(
     () => [...businessProcesses].sort((a, b) => a.business_process.localeCompare(b.business_process)),

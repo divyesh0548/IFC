@@ -482,7 +482,7 @@ function ApproverHome() {
               borderRadius: 3,
               cursor: 'pointer',
               overflow: 'hidden',
-              transition: 'box-shadow 220ms ease-out, border-color 220ms ease-out, background-color 220ms ease-out, transform 220ms ease-out',
+              transition: 'box-shadow 220ms ease-out, border-color 220ms ease-out, background-color 220ms ease-out',
               backgroundColor: alpha(theme.palette.background.paper, 0.92),
               border: `1px solid ${
                 theme.palette.mode === 'dark'
@@ -494,7 +494,6 @@ function ApproverHome() {
                   ? '0 10px 24px rgba(0, 0, 0, 0.18)'
                   : '0 10px 24px rgba(15, 23, 42, 0.05)',
               '&:hover': {
-                transform: 'translateY(-2px)',
                 borderColor: alpha(tile.accent, 0.5),
                 boxShadow:
                   theme.palette.mode === 'dark'
@@ -611,7 +610,7 @@ function ApproverHome() {
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle sx={{ fontWeight: 900 }}>Company Details</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900, borderBottom: 0 }}>Company Details</DialogTitle>
         <DialogContent dividers sx={{ p: { xs: 2, sm: 3 } }}>
           {fallbackCompanyDetails.some((company) => company.detailRows.length > 0 || company.units.length > 0) ? (
             <Box sx={{ display: 'grid', gap: 2 }}>

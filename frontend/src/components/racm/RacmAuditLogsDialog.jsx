@@ -216,6 +216,7 @@ export function RacmAuditLogsDialog({ open, onClose, loading, error, rows }) {
       <DialogTitle
         id="racm-audit-logs-title"
         sx={{
+          borderBottom: 0,
           pb: 1,
           pt: 2.5,
           px: 3,

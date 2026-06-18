@@ -330,13 +330,11 @@ function UserHome() {
             <Box
               sx={{
                 mt: 1.6,
-                display: 'inline-flex',
-                alignItems: 'center',
+                display: 'inline-block',
                 maxWidth: '100%',
-                px: 1.25,
-                py: 0.65,
-                borderRadius: 999,
-                border: `1px solid ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.28 : 0.18)}`,
+                px: 1.4,
+                py: 0.8,
+                borderRadius: 1.5,
                 backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.08),
               }}
             >
@@ -558,7 +556,7 @@ function UserHome() {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle sx={{ fontWeight: 800 }}>Company Details</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 800, borderBottom: 0 }}>Company Details</DialogTitle>
         <DialogContent>
           <Box
             sx={{

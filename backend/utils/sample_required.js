@@ -156,13 +156,19 @@ function normalizeControlFrequencyValue(controlFrequency) {
     return '';
   }
 
-  return String(controlFrequency)
+  const normalized = String(controlFrequency)
     .toLowerCase()
     .trim()
     .replace(/&/g, 'and')
     .replace(/[-_]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  if (normalized === 'annual' || normalized === 'annually') {
+    return 'yearly';
+  }
+
+  return normalized;
 }
 
 const SUPPORTED_CONTROL_FREQUENCY_CATEGORIES = [
@@ -270,13 +276,13 @@ function calculateSampleRequired(controlFrequency, createdAt) {
   console.log('[sample_required] Processing frequency:', frequency, 'for date:', createdDate);
 
   // For 'yearly' frequency
-  if (frequency === 'yearly') {
+  if (normalizedFreq === 'yearly') {
     return String(createdDate.getFullYear() - 1);
   }
 
   // For 'quarterly' frequency: return the last 4 completed calendar quarters.
   // Quarters are fixed as Jan-Mar, Apr-Jun, Jul-Sep, and Oct-Dec.
-  if (frequency === 'quarterly' || frequency.includes('quarter')) {
+  if (normalizedFreq === 'quarterly' || normalizedFreq.includes('quarter')) {
     console.log('[sample_required] Processing quarterly frequency');
     const createdYear = createdDate.getFullYear();
     const createdMonth = createdDate.getMonth(); // 0-11
@@ -311,7 +317,7 @@ function calculateSampleRequired(controlFrequency, createdAt) {
 
   // For 'half yearly' frequency (handle variations: half yearly, half-yearly, Half Yearly, etc.)
   // Since we already normalized to lowercase, check for variations
-  if (frequency === 'half yearly' || frequency === 'half-yearly' || frequency.includes('half') && frequency.includes('year')) {
+  if (normalizedFreq === 'half yearly' || (normalizedFreq.includes('half') && normalizedFreq.includes('year'))) {
     console.log('[sample_required] Processing half yearly frequency');
     const createdYear = createdDate.getFullYear();
     const createdMonth = createdDate.getMonth(); // 0-11

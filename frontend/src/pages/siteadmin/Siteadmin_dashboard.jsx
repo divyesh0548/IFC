@@ -9,6 +9,7 @@ import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
 import { apiUrl, API_BASE_URL } from '../../config/api'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 
 function Siteadmin_Dashboard() {
     const theme = useTheme()
@@ -16,23 +17,27 @@ function Siteadmin_Dashboard() {
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
     const isTablet = useMediaQuery(theme.breakpoints.down('md'))
     const [companies, setCompanies] = useState([])
-    const [loading, setLoading] = useState(true)
+    const [companiesLoading, setCompaniesLoading] = useState(true)
+    const [monthlyLoading, setMonthlyLoading] = useState(true)
+    const [pieLoading, setPieLoading] = useState(true)
+    const [yearsLoading, setYearsLoading] = useState(true)
     const [error, setError] = useState(null)
     const [pieData, setPieData] = useState([]);
     const [monthlyData, setMonthlyData] = useState([])
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [years, setYears] = useState([new Date().getFullYear()]);
+    const loading = companiesLoading || monthlyLoading || pieLoading || yearsLoading
+    useSyncGlobalLoading(loading)
     
     const barChartHeight = isMobile ? 350 : isTablet ? 420 : 450
     const pieChartSize = isMobile ? 280 : isTablet ? 320 : 360
     const pieInnerRadius = isMobile ? 40 : isTablet ? 50 : 60
     const pieOuterRadius = isMobile ? 120 : isTablet ? 140 : 160
     const totalUsers = pieData.reduce((sum, d) => sum + d.value, 0)
-    const activeCompanyCount = pieData.filter((item) => Number(item.value || 0) > 0).length
     const currentYearUsers = monthlyData.reduce((sum, value) => sum + Number(value || 0), 0)
 
     const surfaceSx = {
-        borderRadius: 2,
+        borderRadius: 3,
         backgroundColor: theme.palette.mode === 'dark'
             ? theme.palette.background.paper
             : alpha(theme.palette.background.paper, 0.92),
@@ -43,33 +48,49 @@ function Siteadmin_Dashboard() {
             ? '0 8px 32px rgba(0,0,0,0.3)'
             : '0 14px 34px rgba(18,52,88,0.08)',
     }
+    const navTileSx = {
+        ...surfaceSx,
+        p: { xs: 2.25, sm: 2.5 },
+        minHeight: 168,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        cursor: 'pointer',
+        transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
+        '&:hover': {
+            transform: 'translateY(-2px)',
+            borderColor: theme.palette.mode === 'dark'
+                ? alpha(theme.palette.primary.light, 0.28)
+                : alpha(theme.palette.primary.main, 0.24),
+            boxShadow: theme.palette.mode === 'dark'
+                ? '0 12px 36px rgba(0,0,0,0.34)'
+                : '0 16px 38px rgba(18,52,88,0.12)',
+        },
+    }
 
     const summaryCards = [
         {
             label: 'Companies',
             value: companies.length,
-            detail: 'registered entities',
             icon: <BusinessRoundedIcon fontSize="small" />,
             tint: theme.palette.primary.main,
         },
         {
             label: 'Users',
             value: totalUsers,
-            detail: `across ${activeCompanyCount} active companies`,
             icon: <GroupRoundedIcon fontSize="small" />,
             tint: theme.palette.info.main,
         },
         {
             label: selectedYear,
             value: currentYearUsers,
-            detail: 'new users this year',
             icon: <CalendarMonthRoundedIcon fontSize="small" />,
             tint: theme.palette.success.main,
         },
     ]
 
     const fetchMonthlyData = async (year) => {
-        setLoading(true);
+        setMonthlyLoading(true);
         try {
             const response = await fetch(`${API_BASE_URL}/api/stats/users/monthly-stats?year=${year}`, {
                 credentials: 'include',
@@ -87,11 +108,12 @@ function Siteadmin_Dashboard() {
             setError('Error fetching monthly user stats');
             setMonthlyData(Array(12).fill(0));
         } finally {
-            setLoading(false);
+            setMonthlyLoading(false);
         }
     };
 
     const fetchCompanyUserData = async () => {
+        setPieLoading(true)
         try {
             const response = await fetch(
                 apiUrl('/api/stats/companies/user-distribution'),
@@ -112,13 +134,14 @@ function Siteadmin_Dashboard() {
             setError('Error fetching company user stats');
             setPieData([]);
         } finally {
-            setLoading(false);
+            setPieLoading(false);
         }
     };
 
     // Load year range for user stats from backend
     useEffect(() => {
         const fetchYearRange = async () => {
+            setYearsLoading(true)
             try {
                 const response = await fetch(apiUrl('/api/stats/users/year-range'), {
                     credentials: 'include',
@@ -130,9 +153,11 @@ function Siteadmin_Dashboard() {
 
                     // If current selected year is outside the range, clamp to latestYear
                     const { earliestYear, latestYear } = result.data;
-                    if (selectedYear < earliestYear || selectedYear > latestYear) {
-                        setSelectedYear(latestYear);
-                    }
+                    setSelectedYear((currentYear) => (
+                        currentYear < earliestYear || currentYear > latestYear
+                            ? latestYear
+                            : currentYear
+                    ));
                 } else {
                     // Fallback to last 5 years if API returns no data
                     const currentYear = new Date().getFullYear();
@@ -142,6 +167,8 @@ function Siteadmin_Dashboard() {
                 console.error('Error fetching user year range:', err);
                 const currentYear = new Date().getFullYear();
                 setYears(Array.from({ length: 5 }, (_, i) => currentYear - i).reverse());
+            } finally {
+                setYearsLoading(false)
             }
         };
 
@@ -155,7 +182,7 @@ function Siteadmin_Dashboard() {
     }, [selectedYear])
 
     const fetchCompanies = async () => {
-        setLoading(true)
+        setCompaniesLoading(true)
         setError(null)
         try {
             const response = await fetch(apiUrl('/api/siteadmin/companies'), {
@@ -174,14 +201,13 @@ function Siteadmin_Dashboard() {
             console.error('Error fetching companies:', err)
             setError('Error fetching companies')
         } finally {
-            setLoading(false)
+            setCompaniesLoading(false)
         }
     }
 
     return (
         <Box sx={{ 
             width: '100%', 
-            minHeight: '100vh',
             py: 0,
             px: 0,
             bgcolor: 'transparent'
@@ -218,10 +244,11 @@ function Siteadmin_Dashboard() {
                             sx={{
                                 mt: 0.75,
                                 color: 'text.secondary',
-                                maxWidth: 620,
+                                maxWidth: 700,
+                                lineHeight: 1.6,
                             }}
                         >
-                            Company onboarding, user growth, and organization-level usage at a glance.
+                            Monitor company onboarding, business-process setup, auditor access, and user growth from one central dashboard.
                         </Typography>
                     </Box>
                     <Box
@@ -276,13 +303,13 @@ function Siteadmin_Dashboard() {
                             variant="outlined"
                             sx={{
                                 ...surfaceSx,
-                                p: 2,
+                                p: 2.25,
                                 boxShadow: theme.palette.mode === 'dark'
                                     ? '0 8px 24px rgba(0,0,0,0.22)'
                                     : '0 10px 26px rgba(18,52,88,0.06)',
                             }}
                         >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
                                 <Box
                                     sx={{
                                         width: 38,
@@ -299,7 +326,7 @@ function Siteadmin_Dashboard() {
                                 >
                                     {item.icon}
                                 </Box>
-                                <Box sx={{ minWidth: 0 }}>
+                                <Box sx={{ minWidth: 0, display: 'grid', gap: 0.45 }}>
                                     <Typography
                                         variant="caption"
                                         sx={{
@@ -321,9 +348,6 @@ function Siteadmin_Dashboard() {
                                     >
                                         {item.value}
                                     </Typography>
-                                    <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.82rem' }}>
-                                        {item.detail}
-                                    </Typography>
                                 </Box>
                             </Box>
                         </Card>
@@ -333,39 +357,18 @@ function Siteadmin_Dashboard() {
                 {/* Quick Navigation Tiles */}
                 <Box
                     sx={{
-                        display: 'flex',
-                        flexDirection: { xs: 'column', lg: 'row' },
-                        gap: 2.5,
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(3, minmax(0, 1fr))' },
+                        gap: 2,
                         mb: 3,
                     }}
                 >
-                    <Box sx={{ width: { xs: '100%', lg: 'calc((100% - 40px) / 3)' }, flexShrink: 0 }}>
-                        <Card
-                            variant="outlined"
-                            sx={{
-                                ...surfaceSx,
-                                flex: 1,
-                                px: 2,
-                                py: 2,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                justifyContent: 'space-between',
-                                cursor: 'pointer',
-                                minHeight: 142,
-                                transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
-                                '&:hover': {
-                                    transform: 'translateY(-2px)',
-                                    borderColor: theme.palette.mode === 'dark'
-                                        ? alpha(theme.palette.primary.light, 0.3)
-                                        : alpha(theme.palette.primary.main, 0.28),
-                                    boxShadow: theme.palette.mode === 'dark'
-                                        ? '0 12px 36px rgba(0,0,0,0.34)'
-                                        : '0 16px 38px rgba(18,52,88,0.12)',
-                                },
-                            }}
-                            onClick={() => navigate('/siteadmin/company-management')}
-                        >
-                        <Box>
+                    <Card
+                        variant="outlined"
+                        sx={navTileSx}
+                        onClick={() => navigate('/siteadmin/company-management')}
+                    >
+                        <Box sx={{ display: 'grid', gap: 1.1 }}>
                             <Typography
                                 variant="subtitle2"
                                 sx={{
@@ -375,7 +378,6 @@ function Siteadmin_Dashboard() {
                                     color: theme => theme.palette.mode === 'dark'
                                         ? 'rgba(226,232,240,0.9)'
                                         : 'rgba(30,64,175,0.9)',
-                                    mb: 0.5,
                                 }}
                             >
                                 Administration
@@ -388,7 +390,8 @@ function Siteadmin_Dashboard() {
                                         ? '#e5f2ff'
                                         : '#0f172a',
                                     letterSpacing: 0.2,
-                                    fontSize: { xs: '1.18rem', sm: '1.36rem', md: '1.45rem' },
+                                    fontSize: { xs: '1.15rem', sm: '1.28rem' },
+                                    lineHeight: 1.25,
                                 }}
                             >
                                 Company Management
@@ -396,46 +399,27 @@ function Siteadmin_Dashboard() {
                             <Typography
                                 variant="body2"
                                 sx={{
-                                    mt: 0.75,
                                     color: theme => theme.palette.mode === 'dark'
                                         ? 'rgba(226,232,240,0.85)'
                                         : 'rgba(15,23,42,0.7)',
-                                    fontSize: '0.82rem',
+                                    fontSize: '0.84rem',
+                                    lineHeight: 1.6,
                                 }}
                             >
-                                Configure and manage all client entities in one place.
+                                Create companies, review company profiles, and open company-level details.
                             </Typography>
                         </Box>
+                        <Typography sx={{ mt: 2, fontSize: '0.84rem', fontWeight: 700, color: 'primary.main' }}>
+                            Open section
+                        </Typography>
                     </Card>
-                    </Box>
 
-                    <Box sx={{ width: { xs: '100%', lg: 'calc((100% - 40px) / 3)' }, flexShrink: 0 }}>
-                        <Card
-                            variant="outlined"
-                            sx={{
-                                ...surfaceSx,
-                                flex: 1,
-                                px: 2,
-                                py: 2,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                justifyContent: 'space-between',
-                                cursor: 'pointer',
-                                minHeight: 142,
-                                transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
-                                '&:hover': {
-                                    transform: 'translateY(-2px)',
-                                    borderColor: theme.palette.mode === 'dark'
-                                        ? alpha(theme.palette.primary.light, 0.3)
-                                        : alpha(theme.palette.primary.main, 0.28),
-                                    boxShadow: theme.palette.mode === 'dark'
-                                        ? '0 12px 36px rgba(0,0,0,0.34)'
-                                        : '0 16px 38px rgba(18,52,88,0.12)',
-                                },
-                            }}
-                            onClick={() => navigate('/siteadmin/business-processes')}
-                        >
-                        <Box>
+                    <Card
+                        variant="outlined"
+                        sx={navTileSx}
+                        onClick={() => navigate('/siteadmin/business-processes')}
+                    >
+                        <Box sx={{ display: 'grid', gap: 1.1 }}>
                             <Typography
                                 variant="subtitle2"
                                 sx={{
@@ -445,7 +429,6 @@ function Siteadmin_Dashboard() {
                                     color: theme => theme.palette.mode === 'dark'
                                         ? 'rgba(237,233,254,0.95)'
                                         : 'rgba(91,33,182,0.95)',
-                                    mb: 0.5,
                                 }}
                             >
                                 Onboarding
@@ -458,7 +441,8 @@ function Siteadmin_Dashboard() {
                                         ? '#f5ecff'
                                         : '#111827',
                                     letterSpacing: 0.2,
-                                    fontSize: { xs: '1.18rem', sm: '1.36rem', md: '1.45rem' },
+                                    fontSize: { xs: '1.15rem', sm: '1.28rem' },
+                                    lineHeight: 1.25,
                                 }}
                             >
                                 Business Process Management
@@ -466,46 +450,27 @@ function Siteadmin_Dashboard() {
                             <Typography
                                 variant="body2"
                                 sx={{
-                                    mt: 0.75,
                                     color: theme => theme.palette.mode === 'dark'
                                         ? 'rgba(237,233,254,0.9)'
                                         : 'rgba(30,64,175,0.78)',
-                                    fontSize: '0.82rem',
+                                    fontSize: '0.84rem',
+                                    lineHeight: 1.6,
                                 }}
                             >
-                                Maintain the master business-process list used across the platform.
+                                Maintain the central business-process master used across uploads, RACMs, and reporting.
                             </Typography>
                         </Box>
+                        <Typography sx={{ mt: 2, fontSize: '0.84rem', fontWeight: 700, color: 'primary.main' }}>
+                            Open section
+                        </Typography>
                     </Card>
-                    </Box>
 
-                    <Box sx={{ width: { xs: '100%', lg: 'calc((100% - 40px) / 3)' }, flexShrink: 0 }}>
-                        <Card
-                            variant="outlined"
-                            sx={{
-                                ...surfaceSx,
-                                flex: 1,
-                                px: 2,
-                                py: 2,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                justifyContent: 'space-between',
-                                cursor: 'pointer',
-                                minHeight: 142,
-                                transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
-                                '&:hover': {
-                                    transform: 'translateY(-2px)',
-                                    borderColor: theme.palette.mode === 'dark'
-                                        ? alpha(theme.palette.primary.light, 0.3)
-                                        : alpha(theme.palette.primary.main, 0.28),
-                                    boxShadow: theme.palette.mode === 'dark'
-                                        ? '0 12px 36px rgba(0,0,0,0.34)'
-                                        : '0 16px 38px rgba(18,52,88,0.12)',
-                                },
-                            }}
-                            onClick={() => navigate('/siteadmin/auditors')}
-                        >
-                        <Box>
+                    <Card
+                        variant="outlined"
+                        sx={navTileSx}
+                        onClick={() => navigate('/siteadmin/auditors')}
+                    >
+                        <Box sx={{ display: 'grid', gap: 1.1 }}>
                             <Typography
                                 variant="subtitle2"
                                 sx={{
@@ -515,7 +480,6 @@ function Siteadmin_Dashboard() {
                                     color: theme => theme.palette.mode === 'dark'
                                         ? 'rgba(209,250,229,0.95)'
                                         : 'rgba(4,120,87,0.95)',
-                                    mb: 0.5,
                                 }}
                             >
                                 Access
@@ -528,7 +492,8 @@ function Siteadmin_Dashboard() {
                                         ? '#ecfdf5'
                                         : '#111827',
                                     letterSpacing: 0.2,
-                                    fontSize: { xs: '1.18rem', sm: '1.36rem', md: '1.45rem' },
+                                    fontSize: { xs: '1.15rem', sm: '1.28rem' },
+                                    lineHeight: 1.25,
                                 }}
                             >
                                 Auditor Management
@@ -536,53 +501,51 @@ function Siteadmin_Dashboard() {
                             <Typography
                                 variant="body2"
                                 sx={{
-                                    mt: 0.75,
                                     color: theme => theme.palette.mode === 'dark'
                                         ? 'rgba(209,250,229,0.9)'
                                         : 'rgba(15,23,42,0.7)',
-                                    fontSize: '0.82rem',
+                                    fontSize: '0.84rem',
+                                    lineHeight: 1.6,
                                 }}
                             >
-                                Create auditors and review login email status.
+                                Add auditors, track login email status, and manage platform access cleanly.
                             </Typography>
                         </Box>
+                        <Typography sx={{ mt: 2, fontSize: '0.84rem', fontWeight: 700, color: 'primary.main' }}>
+                            Open section
+                        </Typography>
                     </Card>
-                    </Box>
                 </Box>
 
                 <Box sx={{ 
-                    display: 'flex', 
-                    flexDirection: { xs: 'column', lg: 'row' },
-                    gap: 2.5,
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', xl: '1.75fr 1fr' },
+                    gap: 2,
                     width: '100%',
                     alignItems: 'stretch'
                 }}>
                     {/* User Count Bar Chart */}
-                    <Box sx={{ width: { xs: '100%', lg: '70%' }, flexShrink: 0 }}>
-                        <Card
-                            variant="outlined"
-                            sx={{
-                                ...surfaceSx,
-                                height: '100%',
-                                minHeight: 550,
-                                borderRadius: 3,
-                                p: { xs: 2, sm: 3 },
-                                transition: 'all 0.3s ease',
-                                '&:hover': {
-                                    boxShadow: theme => theme.palette.mode === 'dark'
-                                        ? '0 12px 40px rgba(0,0,0,0.4)'
-                                        : '0 18px 42px rgba(18,52,88,0.12)',
-                                }
-                            }}
-                        >
+                    <Card
+                        variant="outlined"
+                        sx={{
+                            ...surfaceSx,
+                            p: { xs: 2, sm: 2.5 },
+                            transition: 'all 0.3s ease',
+                            '&:hover': {
+                                boxShadow: theme => theme.palette.mode === 'dark'
+                                    ? '0 12px 40px rgba(0,0,0,0.4)'
+                                    : '0 18px 42px rgba(18,52,88,0.12)',
+                            }
+                        }}
+                    >
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             <CardHeader
                                 title={
                                     <Typography 
-                                        variant="h5" 
+                                        variant="h6" 
                                         sx={{ 
-                                            fontWeight: 700, 
-                                            mb: 0.5,
-                                            fontSize: { xs: '1.25rem', sm: '1.5rem' }
+                                            fontWeight: 800,
+                                            fontSize: { xs: '1.08rem', sm: '1.2rem' },
                                         }}
                                     >
                                         New Users per Month
@@ -592,33 +555,30 @@ function Siteadmin_Dashboard() {
                                     <Typography 
                                         variant="body2" 
                                         color="text.secondary"
-                                        sx={{ mt: 0.5 }}
+                                        sx={{ mt: 0.35, lineHeight: 1.6 }}
                                     >
                                         Monthly user registrations across all companies
                                     </Typography>
                                 }
                                 sx={{ 
-                                    pb: 2,
-                                    px: 0
+                                    p: 0
                                 }}
                             />
                             <CardContent sx={{ 
-                                pt: 1, 
-                                pb: 2, 
                                 px: 0,
-                                '&:last-child': { pb: 2 } 
+                                py: 0,
+                                '&:last-child': { pb: 0 } 
                             }}>
                                 <Stack 
                                     direction="row" 
                                     alignItems="center" 
                                     spacing={2} 
-                                    mb={3}
-                                    sx={{ px: { xs: 0, sm: 1 } }}
+                                    mb={2}
                                 >
                                     <FormControl 
                                         size="small" 
                                         sx={{ 
-                                            minWidth: 120,
+                                            minWidth: 140,
                                             '& .MuiOutlinedInput-root': {
                                                 borderRadius: 2,
                                                 backgroundColor: theme.palette.mode === 'dark'
@@ -641,7 +601,7 @@ function Siteadmin_Dashboard() {
                                 </Stack>
 
                                 <Box sx={{ 
-                                    height: barChartHeight, 
+                                    height: barChartHeight - 30, 
                                     width: '100%',
                                     minWidth: 0
                                 }}>
@@ -661,35 +621,31 @@ function Siteadmin_Dashboard() {
                                     />
                                 </Box>
                             </CardContent>
-                        </Card>
-                    </Box>
+                        </Box>
+                    </Card>
 
                     {/* User Distribution Pie Chart */}
-                    <Box sx={{ width: { xs: '100%', lg: '30%' }, flexShrink: 0 }}>
-                        <Card
-                            variant="outlined"
-                            sx={{
-                                ...surfaceSx,
-                                height: '100%',
-                                minHeight: 550,
-                                borderRadius: 3,
-                                p: { xs: 2, sm: 3 },
-                                transition: 'all 0.3s ease',
-                                '&:hover': {
-                                    boxShadow: theme => theme.palette.mode === 'dark'
-                                        ? '0 12px 40px rgba(0,0,0,0.4)'
-                                        : '0 18px 42px rgba(18,52,88,0.12)',
-                                }
-                            }}
-                        >
+                    <Card
+                        variant="outlined"
+                        sx={{
+                            ...surfaceSx,
+                            p: { xs: 2, sm: 2.5 },
+                            transition: 'all 0.3s ease',
+                            '&:hover': {
+                                boxShadow: theme => theme.palette.mode === 'dark'
+                                    ? '0 12px 40px rgba(0,0,0,0.4)'
+                                    : '0 18px 42px rgba(18,52,88,0.12)',
+                            }
+                        }}
+                    >
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
                             <CardHeader
                                 title={
                                     <Typography 
-                                        variant="h5" 
+                                        variant="h6" 
                                         sx={{ 
-                                            fontWeight: 700, 
-                                            mb: 0.5,
-                                            fontSize: { xs: '1.25rem', sm: '1.5rem' }
+                                            fontWeight: 800,
+                                            fontSize: { xs: '1.08rem', sm: '1.2rem' },
                                         }}
                                     >
                                          Users by Company
@@ -699,25 +655,25 @@ function Siteadmin_Dashboard() {
                                     <Typography 
                                         variant="body2" 
                                         color="text.secondary"
-                                        sx={{ mt: 0.5 }}
+                                        sx={{ mt: 0.35, lineHeight: 1.6 }}
                                     >
                                         {totalUsers} total users across {pieData.length} companies
                                     </Typography>
                                 }
                                 sx={{ 
-                                    pb: 2,
-                                    px: 0
+                                    p: 0
                                 }}
                             />
                             <CardContent sx={{ 
-                                pt: 1, 
-                                pb: 2, 
+                                px: 0,
+                                py: 0,
                                 textAlign: 'center',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                minHeight: 400
+                                minHeight: 360,
+                                '&:last-child': { pb: 0 }
                             }}>
                                 <Box sx={{
                                     height: pieChartSize,
@@ -752,8 +708,8 @@ function Siteadmin_Dashboard() {
                                     />
                                 </Box>
                             </CardContent>
-                        </Card>
-                    </Box>
+                        </Box>
+                    </Card>
                 </Box>
             </Box>
         </Box>

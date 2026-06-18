@@ -27,6 +27,10 @@ const {
   getMobileValidationError,
   normalizeMobileDigits,
 } = require('../../utils/mobile_validation');
+const {
+  UNIT_RESPONSIBILITY_TYPES,
+  getUnitResponsibilityConfig,
+} = require('../../utils/unit_responsibilities');
 
 const KEY_MANUAL_AI_PROMPT_VERSION = 'v1';
 
@@ -94,12 +98,16 @@ async function getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail) {
   const result = await pool.query(
     `
       SELECT DISTINCT
-        NULLIF(TRIM(unit_id), '') AS unit_id,
-        NULLIF(TRIM(unit_name), '') AS unit_name
-      FROM company_unit_master
-      WHERE company_identifier = $1
-        AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
-        AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+        NULLIF(TRIM(cum.unit_id), '') AS unit_id,
+        NULLIF(TRIM(cum.unit_name), '') AS unit_name
+      FROM company_unit_master cum
+      INNER JOIN company_unit_responsibilities cur
+        ON cur.company_identifier = cum.company_identifier
+       AND cur.unit_id = cum.unit_id
+       AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+      WHERE cum.company_identifier = $1
+        AND LOWER(TRIM(cur.user_email_id)) = $2
+        AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
       ORDER BY unit_name ASC, unit_id ASC
     `,
     [companyIdentifier, coordinatorEmail]
@@ -408,10 +416,11 @@ async function getRiskAnalysisControlRow(companyIdentifier, controlNumber, coord
         AND cf.control_number = $2
         AND EXISTS (
           SELECT 1
-          FROM company_unit_master cum
-          WHERE cum.company_identifier = cf.company_identifier
-            AND cum.unit_id = cf.unit_id
-            AND LOWER(TRIM(COALESCE(cum.coordinator_email_id, ''))) = $3
+          FROM company_unit_responsibilities cur
+          WHERE cur.company_identifier = cf.company_identifier
+            AND cur.unit_id = cf.unit_id
+            AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+            AND LOWER(TRIM(cur.user_email_id)) = $3
         )
       LIMIT 1
     `,
@@ -745,11 +754,15 @@ async function createCompanyUser(client, coordinator, payload = {}) {
 
     const assignedUnitResult = await client.query(
       `
-        SELECT unit_id
-        FROM company_unit_master
-        WHERE company_identifier = $1
-          AND unit_id = $2
-          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $3
+        SELECT cum.unit_id
+        FROM company_unit_master cum
+        INNER JOIN company_unit_responsibilities cur
+          ON cur.company_identifier = cum.company_identifier
+         AND cur.unit_id = cum.unit_id
+         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        WHERE cum.company_identifier = $1
+          AND cum.unit_id = $2
+          AND LOWER(TRIM(cur.user_email_id)) = $3
         LIMIT 1
       `,
       [companyIdentifier, unitId, normalizeEmail(coordinator.email_id)]
@@ -820,23 +833,7 @@ async function createCompanyUser(client, coordinator, payload = {}) {
 }
 
 function getUnitMappingRoleConfig(role) {
-  if (role === 'company_co') {
-    return {
-      role,
-      columnName: 'coordinator_email_id',
-      roleLabel: 'Company Coordinator',
-    };
-  }
-
-  if (role === 'approver') {
-    return {
-      role,
-      columnName: 'approver_email_id',
-      roleLabel: 'Approver',
-    };
-  }
-
-  return null;
+  return getUnitResponsibilityConfig(role);
 }
 
 function buildUnitAssignmentNotificationEmail({ roleLabel, unitName, companyName }) {
@@ -935,8 +932,36 @@ async function createUnitMappedPrivilegedUser(client, coordinator, payload = {},
 async function getUsers(req, res) {
   try {
     const companyIdentifier = req.user.company_identifier;
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
 
     if (!companyIdentifier) {
+      return res.status(200).json({
+        success: true,
+        users: [],
+      });
+    }
+
+    const coordinatorUnits = await prisma.companyUnitMaster.findMany({
+      where: {
+        companyIdentifier,
+        responsibilities: {
+          some: {
+            responsibilityType: UNIT_RESPONSIBILITY_TYPES.COORDINATOR,
+            userEmailId: {
+              equals: coordinatorEmail,
+              mode: 'insensitive',
+            },
+          },
+        },
+      },
+      select: { unitId: true },
+    });
+
+    const mappedUnitIds = coordinatorUnits
+      .map((row) => (row.unitId == null ? '' : String(row.unitId).trim()))
+      .filter(Boolean);
+
+    if (mappedUnitIds.length === 0) {
       return res.status(200).json({
         success: true,
         users: [],
@@ -977,12 +1002,16 @@ async function getUsers(req, res) {
           STRING_AGG(mapped_units.unit_name, ', ' ORDER BY mapped_units.unit_name, mapped_units.unit_id) AS unit_names
         FROM (
           SELECT DISTINCT
-            NULLIF(TRIM(unit_id), '') AS unit_id,
-            NULLIF(TRIM(unit_name), '') AS unit_name
-          FROM company_unit_master
-          WHERE company_identifier = u.company_identifier
-            AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = LOWER(TRIM(u.email_id))
-            AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+            NULLIF(TRIM(cum.unit_id), '') AS unit_id,
+            NULLIF(TRIM(cum.unit_name), '') AS unit_name
+          FROM company_unit_master cum
+          INNER JOIN company_unit_responsibilities cur
+            ON cur.company_identifier = cum.company_identifier
+           AND cur.unit_id = cum.unit_id
+           AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+          WHERE cum.company_identifier = u.company_identifier
+            AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
+            AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
         ) mapped_units
       ) coordinator_units ON u.role = 'company_co'
       LEFT JOIN LATERAL (
@@ -991,12 +1020,16 @@ async function getUsers(req, res) {
           STRING_AGG(mapped_units.unit_name, ', ' ORDER BY mapped_units.unit_name, mapped_units.unit_id) AS unit_names
         FROM (
           SELECT DISTINCT
-            NULLIF(TRIM(unit_id), '') AS unit_id,
-            NULLIF(TRIM(unit_name), '') AS unit_name
-          FROM company_unit_master
-          WHERE company_identifier = u.company_identifier
-            AND LOWER(TRIM(COALESCE(approver_email_id, ''))) = LOWER(TRIM(u.email_id))
-            AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+            NULLIF(TRIM(cum.unit_id), '') AS unit_id,
+            NULLIF(TRIM(cum.unit_name), '') AS unit_name
+          FROM company_unit_master cum
+          INNER JOIN company_unit_responsibilities cur
+            ON cur.company_identifier = cum.company_identifier
+           AND cur.unit_id = cum.unit_id
+           AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+          WHERE cum.company_identifier = u.company_identifier
+            AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
+            AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
         ) mapped_units
       ) approver_units ON u.role = 'approver'
       WHERE u.company_identifier = $1
@@ -1004,30 +1037,76 @@ async function getUsers(req, res) {
     const params = [companyIdentifier];
     let paramIndex = 2;
 
+    query += `
+      AND (
+        (
+          u.role = 'user'
+          AND NULLIF(TRIM(u.unit_id), '') = ANY($${paramIndex}::text[])
+        )
+        OR (
+          u.role = 'company_co'
+          AND EXISTS (
+            SELECT 1
+            FROM company_unit_responsibilities cur
+            WHERE cur.company_identifier = u.company_identifier
+              AND cur.unit_id = ANY($${paramIndex}::text[])
+              AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+              AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
+          )
+        )
+        OR (
+          u.role = 'approver'
+          AND EXISTS (
+            SELECT 1
+            FROM company_unit_responsibilities cur
+            WHERE cur.company_identifier = u.company_identifier
+              AND cur.unit_id = ANY($${paramIndex}::text[])
+              AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+              AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
+          )
+        )
+      )
+    `;
+    params.push(mappedUnitIds);
+    paramIndex++;
+
     if (roleParam) {
       query += ` AND u.role = $${paramIndex}`;
       params.push(roleParam);
       paramIndex++;
     }
 
-    // Assignable "user" role list (Process Owner / Control Performer): only users in units mapped to this coordinator
-    if (String(roleParam).toLowerCase() === 'user') {
-      const coordinatorEmail = normalizeEmail(req.user.email_id);
-      query += ` AND EXISTS (
-        SELECT 1
-        FROM company_unit_master cum
-        WHERE cum.company_identifier = u.company_identifier
-          AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
-          AND NULLIF(TRIM(u.unit_id), '') IS NOT NULL
-          AND LOWER(TRIM(cum.unit_id)) = LOWER(TRIM(u.unit_id))
-          AND LOWER(TRIM(COALESCE(cum.coordinator_email_id, ''))) = $${paramIndex}
-      )`;
-      params.push(coordinatorEmail);
-      paramIndex++;
-    }
-
     if (unitIdRaw) {
-      query += ` AND LOWER(TRIM(COALESCE(u.unit_id, ''))) = LOWER(TRIM($${paramIndex}))`;
+      query += `
+        AND (
+          (
+            u.role = 'user'
+            AND LOWER(TRIM(COALESCE(u.unit_id, ''))) = LOWER(TRIM($${paramIndex}))
+          )
+          OR (
+            u.role = 'company_co'
+            AND EXISTS (
+              SELECT 1
+              FROM company_unit_responsibilities cur
+              WHERE cur.company_identifier = u.company_identifier
+                AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+                AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
+                AND LOWER(TRIM(cur.unit_id)) = LOWER(TRIM($${paramIndex}))
+            )
+          )
+          OR (
+            u.role = 'approver'
+            AND EXISTS (
+              SELECT 1
+              FROM company_unit_responsibilities cur
+              WHERE cur.company_identifier = u.company_identifier
+                AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+                AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
+                AND LOWER(TRIM(cur.unit_id)) = LOWER(TRIM($${paramIndex}))
+            )
+          )
+        )
+      `;
       params.push(unitIdRaw);
       paramIndex++;
     }
@@ -1060,8 +1139,6 @@ async function getUsers(req, res) {
     console.log(
       `[company-co/users] company=${companyIdentifier} role=${roleParam || 'all'} unit_id=${unitIdRaw || 'all'} q=${qRaw || ''} fetched=${usersResult.rows.length} user(s)`
     );
-
-    console.log(usersResult.rows);
 
     return res.status(200).json({
       success: true,
@@ -1164,12 +1241,16 @@ async function getHomeStats(req, res) {
     const unitsResult = await pool.query(
       `
         SELECT DISTINCT
-          NULLIF(TRIM(unit_id), '') AS unit_id,
-          NULLIF(TRIM(unit_name), '') AS unit_name
-        FROM company_unit_master
-        WHERE company_identifier = $1
-          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
-          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+          NULLIF(TRIM(cum.unit_id), '') AS unit_id,
+          NULLIF(TRIM(cum.unit_name), '') AS unit_name
+        FROM company_unit_master cum
+        INNER JOIN company_unit_responsibilities cur
+          ON cur.company_identifier = cum.company_identifier
+         AND cur.unit_id = cum.unit_id
+         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        WHERE cum.company_identifier = $1
+          AND LOWER(TRIM(cur.user_email_id)) = $2
+          AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
         ORDER BY unit_name ASC, unit_id ASC
       `,
       [companyIdentifier, coordinatorEmail]
@@ -1848,12 +1929,13 @@ async function getUnitManagement(req, res) {
       });
     }
 
-    const buildDistinctPeopleQuery = (columnName) => `
+    const buildDistinctPeopleQuery = (responsibilityType) => `
       WITH distinct_people AS (
-        SELECT DISTINCT LOWER(TRIM(${columnName})) AS email_id
-        FROM company_unit_master
+        SELECT DISTINCT LOWER(TRIM(user_email_id)) AS email_id
+        FROM company_unit_responsibilities
         WHERE company_identifier = $1
-          AND COALESCE(TRIM(${columnName}), '') <> ''
+          AND responsibility_type = '${responsibilityType}'
+          AND COALESCE(TRIM(user_email_id), '') <> ''
       )
       SELECT
         dp.email_id,
@@ -1865,12 +1947,18 @@ async function getUnitManagement(req, res) {
       ORDER BY display_name ASC, dp.email_id ASC
     `;
 
-    const buildUnmappedUnitsQuery = (columnName) => `
-      SELECT id, unit_id, unit_name
-      FROM company_unit_master
-      WHERE company_identifier = $1
-        AND COALESCE(TRIM(${columnName}), '') = ''
-      ORDER BY unit_name ASC, id ASC
+    const buildUnmappedUnitsQuery = (responsibilityType) => `
+      SELECT cum.id, cum.unit_id, cum.unit_name
+      FROM company_unit_master cum
+      WHERE cum.company_identifier = $1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM company_unit_responsibilities cur
+          WHERE cur.company_identifier = cum.company_identifier
+            AND cur.unit_id = cum.unit_id
+            AND cur.responsibility_type = '${responsibilityType}'
+        )
+      ORDER BY cum.unit_name ASC, cum.id ASC
     `;
 
     const [
@@ -1886,17 +1974,21 @@ async function getUnitManagement(req, res) {
     ] = await Promise.all([
       prisma.$queryRawUnsafe(
         `
-          SELECT id, unit_id, unit_name, unit_address
-          FROM company_unit_master
-          WHERE company_identifier = $1
-            AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
-          ORDER BY unit_name ASC, id ASC
+          SELECT cum.id, cum.unit_id, cum.unit_name, cum.unit_address
+          FROM company_unit_master cum
+          INNER JOIN company_unit_responsibilities cur
+            ON cur.company_identifier = cum.company_identifier
+           AND cur.unit_id = cum.unit_id
+           AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+          WHERE cum.company_identifier = $1
+            AND LOWER(TRIM(cur.user_email_id)) = $2
+          ORDER BY cum.unit_name ASC, cum.id ASC
         `,
         companyIdentifier,
         coordinatorEmail
       ),
-      prisma.$queryRawUnsafe(buildDistinctPeopleQuery('approver_email_id'), companyIdentifier),
-      prisma.$queryRawUnsafe(buildDistinctPeopleQuery('coordinator_email_id'), companyIdentifier),
+      prisma.$queryRawUnsafe(buildDistinctPeopleQuery(UNIT_RESPONSIBILITY_TYPES.APPROVER), companyIdentifier),
+      prisma.$queryRawUnsafe(buildDistinctPeopleQuery(UNIT_RESPONSIBILITY_TYPES.COORDINATOR), companyIdentifier),
       prisma.$queryRawUnsafe(
         `
           SELECT *
@@ -1911,9 +2003,10 @@ async function getUnitManagement(req, res) {
               AND COALESCE(TRIM(u.email_id), '') <> ''
               AND NOT EXISTS (
                 SELECT 1
-                FROM company_unit_master cum
-                WHERE cum.company_identifier = u.company_identifier
-                  AND LOWER(TRIM(COALESCE(cum.coordinator_email_id, ''))) = LOWER(TRIM(u.email_id))
+                FROM company_unit_responsibilities cur
+                WHERE cur.company_identifier = u.company_identifier
+                  AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+                  AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
               )
 
             UNION ALL
@@ -1928,17 +2021,18 @@ async function getUnitManagement(req, res) {
               AND COALESCE(TRIM(u.email_id), '') <> ''
               AND NOT EXISTS (
                 SELECT 1
-                FROM company_unit_master cum
-                WHERE cum.company_identifier = u.company_identifier
-                  AND LOWER(TRIM(COALESCE(cum.approver_email_id, ''))) = LOWER(TRIM(u.email_id))
+                FROM company_unit_responsibilities cur
+                WHERE cur.company_identifier = u.company_identifier
+                  AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+                  AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
               )
           ) unmapped_role_users
           ORDER BY role ASC, display_name ASC, email_id ASC
         `,
         companyIdentifier
       ),
-      prisma.$queryRawUnsafe(buildUnmappedUnitsQuery('coordinator_email_id'), companyIdentifier),
-      prisma.$queryRawUnsafe(buildUnmappedUnitsQuery('approver_email_id'), companyIdentifier),
+      prisma.$queryRawUnsafe(buildUnmappedUnitsQuery(UNIT_RESPONSIBILITY_TYPES.COORDINATOR), companyIdentifier),
+      prisma.$queryRawUnsafe(buildUnmappedUnitsQuery(UNIT_RESPONSIBILITY_TYPES.APPROVER), companyIdentifier),
       prisma.$queryRawUnsafe(
         `
           SELECT
@@ -1971,16 +2065,24 @@ async function getUnitManagement(req, res) {
             cum.id,
             cum.unit_id,
             cum.unit_name,
-            cum.coordinator_email_id,
-            COALESCE(NULLIF(TRIM(coordinator.emp_name), ''), cum.coordinator_email_id) AS coordinator_display_name,
-            cum.approver_email_id,
-            COALESCE(NULLIF(TRIM(approver.emp_name), ''), cum.approver_email_id) AS approver_display_name
+            coordinator_map.user_email_id AS coordinator_email_id,
+            COALESCE(NULLIF(TRIM(coordinator.emp_name), ''), coordinator_map.user_email_id) AS coordinator_display_name,
+            approver_map.user_email_id AS approver_email_id,
+            COALESCE(NULLIF(TRIM(approver.emp_name), ''), approver_map.user_email_id) AS approver_display_name
           FROM company_unit_master cum
+          LEFT JOIN company_unit_responsibilities coordinator_map
+            ON coordinator_map.company_identifier = cum.company_identifier
+           AND coordinator_map.unit_id = cum.unit_id
+           AND coordinator_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+          LEFT JOIN company_unit_responsibilities approver_map
+            ON approver_map.company_identifier = cum.company_identifier
+           AND approver_map.unit_id = cum.unit_id
+           AND approver_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
           LEFT JOIN ifc_users coordinator
-            ON LOWER(TRIM(coordinator.email_id)) = LOWER(TRIM(COALESCE(cum.coordinator_email_id, '')))
+            ON LOWER(TRIM(coordinator.email_id)) = LOWER(TRIM(COALESCE(coordinator_map.user_email_id, '')))
            AND coordinator.company_identifier = cum.company_identifier
           LEFT JOIN ifc_users approver
-            ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(cum.approver_email_id, '')))
+            ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.user_email_id, '')))
            AND approver.company_identifier = cum.company_identifier
           WHERE cum.company_identifier = $1
           ORDER BY cum.unit_name ASC, cum.id ASC
@@ -2166,7 +2268,7 @@ async function createCompanyUnit(req, res) {
               company_identifier, unit_name, unit_address, unit_id
             )
             VALUES ($1, $2, $3, $4)
-            RETURNING id, unit_id, unit_name, unit_address, coordinator_email_id, approver_email_id
+            RETURNING id, unit_id, unit_name, unit_address
           `,
           [companyIdentifier, unitName, unitAddress, unitId]
         );
@@ -2259,10 +2361,10 @@ async function updateUnitAssignment(req, res) {
 
     const unitResult = await client.query(
       `
-        SELECT id, unit_name, ${config.columnName}
-        FROM company_unit_master
-        WHERE company_identifier = $1
-          AND unit_id = $2
+        SELECT cum.id, cum.unit_name
+        FROM company_unit_master cum
+        WHERE cum.company_identifier = $1
+          AND cum.unit_id = $2
         FOR UPDATE
       `,
       [companyIdentifier, unitId]
@@ -2276,7 +2378,19 @@ async function updateUnitAssignment(req, res) {
       });
     }
 
-    const currentAssignedEmail = normalizeEmail(unitResult.rows[0]?.[config.columnName]);
+    const currentAssignmentResult = await client.query(
+      `
+        SELECT user_email_id AS assigned_email_id
+        FROM company_unit_responsibilities
+        WHERE company_identifier = $1
+          AND unit_id = $2
+          AND responsibility_type = $3
+        FOR UPDATE
+      `,
+      [companyIdentifier, unitId, config.responsibilityType]
+    );
+
+    const currentAssignedEmail = normalizeEmail(currentAssignmentResult.rows[0]?.assigned_email_id);
     const isReplacingOwnCoordinatorAssignment =
       config.role === 'company_co' &&
       requesterEmail &&
@@ -2313,11 +2427,17 @@ async function updateUnitAssignment(req, res) {
 
     await client.query(
       `
-        UPDATE company_unit_master
-        SET ${config.columnName} = $1
-        WHERE id = $2
+        INSERT INTO company_unit_responsibilities (
+          company_identifier,
+          unit_id,
+          user_email_id,
+          responsibility_type
+        )
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (company_identifier, unit_id, responsibility_type)
+        DO UPDATE SET user_email_id = EXCLUDED.user_email_id
       `,
-      [emailId, unitResult.rows[0].id]
+      [companyIdentifier, unitId, emailId, config.responsibilityType]
     );
 
     await client.query('COMMIT');
@@ -2426,9 +2546,14 @@ async function createUser(req, res) {
           where: {
             companyIdentifier,
             unitId,
-            coordinatorEmailId: {
-              equals: normalizeEmail(coordinator.email_id),
-              mode: 'insensitive',
+            responsibilities: {
+              some: {
+                responsibilityType: UNIT_RESPONSIBILITY_TYPES.COORDINATOR,
+                userEmailId: {
+                  equals: normalizeEmail(coordinator.email_id),
+                  mode: 'insensitive',
+                },
+              },
             },
           },
           select: { unitId: true },
@@ -2674,9 +2799,14 @@ async function createUsersBulk(req, res) {
         where: {
           companyIdentifier,
           unitId: selectedUnitId,
-          coordinatorEmailId: {
-            equals: coordinatorEmail,
-            mode: 'insensitive',
+          responsibilities: {
+            some: {
+              responsibilityType: UNIT_RESPONSIBILITY_TYPES.COORDINATOR,
+              userEmailId: {
+                equals: coordinatorEmail,
+                mode: 'insensitive',
+              },
+            },
           },
         },
         select: { unitId: true },
@@ -2888,9 +3018,14 @@ async function deleteUsers(req, res) {
     const coordinatorUnits = await prisma.companyUnitMaster.findMany({
       where: {
         companyIdentifier,
-        coordinatorEmailId: {
-          equals: normalizeEmail(coordinator.email_id),
-          mode: 'insensitive',
+        responsibilities: {
+          some: {
+            responsibilityType: UNIT_RESPONSIBILITY_TYPES.COORDINATOR,
+            userEmailId: {
+              equals: normalizeEmail(coordinator.email_id),
+              mode: 'insensitive',
+            },
+          },
         },
       },
       select: { unitId: true },
@@ -3199,12 +3334,16 @@ async function getCommunicationMatrix(req, res) {
     const mappedUnitsResult = await pool.query(
       `
         SELECT DISTINCT
-          NULLIF(TRIM(unit_id), '') AS unit_id,
-          NULLIF(TRIM(unit_name), '') AS unit_name
-        FROM company_unit_master
-        WHERE company_identifier = $1
-          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
-          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+          NULLIF(TRIM(cum.unit_id), '') AS unit_id,
+          NULLIF(TRIM(cum.unit_name), '') AS unit_name
+        FROM company_unit_master cum
+        INNER JOIN company_unit_responsibilities cur
+          ON cur.company_identifier = cum.company_identifier
+         AND cur.unit_id = cum.unit_id
+         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        WHERE cum.company_identifier = $1
+          AND LOWER(TRIM(cur.user_email_id)) = $2
+          AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
         ORDER BY unit_name ASC, unit_id ASC
       `,
       [companyIdentifier, coordinatorEmail]
@@ -3317,11 +3456,15 @@ async function addCommonCommunicationEmails(req, res) {
 
     const mappedUnitsResult = await client.query(
       `
-        SELECT DISTINCT NULLIF(TRIM(unit_id), '') AS unit_id
-        FROM company_unit_master
-        WHERE company_identifier = $1
-          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
-          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+        SELECT DISTINCT NULLIF(TRIM(cum.unit_id), '') AS unit_id
+        FROM company_unit_master cum
+        INNER JOIN company_unit_responsibilities cur
+          ON cur.company_identifier = cum.company_identifier
+         AND cur.unit_id = cum.unit_id
+         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        WHERE cum.company_identifier = $1
+          AND LOWER(TRIM(cur.user_email_id)) = $2
+          AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
       `,
       [companyIdentifier, coordinatorEmail]
     );
@@ -3495,11 +3638,15 @@ async function addBusinessProcessSpecificCommunicationEmails(req, res) {
 
     const mappedUnitsResult = await client.query(
       `
-        SELECT DISTINCT NULLIF(TRIM(unit_id), '') AS unit_id
-        FROM company_unit_master
-        WHERE company_identifier = $1
-          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
-          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+        SELECT DISTINCT NULLIF(TRIM(cum.unit_id), '') AS unit_id
+        FROM company_unit_master cum
+        INNER JOIN company_unit_responsibilities cur
+          ON cur.company_identifier = cum.company_identifier
+         AND cur.unit_id = cum.unit_id
+         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        WHERE cum.company_identifier = $1
+          AND LOWER(TRIM(cur.user_email_id)) = $2
+          AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
       `,
       [companyIdentifier, coordinatorEmail]
     );
@@ -3598,11 +3745,15 @@ async function deleteCommunicationMatrixEntries(req, res) {
 
     const mappedUnitsResult = await client.query(
       `
-        SELECT DISTINCT NULLIF(TRIM(unit_id), '') AS unit_id
-        FROM company_unit_master
-        WHERE company_identifier = $1
-          AND LOWER(TRIM(COALESCE(coordinator_email_id, ''))) = $2
-          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+        SELECT DISTINCT NULLIF(TRIM(cum.unit_id), '') AS unit_id
+        FROM company_unit_master cum
+        INNER JOIN company_unit_responsibilities cur
+          ON cur.company_identifier = cum.company_identifier
+         AND cur.unit_id = cum.unit_id
+         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        WHERE cum.company_identifier = $1
+          AND LOWER(TRIM(cur.user_email_id)) = $2
+          AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
       `,
       [companyIdentifier, coordinatorEmail]
     );

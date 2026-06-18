@@ -1,2 +1,0 @@
-
-Get the RACM from Mayank sir which he uploaded and faced issues of missing columns.

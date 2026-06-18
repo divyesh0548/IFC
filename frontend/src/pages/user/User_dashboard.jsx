@@ -286,7 +286,7 @@ function User_dashboard() {
                   color: theme.palette.text.primary,
                 }}
               >
-                My RACM
+                Assigned RACMs
               </Typography>
               <Typography variant="body2" sx={PAGE_SUBHEADER_TEXT_SX}>
                 Track your assigned RACMs, filter by status, and open any item to review details.

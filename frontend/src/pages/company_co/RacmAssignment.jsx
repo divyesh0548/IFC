@@ -1465,10 +1465,7 @@ function RacmAssignment() {
                 onChange={setBulkSelectedUser}
                 prefetch={bulkAssignmentDialogOpen}
                 disabled={hasSelectedActiveRacm}
-                helperText={
-                  bulkSelectedUser?.email_id ||
-                  (selectedBulkUnitName ? `Users from ${selectedBulkUnitName} only` : '')
-                }
+                helperText={selectedBulkUnitName ? `Users from ${selectedBulkUnitName} only` : ''}
               />
             </Box>
           </DialogContent>

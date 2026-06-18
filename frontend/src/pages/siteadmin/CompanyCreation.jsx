@@ -10,16 +10,10 @@ import CardContent from '@mui/material/CardContent'
 import Alert from '@mui/material/Alert'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import Checkbox from '@mui/material/Checkbox'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { toast } from 'react-hot-toast'
-import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
 
 const twoColRowSx = {
@@ -46,187 +40,115 @@ function CompanyCreation() {
     gst: '',
     number_of_corporate_offices: '',
     number_of_factory_units: '',
-    company_coordinator_email: ''
   })
-  const [companyUnits, setCompanyUnits] = useState([
-    { unit_name: 'Main Unit', unit_address: '' }
-  ])
+  const [companyUnits, setCompanyUnits] = useState([{ unit_name: 'Main Unit', unit_address: '' }])
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [unitMappingOpen, setUnitMappingOpen] = useState(false)
-  const [coordinatorUnitIndexes, setCoordinatorUnitIndexes] = useState([])
   useSyncGlobalLoading(loading)
 
-  // GST Validation function
   const validateGST = (gst) => {
-    if (!gst) return true // Allow empty for now
-    
-    // Check length
-    if (gst.length !== 15) {
-      return false
-    }
-
-    // Position 1-2: numeric
-    if (!/^\d{2}/.test(gst)) {
-      return false
-    }
-
-    // Position 3-13: alphanumeric (11 characters)
-    if (!/^\d{2}[A-Z0-9]{11}/.test(gst)) {
-      return false
-    }
-
-    // Position 14: "Z"
-    if (gst[13] !== 'Z' && gst[13] !== 'z') {
-      return false
-    }
-
-    // Position 15: digit
-    if (!/^\d$/.test(gst[14])) {
-      return false
-    }
-
-    // Full format validation
-    if (!/^\d{2}[A-Z0-9]{11}[Zz]\d$/.test(gst)) {
-      return false
-    }
-
-    return true
+    if (!gst) return true
+    if (gst.length !== 15) return false
+    if (!/^\d{2}/.test(gst)) return false
+    if (!/^\d{2}[A-Z0-9]{11}/.test(gst)) return false
+    if (gst[13] !== 'Z' && gst[13] !== 'z') return false
+    if (!/^\d$/.test(gst[14])) return false
+    return /^\d{2}[A-Z0-9]{11}[Zz]\d$/.test(gst)
   }
 
-  // Auto-fill PAN from GST
   const handleGSTChange = (e) => {
     const gstValue = e.target.value.toUpperCase()
-    setFormData(prev => {
-      const newData = { ...prev, gst: gstValue }
-      
-      // Auto-fill PAN from GST (positions 3-12 of GST = PAN)
+    setFormData((prev) => {
+      const next = { ...prev, gst: gstValue }
       if (gstValue.length >= 12 && validateGST(gstValue)) {
-        newData.pan = gstValue.substring(2, 12)
+        next.pan = gstValue.substring(2, 12)
       } else if (gstValue.length < 12) {
-        newData.pan = ''
+        next.pan = ''
       }
-      
-      return newData
+      return next
     })
 
-    // Validate GST
     if (gstValue && !validateGST(gstValue)) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        gst: 'Invalid GST number. Format: 2 digits + 11 alphanumeric + Z + 1 digit (15 characters total)'
+        gst: 'Invalid GST number. Format: 2 digits + 11 alphanumeric + Z + 1 digit (15 characters total)',
       }))
     } else {
-      setErrors(prev => {
-        const newErrors = { ...prev }
-        delete newErrors.gst
-        return newErrors
+      setErrors((prev) => {
+        const next = { ...prev }
+        delete next.gst
+        return next
       })
     }
   }
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }))
-
-    // Clear error for this field
+    setFormData((prev) => ({ ...prev, [name]: value }))
     if (errors[name]) {
-      setErrors(prev => {
-        const newErrors = { ...prev }
-        delete newErrors[name]
-        return newErrors
+      setErrors((prev) => {
+        const next = { ...prev }
+        delete next[name]
+        return next
       })
     }
   }
 
   const handleUnitChange = (index, field, value) => {
-    setCompanyUnits(prev =>
-      prev.map((unit, unitIndex) =>
-        unitIndex === index ? { ...unit, [field]: value } : unit
-      )
-    )
+    setCompanyUnits((prev) => prev.map((unit, unitIndex) => (
+      unitIndex === index ? { ...unit, [field]: value } : unit
+    )))
 
     const errorKey = `company_units_${index}_${field}`
     if (errors[errorKey]) {
-      setErrors(prev => {
-        const newErrors = { ...prev }
-        delete newErrors[errorKey]
-        return newErrors
+      setErrors((prev) => {
+        const next = { ...prev }
+        delete next[errorKey]
+        return next
       })
     }
   }
 
   const handleAddUnit = () => {
-    setCompanyUnits(prev => [
-      ...prev,
-      { unit_name: '', unit_address: '' }
-    ])
+    setCompanyUnits((prev) => [...prev, { unit_name: '', unit_address: '' }])
   }
 
   const handleRemoveUnit = (index) => {
-    setCompanyUnits(prev => prev.filter((_, unitIndex) => unitIndex !== index))
-    setCoordinatorUnitIndexes(prev =>
-      prev
-        .filter((unitIndex) => unitIndex !== index)
-        .map((unitIndex) => (unitIndex > index ? unitIndex - 1 : unitIndex))
-    )
+    setCompanyUnits((prev) => prev.filter((_, unitIndex) => unitIndex !== index))
   }
 
   const validateForm = () => {
     const newErrors = {}
 
-    if (!formData.company_name.trim()) {
-      newErrors.company_name = 'Company name is required'
-    }
-
+    if (!formData.company_name.trim()) newErrors.company_name = 'Company name is required'
     if (!formData.registered_email.trim()) {
       newErrors.registered_email = 'Registered email is required'
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.registered_email)) {
       newErrors.registered_email = 'Invalid email format'
     }
-
-    if (!formData.registered_address.trim()) {
-      newErrors.registered_address = 'Registered address is required'
-    }
-
+    if (!formData.registered_address.trim()) newErrors.registered_address = 'Registered address is required'
     if (!formData.unique_identification_number.trim()) {
       newErrors.unique_identification_number = 'Unique Identification Number is required'
     } else if (!/^\d+$/.test(formData.unique_identification_number)) {
       newErrors.unique_identification_number = 'Must be a number'
     }
-
     if (!formData.gst.trim()) {
       newErrors.gst = 'GST number is required'
     } else if (!validateGST(formData.gst)) {
       newErrors.gst = 'Invalid GST number. Format: 2 digits + 11 alphanumeric + Z + 1 digit (15 characters total)'
     }
-
     if (!formData.number_of_corporate_offices.trim()) {
       newErrors.number_of_corporate_offices = 'Number of Corporate Offices is required'
-    } else if (!/^\d+$/.test(formData.number_of_corporate_offices) || parseInt(formData.number_of_corporate_offices) < 0) {
+    } else if (!/^\d+$/.test(formData.number_of_corporate_offices) || parseInt(formData.number_of_corporate_offices, 10) < 0) {
       newErrors.number_of_corporate_offices = 'Must be a positive number'
     }
-
     if (!formData.number_of_factory_units.trim()) {
       newErrors.number_of_factory_units = 'Number of Factory Unit/Warehouse/Other Facilities is required'
-    } else if (!/^\d+$/.test(formData.number_of_factory_units) || parseInt(formData.number_of_factory_units) < 0) {
+    } else if (!/^\d+$/.test(formData.number_of_factory_units) || parseInt(formData.number_of_factory_units, 10) < 0) {
       newErrors.number_of_factory_units = 'Must be a positive number'
     }
-
-    if (!formData.company_coordinator_email.trim()) {
-      newErrors.company_coordinator_email = 'Company coordinator email is required'
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.company_coordinator_email)) {
-      newErrors.company_coordinator_email = 'Invalid email format'
-    }
-
-    if (companyUnits.length === 0) {
-      newErrors.company_units = 'At least one company unit is required'
-    }
+    if (companyUnits.length === 0) newErrors.company_units = 'At least one company unit is required'
 
     companyUnits.forEach((unit, index) => {
       if (!unit.unit_name.trim()) {
@@ -241,16 +163,14 @@ function CompanyCreation() {
     return Object.keys(newErrors).length === 0
   }
 
-  const createCompany = async (mappedUnitIndexes) => {
+  const createCompany = async () => {
     setLoading(true)
     setError('')
 
     try {
       const response = await fetch(apiUrl('/api/siteadmin/companies/create'), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
           company_name: formData.company_name,
@@ -261,13 +181,11 @@ function CompanyCreation() {
           pan: formData.pan,
           number_of_corporate_offices: formData.number_of_corporate_offices,
           number_of_factory_units: formData.number_of_factory_units,
-          company_coordinator_email: formData.company_coordinator_email.trim(),
-          company_coordinator_unit_indexes: mappedUnitIndexes,
           company_units: companyUnits.map((unit) => ({
             unit_name: unit.unit_name.trim(),
-            unit_address: unit.unit_address.trim()
-          }))
-        })
+            unit_address: unit.unit_address.trim(),
+          })),
+        }),
       })
 
       const data = await response.json()
@@ -288,46 +206,12 @@ function CompanyCreation() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
-    if (!validateForm()) {
-      return
-    }
-
-    setError('')
-    setCoordinatorUnitIndexes([])
-    setUnitMappingOpen(true)
-  }
-
-  const handleToggleCoordinatorUnit = (index) => {
-    setCoordinatorUnitIndexes(prev =>
-      prev.includes(index)
-        ? prev.filter((unitIndex) => unitIndex !== index)
-        : [...prev, index].sort((a, b) => a - b)
-    )
-  }
-
-  const handleConfirmUnitMapping = async () => {
-    if (coordinatorUnitIndexes.length === 0) {
-      setError('Select at least one unit for the company coordinator.')
-      return
-    }
-
-    setUnitMappingOpen(false)
-    await createCompany(coordinatorUnitIndexes)
+    if (!validateForm()) return
+    await createCompany()
   }
 
   return (
-    <Box
-      sx={{
-        width: '100%',
-        maxWidth: '100%',
-        minWidth: 0,
-        mx: 0,
-        px: 0,
-        py: { xs: 2, sm: 3 },
-        boxSizing: 'border-box',
-      }}
-    >
+    <Box sx={{ width: '100%', maxWidth: '100%', minWidth: 0, mx: 0, px: 0, py: { xs: 2, sm: 3 }, boxSizing: 'border-box' }}>
       <Card
         elevation={isDark ? 2 : 3}
         sx={{
@@ -336,131 +220,36 @@ function CompanyCreation() {
           borderRadius: 2,
           border: 1,
           borderColor: 'divider',
-          ...(isDark && {
-            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.35)',
-          }),
+          ...(isDark && { boxShadow: '0 4px 24px rgba(0, 0, 0, 0.35)' }),
         }}
       >
         <CardContent sx={{ p: { xs: 2, sm: 3 }, '&:last-child': { pb: { xs: 2, sm: 3 } } }}>
-          <Typography
-            variant="h4"
-            component="h1"
-            sx={{
-              fontWeight: 700,
-              mb: 1,
-              textAlign: 'left',
-              color: 'text.primary',
-              letterSpacing: '-0.02em',
-            }}
-          >
+          <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 1, textAlign: 'left', color: 'text.primary', letterSpacing: '-0.02em' }}>
             Create Company
           </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ textAlign: 'left', mb: 3 }}
-          >
-            Add a new company profile. Fields marked with an asterisk are required.
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'left', mb: 3 }}>
+            Add a new company profile. Coordinator and approver assignments can be configured after the company is created.
           </Typography>
 
-          <Box
-            component="form"
-            onSubmit={handleSubmit}
-            sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, width: '100%' }}
-          >
+          <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, width: '100%' }}>
             <Box sx={twoColRowSx}>
-              <TextField
-                id="company_name"
-                name="company_name"
-                label="Company Name"
-                variant="filled"
-                value={formData.company_name}
-                onChange={handleChange}
-                required
-                disabled={loading}
-                placeholder="Enter company name"
-                error={!!errors.company_name}
-                helperText={errors.company_name}
-                fullWidth
-              />
-              <TextField
-                id="registered_email"
-                name="registered_email"
-                label="Registered Email"
-                type="email"
-                variant="filled"
-                value={formData.registered_email}
-                onChange={handleChange}
-                required
-                disabled={loading}
-                placeholder="Enter registered email"
-                error={!!errors.registered_email}
-                helperText={errors.registered_email}
-                fullWidth
-              />
+              <TextField id="company_name" name="company_name" label="Company Name" variant="filled" value={formData.company_name} onChange={handleChange} required disabled={loading} placeholder="Enter company name" error={!!errors.company_name} helperText={errors.company_name} fullWidth />
+              <TextField id="registered_email" name="registered_email" label="Registered Email" type="email" variant="filled" value={formData.registered_email} onChange={handleChange} required disabled={loading} placeholder="Enter registered email" error={!!errors.registered_email} helperText={errors.registered_email} fullWidth />
             </Box>
 
-            <Box
-              sx={{
-                width: '100%',
-                pt: 2.5,
-                borderTop: 1,
-                borderColor: 'divider',
-              }}
-            >
-              <TextField
-                id="registered_address"
-                name="registered_address"
-                label="Registered Address"
-                variant="filled"
-                value={formData.registered_address}
-                onChange={handleChange}
-                required
-                disabled={loading}
-                multiline
-                minRows={3}
-                placeholder="Enter registered address"
-                error={!!errors.registered_address}
-                helperText={errors.registered_address}
-                fullWidth
-              />
+            <Box sx={{ width: '100%', pt: 2.5, borderTop: 1, borderColor: 'divider' }}>
+              <TextField id="registered_address" name="registered_address" label="Registered Address" variant="filled" value={formData.registered_address} onChange={handleChange} required disabled={loading} multiline minRows={3} placeholder="Enter registered address" error={!!errors.registered_address} helperText={errors.registered_address} fullWidth />
             </Box>
 
-            <Box
-              sx={{
-                width: '100%',
-                pt: 2.5,
-                borderTop: 1,
-                borderColor: 'divider',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 1.5,
-              }}
-            >
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 1.5,
-                }}
-              >
+            <Box sx={{ width: '100%', pt: 2.5, borderTop: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5 }}>
                 <Box>
-                  <Typography sx={{ fontWeight: 700, color: 'text.primary' }}>
-                    Company Units
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Add one or more company units. Unit address is optional.
-                  </Typography>
+                  <Typography sx={{ fontWeight: 700, color: 'text.primary' }}>Company Units</Typography>
+                  <Typography variant="body2" color="text.secondary">Add one or more company units. Unit address is optional.</Typography>
                 </Box>
                 <Tooltip title="Add unit">
                   <span>
-                    <IconButton
-                      color="primary"
-                      onClick={handleAddUnit}
-                      disabled={loading}
-                      aria-label="Add company unit"
-                    >
+                    <IconButton color="primary" onClick={handleAddUnit} disabled={loading} aria-label="Add company unit">
                       <AddIcon />
                     </IconButton>
                   </span>
@@ -504,13 +293,7 @@ function CompanyCreation() {
                   />
                   <Tooltip title={companyUnits.length === 1 ? 'At least one unit is required' : 'Remove unit'}>
                     <span>
-                      <IconButton
-                        color="error"
-                        onClick={() => handleRemoveUnit(index)}
-                        disabled={loading || companyUnits.length === 1}
-                        aria-label={`Remove company unit ${index + 1}`}
-                        sx={{ mt: 1 }}
-                      >
+                      <IconButton color="error" onClick={() => handleRemoveUnit(index)} disabled={loading || companyUnits.length === 1} aria-label={`Remove company unit ${index + 1}`} sx={{ mt: 1 }}>
                         <DeleteIcon />
                       </IconButton>
                     </span>
@@ -526,21 +309,7 @@ function CompanyCreation() {
             </Box>
 
             <Box sx={twoColRowSx}>
-              <TextField
-                id="unique_identification_number"
-                name="unique_identification_number"
-                label="Unique Identification Number"
-                type="number"
-                variant="filled"
-                value={formData.unique_identification_number}
-                onChange={handleChange}
-                required
-                disabled={loading}
-                placeholder="Enter unique identification number"
-                error={!!errors.unique_identification_number}
-                helperText={errors.unique_identification_number}
-                fullWidth
-              />
+              <TextField id="unique_identification_number" name="unique_identification_number" label="Unique Identification Number" type="number" variant="filled" value={formData.unique_identification_number} onChange={handleChange} required disabled={loading} placeholder="Enter unique identification number" error={!!errors.unique_identification_number} helperText={errors.unique_identification_number} fullWidth />
               <TextField
                 id="gst"
                 name="gst"
@@ -553,23 +322,10 @@ function CompanyCreation() {
                 inputProps={{ maxLength: 15, style: { textTransform: 'uppercase' } }}
                 placeholder="Enter GST number (15 characters)"
                 error={!!errors.gst}
-                helperText={
-                  errors.gst ||
-                  (formData.gst && formData.gst.length === 15 && !errors.gst
-                    ? 'Valid GST format'
-                    : '')
-                }
-                FormHelperTextProps={
-                  formData.gst && formData.gst.length === 15 && !errors.gst
-                    ? { sx: { color: 'success.main' } }
-                    : undefined
-                }
+                helperText={errors.gst || (formData.gst && formData.gst.length === 15 && !errors.gst ? 'Valid GST format' : '')}
+                FormHelperTextProps={formData.gst && formData.gst.length === 15 && !errors.gst ? { sx: { color: 'success.main' } } : undefined}
                 fullWidth
-                sx={{
-                  '& input': {
-                    textTransform: 'uppercase',
-                  },
-                }}
+                sx={{ '& input': { textTransform: 'uppercase' } }}
               />
             </Box>
 
@@ -585,161 +341,30 @@ function CompanyCreation() {
                 placeholder="Auto-filled from GST"
                 fullWidth
                 sx={{
-                  '& input': {
-                    textTransform: 'uppercase',
-                  },
-                  '& .MuiInputBase-root.Mui-disabled': {
-                    bgcolor: 'action.hover',
-                  },
+                  '& input': { textTransform: 'uppercase' },
+                  '& .MuiInputBase-root.Mui-disabled': { bgcolor: 'action.hover' },
                 }}
               />
-              <TextField
-                id="company_coordinator_email"
-                name="company_coordinator_email"
-                label="Company Coordinator Email"
-                type="email"
-                variant="filled"
-                value={formData.company_coordinator_email}
-                onChange={handleChange}
-                required
-                disabled={loading}
-                placeholder="Enter company coordinator email"
-                error={!!errors.company_coordinator_email}
-                helperText={errors.company_coordinator_email}
-                fullWidth
-              />
+              <TextField id="number_of_corporate_offices" name="number_of_corporate_offices" label="Number of Corporate Offices" type="number" variant="filled" value={formData.number_of_corporate_offices} onChange={handleChange} required disabled={loading} inputProps={{ min: 0 }} placeholder="Enter number of corporate offices" error={!!errors.number_of_corporate_offices} helperText={errors.number_of_corporate_offices} fullWidth />
             </Box>
 
             <Box sx={twoColRowSx}>
-              <TextField
-                id="number_of_corporate_offices"
-                name="number_of_corporate_offices"
-                label="Number of Corporate Offices"
-                type="number"
-                variant="filled"
-                value={formData.number_of_corporate_offices}
-                onChange={handleChange}
-                required
-                disabled={loading}
-                inputProps={{ min: 0 }}
-                placeholder="Enter number of corporate offices"
-                error={!!errors.number_of_corporate_offices}
-                helperText={errors.number_of_corporate_offices}
-                fullWidth
-              />
-              <TextField
-                id="number_of_factory_units"
-                name="number_of_factory_units"
-                label="Number of Factory Unit/Warehouse/Other Facilities"
-                type="number"
-                variant="filled"
-                value={formData.number_of_factory_units}
-                onChange={handleChange}
-                required
-                disabled={loading}
-                inputProps={{ min: 0 }}
-                placeholder="Enter number of factory units/warehouse/other facilities"
-                error={!!errors.number_of_factory_units}
-                helperText={errors.number_of_factory_units}
-                fullWidth
-              />
+              <TextField id="number_of_factory_units" name="number_of_factory_units" label="Number of Factory Unit/Warehouse/Other Facilities" type="number" variant="filled" value={formData.number_of_factory_units} onChange={handleChange} required disabled={loading} inputProps={{ min: 0 }} placeholder="Enter number of factory units/warehouse/other facilities" error={!!errors.number_of_factory_units} helperText={errors.number_of_factory_units} fullWidth />
+              <Box />
             </Box>
 
-            {error && (
-              <Alert severity="error" sx={{ mt: 0.5 }}>
-                {error}
-              </Alert>
-            )}
+            {error && <Alert severity="error" sx={{ mt: 0.5 }}>{error}</Alert>}
 
             <Box sx={{ display: 'flex', justifyContent: 'flex-start', pt: 0.5 }}>
-              <Button
-                type="submit"
-                size="medium"
-                disabled={loading}
-                variant="contained"
-                color="primary"
-                sx={{
-                  py: 0.5,
-                  px: 2,
-                  minHeight: 36,
-                  fontSize: theme.typography.customSizes.medium,
-                  fontWeight: 600,
-                }}
-              >
+              <Button type="submit" size="medium" disabled={loading} variant="contained" color="primary" sx={{ py: 0.5, px: 2, minHeight: 36, fontSize: theme.typography.customSizes.medium, fontWeight: 600 }}>
                 {loading ? 'Creating...' : 'Create Company'}
               </Button>
             </Box>
           </Box>
-          </CardContent>
-        </Card>
-        <Dialog
-          open={unitMappingOpen}
-          onClose={() => !loading && setUnitMappingOpen(false)}
-          fullWidth
-          maxWidth="sm"
-        >
-          <DialogTitle>Map Company Coordinator</DialogTitle>
-          <DialogContent dividers>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Select at least one unit for Company Coordinator : {formData.company_coordinator_email.trim()}.
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {companyUnits.map((unit, index) => (
-                <FormControlLabel
-                  key={`coordinator-unit-map-${index}`}
-                  control={
-                    <Checkbox
-                      checked={coordinatorUnitIndexes.includes(index)}
-                      onChange={() => handleToggleCoordinatorUnit(index)}
-                      disabled={loading}
-                    />
-                  }
-                  label={
-                    <Box>
-                      <Typography sx={{ fontWeight: 600 }}>
-                        {unit.unit_name.trim() || `Unit ${index + 1}`}
-                      </Typography>
-                      {unit.unit_address.trim() && (
-                        <Typography variant="caption" color="text.secondary">
-                          {unit.unit_address.trim()}
-                        </Typography>
-                      )}
-                    </Box>
-                  }
-                  sx={{
-                    m: 0,
-                    px: 1,
-                    py: 0.75,
-                    border: 1,
-                    borderColor: coordinatorUnitIndexes.includes(index) ? 'primary.main' : 'divider',
-                    borderRadius: 1,
-                    alignItems: 'flex-start',
-                  }}
-                />
-              ))}
-            </Box>
-            {error && (
-              <Alert severity="error" sx={{ mt: 2 }}>
-                {error}
-              </Alert>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setUnitMappingOpen(false)} disabled={loading}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleConfirmUnitMapping}
-              variant="contained"
-              disabled={loading || coordinatorUnitIndexes.length === 0}
-            >
-              {loading ? 'Creating...' : 'Create Company'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </Box>
+        </CardContent>
+      </Card>
+    </Box>
   )
 }
 
 export default CompanyCreation
-

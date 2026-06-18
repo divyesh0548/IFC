@@ -22,25 +22,47 @@ model Company {
   createdAt                  DateTime? @map("created_at") @db.Timestamp(6)
   users                      IfcUser[]
   companyUnits               CompanyUnitMaster[]
+  unitResponsibilities       CompanyUnitResponsibility[]
   controlForms               ControlForm[]
   businessProcesses          BusinessProcessMaster[]
 
   @@map("companies")
 }
 
+enum UnitResponsibilityType {
+  COORDINATOR
+  APPROVER
+}
+
 model CompanyUnitMaster {
-  id                 Int      @id @default(autoincrement())
-  companyIdentifier  String?  @map("company_identifier") @db.VarChar(255)
-  unitName           String?  @map("unit_name") @db.VarChar(255)
-  unitAddress        String?  @map("unit_address")
-  unitId             String?  @unique @map("unit_id") @db.VarChar(255)
-  coordinatorEmailId String?  @map("coordinator_email_id") @db.VarChar(255)
-  approverEmailId    String?  @map("approver_email_id") @db.VarChar(255)
-  controlForms       ControlForm[]
+  id                   Int                         @id @default(autoincrement())
+  companyIdentifier    String?                     @map("company_identifier") @db.VarChar(255)
+  unitName             String?                     @map("unit_name") @db.VarChar(255)
+  unitAddress          String?                     @map("unit_address")
+  unitId               String?                     @map("unit_id") @db.VarChar(255)
+  controlForms         ControlForm[]
+  responsibilities     CompanyUnitResponsibility[]
 
   company Company? @relation(fields: [companyIdentifier], references: [companyIdentifier], onDelete: SetNull, onUpdate: Cascade)
 
+  @@unique([companyIdentifier, unitId])
   @@map("company_unit_master")
+}
+
+model CompanyUnitResponsibility {
+  id                 Int                    @id @default(autoincrement())
+  companyIdentifier  String                 @map("company_identifier") @db.VarChar(255)
+  unitId             String                 @map("unit_id") @db.VarChar(255)
+  userEmailId        String                 @map("user_email_id") @db.VarChar(255)
+  responsibilityType UnitResponsibilityType @map("responsibility_type")
+  createdAt          DateTime?              @default(dbgenerated("CURRENT_TIMESTAMP")) @map("created_at") @db.Timestamp(6)
+
+  company Company           @relation(fields: [companyIdentifier], references: [companyIdentifier], onDelete: Cascade, onUpdate: Cascade)
+  unit    CompanyUnitMaster @relation(fields: [companyIdentifier, unitId], references: [companyIdentifier, unitId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([companyIdentifier, unitId, responsibilityType])
+  @@index([companyIdentifier, userEmailId, responsibilityType])
+  @@map("company_unit_responsibilities")
 }
 
 model IfcUser {
@@ -128,7 +150,7 @@ model ControlForm {
   controlsReminder           ControlsReminder?
 
   company Company?            @relation(fields: [companyIdentifier], references: [companyIdentifier], onDelete: SetNull, onUpdate: Cascade)
-  unit    CompanyUnitMaster?  @relation(fields: [unitId], references: [unitId], onDelete: SetNull, onUpdate: Cascade)
+  unit    CompanyUnitMaster?  @relation(fields: [companyIdentifier, unitId], references: [companyIdentifier, unitId], onDelete: SetNull, onUpdate: Cascade)
 
   @@unique([companyIdentifier, controlNumber])
   @@map("control_forms")

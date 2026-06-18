@@ -1,7 +1,7 @@
 import './index.css'
 import { useEffect, useState, lazy, Suspense } from 'react'
 import { Navigate, Routes, Route, useLocation } from 'react-router-dom'
-import { useTheme } from '@mui/material/styles'
+import { alpha, useTheme } from '@mui/material/styles'
 import LinearProgress from '@mui/material/LinearProgress'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -19,6 +19,7 @@ const UpdatePassword = lazy(() => import('./pages/UpdatePassword'))
 const Company_Management = lazy(() => import('./pages/siteadmin/Company_Management'))
 const CompanyCreation = lazy(() => import('./pages/siteadmin/CompanyCreation'))
 const CompanyDetail = lazy(() => import('./pages/siteadmin/CompanyDetail'))
+const CompanyUnitManagement = lazy(() => import('./pages/siteadmin/CompanyUnitManagement'))
 const AuditorManagement = lazy(() => import('./pages/siteadmin/AuditorManagement'))
 const Siteadmin_Dashboard = lazy(() => import('./pages/siteadmin/Siteadmin_dashboard'))
 const SiteadminBusinessProcessManagement = lazy(() => import('./pages/siteadmin/BusinessProcessManagement'))
@@ -185,6 +186,8 @@ function RouteFallbackRedirect() {
 }
 
 function App() {
+  const theme = useTheme()
+
   useEffect(() => {
     installGlobalAuthSessionHandler()
   }, [])
@@ -193,7 +196,30 @@ function App() {
     <GlobalLoadingProvider>
       <GlobalLoadingStrip />
       <div className='scrollbar'>
-        <Toaster />
+        <Toaster
+          toastOptions={{
+            style: {
+              width: 'max-content',
+              minWidth: '150px',
+              maxWidth: 'min(92vw, 960px)',
+              whiteSpace: 'nowrap',
+              backgroundColor:
+                theme.palette.mode === 'dark'
+                  ? alpha(theme.palette.background.paper, 0.96)
+                  : alpha(theme.palette.background.paper, 0.98),
+              color: theme.palette.text.primary,
+              border: `1px solid ${
+                theme.palette.mode === 'dark'
+                  ? 'rgba(255,255,255,0.10)'
+                  : 'rgba(15,23,42,0.08)'
+              }`,
+              boxShadow:
+                theme.palette.mode === 'dark'
+                  ? '0 10px 28px rgba(0,0,0,0.28)'
+                  : '0 10px 28px rgba(15,23,42,0.10)',
+            },
+          }}
+        />
         <Suspense fallback={<RouteLoadingFallback />}>
           <Routes>
             <Route path="/" element={<Home />} />
@@ -226,6 +252,7 @@ function App() {
               <Route path="create-company" element={<CompanyCreation />} />
               <Route path="business-processes" element={<SiteadminBusinessProcessManagement />} />
               <Route path="company/:company_identifier" element={<CompanyDetail />} />
+              <Route path="company/:company_identifier/unit-management" element={<CompanyUnitManagement />} />
               <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.siteadmin} replace />} />
             </Route>
 

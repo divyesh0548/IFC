@@ -1,6 +1,7 @@
 const { pool } = require('./db');
 const { sendEmail } = require('./send_email');
 const { getCcEmailsForRacm } = require('./racm_cc_recipients');
+const { UNIT_RESPONSIBILITY_TYPES } = require('./unit_responsibilities');
 
 function formatDueDateDisplay(dueDate) {
   if (!dueDate) return 'Not specified';
@@ -123,8 +124,12 @@ const RACM_STATUS_EMAIL_SELECT = `
   LEFT JOIN company_unit_master cum
     ON cum.company_identifier = cf.company_identifier
    AND cum.unit_id = cf.unit_id
+  LEFT JOIN company_unit_responsibilities coordinator_map
+    ON coordinator_map.company_identifier = cf.company_identifier
+   AND coordinator_map.unit_id = cf.unit_id
+   AND coordinator_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
   LEFT JOIN ifc_users coordinator
-    ON LOWER(TRIM(coordinator.email_id)) = LOWER(TRIM(COALESCE(cum.coordinator_email_id, '')))
+    ON LOWER(TRIM(coordinator.email_id)) = LOWER(TRIM(COALESCE(coordinator_map.user_email_id, '')))
    AND coordinator.company_identifier = cf.company_identifier
   LEFT JOIN companies c
     ON c.company_identifier = cf.company_identifier

@@ -1,5 +1,6 @@
 const { pool } = require('../../utils/db');
 const { attachControlFormDocuments } = require('../../utils/racm_documents');
+const { UNIT_RESPONSIBILITY_TYPES } = require('../../utils/unit_responsibilities');
 
 async function getHomeStats(req, res) {
   try {
@@ -55,16 +56,24 @@ async function getCompanies(req, res) {
             cum.unit_id,
             cum.unit_name,
             cum.unit_address,
-            cum.coordinator_email_id,
-            COALESCE(NULLIF(TRIM(coordinator.emp_name), ''), NULLIF(TRIM(cum.coordinator_email_id), '')) AS coordinator_display_name,
-            cum.approver_email_id,
-            COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(cum.approver_email_id), '')) AS approver_display_name
+            coordinator_map.user_email_id AS coordinator_email_id,
+            COALESCE(NULLIF(TRIM(coordinator.emp_name), ''), NULLIF(TRIM(coordinator_map.user_email_id), '')) AS coordinator_display_name,
+            approver_map.user_email_id AS approver_email_id,
+            COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(approver_map.user_email_id), '')) AS approver_display_name
           FROM company_unit_master cum
+          LEFT JOIN company_unit_responsibilities coordinator_map
+            ON coordinator_map.company_identifier = cum.company_identifier
+           AND coordinator_map.unit_id = cum.unit_id
+           AND coordinator_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+          LEFT JOIN company_unit_responsibilities approver_map
+            ON approver_map.company_identifier = cum.company_identifier
+           AND approver_map.unit_id = cum.unit_id
+           AND approver_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
           LEFT JOIN ifc_users coordinator
-            ON LOWER(TRIM(coordinator.email_id)) = LOWER(TRIM(COALESCE(cum.coordinator_email_id, '')))
+            ON LOWER(TRIM(coordinator.email_id)) = LOWER(TRIM(COALESCE(coordinator_map.user_email_id, '')))
            AND coordinator.company_identifier = cum.company_identifier
           LEFT JOIN ifc_users approver
-            ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(cum.approver_email_id, '')))
+            ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.user_email_id, '')))
            AND approver.company_identifier = cum.company_identifier
           ORDER BY cum.company_identifier ASC, cum.id ASC
         `

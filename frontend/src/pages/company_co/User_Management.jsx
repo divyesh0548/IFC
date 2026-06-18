@@ -616,11 +616,11 @@ function UserManagement() {
       const invalidEmailCount = invalidEmails.length
 
       const logs = [
-        `Users created successfully: ${createdCount}`,
-        `Rows skipped (empty Email ID): ${missingEmailCount}`,
-        `Rows skipped (user already exists): ${duplicateCount}`,
-        `Rows skipped (invalid email format): ${invalidEmailCount}`,
-      ]
+        createdCount > 0 ? `Users created successfully: ${createdCount}` : null,
+        missingEmailCount > 0 ? `Rows skipped (empty Email ID): ${missingEmailCount}` : null,
+        duplicateCount > 0 ? `Rows skipped (user already exists): ${duplicateCount}` : null,
+        invalidEmailCount > 0 ? `Rows skipped (invalid email format): ${invalidEmailCount}` : null,
+      ].filter(Boolean)
       setBulkUploadLogs(logs)
       setShowBulkLogsButton(true)
       toast.success('Bulk upload completed. Click "Logs !" to view details.')
@@ -958,10 +958,10 @@ function UserManagement() {
   const headCellSx = {
     ...bodyCellSx,
     py: 1.7,
-    fontSize: '0.92rem',
-    fontWeight: 800,
+    fontSize: '0.84rem',
+    fontWeight: 700,
     textTransform: 'uppercase',
-    letterSpacing: '0.05em',
+    letterSpacing: '0.04em',
     color: 'text.secondary',
     backgroundColor: TABLE_HEADER_BG,
   }
@@ -1116,6 +1116,14 @@ function UserManagement() {
             border: `1px solid ${tableBorderColor}`,
             borderRadius: 1.5,
             overflow: 'hidden',
+            backgroundColor:
+              theme.palette.mode === 'dark'
+                ? alpha(theme.palette.background.paper, 0.96)
+                : alpha(theme.palette.background.paper, 0.92),
+            boxShadow:
+              theme.palette.mode === 'dark'
+                ? '0 10px 24px rgba(0, 0, 0, 0.16)'
+                : '0 10px 24px rgba(15, 23, 42, 0.05)',
           }}
         >
           <Table

@@ -291,35 +291,33 @@ function DashboardLayout() {
         aria-describedby="logout-dialog-description"
         PaperProps={{
           sx: {
-            borderRadius: 2,
             minWidth: { xs: '90%', sm: '400px' },
-            boxShadow:
-              theme.palette.mode === 'dark'
-                ? '0 8px 32px rgba(0, 0, 0, 0.4)'
-                : '0 8px 32px rgba(0, 0, 0, 0.12)',
           },
         }}
       >
         <DialogTitle
           id="logout-dialog-title"
           sx={{
-            pb: 2.5,
-            pt: 3,
-            px: 3,
-            fontWeight: 600,
-            fontSize: '1.25rem',
-            color: theme.palette.text.primary,
+            borderBottom: 0,
           }}
         >
           Confirm Logout
         </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+        <DialogContent
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            px: 3,
+            pt: 2.75,
+            pb: 2.25,
+          }}
+        >
           <DialogContentText
             id="logout-dialog-description"
             sx={{
               color: theme.palette.text.secondary,
               fontSize: '0.9375rem',
-              lineHeight: 1.5,
+              lineHeight: 1.65,
               m: 0,
             }}
           >
@@ -329,11 +327,8 @@ function DashboardLayout() {
         <DialogActions
           sx={{
             px: 3,
-            pb: 3,
-            pt: 2.5,
-            gap: 1.5,
-            borderTop: '1px solid',
-            borderColor: 'divider',
+            pt: 2,
+            pb: 2.5,
           }}
         >
           <Button

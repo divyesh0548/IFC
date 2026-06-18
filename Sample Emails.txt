@@ -245,6 +245,49 @@ Sharp and Tannan Associates
 
 
 
+
+
+
+
+
+
+============================================== Deficiency Response Reminder (to process owner) ==================================
+
+Subject : Reminder: Deficiency response required – Order to Cash
+
+Body : 
+
+Dear user,
+
+This is a reminder that your RACM has been marked as Not Effective and requires a Deficiency Response.
+
+Control: Testing of process owner on excel file upload. Also reminder frequency
+Business Process: Order to Cash
+Financial Year: 2025-26
+Sub-Process: Estimation of requirements & Approval of budget
+Deficiency Description: Marking as not effective because need proactive measure in asset acquicition.
+
+Please submit a Deficiency Response by providing either a Mitigation Plan or a Compensatory RACM.
+
+Portal: http://localhost:5173/user/form/GJESDTVSFEAWR3Q
+
+Regards,
+Sharp and Tannan Associates
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 =============================== Deficiency Response Submission from Porcess Owner ============================
 
 Subject : Internal Financial Controls - Deficiency Response Submitted

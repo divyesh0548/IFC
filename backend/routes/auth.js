@@ -19,6 +19,7 @@ const {
   getMobileValidationError,
   normalizeMobileDigits,
 } = require('../utils/mobile_validation');
+const { getResponsibilityTypeForRole } = require('../utils/unit_responsibilities');
 
 const router = express.Router();
 
@@ -62,16 +63,17 @@ async function hasUnitAssignmentForPrivilegedUser(user) {
     return true;
   }
 
-  const columnName = normalizedRole === 'company_co' ? 'coordinator_email_id' : 'approver_email_id';
+  const responsibilityType = getResponsibilityTypeForRole(normalizedRole);
   const result = await pool.query(
     `
       SELECT 1
-      FROM company_unit_master
+      FROM company_unit_responsibilities
       WHERE company_identifier = $1
-        AND LOWER(TRIM(COALESCE(${columnName}, ''))) = $2
+        AND responsibility_type = $2
+        AND LOWER(TRIM(user_email_id)) = $3
       LIMIT 1
     `,
-    [companyIdentifier, emailId]
+    [companyIdentifier, responsibilityType, emailId]
   );
 
   return result.rows.length > 0;

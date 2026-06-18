@@ -205,6 +205,46 @@ function extractDataRows(worksheet, headers, headerLocation) {
   return dataRows
 }
 
+function getMeaningfulCellValues(row) {
+  return Object.values(row || {})
+    .map((value) => {
+      if (value === null || value === undefined) return ''
+      return String(value).replace(/\u00a0/g, ' ').trim()
+    })
+    .filter(Boolean)
+}
+
+function isEffectivelyEmptyTrailingRow(row, totalColumns) {
+  const meaningfulValues = getMeaningfulCellValues(row)
+  const meaningfulCount = meaningfulValues.length
+
+  if (meaningfulCount === 0) return true
+
+  // Be conservative: only treat a trailing row as empty-ish when it has
+  // negligible content compared to the expected column width.
+  const joinedLength = meaningfulValues.join(' ').length
+  if (meaningfulCount <= 2 && totalColumns >= 10 && joinedLength <= 12) {
+    return true
+  }
+
+  return false
+}
+
+function trimTrailingEmptyRows(rows) {
+  const nextRows = Array.isArray(rows) ? [...rows] : []
+  const totalColumns = nextRows[0] ? Object.keys(nextRows[0]).length : 0
+
+  while (nextRows.length > 0) {
+    const lastRow = nextRows[nextRows.length - 1]
+    if (!isEffectivelyEmptyTrailingRow(lastRow, totalColumns)) {
+      break
+    }
+    nextRows.pop()
+  }
+
+  return nextRows
+}
+
 function parseSheet(worksheet, sheetName, options = {}) {
   if (!worksheet['!ref']) {
     return []
@@ -214,7 +254,7 @@ function parseSheet(worksheet, sheetName, options = {}) {
     ? findManualHeaderRow(worksheet, options.headerRowNumber)
     : findHeaderRow(worksheet)
   const headers = extractHeaders(worksheet, headerLocation)
-  const dataRows = extractDataRows(worksheet, headers, headerLocation)
+  const dataRows = trimTrailingEmptyRows(extractDataRows(worksheet, headers, headerLocation))
 
   if (dataRows.length === 0) {
     return []

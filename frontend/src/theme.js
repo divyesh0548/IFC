@@ -98,9 +98,60 @@ const radiusComponentOverrides = {
   },
   MuiDialog: {
     styleOverrides: {
-      paper: {
+      paper: ({ theme }) => ({
         borderRadius: APP_SHAPE.dialog,
-      },
+        border: `1px solid ${alpha(theme.palette.divider, theme.palette.mode === 'dark' ? 0.75 : 0.95)}`,
+        boxShadow:
+          theme.palette.mode === 'dark'
+            ? '0 20px 48px rgba(0, 0, 0, 0.36)'
+            : '0 20px 48px rgba(15, 23, 42, 0.14)',
+        overflow: 'hidden',
+      }),
+    },
+  },
+  MuiDialogTitle: {
+    styleOverrides: {
+      root: ({ theme }) => ({
+        paddingTop: theme.spacing(3),
+        paddingRight: theme.spacing(3),
+        paddingBottom: theme.spacing(2.5),
+        paddingLeft: theme.spacing(3),
+        borderBottom: `1px solid ${theme.palette.divider}`,
+        fontSize: '1.18rem',
+        fontWeight: 700,
+        lineHeight: 1.3,
+        color: theme.palette.text.primary,
+      }),
+    },
+  },
+  MuiDialogContent: {
+    styleOverrides: {
+      root: ({ theme }) => ({
+        paddingTop: theme.spacing(3),
+        paddingRight: theme.spacing(3),
+        paddingBottom: theme.spacing(3),
+        paddingLeft: theme.spacing(3),
+      }),
+      dividers: ({ theme }) => ({
+        paddingTop: theme.spacing(3),
+        paddingRight: theme.spacing(3),
+        paddingBottom: theme.spacing(3),
+        paddingLeft: theme.spacing(3),
+        borderTop: 0,
+        borderBottom: 0,
+      }),
+    },
+  },
+  MuiDialogActions: {
+    styleOverrides: {
+      root: ({ theme }) => ({
+        paddingTop: theme.spacing(2.5),
+        paddingRight: theme.spacing(3),
+        paddingBottom: theme.spacing(3),
+        paddingLeft: theme.spacing(3),
+        gap: theme.spacing(1.5),
+        borderTop: `1px solid ${theme.palette.divider}`,
+      }),
     },
   },
   MuiAlert: {

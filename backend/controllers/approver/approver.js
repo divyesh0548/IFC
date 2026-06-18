@@ -14,6 +14,7 @@ const {
   seedIneffectiveReminderDatetime,
   isNotEffectiveConclusion,
 } = require('../../utils/controls_reminder');
+const { UNIT_RESPONSIBILITY_TYPES } = require('../../utils/unit_responsibilities');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -37,9 +38,13 @@ async function getApproverMappedUnits(approverEmail) {
         cum.unit_name,
         cum.unit_address
       FROM company_unit_master cum
+      INNER JOIN company_unit_responsibilities cur
+        ON cur.company_identifier = cum.company_identifier
+       AND cur.unit_id = cum.unit_id
+       AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
       LEFT JOIN companies c
         ON c.company_identifier = cum.company_identifier
-      WHERE LOWER(TRIM(COALESCE(cum.approver_email_id, ''))) = LOWER(TRIM($1))
+      WHERE LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM($1))
       ORDER BY c.company_name NULLS LAST, cum.unit_name NULLS LAST, cum.unit_id
     `,
     [approverEmail]
@@ -53,7 +58,11 @@ function scopedApproverRacmJoin(alias = 'cf') {
     INNER JOIN company_unit_master approver_units
       ON approver_units.company_identifier = ${alias}.company_identifier
      AND approver_units.unit_id = ${alias}.unit_id
-     AND LOWER(TRIM(COALESCE(approver_units.approver_email_id, ''))) = LOWER(TRIM($1))
+    INNER JOIN company_unit_responsibilities approver_assignments
+      ON approver_assignments.company_identifier = ${alias}.company_identifier
+     AND approver_assignments.unit_id = ${alias}.unit_id
+     AND approver_assignments.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+     AND LOWER(TRIM(approver_assignments.user_email_id)) = LOWER(TRIM($1))
   `;
 }
 
@@ -227,11 +236,15 @@ async function getHomeStats(req, res) {
         `
           SELECT COUNT(DISTINCT u.id)::int AS count
           FROM company_unit_master cum
+          INNER JOIN company_unit_responsibilities cur
+            ON cur.company_identifier = cum.company_identifier
+           AND cur.unit_id = cum.unit_id
+           AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
           INNER JOIN ifc_users u
             ON u.company_identifier = cum.company_identifier
            AND u.unit_id = cum.unit_id
            AND u.role = 'user'
-          WHERE LOWER(TRIM(COALESCE(cum.approver_email_id, ''))) = LOWER(TRIM($1))
+          WHERE LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM($1))
           ${unitFilterSql}
         `,
         scopedParams
@@ -476,10 +489,11 @@ async function approveForm(req, res) {
         WHERE form_id = $${paramIndex}
           AND EXISTS (
             SELECT 1
-            FROM company_unit_master approver_units
+            FROM company_unit_responsibilities approver_units
             WHERE approver_units.company_identifier = control_forms.company_identifier
               AND approver_units.unit_id = control_forms.unit_id
-              AND LOWER(TRIM(COALESCE(approver_units.approver_email_id, ''))) = LOWER(TRIM($${paramIndex + 1}))
+              AND approver_units.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+              AND LOWER(TRIM(approver_units.user_email_id)) = LOWER(TRIM($${paramIndex + 1}))
           )
         RETURNING *
       `;
@@ -646,10 +660,11 @@ async function changeApprovalDecision(req, res) {
          WHERE form_id = $3
            AND EXISTS (
              SELECT 1
-             FROM company_unit_master approver_units
+             FROM company_unit_responsibilities approver_units
              WHERE approver_units.company_identifier = control_forms.company_identifier
                AND approver_units.unit_id = control_forms.unit_id
-               AND LOWER(TRIM(COALESCE(approver_units.approver_email_id, ''))) = LOWER(TRIM($4))
+               AND approver_units.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+               AND LOWER(TRIM(approver_units.user_email_id)) = LOWER(TRIM($4))
            )
          RETURNING *`,
         [status, reasonFinal, form_id, approver.email_id]

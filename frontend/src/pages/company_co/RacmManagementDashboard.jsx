@@ -126,6 +126,7 @@ function RacmManagementDashboard() {
 
   useSyncGlobalLoading(loading)
   useSyncGlobalLoading(bulkUpdating)
+  useSyncGlobalLoading(setDueDateSubmitting)
   useSyncGlobalLoading(creatingMissingUsers)
   useSyncGlobalLoading(validatingSetActiveSelection)
   useSyncGlobalLoading(deleting)

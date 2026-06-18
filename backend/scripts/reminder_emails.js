@@ -19,6 +19,8 @@ const {
   formatDueDateForEmail,
 } = require('../utils/controls_reminder');
 
+const IST_CURRENT_DATE_SQL = `((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date)`;
+
 function isValidEmail(value) {
   const email = String(value || '').trim();
   if (!email) return false;
@@ -81,7 +83,7 @@ async function fetchFormsDueForReminder(client) {
     WHERE active = TRUE
       AND (status IS NULL OR TRIM(status) = '' OR status != 'Approved')
       AND due_date IS NOT NULL
-      AND CURRENT_DATE >= due_date
+      AND ${IST_CURRENT_DATE_SQL} >= due_date
       AND (
         cr.reminder_datetime IS NULL
         OR (

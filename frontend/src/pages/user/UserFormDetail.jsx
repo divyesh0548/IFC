@@ -484,7 +484,7 @@ function UserFormDetail() {
       String(formData?.approver_email_id || '').trim()
     )
     if (!hasApproverInfo) {
-      toast.error('Please select an approver before sending RACM for approval')
+      toast.error('Approval is not configured for this RACM')
       return
     }
 
@@ -1089,8 +1089,7 @@ function UserFormDetail() {
   // Check if status should hide conditional fields
   const shouldHideConditionalFields = !formData?.status || formData.status === '' || formData.status === 'sent for approval'
   
-  // Design & Implementation — same three fields as backend DESIGN_IMPLEMENTATION_GROUP_FIELDS (control_forms.js).
-  // API omits all three when every value is empty; if any has a value, API returns all three (show "-" for blanks).
+  // Design & Implementation fields should render only when they have a value.
   const groupedApproverFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
 
   const hasGroupedFieldValue = formData
@@ -2351,7 +2350,12 @@ function UserFormDetail() {
                   {hasGroupedFieldValue ? (
                     <Box>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        {groupedApproverFields.map((key) => {
+                        {groupedApproverFields
+                          .filter((key) => {
+                            const value = formData[key]
+                            return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
+                          })
+                          .map((key) => {
                           const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                           const value = formData[key]
                           const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''

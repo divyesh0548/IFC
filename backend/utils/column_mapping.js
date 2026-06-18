@@ -156,7 +156,7 @@ const columnPatterns = [
     priority: 1
   },
   {
-    keywords: ['key', 'control', 'yes', 'no'],
+    keywords: ['key', 'control', 'yes'],
     dbColumn: 'key_control',
     priority: 1
   },
