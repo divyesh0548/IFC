@@ -22,6 +22,7 @@ const {
   notifyDeficiencyResponseSubmitted,
   getCoordinatorEmailForUnit,
 } = require('../utils/deficiency_response_notifications');
+const { buildRacmDetailsSection } = require('../utils/racm_email_details');
 const {
   calculateSampleRequired,
   getSampleSizeByFrequency,
@@ -52,6 +53,10 @@ const {
   mapControlsReminderToApi,
 } = require('../utils/controls_reminder');
 const { UNIT_RESPONSIBILITY_TYPES } = require('../utils/unit_responsibilities');
+const {
+  resolveApproverForRacm,
+  getControlFormApproverDetails: resolveControlFormApproverDetails,
+} = require('../utils/approver_assignment_resolver');
 
 console.log('✅ control_forms.js module loaded successfully');
 
@@ -157,9 +162,12 @@ const VALID_RACM_ASSIGNMENT_EXISTS_SQL = `
   EXISTS (
     SELECT 1
     FROM ifc_users valid_owner
+    INNER JOIN user_unit_memberships valid_membership
+      ON valid_membership.company_identifier = valid_owner.company_identifier
+     AND LOWER(TRIM(valid_membership.user_email_id)) = LOWER(TRIM(valid_owner.email_id))
+     AND valid_membership.unit_id = cf.unit_id
     WHERE LOWER(TRIM(valid_owner.email_id)) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
       AND valid_owner.company_identifier = cf.company_identifier
-      AND NULLIF(TRIM(valid_owner.unit_id), '') = NULLIF(TRIM(cf.unit_id), '')
       AND valid_owner.role = 'user'
   )
 `;
@@ -173,8 +181,11 @@ const CONTROL_FORMS_LIST_FROM = `
   LEFT JOIN ifc_users u
     ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
    AND u.company_identifier = cf.company_identifier
-   AND NULLIF(TRIM(u.unit_id), '') = NULLIF(TRIM(cf.unit_id), '')
    AND u.role = 'user'
+  LEFT JOIN user_unit_memberships owner_membership
+    ON owner_membership.company_identifier = cf.company_identifier
+   AND owner_membership.unit_id = cf.unit_id
+   AND LOWER(TRIM(owner_membership.user_email_id)) = LOWER(TRIM(u.email_id))
 `;
 
 const CONTROL_FORMS_LIST_SELECT = `
@@ -215,11 +226,10 @@ function appendControlFormsListFilters(req, options, queryParts) {
     whereClause += `
       AND EXISTS (
         SELECT 1
-        FROM company_unit_responsibilities coordinator_units
+        FROM coordinator_unit_assignments coordinator_units
         WHERE coordinator_units.company_identifier = cf.company_identifier
           AND coordinator_units.unit_id = cf.unit_id
-          AND coordinator_units.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-          AND LOWER(TRIM(coordinator_units.user_email_id)) = LOWER(TRIM($${paramIndex}))
+          AND LOWER(TRIM(coordinator_units.coordinator_email_id)) = LOWER(TRIM($${paramIndex}))
       )
     `;
     queryParams.push(req.user.email_id);
@@ -486,24 +496,20 @@ function buildSentForApprovalEmail({
   const submittedBy = String(userDisplayName || '').trim() || 'User';
   const companyDisplayName = String(companyName || '').trim() || 'Sharp and Tannan Associates';
   const bp = String(businessProcess || '').trim();
-  const fy = String(financialYear || '').trim();
-  const controlDesc = String(standardControlDescription || '').trim();
-  const sp = String(subProcess || '').trim();
   const dueDateText = dueDate ? formatDueDateDisplay(dueDate) : '';
   const portalUrl = process.env.VITE_FRONTEND_URL || process.env.FRONTEND_URL || '';
-  const lines = [];
-  const pushIfPresent = (label, value) => {
-    const text = String(value || '').trim();
-    if (!text) return;
-    lines.push(`${label}: ${text}`);
-  };
-  pushIfPresent('Submitted by', submittedBy);
-  pushIfPresent('Business Process', bp);
-  pushIfPresent('Financial Year', fy);
-  pushIfPresent('Control Description', controlDesc);
-  pushIfPresent('Sub-Process', sp);
-  pushIfPresent('Due Date', dueDateText);
-  const detailsBlock = lines.join('\n\n');
+  const detailsBlock = buildRacmDetailsSection(
+    {
+      businessProcess,
+      financialYear,
+      standardControlDescription,
+    },
+    [
+      ['Submitted By', submittedBy],
+      ['Sub-Process', subProcess],
+      ['Due Date', dueDateText],
+    ]
+  );
   const subjectSuffix = bp || String(formId || '').trim() || 'RACM';
 
   return {
@@ -968,32 +974,7 @@ function isDatabaseConnectionError(error) {
 const MISSING_UNIT_APPROVER_MESSAGE = 'No approver is assigned for current company unit';
 
 async function getControlFormApproverDetails(clientOrPool, formId) {
-  const result = await clientOrPool.query(
-    `
-      SELECT
-        cf.form_id,
-        cf.control_owner,
-        cf.company_identifier,
-        cf.unit_id,
-        approver_map.user_email_id AS approver_email_id,
-        approver.id AS approver_user_id,
-        NULLIF(TRIM(approver.emp_name), '') AS approver_name,
-        approver.temp_login AS approver_temp_login,
-        COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(approver_map.user_email_id), '')) AS approver_display_name
-      FROM control_forms cf
-      LEFT JOIN company_unit_responsibilities approver_map
-        ON approver_map.company_identifier = cf.company_identifier
-       AND approver_map.unit_id = cf.unit_id
-       AND approver_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
-      LEFT JOIN ifc_users approver
-        ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.user_email_id, '')))
-      WHERE cf.form_id = $1
-      LIMIT 1
-    `,
-    [formId]
-  );
-
-  return result.rows[0] || null;
+  return resolveControlFormApproverDetails(clientOrPool, formId);
 }
 
 function isApproverAssigned(details) {
@@ -1365,11 +1346,10 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
       const unitResult = await client.query(
         `
           SELECT unit_id
-          FROM company_unit_responsibilities
+          FROM coordinator_unit_assignments
           WHERE company_identifier = $1
             AND unit_id = $2
-            AND responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-            AND LOWER(TRIM(user_email_id)) = LOWER(TRIM($3))
+            AND LOWER(TRIM(coordinator_email_id)) = LOWER(TRIM($3))
           LIMIT 1
         `,
         [companyIdentifier, unitId, coordinatorEmailId]
@@ -1676,23 +1656,41 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
         ${CONTROLS_REMINDER_SELECT_SQL},
         cum.unit_name,
         NULLIF(TRIM(owner.emp_name), '') AS control_owner_name,
-        approver_map.user_email_id AS approver_email_id,
+        approver_map.approver_email_id AS approver_email_id,
         NULLIF(TRIM(approver.emp_name), '') AS approver_name,
         approver.temp_login AS approver_temp_login,
-        COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(approver_map.user_email_id), '')) AS approver_display_name
+        COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(approver_map.approver_email_id), '')) AS approver_display_name
       FROM control_forms cf
       ${CONTROLS_REMINDER_JOIN_SQL}
       LEFT JOIN company_unit_master cum
         ON cum.unit_id = cf.unit_id
        AND cum.company_identifier = cf.company_identifier
-      LEFT JOIN company_unit_responsibilities approver_map
-        ON approver_map.company_identifier = cf.company_identifier
-       AND approver_map.unit_id = cf.unit_id
-       AND approver_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+      LEFT JOIN LATERAL (
+        SELECT aa.approver_email_id
+        FROM approver_assignments aa
+        WHERE aa.company_identifier = cf.company_identifier
+          AND (
+            (aa.assignment_scope = 'RACM' AND aa.form_id = cf.form_id)
+            OR (
+              aa.assignment_scope = 'BUSINESS_PROCESS'
+              AND aa.unit_id = cf.unit_id
+              AND LOWER(TRIM(aa.business_process)) = LOWER(TRIM(cf.business_process))
+            )
+            OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = cf.unit_id)
+          )
+        ORDER BY
+          CASE aa.assignment_scope
+            WHEN 'RACM' THEN 1
+            WHEN 'BUSINESS_PROCESS' THEN 2
+            WHEN 'UNIT' THEN 3
+            ELSE 4
+          END
+        LIMIT 1
+      ) approver_map ON TRUE
       LEFT JOIN ifc_users owner
         ON LOWER(TRIM(owner.email_id)) = LOWER(TRIM(cf.control_owner))
       LEFT JOIN ifc_users approver
-        ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.user_email_id, '')))
+        ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.approver_email_id, '')))
       WHERE cf.form_id = $1
     `;
     const result = await pool.query(query, [form_id]);
@@ -2115,17 +2113,13 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     const isNowSentForApproval = String(updatedRow?.status || '').trim().toLowerCase() === 'sent for approval';
     if (isNowSentForApproval && !wasSentForApproval && req.user?.role === 'user') {
       try {
-        const unitMeta = await prisma.companyUnitResponsibility.findFirst({
-          where: {
-            companyIdentifier: updatedRow.company_identifier || undefined,
-            unitId: updatedRow.unit_id || undefined,
-            responsibilityType: UNIT_RESPONSIBILITY_TYPES.APPROVER,
-          },
-          select: {
-            userEmailId: true,
-          },
+        const resolvedApprover = await resolveApproverForRacm(pool, {
+          companyIdentifier: updatedRow.company_identifier,
+          unitId: updatedRow.unit_id,
+          businessProcess: updatedRow.business_process,
+          formId: updatedRow.form_id,
         });
-        const approverEmail = String(unitMeta?.userEmailId || '').trim();
+        const approverEmail = String(resolvedApprover?.approver_email_id || '').trim();
         if (approverEmail) {
           const [approverUser, submitterUser, company] = await Promise.all([
             prisma.ifcUser.findFirst({
@@ -2300,23 +2294,41 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
           ${CONTROLS_REMINDER_SELECT_SQL},
           cum.unit_name,
           NULLIF(TRIM(owner.emp_name), '') AS control_owner_name,
-          approver_map.user_email_id AS approver_email_id,
+          approver_map.approver_email_id AS approver_email_id,
           NULLIF(TRIM(approver.emp_name), '') AS approver_name,
           approver.temp_login AS approver_temp_login,
-          COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(approver_map.user_email_id), '')) AS approver_display_name
+          COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(approver_map.approver_email_id), '')) AS approver_display_name
         FROM control_forms cf
         ${CONTROLS_REMINDER_JOIN_SQL}
         LEFT JOIN company_unit_master cum
           ON cum.unit_id = cf.unit_id
          AND cum.company_identifier = cf.company_identifier
-        LEFT JOIN company_unit_responsibilities approver_map
-          ON approver_map.company_identifier = cf.company_identifier
-         AND approver_map.unit_id = cf.unit_id
-         AND approver_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+        LEFT JOIN LATERAL (
+          SELECT aa.approver_email_id
+          FROM approver_assignments aa
+          WHERE aa.company_identifier = cf.company_identifier
+            AND (
+              (aa.assignment_scope = 'RACM' AND aa.form_id = cf.form_id)
+              OR (
+                aa.assignment_scope = 'BUSINESS_PROCESS'
+                AND aa.unit_id = cf.unit_id
+                AND LOWER(TRIM(aa.business_process)) = LOWER(TRIM(cf.business_process))
+              )
+              OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = cf.unit_id)
+            )
+          ORDER BY
+            CASE aa.assignment_scope
+              WHEN 'RACM' THEN 1
+              WHEN 'BUSINESS_PROCESS' THEN 2
+              WHEN 'UNIT' THEN 3
+              ELSE 4
+            END
+          LIMIT 1
+        ) approver_map ON TRUE
         LEFT JOIN ifc_users owner
           ON LOWER(TRIM(owner.email_id)) = LOWER(TRIM(cf.control_owner))
         LEFT JOIN ifc_users approver
-          ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.user_email_id, '')))
+          ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.approver_email_id, '')))
         WHERE cf.form_id = $1
       `,
       [normalizedFormId]
@@ -3428,11 +3440,10 @@ router.post('/', verifyAuth, async (req, res) => {
       const unitResult = await client.query(
         `
           SELECT unit_id
-          FROM company_unit_responsibilities
+          FROM coordinator_unit_assignments
           WHERE company_identifier = $1
             AND unit_id = $2
-            AND responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-            AND LOWER(TRIM(user_email_id)) = LOWER(TRIM($3))
+            AND LOWER(TRIM(coordinator_email_id)) = LOWER(TRIM($3))
           LIMIT 1
         `,
         [userCompanyIdentifier, unitId, req.user.email_id]

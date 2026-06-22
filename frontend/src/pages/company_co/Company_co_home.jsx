@@ -14,12 +14,28 @@ import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { apiUrl } from '../../config/api'
-import { formatDisplayName } from '../../utils/displayName'
+import DashboardGreeting from '../../components/DashboardGreeting'
+import { readStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
+
+function formatCoordinatorName(empName, emailId) {
+  const trimmedName = String(empName || '').trim()
+  if (trimmedName && !trimmedName.includes('@')) return trimmedName
+
+  const sourceEmail = trimmedName.includes('@') ? trimmedName : String(emailId || '').trim()
+  const localPart = sourceEmail.split('@')[0] || ''
+  const words = localPart
+    .split('.')
+    .map((segment) => String(segment || '').replace(/[0-9]/g, '').trim())
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
+
+  return words.join(' ').trim() || 'User'
+}
 
 function Company_co_home() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const [username, setUsername] = useState('')
+  const [username, setUsername] = useState(() => readStoredUserDisplayName())
   const [coordinatorUnits, setCoordinatorUnits] = useState([])
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -110,7 +126,9 @@ function Company_co_home() {
         }
 
         const homeStats = result.data || {}
-        setUsername(formatDisplayName(homeStats.coordinatorName, 'User'))
+        const nextDisplayName = formatCoordinatorName(homeStats.coordinatorName, homeStats.coordinatorEmail)
+        setUsername(nextDisplayName)
+        writeStoredUserDisplayName(nextDisplayName, 'User')
         setCoordinatorUnits(Array.isArray(homeStats.coordinatorUnits) ? homeStats.coordinatorUnits : [])
 
         setStats({
@@ -121,7 +139,7 @@ function Company_co_home() {
         })
       } catch (error) {
         console.error('Failed to fetch company coordinator home data:', error)
-        setUsername(formatDisplayName('', 'User'))
+        setUsername(readStoredUserDisplayName() || 'User')
         setCoordinatorUnits([])
         setStats({
           totalUsers: 0,
@@ -221,8 +239,9 @@ function Company_co_home() {
                 Coordinator workspace
               </Typography>
             </Box>
-            <Typography
-              sx={{
+            <DashboardGreeting
+              displayName={username || 'User'}
+              primarySx={{
                 fontSize: { xs: '1.85rem', sm: '2.3rem', md: '2.6rem' },
                 fontWeight: 900,
                 color: theme.palette.text.primary,
@@ -231,9 +250,7 @@ function Company_co_home() {
                 maxWidth: '100%',
                 width: '100%',
               }}
-            >
-              Welcome back, {username}
-            </Typography>
+            />
             <Typography
               sx={{
                 mt: 1.4,

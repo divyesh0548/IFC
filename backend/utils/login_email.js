@@ -13,6 +13,7 @@ function decryptTempPassword(encryptedTempPassword) {
 }
 
 function roleLabel(role) {
+  if (role === 'company_admin') return 'Company Admin';
   if (role === 'company_co') return 'Company Coordinator';
   if (role === 'approver') return 'Approver';
   if (role === 'siteadmin') return 'Site Admin';
@@ -26,7 +27,7 @@ function formatNameFromEmail(emailId) {
   const localPart = raw.split('@')[0] || '';
   const parts = localPart
     .split('.')
-    .map((part) => part.trim())
+    .map((part) => part.replace(/\d+/g, '').trim())
     .filter(Boolean);
   if (parts.length === 0) return 'User';
   return parts
@@ -40,6 +41,7 @@ function getPortalUrl() {
 
 function buildUserCreationEmail({
   emailId,
+  role,
   userName,
   coordinatorName,
   coordinatorEmail,
@@ -50,9 +52,61 @@ function buildUserCreationEmail({
   const resolvedCoordinatorName =
     String(coordinatorName || '').trim() ||
     formatNameFromEmail(coordinatorEmail) ||
-    'Company Coordinator';
+    'Company Admin';
   const resolvedCompanyName = String(companyName || '').trim() || 'IFC';
   const portalUrl = getPortalUrl();
+  const normalizedRole = String(role || '').trim().toLowerCase();
+
+  if (normalizedRole === 'company_admin') {
+    return {
+      subject: `Welcome to ${resolvedCompanyName} - Your Company Admin Account`,
+      text: `Hi ${resolvedUserName},
+
+Your account has been created for company ${resolvedCompanyName}.
+
+As Company Admin, you can create and manage units for ${resolvedCompanyName}, add coordinators and approvers, and manage their assignments across the company.
+
+Here are your login credentials. (This is a temporary password, please change it after logging in.)
+
+Email ID: ${emailId}
+Password: ${tempPassword}
+Portal: ${portalUrl}
+
+If you need any assistance during setup, please reach out to the implementation team.
+
+Thanks & Regards,
+${resolvedCoordinatorName}`,
+    };
+  }
+
+  if (normalizedRole === 'company_co') {
+    return {
+      subject: "Welcome to IFC - Let's get started",
+      text: `Hi ${resolvedUserName},
+
+Hope you're having a good week!
+
+I am ${resolvedCoordinatorName} at ${resolvedCompanyName} organization. We have been engaged to carry out an internal financial control review. This is a yearly exercise. If you have not participated before, we’ve put together a short introductory video (just a few minutes) to get you up to speed. You can watch it here: [Video Link]
+
+You have been assigned as Company Coordinator in ${resolvedCompanyName}
+
+Here is a brief overview of Internal Financial Controls.
+
+Internal financial controls are the everyday steps we take to keep our financial information accurate and safe. IFC testing checks whether those steps are working.
+
+The control flow is as follows: Process Owner upload evidence that they have performed the control. Tester will reviews it and passes or fails the control based on whether it is working effectively. That's it!
+
+Here are your login credentials. (This is a temporary password, please change it after logging in.)
+
+Email ID: ${emailId}
+Password: ${tempPassword}
+Portal: ${portalUrl}
+
+Thanks & Regards,
+${resolvedCoordinatorName}
+Sharp and Tannan Associates`,
+    };
+  }
 
   return {
     subject: "Welcome to IFC - Let's get started",
@@ -62,13 +116,13 @@ Hope you're having a good week!
 
 I am ${resolvedCoordinatorName} at ${resolvedCompanyName} organization. We have been engaged to carry out an internal financial control review. This is a yearly exercise. If you have not participated before, we’ve put together a short introductory video (just a few minutes) to get you up to speed. You can watch it here: [Video Link]
 
+You have been assigned as approver in ${resolvedCompanyName}
+
 Here is a brief overview of Internal Financial Controls.
 
 Internal financial controls are the everyday steps we take to keep our financial information accurate and safe. IFC testing checks whether those steps are working.
 
-The control flow is as follows: You upload evidence that you've performed the control. Our tester reviews it and passes or fails the control based on whether it is working effectively. That's it!
-
-Your evidence is the proof that shows our controls are doing their job.
+The control flow is as follows: Process Owner upload evidence that they have performed the control. Tester will reviews it and passes or fails the control based on whether it is working effectively. That's it!
 
 Here are your login credentials. (This is a temporary password, please change it after logging in.)
 
@@ -122,6 +176,7 @@ async function markLoginEmailSent(client, userId) {
 async function sendUserCreationEmail(client, {
   userId,
   emailId,
+  role,
   userName,
   coordinatorName,
   coordinatorEmail,
@@ -130,6 +185,7 @@ async function sendUserCreationEmail(client, {
 }) {
   const emailPayload = buildUserCreationEmail({
     emailId,
+    role,
     userName,
     coordinatorName,
     coordinatorEmail,

@@ -20,6 +20,7 @@ const {
   NOT_EFFECTIVE_CONCLUSION_WHERE_SQL,
   formatReminderTimestampForLog,
 } = require('../utils/controls_reminder');
+const { buildRacmDetailsSection } = require('../utils/racm_email_details');
 
 function isValidEmail(value) {
   const email = String(value || '').trim();
@@ -71,11 +72,10 @@ function buildIneffectiveReminderEmailBody(form) {
 
 This is a reminder that your RACM has been marked as Not Effective and requires a Deficiency Response.
 
-Control: ${form.standard_control_description || 'N/A'}
-Business Process: ${form.business_process || 'N/A'}
-Financial Year: ${form.financial_year || 'N/A'}
-Sub-Process: ${form.sub_process || 'N/A'}
-Deficiency Description: ${form.design_deficiency_desc || 'N/A'}
+${buildRacmDetailsSection(form, [
+  ['Sub-Process', form.sub_process],
+  ['Deficiency Description', form.design_deficiency_desc],
+])}
 
 Please submit a Deficiency Response by providing either a Mitigation Plan or a Compensatory RACM.
 ${formUrl ? `\nPortal: ${formUrl}` : portalUrl ? `\nPortal: ${portalUrl}` : ''}

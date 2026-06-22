@@ -83,6 +83,7 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
     const roleDashboards = {
       'user': '/user/home',
       'company_co': '/company_co/home',
+      'company_admin': '/company_admin/home',
       'approver': '/approver/home',
       'siteadmin': '/siteadmin/dashboard',
       'auditor': '/auditor/home'

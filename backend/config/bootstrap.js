@@ -1,12 +1,7 @@
-const path = require('path');
-const { spawnSync } = require('child_process');
-const { ensureDatabaseExists } = require('./ensureDatabase');
 const { hashPassword, getPasswordPepper } = require('../utils/password');
-const { prisma } = require('../lib/prisma');
-const { seedDefaultBusinessProcesses } = require('../utils/business_process_master');
 let bootstrapPromise = null;
+let prismaClient = null;
 
-const backendRoot = path.join(__dirname, '..');
 const DEFAULT_BUSINESS_PROCESSES = [
   { businessProcess: 'Purchase to Pay', businessProcessCode: 'P2P' },
   { businessProcess: 'Order to Cash', businessProcessCode: 'O2C' },
@@ -18,29 +13,11 @@ const DEFAULT_BUSINESS_PROCESSES = [
   { businessProcess: 'Entity Level Controls', businessProcessCode: 'ELC' },
 ];
 
-function runNpxPrisma(args) {
-  const result = spawnSync('npx', ['prisma', ...args], {
-    cwd: backendRoot,
-    stdio: 'inherit',
-    env: process.env,
-    shell: true,
-  });
-  if (result.error) {
-    throw result.error;
+function getPrisma() {
+  if (!prismaClient) {
+    ({ prisma: prismaClient } = require('../lib/prisma'));
   }
-  if (result.status !== 0) {
-    throw new Error(`\`npx prisma ${args.join(' ')}\` exited with code ${result.status}`);
-  }
-}
-
-function runPrismaGenerate() {
-  // In dev, running `prisma generate` on each boot causes nodemon restart loops
-  // because the generated client files are written every time.
-  if (process.env.RUN_PRISMA_GENERATE_ON_BOOT !== '1') { 
-    console.log('[bootstrap] Skipping prisma generate on boot (set RUN_PRISMA_GENERATE_ON_BOOT=1 to enable).');
-    return;
-  }
-  runNpxPrisma(['generate']);
+  return prismaClient;
 }
 
 async function ensureAdminUserFromEnv() {
@@ -54,6 +31,7 @@ async function ensureAdminUserFromEnv() {
   }
 
   getPasswordPepper();
+  const prisma = getPrisma();
 
   const existing = await prisma.ifcUser.findFirst({
     where: {
@@ -86,6 +64,7 @@ async function ensureAdminUserFromEnv() {
 }
 
 async function ensureDefaultBusinessProcesses() {
+  const { seedDefaultBusinessProcesses } = require('../utils/business_process_master');
   const result = await seedDefaultBusinessProcesses(DEFAULT_BUSINESS_PROCESSES);
   if (result.inserted === 0 && result.updated === 0) {
     console.log('[bootstrap] Default business processes already present. Skipping seed.');
@@ -102,8 +81,6 @@ async function runBootstrap() {
 
   bootstrapPromise = (async () => {
     try {
-      await ensureDatabaseExists();
-      runPrismaGenerate();
       await ensureDefaultBusinessProcesses();
       await ensureAdminUserFromEnv();
     } catch (error) {

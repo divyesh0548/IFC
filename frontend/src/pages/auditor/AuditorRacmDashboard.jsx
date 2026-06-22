@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import FormControl from '@mui/material/FormControl'
@@ -81,6 +81,7 @@ const auditorColumnWidths = {
 function AuditorRacmDashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
+  const location = useLocation()
   const [forms, setForms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -92,6 +93,9 @@ function AuditorRacmDashboard() {
   const [filterUnit, setFilterUnit] = useState('all')
   const [cellWordWrap, setCellWordWrap] = useState(false)
   const { businessProcessOptions } = useBusinessProcesses()
+  const isCompanyAdminView = location.pathname.startsWith('/company_admin')
+  const racmEndpoint = isCompanyAdminView ? '/api/company-admin/racm-dashboard/racms' : '/api/auditor/racms'
+  const detailPathPrefix = isCompanyAdminView ? '/company_admin/form/' : '/auditor/form/'
 
   useSyncGlobalLoading(loading)
 
@@ -103,7 +107,7 @@ function AuditorRacmDashboard() {
       setError('')
 
       try {
-        const response = await fetch(apiUrl('/api/auditor/racms'), {
+        const response = await fetch(apiUrl(racmEndpoint), {
           method: 'GET',
           credentials: 'include',
         })
@@ -141,7 +145,7 @@ function AuditorRacmDashboard() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [racmEndpoint])
 
   const companyOptions = [...new Map(
     forms
@@ -165,10 +169,12 @@ function AuditorRacmDashboard() {
     ...forms.map((form) => normalizeBusinessProcess(form.business_process)),
   ].filter(Boolean))].sort((a, b) => a.localeCompare(b))
 
-  const isUnitFilterEnabled = filterCompany !== 'all'
+  const isUnitFilterEnabled = isCompanyAdminView || filterCompany !== 'all'
 
   const scopedFormsForUnits = isUnitFilterEnabled
-    ? forms.filter((form) => String(form.company_identifier || '') === filterCompany)
+    ? (isCompanyAdminView
+      ? forms
+      : forms.filter((form) => String(form.company_identifier || '') === filterCompany))
     : []
 
   const unitOptions = [...new Map(
@@ -224,7 +230,7 @@ function AuditorRacmDashboard() {
       return false
     }
 
-    if (filterCompany !== 'all' && String(form.company_identifier || '') !== filterCompany) {
+    if (!isCompanyAdminView && filterCompany !== 'all' && String(form.company_identifier || '') !== filterCompany) {
       return false
     }
 
@@ -379,27 +385,29 @@ function AuditorRacmDashboard() {
                 </FormControl>
               </Box>
 
-              <Box sx={{ minWidth: FILTER_BOX_MIN_WIDTH }}>
-                <FormControl fullWidth size="small" sx={filterControlSx}>
-                  <InputLabel id="auditor-racm-company-label">Company</InputLabel>
-                  <Select
-                    labelId="auditor-racm-company-label"
-                    value={filterCompany}
-                    label="Company"
-                    onChange={(event) => {
-                      setFilterCompany(event.target.value)
-                      setFilterUnit('all')
-                    }}
-                  >
-                    <MenuItem value="all">All</MenuItem>
-                    {companyOptions.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Box>
+              {!isCompanyAdminView && (
+                <Box sx={{ minWidth: FILTER_BOX_MIN_WIDTH }}>
+                  <FormControl fullWidth size="small" sx={filterControlSx}>
+                    <InputLabel id="auditor-racm-company-label">Company</InputLabel>
+                    <Select
+                      labelId="auditor-racm-company-label"
+                      value={filterCompany}
+                      label="Company"
+                      onChange={(event) => {
+                        setFilterCompany(event.target.value)
+                        setFilterUnit('all')
+                      }}
+                    >
+                      <MenuItem value="all">All</MenuItem>
+                      {companyOptions.map((option) => (
+                        <MenuItem key={option.value} value={option.value}>
+                          {option.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+              )}
 
               <Box sx={{ minWidth: FILTER_BOX_MIN_WIDTH }}>
                 <FormControl fullWidth size="small" sx={filterControlSx}>
@@ -716,7 +724,7 @@ function AuditorRacmDashboard() {
                       <Box
                         component="tr"
                         key={form.form_id || form.id || index}
-                        onClick={() => navigate(`/auditor/form/${form.form_id}`)}
+                        onClick={() => navigate(`${detailPathPrefix}${form.form_id}`)}
                         sx={{
                           cursor: 'pointer',
                           transition: 'background-color 0.2s',

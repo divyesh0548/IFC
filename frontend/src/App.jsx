@@ -50,6 +50,11 @@ const CreateUser = lazy(() => import('./pages/company_co/CreateUser'))
 const UnclassifiedControls = lazy(() => import('./pages/company_co/UnclassifiedControls'))
 const KeyManualAiInsightsSummary = lazy(() => import('./pages/company_co/KeyManualAiInsightsSummary'))
 const RiskAnalysis = lazy(() => import('./pages/company_co/RiskAnalysis'))
+const CompanyAdminHome = lazy(() => import('./pages/company_admin/companyAdminHome'))
+const CompanyAdminCompanyDetails = lazy(() => import('./pages/company_admin/CompanyAdminCompanyDetails'))
+const CompanyAdminUserManagement = lazy(() => import('./pages/company_admin/CompanyAdminUserManagement'))
+const CompanyAdminUnitManagement = lazy(() => import('./pages/company_admin/CompanyAdminUnitManagement'))
+const CompanyAdminApproverManagement = lazy(() => import('./pages/company_admin/CompanyAdminApproverManagement'))
 
 const ApproverHome = lazy(() => import('./pages/approver/ApproverHome'))
 const ApproverDashboard = lazy(() => import('./pages/approver/ApproverDashboard'))
@@ -83,7 +88,8 @@ function GlobalLoadingStrip() {
     location.pathname.startsWith('/auditor') ||
     location.pathname.startsWith('/approver') ||
     location.pathname.startsWith('/user') ||
-    location.pathname.startsWith('/company_co')
+    location.pathname.startsWith('/company_co') ||
+    location.pathname.startsWith('/company_admin')
   const hasMountedNavbar =
     typeof document !== 'undefined' &&
     document.body.classList.contains('has-dashboard-navbar')
@@ -134,6 +140,7 @@ function GlobalLoadingStrip() {
 const ROLE_HOME_ROUTES = {
   user: '/user/home',
   company_co: '/company_co/home',
+  company_admin: '/company_admin/home',
   approver: '/approver/home',
   auditor: '/auditor/home',
   siteadmin: '/siteadmin/dashboard',
@@ -340,6 +347,26 @@ function App() {
               <Route path="form/:form_id" element={<FormDetail />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.company_co} replace />} />
+            </Route>
+
+            <Route
+              path="/company_admin/*"
+              element={
+                <RoleBasedProtectedRoute allowedRoles={['company_admin']}>
+                  <DashboardLayout />
+                </RoleBasedProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to={ROLE_HOME_ROUTES.company_admin} replace />} />
+              <Route path="home" element={<CompanyAdminHome />} />
+              <Route path="company-details" element={<CompanyAdminCompanyDetails />} />
+              <Route path="user-management" element={<CompanyAdminUserManagement />} />
+              <Route path="unit-management" element={<CompanyAdminUnitManagement />} />
+              <Route path="approver-management" element={<CompanyAdminApproverManagement />} />
+              <Route path="racms" element={<AuditorRacmDashboard />} />
+              <Route path="form/:form_id" element={<AuditorFormDetail />} />
+              <Route path="profile" element={<ProfilePage />} />
+              <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.company_admin} replace />} />
             </Route>
 
             <Route path="*" element={<RouteFallbackRedirect />} />

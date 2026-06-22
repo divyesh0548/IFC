@@ -18,6 +18,7 @@ const {
   formatReminderTimestampForLog,
   formatDueDateForEmail,
 } = require('../utils/controls_reminder');
+const { buildRacmDetailsSection } = require('../utils/racm_email_details');
 
 const IST_CURRENT_DATE_SQL = `((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date)`;
 
@@ -111,9 +112,9 @@ function buildReminderEmailBody(form) {
 
 This is a reminder that your RACM (Risk and Control Matrix) is pending.
 
-Control: ${form.standard_control_description || 'N/A'}
-Business Process: ${form.business_process || 'N/A'}
-Due date: ${dueStr}
+${buildRacmDetailsSection(form, [
+  ['Due Date', dueStr],
+])}
 
 ${process.env.FRONTEND_URL ? `Portal: ${process.env.FRONTEND_URL}` : ''}
 

@@ -14,7 +14,7 @@ const {
   seedIneffectiveReminderDatetime,
   isNotEffectiveConclusion,
 } = require('../../utils/controls_reminder');
-const { UNIT_RESPONSIBILITY_TYPES } = require('../../utils/unit_responsibilities');
+const { buildRacmDetailsSection } = require('../../utils/racm_email_details');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -38,13 +38,38 @@ async function getApproverMappedUnits(approverEmail) {
         cum.unit_name,
         cum.unit_address
       FROM company_unit_master cum
-      INNER JOIN company_unit_responsibilities cur
-        ON cur.company_identifier = cum.company_identifier
-       AND cur.unit_id = cum.unit_id
-       AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+      INNER JOIN approver_assignments aa
+       ON aa.company_identifier = cum.company_identifier
+       AND (
+          (aa.assignment_scope = 'UNIT' AND aa.unit_id = cum.unit_id)
+          OR (aa.assignment_scope = 'BUSINESS_PROCESS' AND aa.unit_id = cum.unit_id)
+          OR (
+            aa.assignment_scope = 'RACM'
+            AND EXISTS (
+              SELECT 1
+              FROM control_forms cf
+              WHERE cf.company_identifier = cum.company_identifier
+                AND cf.unit_id = cum.unit_id
+                AND cf.form_id = aa.form_id
+            )
+          )
+       )
       LEFT JOIN companies c
         ON c.company_identifier = cum.company_identifier
-      WHERE LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM($1))
+      WHERE LOWER(TRIM(aa.approver_email_id)) = LOWER(TRIM($1))
+      GROUP BY
+        cum.company_identifier,
+        c.company_name,
+        c.registered_email,
+        c.registered_address,
+        c.unique_identification_number,
+        c.gst,
+        c.pan,
+        c.number_of_corporate_offices,
+        c.number_of_factory_units,
+        cum.unit_id,
+        cum.unit_name,
+        cum.unit_address
       ORDER BY c.company_name NULLS LAST, cum.unit_name NULLS LAST, cum.unit_id
     `,
     [approverEmail]
@@ -55,14 +80,29 @@ async function getApproverMappedUnits(approverEmail) {
 
 function scopedApproverRacmJoin(alias = 'cf') {
   return `
-    INNER JOIN company_unit_master approver_units
-      ON approver_units.company_identifier = ${alias}.company_identifier
-     AND approver_units.unit_id = ${alias}.unit_id
-    INNER JOIN company_unit_responsibilities approver_assignments
-      ON approver_assignments.company_identifier = ${alias}.company_identifier
-     AND approver_assignments.unit_id = ${alias}.unit_id
-     AND approver_assignments.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
-     AND LOWER(TRIM(approver_assignments.user_email_id)) = LOWER(TRIM($1))
+    INNER JOIN LATERAL (
+      SELECT aa.approver_email_id
+      FROM approver_assignments aa
+      WHERE aa.company_identifier = ${alias}.company_identifier
+        AND (
+          (aa.assignment_scope = 'RACM' AND aa.form_id = ${alias}.form_id)
+          OR (
+            aa.assignment_scope = 'BUSINESS_PROCESS'
+            AND aa.unit_id = ${alias}.unit_id
+            AND LOWER(TRIM(aa.business_process)) = LOWER(TRIM(${alias}.business_process))
+          )
+          OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = ${alias}.unit_id)
+        )
+      ORDER BY
+        CASE aa.assignment_scope
+          WHEN 'RACM' THEN 1
+          WHEN 'BUSINESS_PROCESS' THEN 2
+          WHEN 'UNIT' THEN 3
+          ELSE 4
+        END
+      LIMIT 1
+    ) approver_assignments
+      ON LOWER(TRIM(approver_assignments.approver_email_id)) = LOWER(TRIM($1))
   `;
 }
 
@@ -127,24 +167,14 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   const normalizedConclusion = normalizeConclusion(updatedForm.control_design_conclusion);
 
   if (reason_by_approver) {
-    emailBody += `Reason/Comments from Approver:\n${reason_by_approver}\n\n`;
+    emailBody += buildRacmDetailsSection(updatedForm, [
+      ['Reason/Comments from Approver', reason_by_approver],
+    ], 'RACM Details:');
+    emailBody += '\n\n';
+  } else {
+    emailBody += buildRacmDetailsSection(updatedForm, [], 'RACM Details:');
+    emailBody += '\n\n';
   }
-
-  emailBody += 'Form Details:\n';
-  if (updatedForm.business_process) {
-    emailBody += `- Business Process: ${updatedForm.business_process}\n`;
-  }
-  if (updatedForm.financial_year) {
-    emailBody += `- Financial Year: ${updatedForm.financial_year}\n`;
-  }
-  if (updatedForm.sub_process) {
-    emailBody += `- Sub Process: ${updatedForm.sub_process}\n`;
-  }
-  if (updatedForm.standard_control_description) {
-    emailBody += `- Description: ${updatedForm.standard_control_description}\n`;
-  }
-
-  emailBody += '\n';
 
   if (status === 'Approved') {
     if (normalizedConclusion === 'effective' || normalizedConclusion === 'accepted under deviation') {
@@ -192,7 +222,7 @@ async function getHomeStats(req, res) {
   try {
     const approverEmail = req.user.email_id;
     const requestedUnitId = req.query.unit_id ? String(req.query.unit_id).trim() : '';
-    const unitFilterSql = requestedUnitId ? ' AND cum.unit_id = $2' : '';
+    const unitFilterSql = requestedUnitId ? ' AND uum.unit_id = $2' : '';
     const racmUnitFilterSql = requestedUnitId ? ' WHERE cf.unit_id = $2' : '';
     const scopedParams = requestedUnitId ? [approverEmail, requestedUnitId] : [approverEmail];
 
@@ -235,16 +265,15 @@ async function getHomeStats(req, res) {
       pool.query(
         `
           SELECT COUNT(DISTINCT u.id)::int AS count
-          FROM company_unit_master cum
-          INNER JOIN company_unit_responsibilities cur
-            ON cur.company_identifier = cum.company_identifier
-           AND cur.unit_id = cum.unit_id
-           AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+          FROM approver_assignments aa
+          INNER JOIN user_unit_memberships uum
+            ON uum.company_identifier = aa.company_identifier
+           AND (aa.assignment_scope <> 'UNIT' OR uum.unit_id = aa.unit_id)
           INNER JOIN ifc_users u
-            ON u.company_identifier = cum.company_identifier
-           AND u.unit_id = cum.unit_id
+            ON u.company_identifier = uum.company_identifier
+           AND LOWER(TRIM(u.email_id)) = LOWER(TRIM(uum.user_email_id))
            AND u.role = 'user'
-          WHERE LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM($1))
+          WHERE LOWER(TRIM(aa.approver_email_id)) = LOWER(TRIM($1))
           ${unitFilterSql}
         `,
         scopedParams
@@ -489,11 +518,29 @@ async function approveForm(req, res) {
         WHERE form_id = $${paramIndex}
           AND EXISTS (
             SELECT 1
-            FROM company_unit_responsibilities approver_units
-            WHERE approver_units.company_identifier = control_forms.company_identifier
-              AND approver_units.unit_id = control_forms.unit_id
-              AND approver_units.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
-              AND LOWER(TRIM(approver_units.user_email_id)) = LOWER(TRIM($${paramIndex + 1}))
+            FROM LATERAL (
+              SELECT aa.approver_email_id
+              FROM approver_assignments aa
+              WHERE aa.company_identifier = control_forms.company_identifier
+                AND (
+                  (aa.assignment_scope = 'RACM' AND aa.form_id = control_forms.form_id)
+                  OR (
+                    aa.assignment_scope = 'BUSINESS_PROCESS'
+                    AND aa.unit_id = control_forms.unit_id
+                    AND LOWER(TRIM(aa.business_process)) = LOWER(TRIM(control_forms.business_process))
+                  )
+                  OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = control_forms.unit_id)
+                )
+              ORDER BY
+                CASE aa.assignment_scope
+                  WHEN 'RACM' THEN 1
+                  WHEN 'BUSINESS_PROCESS' THEN 2
+                  WHEN 'UNIT' THEN 3
+                  ELSE 4
+                END
+              LIMIT 1
+            ) approver_units
+            WHERE LOWER(TRIM(approver_units.approver_email_id)) = LOWER(TRIM($${paramIndex + 1}))
           )
         RETURNING *
       `;
@@ -660,11 +707,29 @@ async function changeApprovalDecision(req, res) {
          WHERE form_id = $3
            AND EXISTS (
              SELECT 1
-             FROM company_unit_responsibilities approver_units
-             WHERE approver_units.company_identifier = control_forms.company_identifier
-               AND approver_units.unit_id = control_forms.unit_id
-               AND approver_units.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
-               AND LOWER(TRIM(approver_units.user_email_id)) = LOWER(TRIM($4))
+             FROM LATERAL (
+               SELECT aa.approver_email_id
+               FROM approver_assignments aa
+               WHERE aa.company_identifier = control_forms.company_identifier
+                 AND (
+                   (aa.assignment_scope = 'RACM' AND aa.form_id = control_forms.form_id)
+                   OR (
+                     aa.assignment_scope = 'BUSINESS_PROCESS'
+                     AND aa.unit_id = control_forms.unit_id
+                     AND LOWER(TRIM(aa.business_process)) = LOWER(TRIM(control_forms.business_process))
+                   )
+                   OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = control_forms.unit_id)
+                 )
+               ORDER BY
+                 CASE aa.assignment_scope
+                   WHEN 'RACM' THEN 1
+                   WHEN 'BUSINESS_PROCESS' THEN 2
+                   WHEN 'UNIT' THEN 3
+                   ELSE 4
+                 END
+               LIMIT 1
+             ) approver_units
+             WHERE LOWER(TRIM(approver_units.approver_email_id)) = LOWER(TRIM($4))
            )
          RETURNING *`,
         [status, reasonFinal, form_id, approver.email_id]

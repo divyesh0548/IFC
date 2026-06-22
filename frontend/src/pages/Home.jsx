@@ -21,7 +21,7 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import SyncAltOutlinedIcon from '@mui/icons-material/SyncAltOutlined'
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
 import { useThemeMode } from '../contexts/ThemeContext'
-import { clearCachedUserProfile } from '../storageKeys'
+import { clearCachedUserProfile, clearStoredUserDisplayName } from '../storageKeys'
 import { MAIN_CONTENT_MAX_WIDTH } from '../uiConstants'
 import { apiUrl } from '../config/api'
 
@@ -219,6 +219,7 @@ function Home() {
       console.error('Error during logout:', error)
     } finally {
       clearCachedUserProfile()
+      clearStoredUserDisplayName()
       setIsAuthenticated(false)
       setUserRole(null)
       navigate('/', { replace: true })

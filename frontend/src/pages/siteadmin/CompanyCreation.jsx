@@ -41,7 +41,7 @@ function CompanyCreation() {
     number_of_corporate_offices: '',
     number_of_factory_units: '',
   })
-  const [companyUnits, setCompanyUnits] = useState([{ unit_name: 'Main Unit', unit_address: '' }])
+  const [companyAdminEmails, setCompanyAdminEmails] = useState([{ email_id: '' }])
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -95,12 +95,12 @@ function CompanyCreation() {
     }
   }
 
-  const handleUnitChange = (index, field, value) => {
-    setCompanyUnits((prev) => prev.map((unit, unitIndex) => (
-      unitIndex === index ? { ...unit, [field]: value } : unit
+  const handleCompanyAdminEmailChange = (index, value) => {
+    setCompanyAdminEmails((prev) => prev.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, email_id: value } : item
     )))
 
-    const errorKey = `company_units_${index}_${field}`
+    const errorKey = `company_admin_emails_${index}`
     if (errors[errorKey]) {
       setErrors((prev) => {
         const next = { ...prev }
@@ -110,12 +110,12 @@ function CompanyCreation() {
     }
   }
 
-  const handleAddUnit = () => {
-    setCompanyUnits((prev) => [...prev, { unit_name: '', unit_address: '' }])
+  const handleAddCompanyAdminEmail = () => {
+    setCompanyAdminEmails((prev) => [...prev, { email_id: '' }])
   }
 
-  const handleRemoveUnit = (index) => {
-    setCompanyUnits((prev) => prev.filter((_, unitIndex) => unitIndex !== index))
+  const handleRemoveCompanyAdminEmail = (index) => {
+    setCompanyAdminEmails((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
   }
 
   const validateForm = () => {
@@ -148,15 +148,23 @@ function CompanyCreation() {
     } else if (!/^\d+$/.test(formData.number_of_factory_units) || parseInt(formData.number_of_factory_units, 10) < 0) {
       newErrors.number_of_factory_units = 'Must be a positive number'
     }
-    if (companyUnits.length === 0) newErrors.company_units = 'At least one company unit is required'
+    if (companyAdminEmails.length === 0) {
+      newErrors.company_admin_emails = 'At least one company admin email is required'
+    }
 
-    companyUnits.forEach((unit, index) => {
-      if (!unit.unit_name.trim()) {
-        newErrors[`company_units_${index}_unit_name`] = 'Unit is required'
+    const normalizedEmails = companyAdminEmails.map((item) => String(item.email_id || '').trim().toLowerCase())
+    companyAdminEmails.forEach((item, index) => {
+      const emailValue = String(item.email_id || '').trim()
+      if (!emailValue) {
+        newErrors[`company_admin_emails_${index}`] = 'Company admin email is required'
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue)) {
+        newErrors[`company_admin_emails_${index}`] = 'Invalid email format'
       }
     })
-    if (companyUnits.some((unit) => !unit.unit_name.trim())) {
-      newErrors.company_units = 'At least one unit is required and unit name cannot be empty'
+
+    const duplicateEmails = normalizedEmails.filter((email, index) => email && normalizedEmails.indexOf(email) !== index)
+    if (duplicateEmails.length > 0) {
+      newErrors.company_admin_emails = 'Company admin emails must be unique'
     }
 
     setErrors(newErrors)
@@ -181,10 +189,7 @@ function CompanyCreation() {
           pan: formData.pan,
           number_of_corporate_offices: formData.number_of_corporate_offices,
           number_of_factory_units: formData.number_of_factory_units,
-          company_units: companyUnits.map((unit) => ({
-            unit_name: unit.unit_name.trim(),
-            unit_address: unit.unit_address.trim(),
-          })),
+          company_admin_emails: companyAdminEmails.map((item) => String(item.email_id || '').trim()),
         }),
       })
 
@@ -194,7 +199,7 @@ function CompanyCreation() {
         toast.success('Company created successfully')
         navigate('/siteadmin/dashboard')
       } else {
-        setError(data.message || 'Failed to create company')
+        setError(data.message || 'Failed to register company')
       }
     } catch (err) {
       console.error('Company creation error:', err)
@@ -225,10 +230,10 @@ function CompanyCreation() {
       >
         <CardContent sx={{ p: { xs: 2, sm: 3 }, '&:last-child': { pb: { xs: 2, sm: 3 } } }}>
           <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 1, textAlign: 'left', color: 'text.primary', letterSpacing: '-0.02em' }}>
-            Create Company
+            Register Company
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'left', mb: 3 }}>
-            Add a new company profile. Coordinator and approver assignments can be configured after the company is created.
+            Fill in the details below to register a new company; Company Admin will manage company units and assignments.
           </Typography>
 
           <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, width: '100%' }}>
@@ -239,73 +244,6 @@ function CompanyCreation() {
 
             <Box sx={{ width: '100%', pt: 2.5, borderTop: 1, borderColor: 'divider' }}>
               <TextField id="registered_address" name="registered_address" label="Registered Address" variant="filled" value={formData.registered_address} onChange={handleChange} required disabled={loading} multiline minRows={3} placeholder="Enter registered address" error={!!errors.registered_address} helperText={errors.registered_address} fullWidth />
-            </Box>
-
-            <Box sx={{ width: '100%', pt: 2.5, borderTop: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5 }}>
-                <Box>
-                  <Typography sx={{ fontWeight: 700, color: 'text.primary' }}>Company Units</Typography>
-                  <Typography variant="body2" color="text.secondary">Add one or more company units. Unit address is optional.</Typography>
-                </Box>
-                <Tooltip title="Add unit">
-                  <span>
-                    <IconButton color="primary" onClick={handleAddUnit} disabled={loading} aria-label="Add company unit">
-                      <AddIcon />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </Box>
-
-              {companyUnits.map((unit, index) => (
-                <Box
-                  key={`company-unit-${index}`}
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: 'minmax(180px, 0.8fr) minmax(240px, 1.2fr) auto' },
-                    gap: 1.5,
-                    alignItems: 'flex-start',
-                  }}
-                >
-                  <TextField
-                    id={`company_unit_name_${index}`}
-                    label="Unit"
-                    variant="filled"
-                    value={unit.unit_name}
-                    onChange={(e) => handleUnitChange(index, 'unit_name', e.target.value)}
-                    required
-                    disabled={loading}
-                    placeholder="Enter unit name"
-                    error={!!errors[`company_units_${index}_unit_name`]}
-                    helperText={errors[`company_units_${index}_unit_name`]}
-                    fullWidth
-                  />
-                  <TextField
-                    id={`company_unit_address_${index}`}
-                    label="Unit Address"
-                    variant="filled"
-                    value={unit.unit_address}
-                    onChange={(e) => handleUnitChange(index, 'unit_address', e.target.value)}
-                    disabled={loading}
-                    multiline
-                    minRows={1}
-                    placeholder="Enter unit address (optional)"
-                    fullWidth
-                  />
-                  <Tooltip title={companyUnits.length === 1 ? 'At least one unit is required' : 'Remove unit'}>
-                    <span>
-                      <IconButton color="error" onClick={() => handleRemoveUnit(index)} disabled={loading || companyUnits.length === 1} aria-label={`Remove company unit ${index + 1}`} sx={{ mt: 1 }}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </Box>
-              ))}
-
-              {errors.company_units && (
-                <Typography variant="caption" color="error">
-                  {errors.company_units}
-                </Typography>
-              )}
             </Box>
 
             <Box sx={twoColRowSx}>
@@ -353,11 +291,66 @@ function CompanyCreation() {
               <Box />
             </Box>
 
+            <Box sx={{ width: '100%', pt: 2.5, borderTop: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5 }}>
+                <Box>
+                  <Typography sx={{ fontWeight: 700, color: 'text.primary' }}>Company Admin <span style={{ fontSize: '0.80rem', color: 'text.secondary', fontWeight: 400 }}>(At least one is required)</span></Typography>
+                </Box>
+                <Tooltip title="Add company admin">
+                  <span>
+                    <IconButton color="primary" onClick={handleAddCompanyAdminEmail} disabled={loading} aria-label="Add company admin email">
+                      <AddIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </Box>
+
+              {companyAdminEmails.map((item, index) => (
+                <Box
+                  key={`company-admin-email-${index}`}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) auto' },
+                    gap: 1.5,
+                    alignItems: 'flex-start',
+                  }}
+                >
+                  <TextField
+                    id={`company_admin_email_${index}`}
+                    label={`Company Admin Email ${index + 1}`}
+                    variant="filled"
+                    type="email"
+                    value={item.email_id}
+                    onChange={(e) => handleCompanyAdminEmailChange(index, e.target.value)}
+                    required
+                    disabled={loading}
+                    placeholder="Enter company admin email"
+                    error={!!errors[`company_admin_emails_${index}`]}
+                    helperText={errors[`company_admin_emails_${index}`]}
+                    fullWidth
+                  />
+                  <Tooltip title={companyAdminEmails.length === 1 ? 'At least one company admin email is required' : 'Remove company admin email'}>
+                    <span>
+                      <IconButton color="error" onClick={() => handleRemoveCompanyAdminEmail(index)} disabled={loading || companyAdminEmails.length === 1} aria-label={`Remove company admin email ${index + 1}`} sx={{ mt: 1 }}>
+                        <DeleteIcon />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Box>
+              ))}
+
+              {errors.company_admin_emails && (
+                <Typography variant="caption" color="error">
+                  {errors.company_admin_emails}
+                </Typography>
+              )}
+            </Box>
+
             {error && <Alert severity="error" sx={{ mt: 0.5 }}>{error}</Alert>}
 
             <Box sx={{ display: 'flex', justifyContent: 'flex-start', pt: 0.5 }}>
               <Button type="submit" size="medium" disabled={loading} variant="contained" color="primary" sx={{ py: 0.5, px: 2, minHeight: 36, fontSize: theme.typography.customSizes.medium, fontWeight: 600 }}>
-                {loading ? 'Creating...' : 'Create Company'}
+                {loading ? 'Creating...' : 'Register'}
               </Button>
             </Box>
           </Box>

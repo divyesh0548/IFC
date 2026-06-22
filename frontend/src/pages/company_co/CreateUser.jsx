@@ -19,6 +19,7 @@ import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
 function CreateUser() {
@@ -36,6 +37,7 @@ function CreateUser() {
   const [unitsLoading, setUnitsLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const { getEmailWarning, getEmailWarningHelperTextSx } = useOrganizationEmailWarning()
 
   useSyncGlobalLoading(loading || unitsLoading)
 
@@ -274,7 +276,8 @@ function CreateUser() {
                       disabled={loading}
                       placeholder="user@example.com"
                       error={!!error}
-                      helperText={error || 'Use the user’s primary company email address.'}
+                      helperText={error || getEmailWarning(email) || 'Use the user’s primary company email address.'}
+                      FormHelperTextProps={{ sx: error ? undefined : getEmailWarningHelperTextSx(email) }}
                       fullWidth
                       InputProps={{
                         startAdornment: (

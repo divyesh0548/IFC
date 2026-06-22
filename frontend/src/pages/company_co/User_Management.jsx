@@ -44,6 +44,7 @@ import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
 import * as XLSX from 'xlsx'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
@@ -51,6 +52,8 @@ const bulkUploadDialogDefaults = {
   open: false,
   unitId: '',
   fileName: '',
+  nonOrgCount: 0,
+  confirmNonOrg: false,
   submitting: false,
   error: '',
 }
@@ -83,6 +86,7 @@ function UserManagement() {
   const [bulkUploadLogs, setBulkUploadLogs] = useState([])
   const [bulkLogsDialogOpen, setBulkLogsDialogOpen] = useState(false)
   const [showBulkLogsButton, setShowBulkLogsButton] = useState(false)
+  const [bulkWarningDialogOpen, setBulkWarningDialogOpen] = useState(false)
 
   const [email, setEmail] = useState('')
   const [empCode, setEmpCode] = useState('')
@@ -92,6 +96,7 @@ function UserManagement() {
   const [mobile, setMobile] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const { getEmailWarning, getEmailWarningHelperTextSx, countNonOrganizationEmails } = useOrganizationEmailWarning()
 
   useSyncGlobalLoading(usersLoading)
   useSyncGlobalLoading(loading)
@@ -541,6 +546,8 @@ function UserManagement() {
       setBulkUploadDialog((prev) => ({
         ...prev,
         fileName: file.name,
+        nonOrgCount: countNonOrganizationEmails(parsedRows.map((row) => row.email_id)),
+        confirmNonOrg: false,
         error: '',
       }))
     } catch (parseError) {
@@ -562,7 +569,7 @@ function UserManagement() {
     toast.success('Bulk upload template downloaded')
   }
 
-  const handleBulkUploadUsers = async () => {
+  const executeBulkUploadUsers = async () => {
     if (!bulkUploadDialog.unitId) {
       setBulkUploadDialog((prev) => ({ ...prev, error: 'Select a unit to map users' }))
       return
@@ -650,6 +657,14 @@ function UserManagement() {
       bulkUploadAbortControllerRef.current = null
       isCancellingBulkUploadRef.current = false
     }
+  }
+
+  const handleBulkUploadUsers = async () => {
+    if (bulkUploadDialog.nonOrgCount > 0 && !bulkUploadDialog.confirmNonOrg) {
+      setBulkWarningDialogOpen(true)
+      return
+    }
+    await executeBulkUploadUsers()
   }
 
   const handleExportUsers = () => {
@@ -770,7 +785,8 @@ function UserManagement() {
                         disabled={loading}
                         placeholder="user@example.com"
                         error={!!error}
-                        helperText={error || 'Use the user’s primary company email address.'}
+                        helperText={error || getEmailWarning(email) || 'Use the user’s primary company email address.'}
+                        FormHelperTextProps={{ sx: error ? undefined : getEmailWarningHelperTextSx(email) }}
                         fullWidth
                         InputProps={{
                           startAdornment: (
@@ -1297,6 +1313,36 @@ function UserManagement() {
             }
           >
             {bulkUploadDialog.submitting ? 'Uploading...' : 'Upload'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={bulkWarningDialogOpen}
+        onClose={() => !bulkUploadDialog.submitting && setBulkWarningDialogOpen(false)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Non-organization Email IDs</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {bulkUploadDialog.nonOrgCount} non-organization email ids are found, if possible use company email for data security.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkWarningDialogOpen(false)} disabled={bulkUploadDialog.submitting}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={async () => {
+              setBulkWarningDialogOpen(false)
+              setBulkUploadDialog((prev) => ({ ...prev, confirmNonOrg: true }))
+              await executeBulkUploadUsers()
+            }}
+            disabled={bulkUploadDialog.submitting}
+          >
+            Continue
           </Button>
         </DialogActions>
       </Dialog>

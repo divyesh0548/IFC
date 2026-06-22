@@ -3,6 +3,7 @@ import {
   STORAGE_KEYS,
   clearCachedUserProfile,
   clearCompanyFinancialYearOptionsCache,
+  clearStoredUserDisplayName,
 } from '../storageKeys'
 
 let installed = false
@@ -26,6 +27,7 @@ function shouldHandleUnauthorized(url) {
 function clearClientAuthState() {
   clearCachedUserProfile()
   clearCompanyFinancialYearOptionsCache()
+  clearStoredUserDisplayName()
 
   try {
     localStorage.removeItem(STORAGE_KEYS.companyName)

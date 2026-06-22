@@ -35,6 +35,7 @@ import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { toast } from 'react-hot-toast'
 import { MAIN_CONTENT_MAX_WIDTH } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
 import { apiUrl } from '../../config/api'
 import {
   STATUS_BADGE_PILL_SX,
@@ -84,6 +85,7 @@ function CompanyUnitManagement() {
   const [assignMode, setAssignMode] = useState(false)
   const [createDialog, setCreateDialog] = useState(createDialogDefaults)
   const [assignmentDialog, setAssignmentDialog] = useState(assignmentDialogDefaults)
+  const { getEmailWarning, getEmailWarningHelperTextSx } = useOrganizationEmailWarning(company?.registered_email || company?.company_details?.registered_email || '')
 
   useSyncGlobalLoading(loading)
   useSyncGlobalLoading(createDialog.submitting)
@@ -708,6 +710,8 @@ function CompanyUnitManagement() {
             disabled={createDialog.submitting}
             fullWidth
             required
+            helperText={createDialog.error ? undefined : getEmailWarning(createDialog.email)}
+            FormHelperTextProps={{ sx: createDialog.error ? undefined : getEmailWarningHelperTextSx(createDialog.email) }}
           />
           {createDialog.error && <Alert severity="error">{createDialog.error}</Alert>}
         </DialogContent>

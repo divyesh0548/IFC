@@ -16,6 +16,8 @@ import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
+import DashboardGreeting from '../../components/DashboardGreeting'
+import { readStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
 
 const COMPANY_DETAIL_LABELS = {
   company_name: 'Company Name',
@@ -90,6 +92,7 @@ function ApproverHome() {
 
         if (response.ok && data.success) {
           setStats(data.data)
+          writeStoredUserDisplayName(data.data?.approver_name, 'Approver')
         }
       } catch (error) {
         console.error('Failed to fetch approver home stats:', error)
@@ -101,14 +104,23 @@ function ApproverHome() {
     fetchHomeStats()
   }, [])
 
-  const displayName = formatDisplayName(stats.approver_name, 'Approver')
+  const displayName = readStoredUserDisplayName() || formatDisplayName(stats.approver_name, 'Approver')
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
   const mappedUnits = Array.isArray(stats.mapped_units) ? stats.mapped_units : []
+  const uniqueMappedUnits = Array.from(
+    mappedUnits.reduce((map, unit) => {
+      const key = String(unit?.unit_id || '').trim() || `${unit?.company_identifier || 'company'}-${unit?.unit_name || 'unit'}`
+      if (!map.has(key)) {
+        map.set(key, unit)
+      }
+      return map
+    }, new Map()).values()
+  )
   const companyDetailsPayload = stats.company_details && typeof stats.company_details === 'object'
     ? stats.company_details
     : {}
   const approverCompanyName = String(
-    companyDetailsPayload.company_name || stats.company_name || mappedUnits[0]?.company_name || ''
+    companyDetailsPayload.company_name || stats.company_name || uniqueMappedUnits[0]?.company_name || ''
   ).trim()
   const buildCompanyDetailRows = (details = {}) => (
     Object.entries(details)
@@ -118,7 +130,7 @@ function ApproverHome() {
         value,
       }))
   )
-  const companyGroups = mappedUnits.reduce((groups, unit) => {
+  const companyGroups = uniqueMappedUnits.reduce((groups, unit) => {
     const key = unit.company_identifier || stats.company_identifier || 'unknown-company'
     if (!groups[key]) {
       const details = {
@@ -266,8 +278,9 @@ function ApproverHome() {
               </Typography>
             </Box>
 
-            <Typography
-              sx={{
+            <DashboardGreeting
+              displayName={displayName}
+              primarySx={{
                 fontSize: { xs: '1.85rem', sm: '2.35rem', md: '2.7rem' },
                 fontWeight: 900,
                 color: theme.palette.text.primary,
@@ -275,9 +288,7 @@ function ApproverHome() {
                 letterSpacing: '-0.03em',
                 maxWidth: '100%',
               }}
-            >
-              Welcome back, {displayName}
-            </Typography>
+            />
 
             <Typography
               sx={{
@@ -292,52 +303,9 @@ function ApproverHome() {
             </Typography>
 
             <Box sx={{ mt: 2.4, display: 'flex', flexDirection: 'column', gap: 1.1, maxWidth: 760 }}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 1,
-                  alignItems: 'center',
-                }}
-              >
-                {[
-                  { label: 'Users', value: stats.total_users, accent: blueTokens.accent || theme.palette.info.main },
-                  { label: 'Units', value: mappedUnits.length, accent: theme.palette.primary.main },
-                ].map((item) => (
-                  <Box
-                    key={item.label}
-                    sx={{
-                      display: 'inline-flex',
-                      alignItems: 'baseline',
-                      gap: 0.75,
-                      px: 1.15,
-                      py: 0.65,
-                      borderRadius: 1.5,
-                      border: `1px solid ${alpha(item.accent, theme.palette.mode === 'dark' ? 0.28 : 0.18)}`,
-                      backgroundColor: alpha(item.accent, theme.palette.mode === 'dark' ? 0.1 : 0.055),
-                    }}
-                  >
-                    <Typography
-                      sx={{
-                        fontSize: '1rem',
-                        fontWeight: 900,
-                        lineHeight: 1,
-                        color: theme.palette.text.primary,
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {loading ? '-' : item.value}
-                    </Typography>
-                    <Typography sx={{ fontSize: '0.76rem', fontWeight: 800, color: theme.palette.text.secondary }}>
-                      {item.label}
-                    </Typography>
-                  </Box>
-                ))}
-              </Box>
-
-              {mappedUnits.length > 0 ? (
+              {uniqueMappedUnits.length > 0 ? (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.7 }}>
-                  {mappedUnits.map((unit) => (
+                  {uniqueMappedUnits.map((unit) => (
                     <Box
                       key={`${unit.company_identifier || 'company'}-${unit.unit_id}`}
                       sx={{

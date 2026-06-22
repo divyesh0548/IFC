@@ -15,6 +15,8 @@ import PolicyRoundedIcon from '@mui/icons-material/PolicyRounded'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatDisplayName } from '../../utils/displayName'
+import DashboardGreeting from '../../components/DashboardGreeting'
+import { readStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
 
 function AuditorHome() {
   const theme = useTheme()
@@ -41,6 +43,7 @@ function AuditorHome() {
 
         if (response.ok && data.success) {
           setStats(data.data || {})
+          writeStoredUserDisplayName(data.data?.auditor_name, 'Auditor')
         } else {
           setError(data.message || 'Failed to load auditor dashboard')
         }
@@ -60,7 +63,7 @@ function AuditorHome() {
   }, [])
 
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
-  const displayName = formatDisplayName(stats?.auditor_name, 'Auditor')
+  const displayName = readStoredUserDisplayName() || formatDisplayName(stats?.auditor_name, 'Auditor')
 
   const quickStats = [
     {
@@ -221,8 +224,9 @@ function AuditorHome() {
               </Typography>
             </Box>
 
-            <Typography
-              sx={{
+            <DashboardGreeting
+              displayName={displayName}
+              primarySx={{
                 fontSize: { xs: '1.85rem', sm: '2.35rem', md: '2.7rem' },
                 fontWeight: 900,
                 color: theme.palette.text.primary,
@@ -230,9 +234,7 @@ function AuditorHome() {
                 letterSpacing: '-0.03em',
                 maxWidth: '100%',
               }}
-            >
-              Welcome back, {displayName}
-            </Typography>
+            />
 
             <Typography
               sx={{

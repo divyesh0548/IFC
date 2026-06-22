@@ -6,10 +6,14 @@ export function formatDisplayName(value, fallback = 'User') {
   const raw = String(value || '').trim()
   if (!raw) return fallback
 
-  const source = raw.includes('@') ? (raw.split('@')[0] || '') : raw
+  const isEmail = raw.includes('@')
+  const source = isEmail ? (raw.split('@')[0] || '') : raw
   const words = source
     .split(/[._\-|\s]+/)
-    .map((part) => String(part || '').trim())
+    .map((part) => {
+      const normalizedPart = String(part || '').trim()
+      return isEmail ? normalizedPart.replace(/\d+/g, '') : normalizedPart
+    })
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
 

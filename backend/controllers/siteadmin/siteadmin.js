@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { pool } = require('../../utils/db');
 const { prisma } = require('../../lib/prisma');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
-const { encryptTempPassword } = require('../../utils/login_email');
+const { encryptTempPassword, sendUserCreationEmail } = require('../../utils/login_email');
 const { deleteFileFromS3 } = require('../../utils/s3Upload');
 const { createBusinessProcessMasterEntry } = require('../../utils/business_process_master');
 const { sendEmail } = require('../../utils/send_email');
@@ -39,18 +39,6 @@ function generateUnitIdentifier(unitName) {
   return (namePart + randomPart).substring(0, 10);
 }
 
-function normalizeCompanyUnits(companyUnits) {
-  const units = Array.isArray(companyUnits) && companyUnits.length > 0
-    ? companyUnits
-    : [{ unit_name: 'Main Unit', unit_address: '' }];
-
-  return units
-    .map((unit) => ({
-      unit_name: String(unit?.unit_name ?? unit?.unit ?? '').trim(),
-      unit_address: String(unit?.unit_address ?? '').trim(),
-    }));
-}
-
 function normalizeCoordinatorUnitIndexes(coordinatorUnitIndexes, unitCount) {
   if (!Array.isArray(coordinatorUnitIndexes)) {
     return [];
@@ -69,6 +57,27 @@ function normalizeEmail(email) {
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
+}
+
+function normalizeCompanyAdminEmails(companyAdminEmails, fallbackEmail) {
+  const rawEmails = Array.isArray(companyAdminEmails) && companyAdminEmails.length > 0
+    ? companyAdminEmails
+    : [fallbackEmail];
+
+  return [...new Set(
+    rawEmails
+      .map((email) => normalizeEmail(email))
+      .filter(Boolean)
+  )];
+}
+
+async function getCompanyName(companyIdentifier) {
+  if (!companyIdentifier) return null;
+  const company = await prisma.company.findUnique({
+    where: { companyIdentifier },
+    select: { companyName: true },
+  });
+  return company?.companyName || null;
 }
 
 function getUnitMappingRoleConfig(role) {
@@ -165,6 +174,7 @@ async function createCompanyPrivilegedUser(client, companyIdentifier, payload = 
       company_identifier: createdUser.companyIdentifier,
     },
     loginEmailQueued: true,
+    tempPassword,
   };
 }
 
@@ -211,13 +221,17 @@ async function getCompanyByIdentifier(req, res) {
           cum.unit_id,
           cum.unit_name,
           cum.unit_address,
-          cur.user_email_id AS coordinator_email_id
+          COALESCE(
+            array_agg(cua.coordinator_email_id ORDER BY cua.coordinator_email_id)
+              FILTER (WHERE cua.coordinator_email_id IS NOT NULL),
+            ARRAY[]::varchar[]
+          ) AS coordinator_email_ids
         FROM company_unit_master cum
-        LEFT JOIN company_unit_responsibilities cur
-          ON cur.company_identifier = cum.company_identifier
-         AND cur.unit_id = cum.unit_id
-         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        LEFT JOIN coordinator_unit_assignments cua
+          ON cua.company_identifier = cum.company_identifier
+         AND cua.unit_id = cum.unit_id
         WHERE cum.company_identifier = $1
+        GROUP BY cum.id, cum.unit_id, cum.unit_name, cum.unit_address
         ORDER BY cum.id ASC
       `,
       [company_identifier]
@@ -445,30 +459,25 @@ async function createCompany(req, res) {
     pan,
     number_of_corporate_offices,
     number_of_factory_units,
-    company_units,
+    company_admin_emails,
+    company_admin_email,
   } = req.body;
+  const companyAdminEmails = normalizeCompanyAdminEmails(company_admin_emails, company_admin_email);
 
   // Validate required fields
   if (!company_name || !registered_email || !registered_address ||
       !unique_identification_number || !gst || !pan ||
-      !number_of_corporate_offices || !number_of_factory_units) {
+      !number_of_corporate_offices || !number_of_factory_units || companyAdminEmails.length === 0) {
     return res.status(400).json({
       success: false,
-      message: 'All required fields must be provided'
+      message: 'All required fields must be provided, including at least one company admin email'
     });
   }
 
-  const normalizedCompanyUnits = normalizeCompanyUnits(company_units);
-  if (normalizedCompanyUnits.length === 0) {
+  if (companyAdminEmails.some((email) => !isValidEmail(email))) {
     return res.status(400).json({
       success: false,
-      message: 'At least one company unit must be provided'
-    });
-  }
-  if (normalizedCompanyUnits.some((unit) => unit.unit_name === '')) {
-    return res.status(400).json({
-      success: false,
-      message: 'Unit name is required for every company unit'
+      message: 'One or more company admin emails are invalid'
     });
   }
 
@@ -477,8 +486,23 @@ async function createCompany(req, res) {
 
     // Generate company identifier
     const company_identifier = generateCompanyIdentifier(company_name);
+    const { company, companyAdmins } = await prisma.$transaction(async (tx) => {
+      const existingAdmins = await tx.ifcUser.findMany({
+        where: {
+          emailId: {
+            in: companyAdminEmails,
+          },
+        },
+        select: { emailId: true },
+      });
 
-    const { company, companyUnits } = await prisma.$transaction(async (tx) => {
+      if (existingAdmins.length > 0) {
+        const existingEmails = existingAdmins.map((admin) => admin.emailId).join(', ');
+        const error = new Error(`User with this company admin email already exists: ${existingEmails}`);
+        error.code = 'P2002';
+        throw error;
+      }
+
       const createdCompany = await tx.company.create({
         data: {
           companyIdentifier: company_identifier,
@@ -498,46 +522,34 @@ async function createCompany(req, res) {
         },
       });
 
-      const createdUnits = [];
-      for (const unit of normalizedCompanyUnits) {
-        let insertedUnit = null;
-        let attempts = 0;
-
-        while (!insertedUnit && attempts < 5) {
-          attempts += 1;
-          const unitId = generateUnitIdentifier(unit.unit_name);
-
-          try {
-            insertedUnit = await tx.companyUnitMaster.create({
-              data: {
-                companyIdentifier: company_identifier,
-                unitName: unit.unit_name,
-                unitAddress: unit.unit_address || null,
-                unitId,
-              },
-              select: {
-                id: true,
-                unitId: true,
-                unitName: true,
-                unitAddress: true,
-              },
-            });
-          } catch (unitError) {
-            const uniqueViolation =
-              unitError?.code === 'P2002' ||
-              String(unitError?.meta?.target || '').includes('unit_id');
-            if (uniqueViolation && attempts < 5) {
-              continue;
-            }
-            throw unitError;
-          }
-        }
-
-        createdUnits.push({
-          id: insertedUnit.id,
-          unit_id: insertedUnit.unitId,
-          unit_name: insertedUnit.unitName,
-          unit_address: insertedUnit.unitAddress,
+      const createdCompanyAdmins = [];
+      for (const emailId of companyAdminEmails) {
+        const tempPassword = crypto.randomBytes(8).toString('hex');
+        const tempPasswordHash = await hashPassword(tempPassword);
+        const tempPasswordEncrypted = encryptTempPassword(tempPassword);
+        const createdCompanyAdmin = await tx.ifcUser.create({
+          data: {
+            emailId,
+            password: tempPasswordHash,
+            role: 'company_admin',
+            companyIdentifier: company_identifier,
+            tempLogin: true,
+            loginEmailSent: false,
+            tempPasswordEncrypted,
+          },
+          select: {
+            id: true,
+            emailId: true,
+            role: true,
+            companyIdentifier: true,
+          },
+        });
+        createdCompanyAdmins.push({
+          id: createdCompanyAdmin.id,
+          email_id: createdCompanyAdmin.emailId,
+          role: createdCompanyAdmin.role,
+          company_identifier: createdCompanyAdmin.companyIdentifier,
+          tempPassword,
         });
       }
 
@@ -546,12 +558,34 @@ async function createCompany(req, res) {
           id: createdCompany.id,
           company_identifier: createdCompany.companyIdentifier,
         },
-        companyUnits: createdUnits,
+        companyAdmins: createdCompanyAdmins,
       };
     }, {
       maxWait: 10000,
       timeout: 30000,
     });
+
+    for (const companyAdmin of companyAdmins) {
+      try {
+        const emailSent = await sendUserCreationEmail(pool, {
+          userId: companyAdmin.id,
+          emailId: companyAdmin.email_id,
+          role: companyAdmin.role,
+          userName: 'Company Admin',
+          coordinatorName: req.user?.emp_name || 'Site Admin',
+          coordinatorEmail: req.user?.email_id,
+          companyName: company_name,
+          tempPassword: companyAdmin.tempPassword,
+        });
+        if (!emailSent) {
+          console.warn(`Warning: failed to send company admin creation email to ${companyAdmin.email_id}`);
+        }
+      } catch (emailError) {
+        console.error(`Company admin creation email error for ${companyAdmin.email_id}:`, emailError);
+      }
+    }
+
+    const responseCompanyAdmins = companyAdmins.map(({ tempPassword: _tempPassword, ...companyAdmin }) => companyAdmin);
 
     res.status(201).json({
       success: true,
@@ -561,23 +595,16 @@ async function createCompany(req, res) {
         company_identifier: company.company_identifier,
         company_name: company_name
       },
-      company_units: companyUnits
+      company_admins: responseCompanyAdmins
     });
 
   } catch (error) {
     console.error('Error creating company:', error);
 
     if (error.code === 'P2002') {
-      if (String(error.meta?.target || '').includes('unit_id')) {
-        return res.status(409).json({
-          success: false,
-          message: 'Company unit identifier already exists. Please try again.'
-        });
-      }
-
       return res.status(409).json({
         success: false,
-        message: 'Company with this identifier already exists'
+        message: error.message || 'Company with this identifier already exists'
       });
     }
 
@@ -872,9 +899,12 @@ async function createCompanyCoordinator(req, res) {
       });
     }
 
+    const companyName = await getCompanyName(companyIdentifier);
+    const coordinatorName = String(req.user?.emp_name || '').trim() || 'Site Admin';
+
     await client.query('BEGIN');
 
-    const { user, loginEmailQueued } = await createCompanyPrivilegedUser(
+    const { user, loginEmailQueued, tempPassword } = await createCompanyPrivilegedUser(
       client,
       companyIdentifier,
       req.body,
@@ -882,6 +912,23 @@ async function createCompanyCoordinator(req, res) {
     );
 
     await client.query('COMMIT');
+
+    try {
+      const emailSent = await sendUserCreationEmail(pool, {
+        userId: user.id,
+        emailId: user.email_id,
+        role: user.role,
+        coordinatorEmail: req.user?.email_id,
+        coordinatorName,
+        companyName,
+        tempPassword,
+      });
+      if (!emailSent) {
+        console.warn(`Warning: failed to send siteadmin coordinator creation email to ${user.email_id}`);
+      }
+    } catch (emailError) {
+      console.error('Siteadmin coordinator creation email error:', emailError);
+    }
 
     return res.status(201).json({
       success: true,
@@ -927,9 +974,12 @@ async function createCompanyApprover(req, res) {
       });
     }
 
+    const companyName = await getCompanyName(companyIdentifier);
+    const coordinatorName = String(req.user?.emp_name || '').trim() || 'Site Admin';
+
     await client.query('BEGIN');
 
-    const { user, loginEmailQueued } = await createCompanyPrivilegedUser(
+    const { user, loginEmailQueued, tempPassword } = await createCompanyPrivilegedUser(
       client,
       companyIdentifier,
       req.body,
@@ -937,6 +987,23 @@ async function createCompanyApprover(req, res) {
     );
 
     await client.query('COMMIT');
+
+    try {
+      const emailSent = await sendUserCreationEmail(pool, {
+        userId: user.id,
+        emailId: user.email_id,
+        role: user.role,
+        coordinatorEmail: req.user?.email_id,
+        coordinatorName,
+        companyName,
+        tempPassword,
+      });
+      if (!emailSent) {
+        console.warn(`Warning: failed to send siteadmin approver creation email to ${user.email_id}`);
+      }
+    } catch (emailError) {
+      console.error('Siteadmin approver creation email error:', emailError);
+    }
 
     return res.status(201).json({
       success: true,

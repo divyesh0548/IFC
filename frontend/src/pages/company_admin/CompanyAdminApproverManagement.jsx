@@ -1,0 +1,461 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { alpha, useTheme } from '@mui/material/styles'
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
+import FormControl from '@mui/material/FormControl'
+import InputAdornment from '@mui/material/InputAdornment'
+import InputLabel from '@mui/material/InputLabel'
+import MenuItem from '@mui/material/MenuItem'
+import Paper from '@mui/material/Paper'
+import Select from '@mui/material/Select'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableContainer from '@mui/material/TableContainer'
+import TableHead from '@mui/material/TableHead'
+import TableRow from '@mui/material/TableRow'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import { toast } from 'react-hot-toast'
+import { useSearchParams } from 'react-router-dom'
+import { apiUrl } from '../../config/api'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
+import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX, getAppDialogCancelButtonSx } from '../../components/AppDialog'
+
+const emptyData = {
+  approvers: [],
+  approverAssignments: [],
+  units: [],
+  businessProcesses: [],
+}
+
+const createAssignmentDialogState = () => ({
+  open: false,
+  approver: null,
+  scopeType: 'UNIT',
+  unitId: '',
+  businessProcess: '',
+  submitting: false,
+  error: '',
+})
+
+function formatScopeLabel(scope) {
+  switch (String(scope || '').trim().toUpperCase()) {
+    case 'UNIT':
+      return 'Unit'
+    case 'BUSINESS_PROCESS':
+      return 'Unit + Business Process'
+    case 'RACM':
+      return 'Specific RACM'
+    default:
+      return 'Unassigned'
+  }
+}
+
+function CompanyAdminApproverManagement() {
+  const theme = useTheme()
+  const [searchParams] = useSearchParams()
+  const presetUnitId = String(searchParams.get('unit_id') || '').trim()
+  const [data, setData] = useState(emptyData)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [assignmentFilter, setAssignmentFilter] = useState('all')
+  const [unitFilter, setUnitFilter] = useState(presetUnitId || 'all')
+  const [assignmentDialog, setAssignmentDialog] = useState(createAssignmentDialogState)
+
+  useSyncGlobalLoading(loading)
+  useSyncGlobalLoading(assignmentDialog.submitting)
+
+  const fetchApproverManagement = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [unitResponse, filtersResponse] = await Promise.all([
+        fetch(apiUrl('/api/company-admin/unit-management'), { credentials: 'include' }),
+        fetch(apiUrl('/api/company-admin/racm-dashboard/filters'), { credentials: 'include' }),
+      ])
+
+      const [unitResult, filtersResult] = await Promise.all([unitResponse.json(), filtersResponse.json()])
+
+      if (!unitResponse.ok || !unitResult?.success) {
+        throw new Error(unitResult?.message || 'Failed to fetch approver management data')
+      }
+      if (!filtersResponse.ok || !filtersResult?.success) {
+        throw new Error(filtersResult?.message || 'Failed to fetch business process list')
+      }
+
+      setData({
+        approvers: Array.isArray(unitResult.data?.approvers) ? unitResult.data.approvers : [],
+        approverAssignments: Array.isArray(unitResult.data?.approverAssignments) ? unitResult.data.approverAssignments : [],
+        units: Array.isArray(unitResult.data?.units) ? unitResult.data.units : [],
+        businessProcesses: Array.isArray(filtersResult.data?.businessProcesses) ? filtersResult.data.businessProcesses : [],
+      })
+    } catch (fetchError) {
+      console.error('Company admin approver management fetch error:', fetchError)
+      setData(emptyData)
+      setError(fetchError.message || 'Network error while fetching approver management data')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchApproverManagement()
+  }, [fetchApproverManagement])
+
+  const tableBorderColor = theme.palette.mode === 'light'
+    ? alpha(theme.palette.text.primary, 0.16)
+    : alpha('#0f172a', 0.72)
+  const commonCellSx = {
+    py: 1.5,
+    px: 2.25,
+    borderBottom: `1px solid ${tableBorderColor}`,
+    verticalAlign: 'top',
+  }
+  const headCellSx = {
+    ...commonCellSx,
+    fontSize: '0.76rem',
+    fontWeight: 800,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    color: 'text.secondary',
+    backgroundColor: TABLE_HEADER_BG,
+  }
+
+  const approverRows = useMemo(() => {
+    const normalizedSearch = String(searchTerm || '').trim().toLowerCase()
+
+    return data.approvers
+      .map((approver) => {
+        const approverEmail = String(approver.email_id || '').trim().toLowerCase()
+        const assignments = data.approverAssignments.filter((item) => {
+          const sameApprover = String(item.approver_email_id || '').trim().toLowerCase() === approverEmail
+          const sameUnit = unitFilter === 'all' || String(item.unit_id || '').trim() === unitFilter
+          return sameApprover && sameUnit
+        })
+        return {
+          ...approver,
+          assignments,
+          assigned: assignments.length > 0,
+        }
+      })
+      .filter((approver) => {
+        if (assignmentFilter === 'assigned' && !approver.assigned) return false
+        if (assignmentFilter === 'unassigned' && approver.assigned) return false
+
+        if (!normalizedSearch) return true
+        const displayName = String(approver.display_name || '').trim().toLowerCase()
+        const emailId = String(approver.email_id || '').trim().toLowerCase()
+        return displayName.includes(normalizedSearch) || emailId.includes(normalizedSearch)
+      })
+      .sort((left, right) => String(left.display_name || left.email_id || '').localeCompare(String(right.display_name || right.email_id || '')))
+  }, [assignmentFilter, data.approverAssignments, data.approvers, searchTerm, unitFilter])
+
+  const currentAssignments = useMemo(() => {
+    if (!assignmentDialog.approver?.email_id) return []
+    const approverEmail = String(assignmentDialog.approver.email_id || '').trim().toLowerCase()
+    return data.approverAssignments.filter((item) => String(item.approver_email_id || '').trim().toLowerCase() === approverEmail)
+  }, [assignmentDialog.approver, data.approverAssignments])
+
+  const handleOpenAssignmentDialog = (approver) => {
+    const defaultUnitId = unitFilter !== 'all' ? unitFilter : data.units[0]?.unit_id || ''
+    setAssignmentDialog({
+      ...createAssignmentDialogState(),
+      open: true,
+      approver,
+      unitId: defaultUnitId,
+      businessProcess: data.businessProcesses[0] || '',
+    })
+  }
+
+  const handleSaveAssignment = async () => {
+    if (!assignmentDialog.approver?.email_id) {
+      setAssignmentDialog((prev) => ({ ...prev, error: 'Approver is required' }))
+      return
+    }
+    if (!assignmentDialog.unitId) {
+      setAssignmentDialog((prev) => ({ ...prev, error: 'Unit is required' }))
+      return
+    }
+    if (assignmentDialog.scopeType === 'BUSINESS_PROCESS' && !assignmentDialog.businessProcess) {
+      setAssignmentDialog((prev) => ({ ...prev, error: 'Business process is required' }))
+      return
+    }
+
+    setAssignmentDialog((prev) => ({ ...prev, submitting: true, error: '' }))
+    try {
+      const response = await fetch(apiUrl('/api/company-admin/unit-management/approver-assignments'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          approver_email_id: assignmentDialog.approver.email_id,
+          assignment_scope: assignmentDialog.scopeType,
+          unit_id: assignmentDialog.unitId,
+          business_process: assignmentDialog.scopeType === 'BUSINESS_PROCESS' ? assignmentDialog.businessProcess : null,
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Failed to save approver assignment')
+      }
+
+      toast.success(result.message || 'Approver assignment saved successfully')
+      setAssignmentDialog(createAssignmentDialogState())
+      await fetchApproverManagement()
+    } catch (saveError) {
+      const message = saveError.message || 'Failed to save approver assignment'
+      toast.error(message)
+      setAssignmentDialog((prev) => ({ ...prev, submitting: false, error: message }))
+    }
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, py: 2 }}>
+      <Box sx={{ pb: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap' }}>
+        <Box>
+          <Typography component="h1" sx={{ fontSize: { xs: '1.45rem', sm: '1.7rem' }, fontWeight: 850, lineHeight: 1.15 }}>
+            Approver Management
+          </Typography>
+          <Typography sx={{ mt: 0.6, color: 'text.secondary', fontSize: '0.94rem', lineHeight: 1.6 }}>
+            Search approvers, filter by assignment status, and assign unit or process scope.
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1.2, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <TextField
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search by email or name"
+            size="small"
+            sx={{ minWidth: { xs: '100%', sm: 280 } }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel id="company-admin-approver-filter-label">Assignment</InputLabel>
+            <Select
+              labelId="company-admin-approver-filter-label"
+              label="Assignment"
+              value={assignmentFilter}
+              onChange={(event) => setAssignmentFilter(event.target.value)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              <MenuItem value="assigned">Assigned</MenuItem>
+              <MenuItem value="unassigned">Unassigned</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <InputLabel id="company-admin-approver-unit-filter-label">Unit</InputLabel>
+            <Select
+              labelId="company-admin-approver-unit-filter-label"
+              label="Unit"
+              value={unitFilter}
+              onChange={(event) => setUnitFilter(event.target.value)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              {data.units.map((unit) => (
+                <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                  {unit.unit_name || unit.unit_id}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+      </Box>
+
+      {error && <Alert severity="error">{error}</Alert>}
+
+      {loading ? (
+        <Paper elevation={0} sx={{ p: 4, borderRadius: 2, border: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.25 }}>
+          <CircularProgress size={22} />
+          <Typography color="text.secondary">Loading approver management data...</Typography>
+        </Paper>
+      ) : (
+        <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+          <TableContainer>
+            <Table sx={{ minWidth: 900, tableLayout: 'fixed' }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ ...headCellSx, width: '34%' }}>Approver</TableCell>
+                  <TableCell sx={{ ...headCellSx, width: '16%' }}>Status</TableCell>
+                  <TableCell sx={{ ...headCellSx, width: '24%' }}>Current Scope</TableCell>
+                  <TableCell sx={{ ...headCellSx, width: '26%' }}>Unit Name</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {approverRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} sx={{ py: 4, textAlign: 'center', borderBottom: 0 }}>
+                      No approvers found for the selected filter.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  approverRows.map((row, index) => {
+                    const latestAssignment = row.assignments[0] || null
+                    const hasMultipleAssignments = row.assignments.length > 1
+                    const displayName = String(row.display_name || '').trim()
+                    const emailId = String(row.email_id || '').trim()
+                    const showName = displayName && displayName.toLowerCase() !== emailId.toLowerCase()
+                    return (
+                      <TableRow
+                        key={row.email_id}
+                        onClick={() => handleOpenAssignmentDialog(row)}
+                        sx={{
+                          cursor: 'pointer',
+                          '&:hover': { backgroundColor: TABLE_ROW_HOVER_BG },
+                          '&:last-of-type td': { borderBottom: 0 },
+                          '& td': { borderBottom: index === approverRows.length - 1 ? 0 : `1px solid ${tableBorderColor}` },
+                        }}
+                      >
+                        <TableCell sx={commonCellSx}>
+                          <Typography sx={{ fontWeight: 700 }}>{emailId || '-'}</Typography>
+                          {showName ? (
+                            <Typography variant="body2" color="text.secondary">{displayName}</Typography>
+                          ) : null}
+                        </TableCell>
+                        <TableCell sx={commonCellSx}>
+                          <Typography sx={{ fontWeight: 700, color: row.assigned ? 'success.main' : 'text.secondary' }}>
+                            {row.assigned ? 'Assigned' : 'Unassigned'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell sx={commonCellSx}>
+                          {hasMultipleAssignments
+                            ? 'Multiple (Click to view)'
+                            : latestAssignment
+                              ? formatScopeLabel(latestAssignment.assignment_scope)
+                              : '-'}
+                        </TableCell>
+                        <TableCell sx={commonCellSx}>
+                          {hasMultipleAssignments ? 'Multiple' : latestAssignment?.unit_name || '-'}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
+      )}
+
+      <AppDialog
+        open={assignmentDialog.open}
+        onClose={() => !assignmentDialog.submitting && setAssignmentDialog(createAssignmentDialogState())}
+        title={assignmentDialog.approver ? (
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.1, flexWrap: 'wrap' }}>
+            <Typography component="span" sx={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.25 }}>
+              Assign Approver
+            </Typography>
+            <Typography component="span" sx={{ color: 'text.secondary', fontSize: '0.92rem', fontWeight: 400, lineHeight: 1.25 }}>
+              ({assignmentDialog.approver.email_id})
+            </Typography>
+          </Box>
+        ) : 'Assign Approver'}
+        titleId="company-admin-approver-assignment-dialog-title"
+        fullWidth
+        maxWidth="md"
+        showTitleDivider
+        titleSx={{ pb: 1.15 }}
+        contentSx={{ pt: 2.2 }}
+        actions={(
+          <>
+            <Button onClick={() => setAssignmentDialog(createAssignmentDialogState())} disabled={assignmentDialog.submitting} variant="outlined" sx={getAppDialogCancelButtonSx(theme)}>
+              Cancel
+            </Button>
+            <Button variant="contained" onClick={handleSaveAssignment} disabled={assignmentDialog.submitting || !assignmentDialog.unitId} sx={APP_DIALOG_PRIMARY_BUTTON_SX}>
+              {assignmentDialog.submitting ? 'Saving...' : 'Save Assignment'}
+            </Button>
+          </>
+        )}
+      >
+        <Typography sx={{ fontWeight: 700, mt: 0.35 }}>Current Assignments</Typography>
+        {currentAssignments.length === 0 ? (
+          <Typography color="text.secondary">No assignments found for this approver.</Typography>
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {currentAssignments.map((assignment) => (
+              <Box
+                key={assignment.id}
+                sx={{
+                  px: 1.5,
+                  py: 1.2,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  backgroundColor: alpha(theme.palette.background.default, 0.35),
+                }}
+              >
+                <Typography sx={{ fontWeight: 700 }}>{formatScopeLabel(assignment.assignment_scope)}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {[assignment.unit_name, assignment.business_process, assignment.form_id].filter(Boolean).join(' | ') || '-'}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        <Typography sx={{ fontWeight: 700, mt: 0.5 }}>New Assignment</Typography>
+        <FormControl fullWidth required>
+          <InputLabel id="company-admin-approver-scope-label">Assignment Type</InputLabel>
+          <Select
+            labelId="company-admin-approver-scope-label"
+            label="Assignment Type"
+            value={assignmentDialog.scopeType}
+            onChange={(event) => setAssignmentDialog((prev) => ({ ...prev, scopeType: event.target.value, error: '' }))}
+          >
+            <MenuItem value="UNIT">Unit</MenuItem>
+            <MenuItem value="BUSINESS_PROCESS">Unit + Business Process</MenuItem>
+          </Select>
+        </FormControl>
+        <FormControl fullWidth required>
+          <InputLabel id="company-admin-approver-unit-label">Unit</InputLabel>
+          <Select
+            labelId="company-admin-approver-unit-label"
+            label="Unit"
+            value={assignmentDialog.unitId}
+            onChange={(event) => setAssignmentDialog((prev) => ({ ...prev, unitId: event.target.value, error: '' }))}
+          >
+            {data.units.map((unit) => (
+              <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                {unit.unit_name || unit.unit_id}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        {assignmentDialog.scopeType === 'BUSINESS_PROCESS' ? (
+          <FormControl fullWidth required>
+            <InputLabel id="company-admin-approver-process-label">Business Process</InputLabel>
+            <Select
+              labelId="company-admin-approver-process-label"
+              label="Business Process"
+              value={assignmentDialog.businessProcess}
+              onChange={(event) => setAssignmentDialog((prev) => ({ ...prev, businessProcess: event.target.value, error: '' }))}
+            >
+              {data.businessProcesses.map((processName) => (
+                <MenuItem key={processName} value={processName}>
+                  {processName}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        ) : null}
+        {assignmentDialog.error && <Alert severity="error">{assignmentDialog.error}</Alert>}
+      </AppDialog>
+    </Box>
+  )
+}
+
+export default CompanyAdminApproverManagement

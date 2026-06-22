@@ -6,11 +6,6 @@ import AppBar from '@mui/material/AppBar'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import Tooltip from '@mui/material/Tooltip'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogContentText from '@mui/material/DialogContentText'
-import DialogActions from '@mui/material/DialogActions'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
@@ -25,12 +20,19 @@ import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import { useThemeMode } from '../contexts/ThemeContext'
 import { toast } from 'react-hot-toast'
-import { STORAGE_KEYS, clearCachedUserProfile, clearCompanyFinancialYearOptionsCache } from '../storageKeys'
+import {
+  STORAGE_KEYS,
+  clearCachedUserProfile,
+  clearCompanyFinancialYearOptionsCache,
+  clearStoredUserDisplayName,
+} from '../storageKeys'
 import { MAIN_CONTENT_MAX_WIDTH, DASHBOARD_SECTION_GAP } from '../uiConstants'
 import { apiUrl } from '../config/api'
+import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX, getAppDialogCancelButtonSx } from './AppDialog'
 
 const getHomePath = (pathname) => {
   if (pathname.startsWith('/company_co')) return '/company_co/home'
+  if (pathname.startsWith('/company_admin')) return '/company_admin/home'
   if (pathname.startsWith('/siteadmin')) return '/siteadmin/dashboard'
   if (pathname.startsWith('/user')) return '/user/home'
   if (pathname.startsWith('/approver')) return '/approver/home'
@@ -40,6 +42,7 @@ const getHomePath = (pathname) => {
 
 const getProfilePath = (pathname) => {
   if (pathname.startsWith('/company_co')) return '/company_co/profile'
+  if (pathname.startsWith('/company_admin')) return '/company_admin/profile'
   if (pathname.startsWith('/siteadmin')) return '/siteadmin/profile'
   if (pathname.startsWith('/user')) return '/user/profile'
   if (pathname.startsWith('/approver')) return '/approver/profile'
@@ -126,6 +129,7 @@ function DashboardLayout() {
         localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
         clearCompanyFinancialYearOptionsCache()
         clearCachedUserProfile()
+        clearStoredUserDisplayName()
         toast.success('Logged out successfully')
         navigate('/login')
       } else {
@@ -133,6 +137,7 @@ function DashboardLayout() {
         toast.error(data.message || 'Logout failed')
         clearCompanyFinancialYearOptionsCache()
         clearCachedUserProfile()
+        clearStoredUserDisplayName()
         navigate('/login')
       }
     } catch (error) {
@@ -140,6 +145,7 @@ function DashboardLayout() {
       toast.error('Error during logout')
       clearCompanyFinancialYearOptionsCache()
       clearCachedUserProfile()
+      clearStoredUserDisplayName()
       navigate('/login')
     }
   }
@@ -284,100 +290,44 @@ function DashboardLayout() {
         </Toolbar>
       </AppBar>
 
-      <Dialog
+      <AppDialog
         open={logoutDialogOpen}
         onClose={() => setLogoutDialogOpen(false)}
-        aria-labelledby="logout-dialog-title"
-        aria-describedby="logout-dialog-description"
+        title="Confirm Logout"
+        titleId="logout-dialog-title"
+        description="Are you sure you want to log out? You will need to log in again to access your account."
+        descriptionId="logout-dialog-description"
         PaperProps={{
           sx: {
             minWidth: { xs: '90%', sm: '400px' },
           },
         }}
-      >
-        <DialogTitle
-          id="logout-dialog-title"
-          sx={{
-            borderBottom: 0,
-          }}
-        >
-          Confirm Logout
-        </DialogTitle>
-        <DialogContent
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            px: 3,
-            pt: 2.75,
-            pb: 2.25,
-          }}
-        >
-          <DialogContentText
-            id="logout-dialog-description"
-            sx={{
-              color: theme.palette.text.secondary,
-              fontSize: '0.9375rem',
-              lineHeight: 1.65,
-              m: 0,
-            }}
-          >
-            Are you sure you want to log out? You will need to log in again to access your account.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions
-          sx={{
-            px: 3,
-            pt: 2,
-            pb: 2.5,
-          }}
-        >
-          <Button
-            onClick={() => setLogoutDialogOpen(false)}
-            variant="outlined"
-            sx={{
-              textTransform: 'none',
-              px: 3,
-              py: 1,
-              minWidth: '100px',
-              borderColor:
-                theme.palette.mode === 'dark'
-                  ? 'rgba(255, 255, 255, 0.23)'
-                  : 'rgba(0, 0, 0, 0.23)',
-              color: theme.palette.text.primary,
-              '&:hover': {
-                borderColor:
-                  theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.3)'
-                    : 'rgba(0, 0, 0, 0.3)',
-                backgroundColor:
-                  theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.05)'
-                    : 'rgba(0, 0, 0, 0.04)',
-              },
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              setLogoutDialogOpen(false)
-              handleUnifiedLogout()
-            }}
-            variant="contained"
-            color="secondary"
-            autoFocus
-            sx={{
-              textTransform: 'none',
-              px: 3,
-              py: 1,
-              minWidth: '100px',
-              fontWeight: 600,
-            }}
-          >
-            Log out
-          </Button>
-        </DialogActions>
-      </Dialog>
+        actions={
+          <>
+            <Button
+              onClick={() => setLogoutDialogOpen(false)}
+              variant="outlined"
+              sx={getAppDialogCancelButtonSx(theme)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setLogoutDialogOpen(false)
+                handleUnifiedLogout()
+              }}
+              variant="contained"
+              color="secondary"
+              autoFocus
+              sx={{
+                ...APP_DIALOG_PRIMARY_BUTTON_SX,
+              }}
+            >
+              Log out
+            </Button>
+          </>
+        }
+      />
 
       <Box
         component="main"

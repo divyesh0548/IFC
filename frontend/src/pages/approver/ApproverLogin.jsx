@@ -12,7 +12,12 @@ import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Alert from '@mui/material/Alert'
 import { toast } from 'react-hot-toast'
-import { STORAGE_KEYS, clearCachedUserProfile } from '../../storageKeys'
+import {
+  STORAGE_KEYS,
+  clearCachedUserProfile,
+  clearStoredUserDisplayName,
+  writeStoredUserDisplayName,
+} from '../../storageKeys'
 import { apiUrl } from '../../config/api'
 
 function ApproverLogin() {
@@ -28,6 +33,8 @@ function ApproverLogin() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    clearCachedUserProfile()
+    clearStoredUserDisplayName()
 
     try {
       const response = await fetch(apiUrl('/api/auth/approver/login'), {
@@ -45,9 +52,9 @@ function ApproverLogin() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        clearCachedUserProfile()
         // Login successful - token is stored in httpOnly cookie
         console.log('Approver login successful:', data.approver)
+        writeStoredUserDisplayName(data.approver, 'Approver')
         localStorage.removeItem(STORAGE_KEYS.companyIdentifier)
         localStorage.removeItem(STORAGE_KEYS.companyName)
         toast.success('Login successful!')

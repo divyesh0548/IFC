@@ -10,7 +10,11 @@ import Button from '@mui/material/Button'
 import { toast } from 'react-hot-toast'
 import { MAIN_CONTENT_MAX_WIDTH, PAGE_SUBHEADER_TEXT_SX } from '../uiConstants'
 import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
-import { readCachedUserProfile, writeCachedUserProfile } from '../storageKeys'
+import {
+  readCachedUserProfile,
+  writeCachedUserProfile,
+  writeStoredUserDisplayName,
+} from '../storageKeys'
 import { apiUrl } from '../config/api'
 import { getMobileValidationError, normalizeMobileDigits } from '../utils/mobileValidation'
 
@@ -62,6 +66,7 @@ function ProfilePage() {
         if (response.ok && data.success && data.profile) {
           setProfile(data.profile)
           writeCachedUserProfile(data.profile)
+          writeStoredUserDisplayName(data.profile)
           setError('')
         } else {
           setError(data.message || 'Failed to load profile')
@@ -131,6 +136,7 @@ function ProfilePage() {
       if (response.ok && data.success && data.profile) {
         setProfile(data.profile)
         writeCachedUserProfile(data.profile)
+        writeStoredUserDisplayName(data.profile)
         setIsEditing(false)
         toast.success('Profile updated successfully')
       } else {

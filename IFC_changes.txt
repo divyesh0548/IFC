@@ -39,7 +39,7 @@ Try to summarize for each business process too.
 
 
 
-
+ 
 
 In Capex IFC of Rubamin there is a control frequency which is "Once in 3 year".
 

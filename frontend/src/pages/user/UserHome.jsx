@@ -20,6 +20,8 @@ import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
+import DashboardGreeting from '../../components/DashboardGreeting'
+import { readStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
 
 function normalizeStatus(status) {
   return String(status || '').trim().toLowerCase()
@@ -94,6 +96,7 @@ function UserHome() {
         const nextProfile = profileData.profile || {}
         if (cancelled) return
         setProfile(nextProfile)
+        writeStoredUserDisplayName(nextProfile, 'User')
 
         if (!nextProfile.email_id) {
           setForms([])
@@ -161,7 +164,7 @@ function UserHome() {
     )
   }, [forms])
 
-  const displayName = formatDisplayName(profile?.emp_name?.trim() || profile?.email_id, 'User')
+  const displayName = readStoredUserDisplayName() || formatDisplayName(profile?.emp_name?.trim() || profile?.email_id, 'User')
   const unitDisplay = profile?.unit_name || profile?.unit_id || '-'
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
   const companyDetailRows = Object.entries(profile?.company_details || {})
@@ -302,8 +305,9 @@ function UserHome() {
               </Typography>
             </Box>
 
-            <Typography
-              sx={{
+            <DashboardGreeting
+              displayName={displayName}
+              primarySx={{
                 fontSize: { xs: '1.85rem', sm: '2.35rem', md: '2.7rem' },
                 fontWeight: 900,
                 color: theme.palette.text.primary,
@@ -311,9 +315,7 @@ function UserHome() {
                 letterSpacing: '-0.03em',
                 maxWidth: '100%',
               }}
-            >
-              Welcome back, {displayName}
-            </Typography>
+            />
 
             <Typography
               sx={{

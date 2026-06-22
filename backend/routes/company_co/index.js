@@ -18,17 +18,6 @@ router.get('/ai-insights/key-manual-summary/availability', verifyCompanyCoordina
 router.get('/ai-insights/key-manual-summary', verifyCompanyCoordinator, controller.getKeyManualAiInsightsRun);
 router.post('/ai-insights/key-manual-summary/generate', verifyCompanyCoordinator, controller.generateKeyManualAiInsightsRun);
 router.delete('/ai-insights/key-manual-summary/:run_id', verifyCompanyCoordinator, controller.deleteKeyManualAiInsightsRun);
-router.get('/unit-management', verifyCompanyCoordinator, controller.getUnitManagement);
-router.post('/unit-management/units', verifyCompanyCoordinator, controller.createCompanyUnit);
-router.patch('/unit-management/units/:unit_id/assignment', verifyCompanyCoordinator, controller.updateUnitAssignment);
-router.post('/unit-management/coordinators', verifyCompanyCoordinator, controller.createUnitCoordinator);
-router.post('/unit-management/approvers', verifyCompanyCoordinator, controller.createUnitApprover);
-router.get('/users', verifyCompanyCoordinator, controller.getUsers);
-router.post('/create-user', verifyCompanyCoordinator, controller.createUser);
-router.post('/create-users-bulk', verifyCompanyCoordinator, controller.createUsersBulk);
-router.post('/delete-users', verifyCompanyCoordinator, controller.deleteUsers);
-router.get('/check-user/:email', verifyCompanyCoordinator, controller.checkUser);
-router.get('/check-user-role/:email', verifyCompanyCoordinator, controller.checkUserRole);
 router.get('/racm-audit-logs/:form_id', verifyCompanyCoordinator, controller.getRacmAuditLogs);
 router.get('/communication-matrix', verifyCompanyCoordinator, controller.getCommunicationMatrix);
 router.post('/communication-matrix/common', verifyCompanyCoordinator, controller.addCommonCommunicationEmails);

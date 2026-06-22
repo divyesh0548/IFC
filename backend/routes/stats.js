@@ -12,27 +12,23 @@ router.use(verifySiteadminAuth);
 // Stats endpoint - Get counts of companies and users (defined before other routes)
 router.get('/', async (req, res) => {
     try {
-      console.log('Fetching stats...');
-      
-      // Get company count
-      const companiesResult = await pool.query('SELECT COUNT(*) as count FROM companies');
-      const companyCount = parseInt(companiesResult.rows[0].count, 10);
-      console.log('Company count:', companyCount);
-  
-      // Get user count
-      const usersResult = await pool.query('SELECT COUNT(*) as count FROM ifc_users');
-      const userCount = parseInt(usersResult.rows[0].count, 10);
-      console.log('User count:', userCount);
+      const [companiesResult, usersResult, racmsResult] = await Promise.all([
+        pool.query('SELECT COUNT(*)::int as count FROM companies'),
+        pool.query("SELECT COUNT(*)::int as count FROM ifc_users WHERE LOWER(TRIM(COALESCE(role, ''))) <> 'siteadmin'"),
+        pool.query('SELECT COUNT(*)::int as count FROM control_forms'),
+      ]);
+      const companyCount = companiesResult.rows[0]?.count || 0;
+      const userCount = usersResult.rows[0]?.count || 0;
+      const totalRacms = racmsResult.rows[0]?.count || 0;
   
       const responseData = {
         success: true,
         data: {
           companies: companyCount,
-          users: userCount
+          users: userCount,
+          totalRacms,
         }
       };
-      
-      console.log('Sending stats response:', responseData);
       res.status(200).json(responseData);
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -62,6 +58,7 @@ router.get('/users/monthly-stats', async (req, res) => {
         COUNT(*) as user_count
       FROM ifc_users 
       WHERE EXTRACT(YEAR FROM created_at AT TIME ZONE 'Asia/Kolkata') = $1
+        AND LOWER(TRIM(COALESCE(role, ''))) <> 'siteadmin'
       GROUP BY EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Kolkata')::int
       ORDER BY month_num
     `;

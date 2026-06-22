@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -79,7 +79,10 @@ function getFileName(filePath) {
 function AuditorFormDetail() {
   const theme = useTheme()
   const navigate = useNavigate()
+  const location = useLocation()
   const { form_id } = useParams()
+  const isCompanyAdminView = location.pathname.startsWith('/company_admin')
+  const backPath = isCompanyAdminView ? '/company_admin/racms' : '/auditor/racms'
   const [formData, setFormData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -414,7 +417,7 @@ function AuditorFormDetail() {
                     color="primary"
                     size="medium"
                     startIcon={<HistoryRoundedIcon sx={{ fontSize: '1.2rem !important' }} />}
-                    onClick={() => navigate('/auditor/racms')}
+                    onClick={() => navigate(backPath)}
                     disableElevation
                     sx={{
                       alignSelf: { xs: 'flex-start', sm: 'center' },
@@ -608,7 +611,7 @@ function AuditorFormDetail() {
                   </Button>
 
                   <Button
-                    onClick={() => navigate('/auditor/racms')}
+                    onClick={() => navigate(backPath)}
                     fullWidth
                     variant="contained"
                     color="secondary"

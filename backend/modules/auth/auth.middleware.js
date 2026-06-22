@@ -2,7 +2,6 @@ const jwt = require('jsonwebtoken');
 const { decryptToken } = require('../../utils/auth_utility');
 const { pool } = require('../../utils/db');
 const { clearAuthCookies } = require('./auth.cookies');
-const { getResponsibilityTypeForRole } = require('../../utils/unit_responsibilities');
 
 function clearCookiesAndRespondAuthError(res, statusCode, message) {
   clearAuthCookies(res);
@@ -44,7 +43,7 @@ function getEmailFromAuthCookies(req) {
   return null;
 }
 
-async function ensurePrivilegedUserHasUnitAssignment(user) {
+async function ensurePrivilegedUserHasAssignment(user) {
   const normalizedRole = String(user?.role || '').trim().toLowerCase();
   const companyIdentifier = user?.company_identifier || null;
   const emailId = String(user?.email_id || '').trim().toLowerCase();
@@ -53,18 +52,22 @@ async function ensurePrivilegedUserHasUnitAssignment(user) {
     return true;
   }
 
-  const responsibilityType = getResponsibilityTypeForRole(normalizedRole);
-  const result = await pool.query(
-    `
+  const assignmentQuery = normalizedRole === 'company_co'
+    ? `
       SELECT 1
-      FROM company_unit_responsibilities
+      FROM coordinator_unit_assignments
       WHERE company_identifier = $1
-        AND responsibility_type = $2
-        AND LOWER(TRIM(user_email_id)) = $3
+        AND LOWER(TRIM(coordinator_email_id)) = $2
       LIMIT 1
-    `,
-    [companyIdentifier, responsibilityType, emailId]
-  );
+    `
+    : `
+      SELECT 1
+      FROM approver_assignments
+      WHERE company_identifier = $1
+        AND LOWER(TRIM(approver_email_id)) = $2
+      LIMIT 1
+    `;
+  const result = await pool.query(assignmentQuery, [companyIdentifier, emailId]);
 
   return result.rows.length > 0;
 }
@@ -115,10 +118,10 @@ async function verifyCompanyCoordinator(req, res, next) {
       });
     }
 
-    if (!(await ensurePrivilegedUserHasUnitAssignment(user))) {
+    if (!(await ensurePrivilegedUserHasAssignment(user))) {
       return res.status(403).json({
         success: false,
-        message: 'Your account is not yet assigned to any Company Unit',
+        message: 'Your account is not yet assigned',
       });
     }
 
@@ -133,6 +136,43 @@ async function verifyCompanyCoordinator(req, res, next) {
 
     console.error('❌ Token verification failed:', error.message);
     return clearCookiesAndRespondAuthError(res, 401, 'Token verification failed');
+  }
+}
+
+/** Company admin only (`ifc_users.role === 'company_admin'`). */
+async function verifyCompanyAdmin(req, res, next) {
+  try {
+    const token = req.cookies.authToken || req.cookies.userAuthToken;
+
+    if (!token) {
+      return clearCookiesAndRespondAuthError(res, 401, 'Authentication required');
+    }
+
+    const jwtSecret = process.env.JWT_SECRET;
+    const decoded = jwt.verify(decryptToken(token), jwtSecret);
+
+    const userResult = await pool.query('SELECT * FROM ifc_users WHERE email_id = $1', [decoded.email_id]);
+    if (userResult.rows.length === 0) {
+      return clearCookiesAndRespondAuthError(res, 401, 'User not found');
+    }
+
+    const user = userResult.rows[0];
+    if (user.role !== 'company_admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Company admin role required.',
+      });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return clearCookiesAndRespondAuthError(res, 401, 'Invalid or expired token');
+    }
+
+    console.error('Company admin authentication error:', error);
+    return clearCookiesAndRespondAuthError(res, 401, 'Authentication failed');
   }
 }
 
@@ -173,10 +213,10 @@ async function verifyApproverAuth(req, res, next) {
       });
     }
 
-    if (!(await ensurePrivilegedUserHasUnitAssignment(user))) {
+    if (!(await ensurePrivilegedUserHasAssignment(user))) {
       return res.status(403).json({
         success: false,
-        message: 'Your account is not yet assigned to any Company Unit',
+        message: 'Your account is not yet assigned',
       });
     }
 
@@ -363,10 +403,10 @@ async function verifyAuthenticatedUser(req, res, next) {
     }
 
     if (['company_co', 'approver'].includes(String(user.role || '').trim().toLowerCase())) {
-      if (!(await ensurePrivilegedUserHasUnitAssignment(user))) {
+      if (!(await ensurePrivilegedUserHasAssignment(user))) {
         return res.status(403).json({
           success: false,
-          message: 'Your account is not yet assigned to any Company Unit',
+          message: 'Your account is not yet assigned',
         });
       }
     }
@@ -382,6 +422,7 @@ async function verifyAuthenticatedUser(req, res, next) {
 module.exports = {
   clearCookiesAndRespondAuthError,
   getEmailFromAuthCookies,
+  verifyCompanyAdmin,
   verifyCompanyCoordinator,
   verifyApproverAuth,
   verifyUserAuth,

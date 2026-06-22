@@ -18,7 +18,6 @@ const {
   formatReminderTimestampForLog,
   formatDueDateForEmail,
 } = require('../utils/controls_reminder');
-const { UNIT_RESPONSIBILITY_TYPES } = require('../utils/unit_responsibilities');
 
 function isValidEmail(value) {
   const email = String(value || '').trim();
@@ -34,24 +33,37 @@ async function fetchFormsDueForApproverReminder(client) {
       cf.standard_control_description,
       cf.business_process,
       cf.financial_year,
-      cf.sub_process,
       cf.due_date,
       cr.reminder_to_approver_datetime,
-      approver_map.user_email_id AS approver_email_id,
+      approver_map.approver_email_id AS approver_email_id,
       NULLIF(TRIM(approver.emp_name), '') AS approver_name,
       c.company_name
     FROM control_forms cf
     LEFT JOIN controls_reminder cr
       ON cr.form_id = cf.form_id
-    LEFT JOIN company_unit_master cum
-      ON cum.company_identifier = cf.company_identifier
-     AND cum.unit_id = cf.unit_id
-    LEFT JOIN company_unit_responsibilities approver_map
-      ON approver_map.company_identifier = cf.company_identifier
-     AND approver_map.unit_id = cf.unit_id
-     AND approver_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+    LEFT JOIN LATERAL (
+      SELECT aa.approver_email_id
+      FROM approver_assignments aa
+      WHERE aa.company_identifier = cf.company_identifier
+        AND (
+          (aa.assignment_scope = 'RACM' AND aa.form_id = cf.form_id)
+          OR (
+            aa.assignment_scope = 'BUSINESS_PROCESS'
+            AND LOWER(TRIM(aa.business_process)) = LOWER(TRIM(cf.business_process))
+          )
+          OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = cf.unit_id)
+        )
+      ORDER BY
+        CASE aa.assignment_scope
+          WHEN 'RACM' THEN 1
+          WHEN 'BUSINESS_PROCESS' THEN 2
+          WHEN 'UNIT' THEN 3
+          ELSE 4
+        END
+      LIMIT 1
+    ) approver_map ON TRUE
     LEFT JOIN ifc_users approver
-      ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.user_email_id, '')))
+      ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.approver_email_id, '')))
     LEFT JOIN companies c
       ON c.company_identifier = cf.company_identifier
     WHERE cf.active = TRUE
@@ -76,7 +88,7 @@ This is a reminder that a RACM is pending your approval.
 Control: ${form.standard_control_description || 'N/A'}
 Business Process: ${form.business_process || 'N/A'}
 Financial Year: ${form.financial_year || 'N/A'}
-Sub-Process: ${form.sub_process || 'N/A'}
+
 Due date: ${dueStr}
 
 Please review the uploaded documents and Approve/Reject based on your judgement.

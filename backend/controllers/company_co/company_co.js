@@ -926,6 +926,7 @@ async function createUnitMappedPrivilegedUser(client, coordinator, payload = {},
       company_identifier: createdUser.companyIdentifier,
     },
     loginEmailQueued: true,
+    tempPassword,
   };
 }
 
@@ -1244,12 +1245,11 @@ async function getHomeStats(req, res) {
           NULLIF(TRIM(cum.unit_id), '') AS unit_id,
           NULLIF(TRIM(cum.unit_name), '') AS unit_name
         FROM company_unit_master cum
-        INNER JOIN company_unit_responsibilities cur
-          ON cur.company_identifier = cum.company_identifier
-         AND cur.unit_id = cum.unit_id
-         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        INNER JOIN coordinator_unit_assignments cua
+          ON cua.company_identifier = cum.company_identifier
+         AND cua.unit_id = cum.unit_id
         WHERE cum.company_identifier = $1
-          AND LOWER(TRIM(cur.user_email_id)) = $2
+          AND LOWER(TRIM(cua.coordinator_email_id)) = $2
           AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
         ORDER BY unit_name ASC, unit_id ASC
       `,
@@ -1277,11 +1277,14 @@ async function getHomeStats(req, res) {
     const [usersResult, racmResult] = await Promise.all([
       pool.query(
         `
-          SELECT COUNT(*)::int AS total_users
-          FROM ifc_users
-          WHERE company_identifier = $1
-            AND role = 'user'
-            AND NULLIF(TRIM(unit_id), '') = ANY($2::text[])
+          SELECT COUNT(DISTINCT u.id)::int AS total_users
+          FROM ifc_users u
+          INNER JOIN user_unit_memberships uum
+            ON uum.company_identifier = u.company_identifier
+           AND LOWER(TRIM(uum.user_email_id)) = LOWER(TRIM(u.email_id))
+          WHERE u.company_identifier = $1
+            AND u.role = 'user'
+            AND NULLIF(TRIM(uum.unit_id), '') = ANY($2::text[])
         `,
         [companyIdentifier, mappedUnitIds]
       ),
@@ -2118,9 +2121,12 @@ async function createUnitCoordinator(req, res) {
   const client = await pool.connect();
 
   try {
+    const companyName = await getCompanyName(req.user.company_identifier);
+    const coordinatorName = String(req.user.emp_name || '').trim() || 'Company Coordinator';
+
     await client.query('BEGIN');
 
-    const { user, loginEmailQueued } = await createUnitMappedPrivilegedUser(
+    const { user, loginEmailQueued, tempPassword } = await createUnitMappedPrivilegedUser(
       client,
       req.user,
       req.body,
@@ -2128,6 +2134,23 @@ async function createUnitCoordinator(req, res) {
     );
 
     await client.query('COMMIT');
+
+    try {
+      const emailSent = await sendUserCreationEmail(pool, {
+        userId: user.id,
+        emailId: user.email_id,
+        role: user.role,
+        coordinatorEmail: req.user.email_id,
+        coordinatorName,
+        companyName,
+        tempPassword,
+      });
+      if (!emailSent) {
+        console.warn(`Warning: failed to send coordinator creation email to ${user.email_id}`);
+      }
+    } catch (emailError) {
+      console.error('Coordinator creation email error:', emailError);
+    }
 
     return res.status(201).json({
       success: true,
@@ -2165,9 +2188,12 @@ async function createUnitApprover(req, res) {
   const client = await pool.connect();
 
   try {
+    const companyName = await getCompanyName(req.user.company_identifier);
+    const coordinatorName = String(req.user.emp_name || '').trim() || 'Company Coordinator';
+
     await client.query('BEGIN');
 
-    const { user, loginEmailQueued } = await createUnitMappedPrivilegedUser(
+    const { user, loginEmailQueued, tempPassword } = await createUnitMappedPrivilegedUser(
       client,
       req.user,
       req.body,
@@ -2175,6 +2201,23 @@ async function createUnitApprover(req, res) {
     );
 
     await client.query('COMMIT');
+
+    try {
+      const emailSent = await sendUserCreationEmail(pool, {
+        userId: user.id,
+        emailId: user.email_id,
+        role: user.role,
+        coordinatorEmail: req.user.email_id,
+        coordinatorName,
+        companyName,
+        tempPassword,
+      });
+      if (!emailSent) {
+        console.warn(`Warning: failed to send approver creation email to ${user.email_id}`);
+      }
+    } catch (emailError) {
+      console.error('Approver creation email error:', emailError);
+    }
 
     return res.status(201).json({
       success: true,
@@ -2627,6 +2670,7 @@ async function createUser(req, res) {
       const emailSent = await sendUserCreationEmail(pool, {
         userId: newUser.id,
         emailId: newUser.email_id,
+        role: newUser.role,
         userName: createdEmpName,
         coordinatorName,
         coordinatorEmail: coordinator.email_id,
@@ -2932,6 +2976,7 @@ async function createUsersBulk(req, res) {
         const emailSent = await sendUserCreationEmail(pool, {
           userId: createdUser.id,
           emailId: createdUser.email_id,
+          role: createdUser.role,
           userName: createdUser.emp_name,
           coordinatorName,
           coordinatorEmail: coordinator.email_id,

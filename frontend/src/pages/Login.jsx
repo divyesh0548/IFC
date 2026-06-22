@@ -15,10 +15,50 @@ import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import Alert from '@mui/material/Alert'
 import { toast } from 'react-hot-toast'
-import { STORAGE_KEYS, clearCachedUserProfile } from '../storageKeys'
+import {
+  STORAGE_KEYS,
+  clearCachedUserProfile,
+  clearStoredUserDisplayName,
+  writeCachedUserProfile,
+  writeStoredUserDisplayName,
+} from '../storageKeys'
 import { useThemeMode } from '../contexts/ThemeContext'
 import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
-import { apiUrl, API_BASE_URL } from '../config/api'
+import { apiUrl } from '../config/api'
+
+async function cacheCompanyContext() {
+  try {
+    const profileResponse = await fetch(apiUrl('/api/auth/profile'), {
+      method: 'GET',
+      credentials: 'include',
+    })
+
+    const profileData = await profileResponse.json()
+    if (!profileResponse.ok || !profileData?.success) {
+      return
+    }
+
+    writeCachedUserProfile(profileData.profile)
+    writeStoredUserDisplayName(profileData.profile)
+
+    const companyIdentifier = String(profileData?.profile?.company_identifier || '').trim()
+    const companyName = String(profileData?.profile?.company_name || '').trim()
+
+    if (companyIdentifier) {
+      localStorage.setItem(STORAGE_KEYS.companyIdentifier, companyIdentifier)
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.companyIdentifier)
+    }
+
+    if (companyName) {
+      localStorage.setItem(STORAGE_KEYS.companyName, companyName)
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.companyName)
+    }
+  } catch (error) {
+    console.warn('Failed to prefetch company context:', error)
+  }
+}
 
 function Login() {
   const theme = useTheme()
@@ -48,25 +88,7 @@ function Login() {
             return
           }
 
-          const companyIdentifier = data.user?.company_identifier
-          if (companyIdentifier) {
-            try {
-              const companyRes = await fetch(`${API_BASE_URL}/api/companies/${encodeURIComponent(companyIdentifier)}`, {
-                method: 'GET',
-                credentials: 'include',
-              })
-              const companyData = await companyRes.json()
-              if (companyRes.ok && companyData?.success && companyData?.data?.company_name) {
-                localStorage.setItem(STORAGE_KEYS.companyIdentifier, companyIdentifier)
-                localStorage.setItem(STORAGE_KEYS.companyName, String(companyData.data.company_name))
-              }
-            } catch (e) {
-              console.warn('Failed to prefetch company name:', e)
-            }
-          } else {
-            localStorage.removeItem(STORAGE_KEYS.companyIdentifier)
-            localStorage.removeItem(STORAGE_KEYS.companyName)
-          }
+          await cacheCompanyContext()
 
           // Check if there's a redirect parameter in the URL
           const urlParams = new URLSearchParams(window.location.search)
@@ -80,6 +102,7 @@ function Login() {
             const role = data.user?.role
             const roleRoutes = {
               user: '/user/home',
+              company_admin: '/company_admin/home',
               company_co: '/company_co/home',
               approver: '/approver/home',
               siteadmin: '/siteadmin/dashboard',
@@ -103,6 +126,8 @@ function Login() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    clearCachedUserProfile()
+    clearStoredUserDisplayName()
 
     try {
       const response = await fetch(apiUrl('/api/auth/login'), {
@@ -120,31 +145,12 @@ function Login() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        clearCachedUserProfile()
         // Login successful - token is stored in httpOnly cookie
         console.log('Login successful:', data.user)
         toast.success('Login successful!')
 
         // Prefetch company name once and store in localStorage
-        const companyIdentifier = data.user?.company_identifier
-        if (companyIdentifier) {
-          try {
-            const companyRes = await fetch(`${API_BASE_URL}/api/companies/${encodeURIComponent(companyIdentifier)}`, {
-              method: 'GET',
-              credentials: 'include',
-            })
-            const companyData = await companyRes.json()
-            if (companyRes.ok && companyData?.success && companyData?.data?.company_name) {
-              localStorage.setItem(STORAGE_KEYS.companyIdentifier, companyIdentifier)
-              localStorage.setItem(STORAGE_KEYS.companyName, String(companyData.data.company_name))
-            }
-          } catch (e) {
-            console.warn('Failed to fetch company name after login:', e)
-          }
-        } else {
-          localStorage.removeItem(STORAGE_KEYS.companyIdentifier)
-          localStorage.removeItem(STORAGE_KEYS.companyName)
-        }
+        await cacheCompanyContext()
 
         // Check if password update is required
         if (data.requiresPasswordUpdate) {
@@ -164,6 +170,7 @@ function Login() {
           const role = data.user.role
           const roleRoutes = {
             'user': '/user/home',
+            'company_admin': '/company_admin/home',
             'company_co': '/company_co/home',
             'approver': '/approver/home',
             'siteadmin': '/siteadmin/dashboard',

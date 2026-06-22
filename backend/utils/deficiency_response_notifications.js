@@ -1,7 +1,6 @@
 const { pool } = require('./db');
 const { sendEmail } = require('./send_email');
 const { getCcEmailsForRacm } = require('./racm_cc_recipients');
-const { UNIT_RESPONSIBILITY_TYPES } = require('./unit_responsibilities');
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -48,12 +47,11 @@ async function getCoordinatorEmailForUnit(companyIdentifier, unitId) {
 
   const result = await pool.query(
     `
-      SELECT LOWER(TRIM(user_email_id)) AS coordinator_email_id
-      FROM company_unit_responsibilities
+      SELECT LOWER(TRIM(coordinator_email_id)) AS coordinator_email_id
+      FROM coordinator_unit_assignments
       WHERE company_identifier = $1
         AND unit_id = $2
-        AND responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-        AND COALESCE(TRIM(user_email_id), '') <> ''
+        AND COALESCE(TRIM(coordinator_email_id), '') <> ''
       LIMIT 1
     `,
     [normalizedCompany, normalizedUnit]

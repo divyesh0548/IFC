@@ -19,7 +19,6 @@ const {
   getMobileValidationError,
   normalizeMobileDigits,
 } = require('../utils/mobile_validation');
-const { getResponsibilityTypeForRole } = require('../utils/unit_responsibilities');
 
 const router = express.Router();
 
@@ -54,7 +53,7 @@ async function queryUserByEmailForAuth(emailId, columns = 'id, email_id, role, c
   }
 }
 
-async function hasUnitAssignmentForPrivilegedUser(user) {
+async function hasAssignmentForPrivilegedUser(user) {
   const normalizedRole = String(user?.role || '').trim().toLowerCase();
   const companyIdentifier = user?.company_identifier || null;
   const emailId = normalizeEmail(user?.email_id);
@@ -63,18 +62,22 @@ async function hasUnitAssignmentForPrivilegedUser(user) {
     return true;
   }
 
-  const responsibilityType = getResponsibilityTypeForRole(normalizedRole);
-  const result = await pool.query(
-    `
+  const assignmentQuery = normalizedRole === 'company_co'
+    ? `
       SELECT 1
-      FROM company_unit_responsibilities
+      FROM coordinator_unit_assignments
       WHERE company_identifier = $1
-        AND responsibility_type = $2
-        AND LOWER(TRIM(user_email_id)) = $3
+        AND LOWER(TRIM(coordinator_email_id)) = $2
       LIMIT 1
-    `,
-    [companyIdentifier, responsibilityType, emailId]
-  );
+    `
+    : `
+      SELECT 1
+      FROM approver_assignments
+      WHERE company_identifier = $1
+        AND LOWER(TRIM(approver_email_id)) = $2
+      LIMIT 1
+    `;
+  const result = await pool.query(assignmentQuery, [companyIdentifier, emailId]);
 
   return result.rows.length > 0;
 }
@@ -137,7 +140,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Validate role
-    const validRoles = ['user', 'company_co', 'approver', 'siteadmin', 'auditor'];
+    const validRoles = ['user', 'company_admin', 'company_co', 'approver', 'siteadmin', 'auditor'];
     if (!validRoles.includes(user.role)) {
       return res.status(403).json({
         success: false,
@@ -145,10 +148,10 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    if (!(await hasUnitAssignmentForPrivilegedUser(user))) {
+    if (!(await hasAssignmentForPrivilegedUser(user))) {
       return res.status(403).json({
         success: false,
-        message: 'Your account is not yet assigned to any Company Unit'
+        message: 'Your account is not yet assigned'
       });
     }
 
@@ -232,10 +235,10 @@ router.get('/verify', async (req, res) => {
     
     const user = userResult.rows[0];
 
-    if (!(await hasUnitAssignmentForPrivilegedUser(user))) {
+    if (!(await hasAssignmentForPrivilegedUser(user))) {
       return res.status(403).json({
         success: false,
-        message: 'Your account is not yet assigned to any Company Unit'
+        message: 'Your account is not yet assigned'
       });
     }
     
@@ -292,8 +295,8 @@ function buildProfilePayload(row, companyNameFallback) {
     phone: row.phone ?? row.mobile ?? null,
     company_name: companyName ?? null,
     company_identifier: row.company_identifier ?? null,
-    unit_id: row.unit_id ?? null,
-    unit_name: row.unit_name ?? null,
+    unit_ids: row.unit_ids ?? [],
+    unit_names: row.unit_names ?? [],
     company_details: {
       company_name: companyName ?? null,
       registered_email: row.registered_email ?? null,
@@ -332,7 +335,6 @@ router.get('/profile', async (req, res) => {
         u.mobile AS phone,
         u.department,
         u.designation,
-        u.unit_id,
         u.company_identifier,
         c.company_name,
         c.registered_email,
@@ -342,13 +344,39 @@ router.get('/profile', async (req, res) => {
         c.pan,
         c.number_of_corporate_offices,
         c.number_of_factory_units,
-        cum.unit_name
+        COALESCE(
+          array_agg(uum.unit_id ORDER BY uum.unit_id) FILTER (WHERE uum.unit_id IS NOT NULL),
+          ARRAY[]::varchar[]
+        ) AS unit_ids,
+        COALESCE(
+          array_agg(cum.unit_name ORDER BY cum.unit_name) FILTER (WHERE cum.unit_name IS NOT NULL),
+          ARRAY[]::varchar[]
+        ) AS unit_names
       FROM ifc_users u
       LEFT JOIN companies c ON u.company_identifier = c.company_identifier
+      LEFT JOIN user_unit_memberships uum
+        ON uum.company_identifier = u.company_identifier
+       AND LOWER(TRIM(uum.user_email_id)) = LOWER(TRIM(u.email_id))
       LEFT JOIN company_unit_master cum
-        ON cum.company_identifier = u.company_identifier
-       AND cum.unit_id = u.unit_id
+        ON cum.company_identifier = uum.company_identifier
+       AND cum.unit_id = uum.unit_id
       WHERE u.email_id = $1
+      GROUP BY
+        u.id,
+        u.emp_name,
+        u.email_id,
+        u.mobile,
+        u.department,
+        u.designation,
+        u.company_identifier,
+        c.company_name,
+        c.registered_email,
+        c.registered_address,
+        c.unique_identification_number,
+        c.gst,
+        c.pan,
+        c.number_of_corporate_offices,
+        c.number_of_factory_units
       LIMIT 1
     `;
     const result = await pool.query(profileQuery, [emailId]);
