@@ -15,6 +15,7 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
 const twoColRowSx = {
   display: 'flex',
@@ -41,7 +42,7 @@ function CompanyCreation() {
     number_of_corporate_offices: '',
     number_of_factory_units: '',
   })
-  const [companyAdminEmails, setCompanyAdminEmails] = useState([{ email_id: '' }])
+  const [companyAdminEmails, setCompanyAdminEmails] = useState([{ email_id: '', mobile: '' }])
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -95,12 +96,12 @@ function CompanyCreation() {
     }
   }
 
-  const handleCompanyAdminEmailChange = (index, value) => {
+  const handleCompanyAdminFieldChange = (index, field, value) => {
     setCompanyAdminEmails((prev) => prev.map((item, itemIndex) => (
-      itemIndex === index ? { ...item, email_id: value } : item
+      itemIndex === index ? { ...item, [field]: value } : item
     )))
 
-    const errorKey = `company_admin_emails_${index}`
+    const errorKey = `company_admin_${field}_${index}`
     if (errors[errorKey]) {
       setErrors((prev) => {
         const next = { ...prev }
@@ -111,7 +112,7 @@ function CompanyCreation() {
   }
 
   const handleAddCompanyAdminEmail = () => {
-    setCompanyAdminEmails((prev) => [...prev, { email_id: '' }])
+    setCompanyAdminEmails((prev) => [...prev, { email_id: '', mobile: '' }])
   }
 
   const handleRemoveCompanyAdminEmail = (index) => {
@@ -156,9 +157,19 @@ function CompanyCreation() {
     companyAdminEmails.forEach((item, index) => {
       const emailValue = String(item.email_id || '').trim()
       if (!emailValue) {
-        newErrors[`company_admin_emails_${index}`] = 'Company admin email is required'
+        newErrors[`company_admin_email_${index}`] = 'Company admin email is required'
       } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue)) {
-        newErrors[`company_admin_emails_${index}`] = 'Invalid email format'
+        newErrors[`company_admin_email_${index}`] = 'Invalid email format'
+      }
+
+      const mobileValue = String(item.mobile || '').trim()
+      if (!mobileValue) {
+        newErrors[`company_admin_mobile_${index}`] = 'Mobile number is required'
+      } else {
+        const mobileError = getMobileValidationError(mobileValue)
+        if (mobileError) {
+          newErrors[`company_admin_mobile_${index}`] = mobileError
+        }
       }
     })
 
@@ -189,7 +200,10 @@ function CompanyCreation() {
           pan: formData.pan,
           number_of_corporate_offices: formData.number_of_corporate_offices,
           number_of_factory_units: formData.number_of_factory_units,
-          company_admin_emails: companyAdminEmails.map((item) => String(item.email_id || '').trim()),
+          company_admins: companyAdminEmails.map((item) => ({
+            email_id: String(item.email_id || '').trim(),
+            mobile: normalizeMobileDigits(item.mobile) || null,
+          })),
         }),
       })
 
@@ -310,7 +324,7 @@ function CompanyCreation() {
                   key={`company-admin-email-${index}`}
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) auto' },
+                    gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr) auto' },
                     gap: 1.5,
                     alignItems: 'flex-start',
                   }}
@@ -321,12 +335,27 @@ function CompanyCreation() {
                     variant="filled"
                     type="email"
                     value={item.email_id}
-                    onChange={(e) => handleCompanyAdminEmailChange(index, e.target.value)}
+                    onChange={(e) => handleCompanyAdminFieldChange(index, 'email_id', e.target.value)}
                     required
                     disabled={loading}
                     placeholder="Enter company admin email"
-                    error={!!errors[`company_admin_emails_${index}`]}
-                    helperText={errors[`company_admin_emails_${index}`]}
+                    error={!!errors[`company_admin_email_${index}`]}
+                    helperText={errors[`company_admin_email_${index}`]}
+                    fullWidth
+                  />
+                  <TextField
+                    id={`company_admin_mobile_${index}`}
+                    label={`Company Admin Mobile ${index + 1}`}
+                    variant="filled"
+                    type="tel"
+                    value={item.mobile || ''}
+                    onChange={(e) => handleCompanyAdminFieldChange(index, 'mobile', e.target.value)}
+                    required
+                    disabled={loading}
+                    inputProps={{ maxLength: 10 }}
+                    placeholder="Enter 10-digit mobile number"
+                    error={!!errors[`company_admin_mobile_${index}`]}
+                    helperText={errors[`company_admin_mobile_${index}`] || 'Required for company admin login profile.'}
                     fullWidth
                   />
                   <Tooltip title={companyAdminEmails.length === 1 ? 'At least one company admin email is required' : 'Remove company admin email'}>

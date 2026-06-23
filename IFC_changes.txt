@@ -1,12 +1,4 @@
-
-In some cases process owner may not have additional documents, which are required by approver. In this case user/process_owner should be able to re-submit RACM with remarks, furthur submission not possible. This judgement from process_owner will require approval from coordinator before it reaches auditor/approver. Then it is up to auditor whether to mark RACM as effective or ineffective.
-
-
-
 Mayank sir suggested to implement dynamic User controls. Curently each user role is fixed and can't be changed. But it should be dynamic and adjusted by siteadmin or coordinator.
-
-
-Change the header of dashboard to "Control Dispersion".
 
 Add these new insights in the dashboard : Key+Manual, Key+Automated, Key+High+Manual (If high, low risk levels are given)
 

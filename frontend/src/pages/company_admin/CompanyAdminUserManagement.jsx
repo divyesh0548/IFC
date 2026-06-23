@@ -128,7 +128,11 @@ function CompanyAdminUserManagement() {
       setCreateDialog((prev) => ({ ...prev, error: 'Email ID is required' }))
       return
     }
-    const mobileError = createDialog.mobile ? getMobileValidationError(createDialog.mobile) : null
+    if (!createDialog.mobile.trim()) {
+      setCreateDialog((prev) => ({ ...prev, error: 'Mobile number is required' }))
+      return
+    }
+    const mobileError = getMobileValidationError(createDialog.mobile)
     if (mobileError) {
       setCreateDialog((prev) => ({ ...prev, error: mobileError }))
       return
@@ -197,6 +201,18 @@ function CompanyAdminUserManagement() {
   const executeBulkUpload = async () => {
     if (bulkDialog.rows.length === 0) {
       setBulkDialog((prev) => ({ ...prev, error: 'Upload a valid excel file first' }))
+      return
+    }
+
+    const invalidMobileRows = bulkDialog.rows
+      .map((row, index) => ({ row, rowNumber: index + 2 }))
+      .filter(({ row }) => !row.mobile || getMobileValidationError(row.mobile))
+
+    if (invalidMobileRows.length > 0) {
+      setBulkDialog((prev) => ({
+        ...prev,
+        error: `Invalid or missing mobile number on row(s): ${invalidMobileRows.map((item) => item.rowNumber).join(', ')}`,
+      }))
       return
     }
 
@@ -417,9 +433,10 @@ function CompanyAdminUserManagement() {
             label="Mobile"
             value={createDialog.mobile}
             onChange={(event) => setCreateDialog((prev) => ({ ...prev, mobile: event.target.value, error: '' }))}
+            required
             fullWidth
-            error={!!createDialog.mobile && !!getMobileValidationError(createDialog.mobile)}
-            helperText={(createDialog.mobile && getMobileValidationError(createDialog.mobile)) || 'Optional. Enter a valid 10-digit mobile number.'}
+            error={!createDialog.mobile.trim() || !!getMobileValidationError(createDialog.mobile)}
+            helperText={(!createDialog.mobile.trim() && 'Mobile number is required') || getMobileValidationError(createDialog.mobile) || 'Enter a valid 10-digit mobile number.'}
             inputProps={{ maxLength: 10 }}
           />
           {createDialog.error && <Alert severity="error">{createDialog.error}</Alert>}
@@ -495,16 +512,16 @@ function CompanyAdminUserManagement() {
       </Dialog>
 
       <Dialog open={deleteDialogOpen} onClose={() => !deletingUsers && setDeleteDialogOpen(false)}>
-        <DialogTitle>Confirm Delete</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
+        <DialogTitle sx={{ px: 3, pt: 2.5, pb: 2, fontWeight: 600, fontSize: '1.25rem' }}>Confirm Delete</DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 2.25, pb: 2.25 }}>
+          <DialogContentText sx={{ m: 0, mb: 1.5, lineHeight: 1.5 }}>
             Deleting selected users will remove them from the company. RACMs owned by deleted process owners will be set inactive.
           </DialogContentText>
-          <Typography sx={{ mt: 2, fontWeight: 600 }}>
+          <Typography sx={{ mt: 1.5, fontWeight: 600 }}>
             Total selected users: {selectedUserEmails.size}
           </Typography>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, py: 2.25, gap: 1.25, borderTop: '1px solid', borderColor: 'divider' }}>
           <Button onClick={() => setDeleteDialogOpen(false)} disabled={deletingUsers}>Cancel</Button>
           <Button variant="contained" color="error" onClick={handleDeleteUsers} disabled={deletingUsers || selectedUserEmails.size === 0}>
             {deletingUsers ? 'Deleting...' : 'Delete'}

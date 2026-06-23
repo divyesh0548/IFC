@@ -62,7 +62,7 @@ const getNavigationForRole = (role) => {
           icon: <PersonAddIcon />,
         },
         {
-          path: '/company_co/upload-excel',
+          path: '/company_co/control-creation',
           title: 'Upload Excel',
           icon: <UploadFileIcon />,
         }

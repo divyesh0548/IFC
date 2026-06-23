@@ -10,7 +10,6 @@ import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
-import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { apiUrl } from '../../config/api'
@@ -58,17 +57,9 @@ function Company_co_home() {
     {
       eyebrow: 'User',
       title: 'User Management',
-      description: 'Create and maintain user accounts, permissions, and access roles.',
+      description: 'Create users and see available approvers',
       path: '/company_co/user-management',
       icon: <PeopleAltRoundedIcon sx={{ fontSize: 38 }} />,
-      accent: sharedTileAccent,
-    },
-    {
-      eyebrow: 'Process Master',
-      title: 'Business Process Management',
-      description: 'View common business processes and add company specific process names and codes.',
-      path: '/company_co/business-processes',
-      icon: <AccountTreeRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },
     {
@@ -81,9 +72,9 @@ function Company_co_home() {
     },
     {
       eyebrow: 'Bulk Upload',
-      title: 'RACM Upload',
-      description: 'Upload RACMs in bulk using standardized Excel templates.',
-      path: '/company_co/upload-excel',
+      title: 'RACM Upload/Create',
+      description: 'Upload RACMs in bulk or open the manual RACM creation flow for individual entries.',
+      path: '/company_co/control-creation',
       icon: <UploadFileRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },

@@ -249,7 +249,7 @@ function ExcelColumnMap() {
       } catch (error) {
         console.error(error)
         toast.error('Could not load column mapping config. Please try again.')
-        navigate('/company_co/upload-excel', { replace: true })
+        navigate('/company_co/control-creation', { replace: true })
         setInitializing(false)
       }
     }
@@ -263,14 +263,14 @@ function ExcelColumnMap() {
       const raw = sessionStorage.getItem(RACM_BULK_IMPORT_SESSION_KEY)
       if (!raw) {
         toast.error('No import data found. Start again from the upload page.')
-        navigate('/company_co/upload-excel', { replace: true })
+        navigate('/company_co/control-creation', { replace: true })
         return
       }
       const data = JSON.parse(raw)
       if (!data?.rows?.length || !data.businessProcess || !data.financialYear || !data.unitId) {
         toast.error('Invalid import session.')
         sessionStorage.removeItem(RACM_BULK_IMPORT_SESSION_KEY)
-        navigate('/company_co/upload-excel', { replace: true })
+        navigate('/company_co/control-creation', { replace: true })
         return
       }
       setPayload(data)
@@ -285,7 +285,7 @@ function ExcelColumnMap() {
     } catch (e) {
       console.error(e)
       toast.error('Could not load import session.')
-      navigate('/company_co/upload-excel', { replace: true })
+      navigate('/company_co/control-creation', { replace: true })
     } finally {
       setInitializing(false)
     }
@@ -324,7 +324,7 @@ function ExcelColumnMap() {
 
   const handleBack = () => {
     sessionStorage.removeItem(RACM_BULK_IMPORT_SESSION_KEY)
-    navigate('/company_co/upload-excel')
+    navigate('/company_co/control-creation')
   }
 
   const handleSubmit = async () => {
@@ -417,7 +417,7 @@ function ExcelColumnMap() {
             : `Created ${inserted} RACM(s)${extra}.`
         )
         sessionStorage.removeItem(RACM_BULK_IMPORT_SESSION_KEY)
-        navigate('/company_co/upload-excel', { replace: true })
+        navigate('/company_co/control-creation', { replace: true })
       } else {
         if (String(data?.message || '').includes(DUPLICATE_CONTROL_NUMBER_MESSAGE)) {
           setDuplicateControlNumberNotice(DUPLICATE_CONTROL_NUMBER_NOTICE)

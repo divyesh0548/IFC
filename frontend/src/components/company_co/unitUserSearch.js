@@ -3,6 +3,7 @@ import { apiUrl } from '../../config/api'
 export const UNIT_USER_SEARCH_INITIAL_LIMIT = 5
 export const UNIT_USER_SEARCH_LIMIT = 50
 export const UNIT_USER_SEARCH_DEBOUNCE_MS = 300
+export const USER_SEARCH_VISIBLE_OPTION_COUNT = 3
 
 export function sortUnitUsersByQuery(users, query) {
   const normalizedQuery = String(query || '').trim().toLowerCase()

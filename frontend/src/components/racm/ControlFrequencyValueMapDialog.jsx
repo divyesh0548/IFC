@@ -52,7 +52,7 @@ export default function ControlFrequencyValueMapDialog({
     <Dialog open={open} onClose={loading ? undefined : onCancel} maxWidth="md" fullWidth>
       <DialogTitle>Map Unsupported Control Frequency Values</DialogTitle>
       <DialogContent>
-        <Typography sx={{ color: 'text.secondary', mb: 2 }}>
+        <Typography sx={{ color: 'text.secondary', mt: 1.5,mb:1.5 }}>
           Some Control Frequency values do not match the supported sampling categories. Map each
           distinct Excel value to one of the allowed categories before import starts.
         </Typography>

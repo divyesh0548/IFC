@@ -19,9 +19,8 @@ import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
-import { formatDisplayName } from '../../utils/displayName'
 import DashboardGreeting from '../../components/DashboardGreeting'
-import { readStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
+import { clearStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
 
 function normalizeStatus(status) {
   return String(status || '').trim().toLowerCase()
@@ -96,7 +95,11 @@ function UserHome() {
         const nextProfile = profileData.profile || {}
         if (cancelled) return
         setProfile(nextProfile)
-        writeStoredUserDisplayName(nextProfile, 'User')
+        if (String(nextProfile.emp_name || '').trim()) {
+          writeStoredUserDisplayName(nextProfile.emp_name, 'User')
+        } else {
+          clearStoredUserDisplayName()
+        }
 
         if (!nextProfile.email_id) {
           setForms([])
@@ -164,8 +167,18 @@ function UserHome() {
     )
   }, [forms])
 
-  const displayName = readStoredUserDisplayName() || formatDisplayName(profile?.emp_name?.trim() || profile?.email_id, 'User')
-  const unitDisplay = profile?.unit_name || profile?.unit_id || '-'
+  const displayName = String(profile?.emp_name || '').trim()
+  const unitNames = Array.isArray(profile?.unit_names)
+    ? profile.unit_names.map((value) => String(value || '').trim()).filter(Boolean)
+    : []
+  const unitIds = Array.isArray(profile?.unit_ids)
+    ? profile.unit_ids.map((value) => String(value || '').trim()).filter(Boolean)
+    : []
+  const unitDisplay = unitNames.length > 0
+    ? unitNames.join(', ')
+    : unitIds.length > 0
+      ? unitIds.join(', ')
+      : profile?.unit_name || profile?.unit_id || '-'
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
   const companyDetailRows = Object.entries(profile?.company_details || {})
     .filter(([key]) => !['id', 'company_identifier', 'created_at'].includes(key))

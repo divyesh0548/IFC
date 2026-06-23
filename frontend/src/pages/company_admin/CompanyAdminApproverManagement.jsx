@@ -356,7 +356,7 @@ function CompanyAdminApproverManagement() {
         onClose={() => !assignmentDialog.submitting && setAssignmentDialog(createAssignmentDialogState())}
         title={assignmentDialog.approver ? (
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.1, flexWrap: 'wrap' }}>
-            <Typography component="span" sx={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.25 }}>
+            <Typography component="span" sx={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.25, mb:1 }}>
               Assign Approver
             </Typography>
             <Typography component="span" sx={{ color: 'text.secondary', fontSize: '0.92rem', fontWeight: 400, lineHeight: 1.25 }}>
@@ -381,7 +381,7 @@ function CompanyAdminApproverManagement() {
           </>
         )}
       >
-        <Typography sx={{ fontWeight: 700, mt: 0.35 }}>Current Assignments</Typography>
+        <Typography sx={{ fontWeight: 700, mt: 1 }}>Current Assignments</Typography>
         {currentAssignments.length === 0 ? (
           <Typography color="text.secondary">No assignments found for this approver.</Typography>
         ) : (

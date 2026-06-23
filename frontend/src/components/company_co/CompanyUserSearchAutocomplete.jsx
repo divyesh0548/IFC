@@ -11,11 +11,11 @@ import {
   UNIT_USER_SEARCH_LIMIT,
   USER_SEARCH_VISIBLE_OPTION_COUNT,
   excludeUnitUsers,
-  fetchUnitUsers,
+  fetchCompanyUsers,
   getUnitUserOptionLabel,
   getUnitUserDisplayLabel,
   isSameUnitUserOption,
-} from './unitUserSearch'
+} from './companyUserSearch'
 
 const EMPTY_EXCLUDE_EMAILS = Object.freeze([])
 
@@ -66,12 +66,12 @@ function UserSingleValue({ data }) {
   )
 }
 
-function UnitUserSearchAutocomplete({
-  unitId,
+function CompanyUserSearchAutocomplete({
+  role,
   value = null,
   onChange,
   excludeEmails = [],
-  label = 'Search Username',
+  label = 'Search User',
   placeholder = '',
   disabled = false,
   prefetch = false,
@@ -87,7 +87,7 @@ function UnitUserSearchAutocomplete({
   const [loading, setLoading] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
 
-  const normalizedUnitId = String(unitId || '').trim()
+  const normalizedRole = String(role || '').trim()
   const resolvedValue = value?.email_id ? value : null
   const inputId = textFieldProps?.id || `${String(label || 'user-search').toLowerCase().replace(/\s+/g, '-')}-select`
   const excludeEmailsKey = getExcludeEmailsKey(excludeEmails)
@@ -95,7 +95,7 @@ function UnitUserSearchAutocomplete({
 
   const loadUsers = useCallback(
     async ({ q = '', limit = UNIT_USER_SEARCH_INITIAL_LIMIT } = {}) => {
-      if (!normalizedUnitId) {
+      if (!normalizedRole) {
         setOptions([])
         setLoading(false)
         return
@@ -106,8 +106,8 @@ function UnitUserSearchAutocomplete({
       setLoading(true)
 
       try {
-        const users = await fetchUnitUsers({
-          unitId: normalizedUnitId,
+        const users = await fetchCompanyUsers({
+          role: normalizedRole,
           q,
           limit,
         })
@@ -116,7 +116,7 @@ function UnitUserSearchAutocomplete({
         const excludedEmails = excludeEmailsKey ? excludeEmailsKey.split('\n') : []
         setOptions(excludeUnitUsers(users, excludedEmails))
       } catch (error) {
-        console.error('Error loading unit users:', error)
+        console.error('Error loading company users:', error)
         if (requestIdRef.current === requestId) {
           setOptions([])
         }
@@ -126,7 +126,7 @@ function UnitUserSearchAutocomplete({
         }
       }
     },
-    [excludeEmailsKey, normalizedUnitId]
+    [excludeEmailsKey, normalizedRole]
   )
 
   useEffect(() => {
@@ -139,15 +139,15 @@ function UnitUserSearchAutocomplete({
     setOptions([])
     setMenuOpen(false)
     setLoading(false)
-    if (!normalizedUnitId) {
+    if (!normalizedRole) {
       setInputValue('')
     }
-  }, [normalizedUnitId])
+  }, [normalizedRole])
 
   useEffect(() => {
-    if (!prefetch || !normalizedUnitId) return
+    if (!prefetch || !normalizedRole) return
     loadUsers({ q: '', limit: UNIT_USER_SEARCH_INITIAL_LIMIT })
-  }, [prefetch, normalizedUnitId, loadUsers])
+  }, [prefetch, normalizedRole, loadUsers])
 
   useEffect(() => {
     return () => {
@@ -163,7 +163,7 @@ function UnitUserSearchAutocomplete({
   )
 
   const handleMenuOpen = () => {
-    if (disabled || !normalizedUnitId) return
+    if (disabled || !normalizedRole) return
     setMenuOpen(true)
     loadUsers({
       q: inputValue.trim(),
@@ -188,7 +188,7 @@ function UnitUserSearchAutocomplete({
       onChange?.(null)
     }
 
-    if (!normalizedUnitId) {
+    if (!normalizedRole) {
       setOptions([])
       return newInputValue
     }
@@ -264,9 +264,9 @@ function UnitUserSearchAutocomplete({
       position: 'static',
       top: 'auto',
       transform: 'none',
+      color: theme.palette.text.primary,
       maxWidth: 'calc(100% - 8px)',
       margin: 0,
-      color: theme.palette.text.primary,
     }),
     indicatorsContainer: (base) => ({
       ...base,
@@ -281,91 +281,118 @@ function UnitUserSearchAutocomplete({
       ...base,
       borderRadius: menuBorderRadius,
       overflow: 'hidden',
-      border: `1px solid ${theme.palette.divider}`,
-      boxShadow: theme.shadows[8],
       backgroundColor: theme.palette.background.paper,
+      boxShadow:
+        theme.palette.mode === 'dark'
+          ? '0 20px 45px rgba(0,0,0,0.45)'
+          : '0 20px 45px rgba(15, 23, 42, 0.16)',
+      border: `1px solid ${alpha(theme.palette.divider, theme.palette.mode === 'dark' ? 0.7 : 0.9)}`,
     }),
     menuList: (base) => ({
       ...base,
+      maxHeight: menuMaxHeight,
       paddingTop: 0,
       paddingBottom: 0,
-      maxHeight: menuMaxHeight,
     }),
     option: (base, state) => ({
       ...base,
-      backgroundColor: state.isSelected
-        ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.26 : 0.14)
-        : state.isFocused
-          ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.08)
-          : theme.palette.background.paper,
-      color: theme.palette.text.primary,
       cursor: 'pointer',
-      padding: '10px 14px',
-    }),
-    noOptionsMessage: (base) => ({
-      ...base,
-      color: theme.palette.text.secondary,
-    }),
-    loadingMessage: (base) => ({
-      ...base,
-      color: theme.palette.text.secondary,
+      padding: '12px 14px',
+      backgroundColor: state.isFocused
+        ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.08)
+        : 'transparent',
+      color: theme.palette.text.primary,
     }),
     indicatorSeparator: () => ({
       display: 'none',
     }),
-    dropdownIndicator: (base, state) => ({
+    dropdownIndicator: (base) => ({
       ...base,
-      color: state.isFocused ? theme.palette.primary.main : theme.palette.text.secondary,
-      '&:hover': {
-        color: theme.palette.primary.main,
-      },
+      color: theme.palette.text.secondary,
+      paddingRight: 10,
     }),
     clearIndicator: (base) => ({
       ...base,
       color: theme.palette.text.secondary,
-      '&:hover': {
-        color: theme.palette.text.primary,
-      },
+    }),
+    noOptionsMessage: (base) => ({
+      ...base,
+      color: theme.palette.text.secondary,
+      padding: '12px 14px',
+    }),
+    loadingMessage: (base) => ({
+      ...base,
+      color: theme.palette.text.secondary,
+      padding: '12px 14px',
     }),
   }
 
-  const formatOptionLabel = (option) => <UserOptionContent option={option} />
-
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, width: '100%' }}>
+    <Box sx={{ width: '100%' }}>
+      <Typography
+        component="label"
+        htmlFor={inputId}
+        sx={{
+          display: 'block',
+          mb: 0.75,
+          fontSize: '0.8125rem',
+          fontWeight: 600,
+          color: theme.palette.text.secondary,
+        }}
+      >
+        {label}
+      </Typography>
       <Select
         inputId={inputId}
         options={displayedOptions}
         value={resolvedValue}
-        inputValue={inputValue}
-        isDisabled={disabled || !normalizedUnitId}
-        isClearable
-        isSearchable
-        menuIsOpen={menuOpen && !disabled && Boolean(normalizedUnitId)}
+        onChange={handleSelectUser}
+        onInputChange={handleInputChange}
         onMenuOpen={handleMenuOpen}
         onMenuClose={() => setMenuOpen(false)}
-        onInputChange={handleInputChange}
-        onChange={(newValue) => handleSelectUser(newValue || null)}
-        getOptionLabel={getUnitUserOptionLabel}
-        getOptionValue={(option) => String(option?.email_id || '').trim().toLowerCase()}
-        formatOptionLabel={formatOptionLabel}
+        menuIsOpen={menuOpen}
+        isDisabled={disabled}
+        isClearable
+        isSearchable
+        backspaceRemovesValue
+        escapeClearsValue
         placeholder={resolvedPlaceholder}
-        styles={controlStyles}
+        getOptionValue={(option) => String(option?.email_id || '').trim().toLowerCase()}
+        getOptionLabel={getUnitUserOptionLabel}
         menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
         menuPosition="fixed"
-        noOptionsMessage={() =>
-          !normalizedUnitId ? 'Unit is required to load users' : 'No users found for this unit'
-        }
-        loadingMessage={() => 'Loading users...'}
-        isLoading={loading}
         components={{
-          LoadingIndicator: () => <CircularProgress size={18} />,
+          Option: ({ data, innerProps, innerRef, isFocused }) => (
+            <Box
+              ref={innerRef}
+              {...innerProps}
+              sx={{
+                px: 1.75,
+                py: 1.25,
+                cursor: 'pointer',
+                backgroundColor: isFocused
+                  ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.08)
+                  : 'transparent',
+              }}
+            >
+              <UserOptionContent option={data} />
+            </Box>
+          ),
           SingleValue: UserSingleValue,
+          LoadingIndicator: () => (loading ? <CircularProgress size={18} thickness={5} /> : null),
         }}
+        styles={controlStyles}
+        noOptionsMessage={() => (loading ? 'Loading...' : 'No users found')}
       />
-
       {helperText ? (
-        <Typography variant="caption" color="text.secondary">
+        <Typography
+          variant="caption"
+          sx={{
+            display: 'block',
+            mt: 0.75,
+            color: theme.palette.text.secondary,
+          }}
+        >
           {helperText}
         </Typography>
       ) : null}
@@ -373,4 +400,4 @@ function UnitUserSearchAutocomplete({
   )
 }
 
-export default UnitUserSearchAutocomplete
+export default CompanyUserSearchAutocomplete

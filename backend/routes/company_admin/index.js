@@ -20,5 +20,6 @@ router.post('/unit-management/approvers', verifyCompanyAdmin, controller.createA
 router.post('/unit-management/approver-assignments', verifyCompanyAdmin, controller.assignApprover);
 router.post('/users', verifyCompanyAdmin, controller.createUser);
 router.patch('/users/units', verifyCompanyAdmin, controller.updateUserUnits);
+router.post('/business-processes', verifyCompanyAdmin, controller.createCompanyBusinessProcess);
 
 module.exports = router;

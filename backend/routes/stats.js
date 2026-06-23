@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
     try {
       const [companiesResult, usersResult, racmsResult] = await Promise.all([
         pool.query('SELECT COUNT(*)::int as count FROM companies'),
-        pool.query("SELECT COUNT(*)::int as count FROM ifc_users WHERE LOWER(TRIM(COALESCE(role, ''))) <> 'siteadmin'"),
+        pool.query("SELECT COUNT(*)::int as count FROM ifc_users WHERE LOWER(TRIM(COALESCE(role, ''))) = 'user'"),
         pool.query('SELECT COUNT(*)::int as count FROM control_forms'),
       ]);
       const companyCount = companiesResult.rows[0]?.count || 0;
@@ -58,7 +58,7 @@ router.get('/users/monthly-stats', async (req, res) => {
         COUNT(*) as user_count
       FROM ifc_users 
       WHERE EXTRACT(YEAR FROM created_at AT TIME ZONE 'Asia/Kolkata') = $1
-        AND LOWER(TRIM(COALESCE(role, ''))) <> 'siteadmin'
+        AND LOWER(TRIM(COALESCE(role, ''))) = 'user'
       GROUP BY EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Kolkata')::int
       ORDER BY month_num
     `;
@@ -98,7 +98,9 @@ router.get('/companies/user-distribution', async (req, res) => {
           c.company_name,
           COUNT(u.id) as user_count
         FROM companies c
-        LEFT JOIN ifc_users u ON c.company_identifier = u.company_identifier
+        LEFT JOIN ifc_users u
+          ON c.company_identifier = u.company_identifier
+         AND LOWER(TRIM(COALESCE(u.role, ''))) = 'user'
         GROUP BY c.company_identifier, c.company_name
         HAVING COUNT(u.id) > 0
         ORDER BY user_count DESC

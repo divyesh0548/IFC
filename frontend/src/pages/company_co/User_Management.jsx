@@ -11,6 +11,7 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
+import ListItemText from '@mui/material/ListItemText'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -47,13 +48,15 @@ import { apiUrl } from '../../config/api'
 import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
+import AppDialog, { getAppDialogCancelButtonSx } from '../../components/AppDialog'
 
 const bulkUploadDialogDefaults = {
   open: false,
-  unitId: '',
+  unitIds: [],
   fileName: '',
   nonOrgCount: 0,
   confirmNonOrg: false,
+  confirmExistingUsers: false,
   submitting: false,
   error: '',
 }
@@ -87,6 +90,13 @@ function UserManagement() {
   const [bulkLogsDialogOpen, setBulkLogsDialogOpen] = useState(false)
   const [showBulkLogsButton, setShowBulkLogsButton] = useState(false)
   const [bulkWarningDialogOpen, setBulkWarningDialogOpen] = useState(false)
+  const [approverDetailsDialog, setApproverDetailsDialog] = useState({
+    open: false,
+    loading: false,
+    error: '',
+    approver: null,
+    assignments: [],
+  })
 
   const [email, setEmail] = useState('')
   const [empCode, setEmpCode] = useState('')
@@ -94,9 +104,15 @@ function UserManagement() {
   const [designation, setDesignation] = useState('')
   const [department, setDepartment] = useState('')
   const [mobile, setMobile] = useState('')
+  const [selectedCreateUnitIds, setSelectedCreateUnitIds] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [bulkExistingUsersDialog, setBulkExistingUsersDialog] = useState({
+    open: false,
+    users: [],
+  })
   const { getEmailWarning, getEmailWarningHelperTextSx, countNonOrganizationEmails } = useOrganizationEmailWarning()
+  const showUnitControls = mappedUnits.length > 1
 
   useSyncGlobalLoading(usersLoading)
   useSyncGlobalLoading(loading)
@@ -115,6 +131,7 @@ function UserManagement() {
     setDesignation('')
     setDepartment('')
     setMobile('')
+    setSelectedCreateUnitIds(mappedUnits[0]?.unit_id ? [mappedUnits[0].unit_id] : [])
     setError('')
   }
 
@@ -142,37 +159,46 @@ function UserManagement() {
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
       .join(' ')
   }
+  const formatAssignmentScopeLabel = (scope) => {
+    const normalizedScope = String(scope || '').trim().toUpperCase()
+    if (!normalizedScope) return '-'
+    if (normalizedScope === 'BUSINESS_PROCESS') return 'Business Process Level'
+    if (normalizedScope === 'RACM') return 'RACM Level'
+    if (normalizedScope === 'UNIT') return 'Unit Level'
+    return normalizedScope
+  }
+
+  const formatAssignmentDetails = useCallback((assignment) => {
+    const normalizedScope = String(assignment?.assignment_scope || '').trim().toUpperCase()
+    if (normalizedScope === 'RACM') {
+      return assignment?.unit_name || assignment?.unit_id || '-'
+    }
+    if (normalizedScope === 'BUSINESS_PROCESS') {
+      return [assignment?.unit_name || assignment?.unit_id, assignment?.business_process].filter(Boolean).join(' | ') || '-'
+    }
+    if (normalizedScope === 'UNIT') {
+      return assignment?.unit_name || assignment?.unit_id || '-'
+    }
+    return [assignment?.unit_name || assignment?.unit_id, assignment?.business_process].filter(Boolean).join(' | ') || '-'
+  }, [])
 
   const unitOptions = useMemo(() => {
-    const unitsById = new Map()
-    let hasUnassigned = false
-
-    users.forEach((user) => {
-      const unitIds = getUserUnitIds(user)
-      const unitNames = getUserUnitNames(user)
-
-      if (unitIds.length === 0) {
-        hasUnassigned = true
-        return
-      }
-
-      unitIds.forEach((unitId, index) => {
-        if (!unitsById.has(unitId)) {
-          unitsById.set(unitId, unitNames[index] || unitId)
-        }
-      })
-    })
-
-    const options = Array.from(unitsById.entries())
-      .map(([unitId, unitName]) => ({ unitId, unitName }))
+    return mappedUnits
+      .map((unit) => ({
+        unitId: String(unit?.unit_id || '').trim(),
+        unitName: String(unit?.unit_name || unit?.unit_id || '').trim(),
+      }))
+      .filter((unit) => unit.unitId)
       .sort((a, b) => String(a.unitName).localeCompare(String(b.unitName)))
+  }, [mappedUnits])
 
-    if (hasUnassigned) {
-      options.push({ unitId: '__unassigned__', unitName: 'Unassigned' })
-    }
-
-    return options
-  }, [users])
+  const getUnitNamesFromIds = useCallback((unitIds) => {
+    const normalizedUnitIds = Array.isArray(unitIds) ? unitIds : []
+    return normalizedUnitIds
+      .map((unitId) => unitOptions.find((unit) => unit.unitId === unitId))
+      .filter(Boolean)
+      .map((unit) => unit.unitName)
+  }, [unitOptions])
 
   const roleOptions = useMemo(() => {
     return Array.from(
@@ -190,6 +216,8 @@ function UserManagement() {
       const matchesUnit =
         unitFilter === 'all'
           ? true
+          : String(user.role || '').trim() === 'approver'
+            ? true
           : unitFilter === '__unassigned__'
             ? unitIds.length === 0
             : unitIds.includes(unitFilter)
@@ -227,7 +255,7 @@ function UserManagement() {
 
   const fetchMappedUnits = useCallback(async () => {
     try {
-      const response = await fetch(apiUrl('/api/company-co/unit-management'), {
+      const response = await fetch(apiUrl('/api/company-co/assigned-units'), {
         credentials: 'include',
       })
       const result = await response.json()
@@ -236,9 +264,7 @@ function UserManagement() {
         return
       }
 
-      const currentUnits = Array.isArray(result.data?.currentCoordinatorUnits)
-        ? result.data.currentCoordinatorUnits
-        : []
+      const currentUnits = Array.isArray(result.units) ? result.units : []
       setMappedUnits(currentUnits)
     } catch (fetchError) {
       console.error('Fetch mapped units error:', fetchError)
@@ -316,6 +342,19 @@ function UserManagement() {
   }, [unitFilter, roleFilter])
 
   useEffect(() => {
+    if (!showUnitControls && unitFilter !== 'all') {
+      setUnitFilter('all')
+    }
+  }, [showUnitControls, unitFilter])
+
+  useEffect(() => {
+    if (selectedCreateUnitIds.length > 0) return
+    if (mappedUnits[0]?.unit_id) {
+      setSelectedCreateUnitIds([mappedUnits[0].unit_id])
+    }
+  }, [mappedUnits, selectedCreateUnitIds.length])
+
+  useEffect(() => {
     if (location.pathname !== '/company_co/user-management') {
       setBulkUploadLogs([])
       setBulkLogsDialogOpen(false)
@@ -343,6 +382,50 @@ function UserManagement() {
     setDeleteMode(true)
   }
 
+  const handleOpenApproverDetails = useCallback(async (user) => {
+    if (!user || String(user.role || '').trim() !== 'approver' || !user.email_id) {
+      return
+    }
+
+    setApproverDetailsDialog({
+      open: true,
+      loading: true,
+      error: '',
+      approver: user,
+      assignments: [],
+    })
+
+    try {
+      const response = await fetch(apiUrl(`/api/company-co/approvers/${encodeURIComponent(user.email_id)}/assignments`), {
+        credentials: 'include',
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Failed to fetch approver assignments')
+      }
+
+      setApproverDetailsDialog({
+        open: true,
+        loading: false,
+        error: '',
+        approver: result.data?.approver || user,
+        assignments: Array.isArray(result.data?.assignments) ? result.data.assignments : [],
+      })
+    } catch (fetchError) {
+      console.error('Fetch approver assignments error:', fetchError)
+      setApproverDetailsDialog((prev) => ({
+        ...prev,
+        loading: false,
+        error: fetchError.message || 'Failed to fetch approver assignments',
+      }))
+    }
+  }, [])
+
+  const currentApproverAssignments = useMemo(() => {
+    return Array.isArray(approverDetailsDialog.assignments) ? approverDetailsDialog.assignments : []
+  }, [approverDetailsDialog.assignments])
+
   const handleDeleteClick = () => {
     if (selectedUserEmails.size === 0) {
       setDeleteMode(false)
@@ -351,31 +434,36 @@ function UserManagement() {
     setDeleteDialogOpen(true)
   }
 
-  const handleListContainerClick = (e) => {
-    if (!deleteMode) return
-    if (deleteDialogOpen) return
+  useEffect(() => {
+    if (!deleteMode || deleteDialogOpen) return undefined
 
-    const target = e?.target
-    if (!target) return
+    const handleDocumentClick = (event) => {
+      const target = event?.target
+      if (!target) return
 
-    const isCheckbox =
-      target.type === 'checkbox' ||
-      target.closest?.('input[type="checkbox"]') ||
-      target.closest?.('.MuiCheckbox-root')
+      const isCheckbox =
+        target.type === 'checkbox' ||
+        target.closest?.('input[type="checkbox"]') ||
+        target.closest?.('.MuiCheckbox-root')
 
-    const isDialog = target.closest?.('.MuiDialog-root')
+      const isDialog = target.closest?.('.MuiDialog-root')
+      const clickedButton = target.closest?.('button')
+      const isDeleteButton = Boolean(
+        clickedButton &&
+          (clickedButton.textContent?.includes('Delete') ||
+            clickedButton.getAttribute('aria-label')?.toLowerCase().includes('delete'))
+      )
 
-    const clickedButton = target.closest?.('button')
-    const isDeleteButton = Boolean(
-      clickedButton &&
-        (clickedButton.textContent?.includes('Delete') ||
-          clickedButton.getAttribute('aria-label')?.toLowerCase().includes('delete'))
-    )
+      if (isCheckbox || isDialog || isDeleteButton) return
 
-    if (isCheckbox || isDialog || isDeleteButton) return
+      setDeleteMode(false)
+    }
 
-    setDeleteMode(false)
-  }
+    document.addEventListener('click', handleDocumentClick, true)
+    return () => {
+      document.removeEventListener('click', handleDocumentClick, true)
+    }
+  }, [deleteDialogOpen, deleteMode])
 
   useEffect(() => {
     const emailParam = searchParams.get('email')
@@ -384,6 +472,41 @@ function UserManagement() {
       setShowCreateForm(true)
     }
   }, [searchParams])
+
+  const submitCreateUser = async (confirmExistingUserUnits = false) => {
+    const response = await fetch(apiUrl('/api/company-co/create-user'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        email_id: email.trim(),
+        emp_code: empCode.trim() || null,
+        emp_name: empName.trim() || null,
+        designation: designation.trim() || null,
+        department: department.trim() || null,
+        mobile: normalizeMobileDigits(mobile) || null,
+        unit_ids: selectedCreateUnitIds,
+        confirm_existing_user_units: confirmExistingUserUnits,
+      }),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok && data?.code === 'CONFIRM_EXISTING_USER_UNITS' && data?.requiresConfirmation) {
+      const unitNames = getUnitNamesFromIds(selectedCreateUnitIds)
+      const unitLabel = unitNames.length > 0 ? unitNames.join(', ') : 'the selected unit(s)'
+      const shouldContinue = window.confirm(`User already exists in another unit. Are you sure you want to create user in ${unitLabel}?`)
+      if (!shouldContinue) {
+        return { cancelled: true }
+      }
+
+      return submitCreateUser(true)
+    }
+
+    return { response, data }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -403,7 +526,21 @@ function UserManagement() {
       return
     }
 
-    const mobileValidationError = mobile.trim() ? getMobileValidationError(mobile.trim()) : null
+    if (selectedCreateUnitIds.length === 0) {
+      const errorMsg = 'At least one unit is required'
+      setError(errorMsg)
+      toast.error(errorMsg)
+      return
+    }
+
+    if (!mobile.trim()) {
+      const errorMsg = 'Mobile number is required'
+      setError(errorMsg)
+      toast.error(errorMsg)
+      return
+    }
+
+    const mobileValidationError = getMobileValidationError(mobile.trim())
     if (mobileValidationError) {
       setError(mobileValidationError)
       toast.error(mobileValidationError)
@@ -413,26 +550,15 @@ function UserManagement() {
     setLoading(true)
 
     try {
-      const response = await fetch(apiUrl('/api/company-co/create-user'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          email_id: email.trim(),
-          emp_code: empCode.trim() || null,
-          emp_name: empName.trim() || null,
-          designation: designation.trim() || null,
-          department: department.trim() || null,
-          mobile: normalizeMobileDigits(mobile) || null,
-        }),
-      })
+      const result = await submitCreateUser()
+      if (result?.cancelled) {
+        return
+      }
 
-      const data = await response.json()
+      const { response, data } = result
 
       if (response.ok && data.success) {
-        toast.success('User created successfully')
+        toast.success(data.message || 'User created successfully')
         resetForm()
         setShowCreateForm(false)
         fetchUsers()
@@ -457,7 +583,7 @@ function UserManagement() {
     setBulkUploadDialog({
       ...bulkUploadDialogDefaults,
       open: true,
-      unitId: mappedUnits[0]?.unit_id || '',
+      unitIds: mappedUnits[0]?.unit_id ? [mappedUnits[0].unit_id] : [],
     })
   }
 
@@ -468,6 +594,10 @@ function UserManagement() {
     }
     setBulkUploadRows([])
     setBulkUploadDialog(bulkUploadDialogDefaults)
+    setBulkExistingUsersDialog({
+      open: false,
+      users: [],
+    })
   }
 
   const handleBulkFileChange = async (event) => {
@@ -516,7 +646,7 @@ function UserManagement() {
 
       jsonRows.forEach((row, index) => {
         const mobileDigits = normalizeMobileDigits(row['Mobile'])
-        const mobileError = mobileDigits ? getMobileValidationError(mobileDigits) : null
+        const mobileError = !mobileDigits ? 'Mobile number is required' : getMobileValidationError(mobileDigits)
 
         if (mobileError) {
           invalidMobileRows.push(index + 2)
@@ -569,9 +699,9 @@ function UserManagement() {
     toast.success('Bulk upload template downloaded')
   }
 
-  const executeBulkUploadUsers = async () => {
-    if (!bulkUploadDialog.unitId) {
-      setBulkUploadDialog((prev) => ({ ...prev, error: 'Select a unit to map users' }))
+  const executeBulkUploadUsers = async (confirmExistingUsersOverride = bulkUploadDialog.confirmExistingUsers) => {
+    if (bulkUploadDialog.unitIds.length === 0) {
+      setBulkUploadDialog((prev) => ({ ...prev, error: 'Select at least one unit to map users' }))
       return
     }
 
@@ -582,12 +712,12 @@ function UserManagement() {
 
     const invalidBulkMobileRows = bulkUploadRows
       .map((row, index) => ({ row, rowNumber: index + 2 }))
-      .filter(({ row }) => row.mobile && getMobileValidationError(row.mobile))
+      .filter(({ row }) => !row.mobile || getMobileValidationError(row.mobile))
 
     if (invalidBulkMobileRows.length > 0) {
       setBulkUploadDialog((prev) => ({
         ...prev,
-        error: `Invalid mobile number on row(s): ${invalidBulkMobileRows.map((item) => item.rowNumber).join(', ')}`,
+        error: `Invalid or missing mobile number on row(s): ${invalidBulkMobileRows.map((item) => item.rowNumber).join(', ')}`,
       }))
       return
     }
@@ -605,11 +735,25 @@ function UserManagement() {
         credentials: 'include',
         signal: abortController.signal,
         body: JSON.stringify({
-          unit_id: bulkUploadDialog.unitId,
+          unit_ids: bulkUploadDialog.unitIds,
+          confirm_existing_user_units: confirmExistingUsersOverride,
           users: bulkUploadRows,
         }),
       })
       const result = await response.json()
+
+      if (!response.ok && result?.code === 'CONFIRM_EXISTING_USER_UNITS' && result?.requiresConfirmation) {
+        setBulkUploadDialog((prev) => ({
+          ...prev,
+          submitting: false,
+          error: '',
+        }))
+        setBulkExistingUsersDialog({
+          open: true,
+          users: Array.isArray(result.users) ? result.users : [],
+        })
+        return
+      }
 
       if (!response.ok || !result?.success) {
         throw new Error(result?.message || 'Failed to upload users in bulk')
@@ -620,13 +764,33 @@ function UserManagement() {
       const invalidEmails = Array.isArray(result.invalidEmails) ? result.invalidEmails : []
       const missingEmailCount = skippedRows.filter((row) => row?.reason === 'Email ID is missing').length
       const duplicateCount = skippedRows.filter((row) => row?.reason === 'User already exists').length
+      const alreadyMappedCount = skippedRows.filter((row) => row?.reason === 'User already exists in selected unit(s)').length
       const invalidEmailCount = invalidEmails.length
 
+      const duplicateEmails = skippedRows
+        .filter((row) => row?.reason === 'User already exists' && row?.email_id)
+        .map((row) => String(row.email_id).trim())
+
+      const alreadyMappedEmails = skippedRows
+        .filter((row) => row?.reason === 'User already exists in selected unit(s)' && row?.email_id)
+        .map((row) => String(row.email_id).trim())
+
       const logs = [
-        createdCount > 0 ? `Users created successfully: ${createdCount}` : null,
-        missingEmailCount > 0 ? `Rows skipped (empty Email ID): ${missingEmailCount}` : null,
-        duplicateCount > 0 ? `Rows skipped (user already exists): ${duplicateCount}` : null,
-        invalidEmailCount > 0 ? `Rows skipped (invalid email format): ${invalidEmailCount}` : null,
+        createdCount > 0 ? { message: `Users created successfully: ${createdCount}` } : null,
+        missingEmailCount > 0 ? { message: `Rows skipped (empty Email ID): ${missingEmailCount}` } : null,
+        duplicateCount > 0
+          ? {
+              message: `Rows skipped (user already exists): ${duplicateCount}`,
+              items: duplicateEmails,
+            }
+          : null,
+        alreadyMappedCount > 0
+          ? {
+              message: `Rows skipped (user already mapped to selected units): ${alreadyMappedCount}`,
+              items: alreadyMappedEmails,
+            }
+          : null,
+        invalidEmailCount > 0 ? { message: `Rows skipped (invalid email format): ${invalidEmailCount}` } : null,
       ].filter(Boolean)
       setBulkUploadLogs(logs)
       setShowBulkLogsButton(true)
@@ -637,7 +801,7 @@ function UserManagement() {
     } catch (uploadError) {
       console.error('Bulk user upload error:', uploadError)
       if (uploadError.name === 'AbortError') {
-        setBulkUploadLogs(['User insertion process was cancelled'])
+        setBulkUploadLogs([{ message: 'User insertion process was cancelled' }])
         if (!isCancellingBulkUploadRef.current) {
           toast.error('User insertion process was cancelled')
         }
@@ -652,7 +816,7 @@ function UserManagement() {
         submitting: false,
         error: uploadError.message || 'Network error while uploading users',
       }))
-      setBulkUploadLogs([`Bulk upload failed: ${uploadError.message || 'Network error while uploading users'}`])
+      setBulkUploadLogs([{ message: `Bulk upload failed: ${uploadError.message || 'Network error while uploading users'}` }])
     } finally {
       bulkUploadAbortControllerRef.current = null
       isCancellingBulkUploadRef.current = false
@@ -770,6 +934,52 @@ function UserManagement() {
                   <Grid container spacing={2.25}>
                     <Grid item xs={12}>
                       <Typography sx={{ fontWeight: 700, mb: 1.5 }}>User details</Typography>
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <TextField
+                        id="create-user-units"
+                        name="create-user-units"
+                        label={showUnitControls ? 'Units' : 'Unit'}
+                        select={showUnitControls}
+                        variant="outlined"
+                        value={showUnitControls ? selectedCreateUnitIds : (mappedUnits[0]?.unit_name || mappedUnits[0]?.unit_id || '')}
+                        onChange={(e) => setSelectedCreateUnitIds(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                        required
+                        disabled={loading || mappedUnits.length === 0 || !showUnitControls}
+                        helperText={
+                          mappedUnits.length === 0
+                            ? 'No units are mapped with your coordinator account.'
+                            : showUnitControls
+                              ? 'Only units mapped with your coordinator account are available. You can select multiple units.'
+                              : 'This user will be created for the selected unit.'
+                        }
+                        fullWidth
+                        SelectProps={showUnitControls ? {
+                          multiple: true,
+                          renderValue: (selected) => {
+                            const selectedIds = Array.isArray(selected) ? selected : []
+                            return getUnitNamesFromIds(selectedIds).join(', ')
+                          },
+                        } : undefined}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <ApartmentRoundedIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+                            </InputAdornment>
+                          ),
+                          readOnly: !showUnitControls,
+                        }}
+                      >
+                        {showUnitControls
+                          ? unitOptions.map((unit) => (
+                            <MenuItem key={unit.unitId} value={unit.unitId}>
+                              <Checkbox checked={selectedCreateUnitIds.includes(unit.unitId)} size="small" />
+                              <ListItemText primary={unit.unitName} />
+                            </MenuItem>
+                          ))
+                          : undefined}
+                      </TextField>
                     </Grid>
 
                     <Grid item xs={12}>
@@ -892,10 +1102,12 @@ function UserManagement() {
                         value={mobile}
                         onChange={(e) => setMobile(e.target.value)}
                         disabled={loading}
-                        error={!!mobile && !!getMobileValidationError(mobile)}
+                        required
+                        error={!mobile.trim() || !!getMobileValidationError(mobile)}
                         helperText={
-                          (mobile && getMobileValidationError(mobile)) ||
-                          'Optional. Enter a valid 10-digit mobile number.'
+                          (!mobile.trim() && 'Mobile number is required') ||
+                          getMobileValidationError(mobile) ||
+                          'Enter a valid 10-digit mobile number.'
                         }
                         fullWidth
                         inputProps={{
@@ -986,7 +1198,6 @@ function UserManagement() {
     <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Paper
         elevation={0}
-        onClick={handleListContainerClick}
         sx={{
           ...DASHBOARD_PAPER_SX,
           overflow: 'visible',
@@ -1022,24 +1233,26 @@ function UserManagement() {
             User Management
           </Typography>
           <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', alignItems: 'center', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
-            <FormControl size="small" sx={filterControlSx}>
-              <InputLabel id="unit-filter-label">Unit</InputLabel>
-              <Select
-                labelId="unit-filter-label"
-                id="unit-filter"
-                value={unitFilter}
-                label="Unit"
-                onChange={(e) => setUnitFilter(e.target.value)}
-                disabled={usersLoading || unitOptions.length === 0}
-              >
-                <MenuItem value="all">All Units</MenuItem>
-                {unitOptions.map((unit) => (
-                  <MenuItem key={unit.unitId} value={unit.unitId}>
-                    {unit.unitName}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {showUnitControls ? (
+              <FormControl size="small" sx={filterControlSx}>
+                <InputLabel id="unit-filter-label">Unit</InputLabel>
+                <Select
+                  labelId="unit-filter-label"
+                  id="unit-filter"
+                  value={unitFilter}
+                  label="Unit"
+                  onChange={(e) => setUnitFilter(e.target.value)}
+                  disabled={usersLoading || unitOptions.length === 0}
+                >
+                  <MenuItem value="all">All Units</MenuItem>
+                  {unitOptions.map((unit) => (
+                    <MenuItem key={unit.unitId} value={unit.unitId}>
+                      {unit.unitName}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : null}
             <FormControl size="small" sx={filterControlSx}>
               <InputLabel id="role-filter-label">Role</InputLabel>
               <Select
@@ -1155,8 +1368,8 @@ function UserManagement() {
                 {deleteMode ? <TableCell sx={{ ...headCellSx, width: 54, px: 2 }} /> : null}
                 <TableCell sx={headCellSx}>Name</TableCell>
                 <TableCell sx={headCellSx}>Email ID</TableCell>
-                <TableCell sx={headCellSx}>Role</TableCell>
-                <TableCell sx={headCellSx}>Unit</TableCell>
+                <TableCell sx={{ ...headCellSx, width: showUnitControls ? 180 : 210 }}>Role</TableCell>
+                {showUnitControls ? <TableCell sx={headCellSx}>Unit</TableCell> : null}
                 <TableCell sx={headCellSx}>Department</TableCell>
                 <TableCell sx={headCellSx}>Designation</TableCell>
                 <TableCell sx={headCellSx}>Mobile</TableCell>
@@ -1165,19 +1378,19 @@ function UserManagement() {
             <TableBody>
               {usersLoading ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5, borderBottom: 0 }}>
+                  <TableCell colSpan={deleteMode ? (showUnitControls ? 8 : 7) : (showUnitControls ? 7 : 6)} align="center" sx={{ py: 5, borderBottom: 0 }}>
                     <CircularProgress size={26} />
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5, borderBottom: 0 }}>
+                  <TableCell colSpan={deleteMode ? (showUnitControls ? 8 : 7) : (showUnitControls ? 7 : 6)} align="center" sx={{ py: 5, borderBottom: 0 }}>
                     No users found for your company.
                   </TableCell>
                 </TableRow>
               ) : filteredUsers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? 8 : 7} align="center" sx={{ py: 5, borderBottom: 0 }}>
+                  <TableCell colSpan={deleteMode ? (showUnitControls ? 8 : 7) : (showUnitControls ? 7 : 6)} align="center" sx={{ py: 5, borderBottom: 0 }}>
                     No users found for the selected filters.
                   </TableCell>
                 </TableRow>
@@ -1211,8 +1424,35 @@ function UserManagement() {
                       {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (Company Coordinator)' : ''}` : ''}
                     </TableCell>
                     <TableCell sx={bodyCellSx}>{user.email_id || '-'}</TableCell>
-                    <TableCell sx={bodyCellSx}>{formatRoleLabel(user.role)}</TableCell>
-                    <TableCell sx={bodyCellSx}>{user.unit_name || user.unit_id || '-'}</TableCell>
+                    <TableCell sx={{ ...bodyCellSx, whiteSpace: 'nowrap' }}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
+                        <Typography component="span" sx={{ fontSize: '0.89rem', lineHeight: 1.2 }}>
+                          {formatRoleLabel(user.role)}
+                        </Typography>
+                        {user.role === 'approver' ? (
+                          <Typography
+                            component="button"
+                            type="button"
+                            onClick={() => handleOpenApproverDetails(user)}
+                            sx={{
+                              p: 0,
+                              m: 0,
+                              border: 0,
+                              background: 'transparent',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              color: theme.palette.primary.main,
+                              fontSize: '0.7rem',
+                              lineHeight: 1.2,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            (Click to see details)
+                          </Typography>
+                        ) : null}
+                      </Box>
+                    </TableCell>
+                    {showUnitControls ? <TableCell sx={bodyCellSx}>{user.unit_name || user.unit_id || '-'}</TableCell> : null}
                     <TableCell sx={bodyCellSx}>{user.department || '-'}</TableCell>
                     <TableCell sx={bodyCellSx}>{user.designation || '-'}</TableCell>
                     <TableCell sx={bodyCellSx}>{user.mobile || '-'}</TableCell>
@@ -1239,18 +1479,29 @@ function UserManagement() {
           ) : (
             <>
               <FormControl fullWidth required disabled={bulkUploadDialog.submitting}>
-                <InputLabel id="bulk-upload-unit-label">Unit</InputLabel>
+                <InputLabel id="bulk-upload-unit-label">{showUnitControls ? 'Units' : 'Unit'}</InputLabel>
                 <Select
                   labelId="bulk-upload-unit-label"
-                  label="Unit"
-                  value={bulkUploadDialog.unitId}
+                  label={showUnitControls ? 'Units' : 'Unit'}
+                  multiple={showUnitControls}
+                  value={showUnitControls ? bulkUploadDialog.unitIds : (bulkUploadDialog.unitIds[0] || '')}
                   onChange={(event) =>
-                    setBulkUploadDialog((prev) => ({ ...prev, unitId: event.target.value, error: '' }))
+                    setBulkUploadDialog((prev) => ({
+                      ...prev,
+                      unitIds: typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value,
+                      error: '',
+                    }))
+                  }
+                  renderValue={
+                    showUnitControls
+                      ? (selected) => getUnitNamesFromIds(Array.isArray(selected) ? selected : []).join(', ')
+                      : undefined
                   }
                 >
                   {mappedUnits.map((unit) => (
                     <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
-                      {unit.unit_name || unit.unit_id}
+                      {showUnitControls ? <Checkbox checked={bulkUploadDialog.unitIds.includes(unit.unit_id)} size="small" /> : null}
+                      <ListItemText primary={unit.unit_name || unit.unit_id} />
                     </MenuItem>
                   ))}
                 </Select>
@@ -1348,6 +1599,61 @@ function UserManagement() {
       </Dialog>
 
       <Dialog
+        open={bulkExistingUsersDialog.open}
+        onClose={() => !bulkUploadDialog.submitting && setBulkExistingUsersDialog({ open: false, users: [] })}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Existing Users Found</DialogTitle>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, pt: 2.5 }}>
+          <DialogContentText>
+            The following users already exist in other unit(s). On continue, they will be added to the selected unit membership.
+          </DialogContentText>
+          {bulkExistingUsersDialog.users.length === 0 ? (
+            <Typography color="text.secondary">No users available.</Typography>
+          ) : (
+            bulkExistingUsersDialog.users.map((user) => (
+              <Box
+                key={user.email_id}
+                sx={{
+                  px: 1.5,
+                  py: 1.2,
+                  borderRadius: 1.5,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  backgroundColor: alpha(theme.palette.background.default, 0.35),
+                }}
+              >
+                <Typography sx={{ fontWeight: 700 }}>{user.email_id}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Existing units: {getUnitNamesFromIds(user.existing_unit_ids).join(', ') || (user.existing_unit_ids || []).join(', ') || '-'}
+                </Typography>
+              </Box>
+            ))
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setBulkExistingUsersDialog({ open: false, users: [] })}
+            disabled={bulkUploadDialog.submitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={async () => {
+              setBulkExistingUsersDialog({ open: false, users: [] })
+              setBulkUploadDialog((prev) => ({ ...prev, confirmExistingUsers: true }))
+              await executeBulkUploadUsers(true)
+            }}
+            disabled={bulkUploadDialog.submitting}
+          >
+            Continue
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
         open={bulkLogsDialogOpen}
         onClose={() => setBulkLogsDialogOpen(false)}
         fullWidth
@@ -1358,10 +1664,17 @@ function UserManagement() {
           {bulkUploadLogs.length === 0 ? (
             <Typography color="text.secondary">No logs available.</Typography>
           ) : (
-            bulkUploadLogs.map((message, index) => (
-              <Typography key={`${message}-${index}`} sx={{ fontSize: '0.95rem' }}>
-                {index + 1}. {message}
-              </Typography>
+            bulkUploadLogs.map((entry, index) => (
+              <Box key={`${entry.message}-${index}`} sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                <Typography sx={{ fontSize: '0.95rem' }}>
+                  {index + 1}. {entry.message}
+                </Typography>
+                {Array.isArray(entry.items) && entry.items.length > 0 ? (
+                  <Typography sx={{ fontSize: '0.87rem', color: 'text.secondary', pl: 2.1 }}>
+                    Email ID(s): {entry.items.join(', ')}
+                  </Typography>
+                ) : null}
+              </Box>
             ))
           )}
         </DialogContent>
@@ -1369,6 +1682,63 @@ function UserManagement() {
           <Button onClick={() => setBulkLogsDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      <AppDialog
+        open={approverDetailsDialog.open}
+        onClose={() => setApproverDetailsDialog((prev) => ({ ...prev, open: false }))}
+        title={approverDetailsDialog.approver ? (
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.1, flexWrap: 'wrap' }}>
+            <Typography component="span" sx={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.25 }}>
+              Approver Assignments
+            </Typography>
+            <Typography component="span" sx={{ color: 'text.secondary', fontSize: '0.92rem', fontWeight: 400, lineHeight: 1.25 }}>
+              ({approverDetailsDialog.approver.email_id})
+            </Typography>
+          </Box>
+        ) : 'Assign Approver'}
+        titleId="company-co-approver-details-dialog-title"
+        fullWidth
+        maxWidth="md"
+        showTitleDivider
+        titleSx={{ py: 1.75 }}
+        contentSx={{ py: 2.2 }}
+        actions={(
+          <Button onClick={() => setApproverDetailsDialog((prev) => ({ ...prev, open: false }))} variant="outlined" sx={getAppDialogCancelButtonSx(theme)}>
+            Close
+          </Button>
+        )}
+      >
+        {approverDetailsDialog.loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
+            <CircularProgress size={26} />
+          </Box>
+        ) : approverDetailsDialog.error ? (
+          <Alert severity="error">{approverDetailsDialog.error}</Alert>
+        ) : currentApproverAssignments.length === 0 ? (
+          <Typography color="text.secondary">No assignments found for this approver.</Typography>
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1,  mt:1.5 }}>
+            {currentApproverAssignments.map((assignment) => (
+              <Box
+                key={assignment.id}
+                sx={{
+                  px: 1.5,
+                  py: 1.2,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  backgroundColor: alpha(theme.palette.background.default, 0.35),
+                }}
+              >
+                <Typography sx={{ fontWeight: 700 }}>{formatAssignmentScopeLabel(assignment.assignment_scope)}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {formatAssignmentDetails(assignment)}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </AppDialog>
 
       <Dialog
         open={deleteDialogOpen}
@@ -1388,8 +1758,8 @@ function UserManagement() {
         <DialogTitle
           id="delete-dialog-title"
           sx={{
-            pb: 2.5,
-            pt: 3,
+            pb: 2,
+            pt: 2.5,
             px: 3,
             fontWeight: 600,
             fontSize: '1.25rem',
@@ -1398,7 +1768,7 @@ function UserManagement() {
         >
           Confirm Delete
         </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+        <DialogContent sx={{ px: 3, pt: 2.25, pb: 2.25 }}>
           <DialogContentText
             id="delete-dialog-description"
             sx={{
@@ -1406,13 +1776,14 @@ function UserManagement() {
               fontSize: '0.9375rem',
               lineHeight: 1.5,
               m: 0,
-              mb: 2,
+              mb: 1.5,
+              mt: 1.5,
             }}
           >
             Deleting selected user(s) will remove them from the company and all assigned RACMs will go inactive. This action cannot be undone.
           </DialogContentText>
           {selectedUserEmails.size > 0 ? (
-            <Box sx={{ mt: 2 }}>
+            <Box sx={{ mt: 1.5 }}>
               <Typography
                 variant="body2"
                 sx={{
@@ -1428,8 +1799,7 @@ function UserManagement() {
         <DialogActions
           sx={{
             px: 3,
-            pb: 3,
-            pt: 2.5,
+            py: 2.25,
             gap: 1.5,
             borderTop: '1px solid',
             borderColor: 'divider',

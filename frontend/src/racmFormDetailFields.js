@@ -52,7 +52,7 @@ export const RACM_FIELD_LABELS = {
   control_design_procs: 'Procedures to Evaluate Design and Implementation',
   control_type_fo: 'Type of control (Operational/Financial)',
   control_type_ma: 'Type of control (Manual/ Automated)',
-  nature_of_control: 'Nature of Control',
+  nature_of_control: 'Nature of Control (Preventive/Detective)',
   control_owner: 'Process Owner',
   control_frequency: 'Control Frequency',
   sample_size: 'Sample Size',

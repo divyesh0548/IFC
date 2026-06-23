@@ -64,16 +64,14 @@ function Control_form() {
 
     const fetchUnits = async () => {
       try {
-        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
+        const response = await fetch(apiUrl('/api/company-co/assigned-units'), {
           method: 'GET',
           credentials: 'include',
         })
         const data = await response.json()
 
         if (!cancelled && response.ok && data.success) {
-          const units = Array.isArray(data.data?.currentCoordinatorUnits)
-            ? data.data.currentCoordinatorUnits
-            : []
+          const units = Array.isArray(data.units) ? data.units : []
           setUnitOptions(units)
           setFormData((prev) => ({
             ...prev,

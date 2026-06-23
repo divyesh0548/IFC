@@ -172,34 +172,45 @@ const portalContent = {
 function Home() {
   const theme = useTheme()
   const { toggleTheme, mode } = useThemeMode()
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [authStatus, setAuthStatus] = useState('checking')
   const [userRole, setUserRole] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
-    checkAuthOnHome()
-  }, [])
+    let cancelled = false
 
-  const checkAuthOnHome = async () => {
-    try {
-      const response = await fetch(apiUrl('/api/auth/verify'), {
-        method: 'GET',
-        credentials: 'include',
-      })
-      const data = await response.json()
-      if (response.ok && data.success) {
-        setIsAuthenticated(true)
-        setUserRole(data.user?.role || null)
-      } else {
-        setIsAuthenticated(false)
-        setUserRole(null)
+    const checkAuthOnHome = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+
+        if (cancelled) return
+
+        if (response.ok && data.success) {
+          setAuthStatus('authenticated')
+          setUserRole(data.user?.role || null)
+        } else {
+          setAuthStatus('unauthenticated')
+          setUserRole(null)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error verifying auth token on Home:', error)
+          setAuthStatus('unauthenticated')
+          setUserRole(null)
+        }
       }
-    } catch (error) {
-      console.error('Error verifying auth token on Home:', error)
-      setIsAuthenticated(false)
-      setUserRole(null)
     }
-  }
+
+    checkAuthOnHome()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const getDashboardPath = () => {
     if (!userRole) return '/login'
@@ -220,11 +231,14 @@ function Home() {
     } finally {
       clearCachedUserProfile()
       clearStoredUserDisplayName()
-      setIsAuthenticated(false)
+      setAuthStatus('unauthenticated')
       setUserRole(null)
       navigate('/', { replace: true })
     }
   }
+
+  const isAuthResolved = authStatus !== 'checking'
+  const isAuthenticated = authStatus === 'authenticated'
 
   const navButtonSx = {
     textTransform: 'none',
@@ -344,7 +358,7 @@ function Home() {
             </Box>
 
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              {isAuthenticated ? (
+              {isAuthResolved && (isAuthenticated ? (
                 <>
                   <Button variant="contained" color="primary" onClick={() => navigate(getDashboardPath())} sx={navButtonSx}>
                     Go to Dashboard
@@ -357,7 +371,7 @@ function Home() {
                 <Button component={Link} to="/login" variant="contained" color="primary" sx={navButtonSx}>
                   Login
                 </Button>
-              )}
+              ))}
               <Tooltip title={mode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'} arrow>
                 <IconButton
                   onClick={toggleTheme}
@@ -433,7 +447,7 @@ function Home() {
                       ))}
                     </Stack>
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ pt: 1 }}>
-                      {isAuthenticated ? (
+                      {isAuthResolved && (isAuthenticated ? (
                         <Button variant="contained" color="primary" onClick={() => navigate(getDashboardPath())} sx={{ ...navButtonSx, px: 3 }}>
                           Open workspace
                         </Button>
@@ -441,7 +455,7 @@ function Home() {
                         <Button component={Link} to="/login" variant="contained" color="primary" sx={{ ...navButtonSx, px: 3 }}>
                           Access portal
                         </Button>
-                      )}
+                      ))}
                       <Button
                         variant="outlined"
                         color="primary"

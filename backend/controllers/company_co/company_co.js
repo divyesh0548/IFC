@@ -101,12 +101,11 @@ async function getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail) {
         NULLIF(TRIM(cum.unit_id), '') AS unit_id,
         NULLIF(TRIM(cum.unit_name), '') AS unit_name
       FROM company_unit_master cum
-      INNER JOIN company_unit_responsibilities cur
-        ON cur.company_identifier = cum.company_identifier
-       AND cur.unit_id = cum.unit_id
-       AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+      INNER JOIN coordinator_unit_assignments cua
+        ON cua.company_identifier = cum.company_identifier
+       AND cua.unit_id = cum.unit_id
       WHERE cum.company_identifier = $1
-        AND LOWER(TRIM(cur.user_email_id)) = $2
+        AND LOWER(TRIM(cua.coordinator_email_id)) = $2
         AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
       ORDER BY unit_name ASC, unit_id ASC
     `,
@@ -114,6 +113,93 @@ async function getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail) {
   );
 
   return result.rows;
+}
+
+async function assertCoordinatorHasUnitAssignment(clientOrTx, companyIdentifier, coordinatorEmail, unitId) {
+  if (!companyIdentifier || !coordinatorEmail || !unitId) {
+    return false;
+  }
+
+  const result = await clientOrTx.$queryRawUnsafe
+    ? clientOrTx.$queryRawUnsafe(
+      `
+        SELECT 1
+        FROM coordinator_unit_assignments cua
+        INNER JOIN company_unit_master cum
+          ON cum.company_identifier = cua.company_identifier
+         AND cum.unit_id = cua.unit_id
+        WHERE cua.company_identifier = $1
+          AND LOWER(TRIM(cua.coordinator_email_id)) = $2
+          AND LOWER(TRIM(cua.unit_id)) = LOWER(TRIM($3))
+        LIMIT 1
+      `,
+      companyIdentifier,
+      coordinatorEmail,
+      unitId
+    )
+    : clientOrTx.query(
+      `
+        SELECT 1
+        FROM coordinator_unit_assignments cua
+        INNER JOIN company_unit_master cum
+          ON cum.company_identifier = cua.company_identifier
+         AND cum.unit_id = cua.unit_id
+        WHERE cua.company_identifier = $1
+          AND LOWER(TRIM(cua.coordinator_email_id)) = $2
+          AND LOWER(TRIM(cua.unit_id)) = LOWER(TRIM($3))
+        LIMIT 1
+      `,
+      [companyIdentifier, coordinatorEmail, unitId]
+    );
+
+  const rows = Array.isArray(result?.rows) ? result.rows : result;
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+async function assertCoordinatorHasMappedUnit(companyIdentifier, coordinatorEmail, unitId) {
+  if (!companyIdentifier || !coordinatorEmail || !unitId) {
+    return false;
+  }
+
+  const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+  return mappedUnits.some((row) => String(row?.unit_id || '').trim().toLowerCase() === String(unitId).trim().toLowerCase());
+}
+
+function normalizeSelectedUnitIds(unitIdsInput, unitIdInput) {
+  const unitIds = Array.isArray(unitIdsInput) ? unitIdsInput : [];
+  const normalizedUnitIds = [...new Set(
+    [
+      ...unitIds,
+      ...(unitIdInput != null ? [unitIdInput] : []),
+    ]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+  )];
+
+  return normalizedUnitIds;
+}
+
+async function getUserMembershipUnitIds(tx, companyIdentifier, emailId) {
+  if (!companyIdentifier || !emailId) {
+    return [];
+  }
+
+  const memberships = await tx.userUnitMembership.findMany({
+    where: {
+      companyIdentifier,
+      userEmailId: {
+        equals: emailId,
+        mode: 'insensitive',
+      },
+    },
+    select: {
+      unitId: true,
+    },
+  });
+
+  return memberships
+    .map((row) => String(row.unitId || '').trim())
+    .filter(Boolean);
 }
 
 async function getCompanyUnits(companyIdentifier) {
@@ -942,24 +1028,12 @@ async function getUsers(req, res) {
       });
     }
 
-    const coordinatorUnits = await prisma.companyUnitMaster.findMany({
-      where: {
-        companyIdentifier,
-        responsibilities: {
-          some: {
-            responsibilityType: UNIT_RESPONSIBILITY_TYPES.COORDINATOR,
-            userEmailId: {
-              equals: coordinatorEmail,
-              mode: 'insensitive',
-            },
-          },
-        },
-      },
-      select: { unitId: true },
-    });
-
+    const coordinatorUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
     const mappedUnitIds = coordinatorUnits
       .map((row) => (row.unitId == null ? '' : String(row.unitId).trim()))
+      .concat(
+        coordinatorUnits.map((row) => (row.unit_id == null ? '' : String(row.unit_id).trim()))
+      )
       .filter(Boolean);
 
     if (mappedUnitIds.length === 0) {
@@ -986,17 +1060,14 @@ async function getUsers(req, res) {
         CASE
           WHEN u.role = 'company_co' THEN coordinator_units.unit_ids
           WHEN u.role = 'approver' THEN approver_units.unit_ids
-          ELSE NULLIF(TRIM(u.unit_id), '')
+          ELSE user_units.unit_ids
         END AS unit_id,
         CASE
           WHEN u.role = 'company_co' THEN coordinator_units.unit_names
           WHEN u.role = 'approver' THEN approver_units.unit_names
-          ELSE NULLIF(TRIM(user_unit.unit_name), '')
+          ELSE user_units.unit_names
         END AS unit_name
       FROM ifc_users u
-      LEFT JOIN company_unit_master user_unit
-        ON user_unit.company_identifier = u.company_identifier
-       AND user_unit.unit_id = u.unit_id
       LEFT JOIN LATERAL (
         SELECT
           STRING_AGG(mapped_units.unit_id, ', ' ORDER BY mapped_units.unit_name, mapped_units.unit_id) AS unit_ids,
@@ -1006,12 +1077,11 @@ async function getUsers(req, res) {
             NULLIF(TRIM(cum.unit_id), '') AS unit_id,
             NULLIF(TRIM(cum.unit_name), '') AS unit_name
           FROM company_unit_master cum
-          INNER JOIN company_unit_responsibilities cur
-            ON cur.company_identifier = cum.company_identifier
-           AND cur.unit_id = cum.unit_id
-           AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+          INNER JOIN coordinator_unit_assignments cua
+            ON cua.company_identifier = cum.company_identifier
+           AND cua.unit_id = cum.unit_id
           WHERE cum.company_identifier = u.company_identifier
-            AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
+            AND LOWER(TRIM(cua.coordinator_email_id)) = LOWER(TRIM(u.email_id))
             AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
         ) mapped_units
       ) coordinator_units ON u.role = 'company_co'
@@ -1021,18 +1091,41 @@ async function getUsers(req, res) {
           STRING_AGG(mapped_units.unit_name, ', ' ORDER BY mapped_units.unit_name, mapped_units.unit_id) AS unit_names
         FROM (
           SELECT DISTINCT
+            NULLIF(TRIM(COALESCE(aa.unit_id, cf.unit_id)), '') AS unit_id,
+            NULLIF(TRIM(COALESCE(unit_direct.unit_name, unit_cf.unit_name)), '') AS unit_name
+          FROM approver_assignments aa
+          LEFT JOIN control_forms cf
+            ON aa.assignment_scope = 'RACM'
+           AND cf.company_identifier = aa.company_identifier
+           AND cf.form_id = aa.form_id
+          LEFT JOIN company_unit_master unit_direct
+            ON unit_direct.company_identifier = aa.company_identifier
+           AND unit_direct.unit_id = aa.unit_id
+          LEFT JOIN company_unit_master unit_cf
+            ON unit_cf.company_identifier = cf.company_identifier
+           AND unit_cf.unit_id = cf.unit_id
+          WHERE aa.company_identifier = u.company_identifier
+            AND LOWER(TRIM(aa.approver_email_id)) = LOWER(TRIM(u.email_id))
+            AND NULLIF(TRIM(COALESCE(aa.unit_id, cf.unit_id)), '') IS NOT NULL
+        ) mapped_units
+      ) approver_units ON u.role = 'approver'
+      LEFT JOIN LATERAL (
+        SELECT
+          STRING_AGG(mapped_units.unit_id, ', ' ORDER BY mapped_units.unit_name, mapped_units.unit_id) AS unit_ids,
+          STRING_AGG(mapped_units.unit_name, ', ' ORDER BY mapped_units.unit_name, mapped_units.unit_id) AS unit_names
+        FROM (
+          SELECT DISTINCT
             NULLIF(TRIM(cum.unit_id), '') AS unit_id,
             NULLIF(TRIM(cum.unit_name), '') AS unit_name
           FROM company_unit_master cum
-          INNER JOIN company_unit_responsibilities cur
-            ON cur.company_identifier = cum.company_identifier
-           AND cur.unit_id = cum.unit_id
-           AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+          INNER JOIN user_unit_memberships uum
+            ON uum.company_identifier = cum.company_identifier
+           AND uum.unit_id = cum.unit_id
           WHERE cum.company_identifier = u.company_identifier
-            AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
+            AND LOWER(TRIM(uum.user_email_id)) = LOWER(TRIM(u.email_id))
             AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
         ) mapped_units
-      ) approver_units ON u.role = 'approver'
+      ) user_units ON u.role = 'user'
       WHERE u.company_identifier = $1
     `;
     const params = [companyIdentifier];
@@ -1042,29 +1135,26 @@ async function getUsers(req, res) {
       AND (
         (
           u.role = 'user'
-          AND NULLIF(TRIM(u.unit_id), '') = ANY($${paramIndex}::text[])
+          AND EXISTS (
+            SELECT 1
+            FROM user_unit_memberships uum
+            WHERE uum.company_identifier = u.company_identifier
+              AND uum.unit_id = ANY($${paramIndex}::text[])
+              AND LOWER(TRIM(uum.user_email_id)) = LOWER(TRIM(u.email_id))
+          )
         )
         OR (
           u.role = 'company_co'
           AND EXISTS (
             SELECT 1
-            FROM company_unit_responsibilities cur
-            WHERE cur.company_identifier = u.company_identifier
-              AND cur.unit_id = ANY($${paramIndex}::text[])
-              AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-              AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
+            FROM coordinator_unit_assignments cua
+            WHERE cua.company_identifier = u.company_identifier
+              AND cua.unit_id = ANY($${paramIndex}::text[])
+              AND LOWER(TRIM(cua.coordinator_email_id)) = LOWER(TRIM(u.email_id))
           )
         )
         OR (
           u.role = 'approver'
-          AND EXISTS (
-            SELECT 1
-            FROM company_unit_responsibilities cur
-            WHERE cur.company_identifier = u.company_identifier
-              AND cur.unit_id = ANY($${paramIndex}::text[])
-              AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
-              AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
-          )
         )
       )
     `;
@@ -1082,29 +1172,26 @@ async function getUsers(req, res) {
         AND (
           (
             u.role = 'user'
-            AND LOWER(TRIM(COALESCE(u.unit_id, ''))) = LOWER(TRIM($${paramIndex}))
+            AND EXISTS (
+              SELECT 1
+              FROM user_unit_memberships uum
+              WHERE uum.company_identifier = u.company_identifier
+                AND LOWER(TRIM(uum.user_email_id)) = LOWER(TRIM(u.email_id))
+                AND LOWER(TRIM(uum.unit_id)) = LOWER(TRIM($${paramIndex}))
+            )
           )
           OR (
             u.role = 'company_co'
             AND EXISTS (
               SELECT 1
-              FROM company_unit_responsibilities cur
-              WHERE cur.company_identifier = u.company_identifier
-                AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-                AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
-                AND LOWER(TRIM(cur.unit_id)) = LOWER(TRIM($${paramIndex}))
+              FROM coordinator_unit_assignments cua
+              WHERE cua.company_identifier = u.company_identifier
+                AND LOWER(TRIM(cua.coordinator_email_id)) = LOWER(TRIM(u.email_id))
+                AND LOWER(TRIM(cua.unit_id)) = LOWER(TRIM($${paramIndex}))
             )
           )
           OR (
             u.role = 'approver'
-            AND EXISTS (
-              SELECT 1
-              FROM company_unit_responsibilities cur
-              WHERE cur.company_identifier = u.company_identifier
-                AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
-                AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
-                AND LOWER(TRIM(cur.unit_id)) = LOWER(TRIM($${paramIndex}))
-            )
           )
         )
       `;
@@ -1116,7 +1203,7 @@ async function getUsers(req, res) {
       query += ` AND (
         LOWER(COALESCE(u.emp_name, '')) LIKE $${paramIndex}
         OR LOWER(TRIM(u.email_id)) LIKE $${paramIndex}
-        OR LOWER(COALESCE(user_unit.unit_name, '')) LIKE $${paramIndex}
+        OR LOWER(COALESCE(user_units.unit_names, '')) LIKE $${paramIndex}
         OR LOWER(COALESCE(coordinator_units.unit_names, '')) LIKE $${paramIndex}
         OR LOWER(COALESCE(approver_units.unit_names, '')) LIKE $${paramIndex}
       )`;
@@ -1151,6 +1238,331 @@ async function getUsers(req, res) {
       success: false,
       message: 'Failed to fetch users',
     });
+  }
+}
+
+async function getAssignedUnits(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim() || null;
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(200).json({
+        success: true,
+        units: [],
+      });
+    }
+
+    const units = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+
+    return res.status(200).json({
+      success: true,
+      units,
+    });
+  } catch (error) {
+    console.error('Error fetching coordinator assigned units:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch assigned units',
+    });
+  }
+}
+
+async function getApproverAssignments(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim() || null;
+    const approverEmail = normalizeEmail(req.params?.email_id);
+
+    if (!companyIdentifier || !approverEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Approver email is required',
+      });
+    }
+
+    const approverResult = await pool.query(
+      `
+        SELECT
+          email_id,
+          role,
+          emp_name
+        FROM ifc_users
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(email_id)) = $2
+        LIMIT 1
+      `,
+      [companyIdentifier, approverEmail]
+    );
+
+    const approver = approverResult.rows[0];
+    if (!approver || approver.role !== 'approver') {
+      return res.status(404).json({
+        success: false,
+        message: 'Approver not found for this company',
+      });
+    }
+
+    const assignmentsResult = await pool.query(
+      `
+        SELECT
+          aa.id,
+          aa.assignment_scope,
+          COALESCE(aa.unit_id, cf.unit_id) AS unit_id,
+          COALESCE(unit_direct.unit_name, unit_cf.unit_name) AS unit_name,
+          aa.business_process,
+          aa.form_id,
+          cf.control_number,
+          cf.standard_control_description,
+          aa.created_at
+        FROM approver_assignments aa
+        LEFT JOIN control_forms cf
+          ON aa.assignment_scope = 'RACM'
+         AND cf.company_identifier = aa.company_identifier
+         AND cf.form_id = aa.form_id
+        LEFT JOIN company_unit_master unit_direct
+          ON unit_direct.company_identifier = aa.company_identifier
+         AND unit_direct.unit_id = aa.unit_id
+        LEFT JOIN company_unit_master unit_cf
+          ON unit_cf.company_identifier = cf.company_identifier
+         AND unit_cf.unit_id = cf.unit_id
+        WHERE aa.company_identifier = $1
+          AND LOWER(TRIM(aa.approver_email_id)) = $2
+        ORDER BY
+          CASE aa.assignment_scope
+            WHEN 'RACM' THEN 1
+            WHEN 'BUSINESS_PROCESS' THEN 2
+            WHEN 'UNIT' THEN 3
+            ELSE 4
+          END,
+          aa.created_at DESC
+      `,
+      [companyIdentifier, approverEmail]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        approver: {
+          email_id: approver.email_id,
+          emp_name: approver.emp_name,
+        },
+        assignments: assignmentsResult.rows,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching approver assignments:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch approver assignments',
+    });
+  }
+}
+
+async function assignRacmApprover(req, res) {
+  const client = await pool.connect();
+
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim() || null;
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const approverEmailId = normalizeEmail(req.body?.approver_email_id || req.body?.email_id);
+    const formIds = [...new Set(
+      (Array.isArray(req.body?.form_ids) ? req.body.form_ids : [req.body?.form_id])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )];
+    const confirmReplaceExisting = Boolean(req.body?.confirm_replace_existing);
+    const lockedApprovalStatuses = new Set(['sent for approval', 'approved', 'rejected']);
+
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company coordinator context is required',
+      });
+    }
+
+    if (!approverEmailId || !isValidEmail(approverEmailId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid approver email ID is required',
+      });
+    }
+
+    if (formIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one RACM is required',
+      });
+    }
+
+    const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+    const mappedUnitIds = mappedUnits
+      .map((row) => String(row?.unit_id || '').trim())
+      .filter(Boolean);
+
+    if (mappedUnitIds.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'No linked units available for this coordinator',
+      });
+    }
+
+    await client.query('BEGIN');
+
+    const approverResult = await client.query(
+      `
+        SELECT email_id, emp_name
+        FROM ifc_users
+        WHERE company_identifier = $1
+          AND role = 'approver'
+          AND LOWER(TRIM(email_id)) = $2
+        LIMIT 1
+      `,
+      [companyIdentifier, approverEmailId]
+    );
+
+    if (approverResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Approver email ID is not available for this company',
+      });
+    }
+
+    const formsResult = await client.query(
+      `
+        SELECT
+          cf.form_id,
+          cf.unit_id,
+          cf.control_number,
+          cf.standard_control_description,
+          cf.status
+        FROM control_forms cf
+        WHERE cf.company_identifier = $1
+          AND cf.form_id = ANY($2::text[])
+          AND cf.unit_id = ANY($3::text[])
+      `,
+      [companyIdentifier, formIds, mappedUnitIds]
+    );
+
+    const accessibleForms = formsResult.rows;
+    if (accessibleForms.length !== formIds.length) {
+      const accessibleIds = new Set(accessibleForms.map((row) => String(row.form_id || '').trim()));
+      const inaccessibleFormIds = formIds.filter((formId) => !accessibleIds.has(formId));
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'One or more RACMs are not accessible for approver assignment',
+        inaccessibleFormIds,
+      });
+    }
+
+    const approvalLockedForms = accessibleForms.filter((row) =>
+      lockedApprovalStatuses.has(String(row?.status || '').trim().toLowerCase())
+    );
+    if (approvalLockedForms.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        code: 'RACM_APPROVER_ASSIGNMENT_LOCKED',
+        message: 'Approver assignment cannot be changed for RACMs already in approval flow',
+        lockedForms: approvalLockedForms.map((row) => ({
+          form_id: row.form_id,
+          control_number: row.control_number,
+          standard_control_description: row.standard_control_description,
+          status: row.status,
+        })),
+      });
+    }
+
+    const existingAssignmentsResult = await client.query(
+      `
+        SELECT
+          aa.id,
+          aa.form_id,
+          aa.approver_email_id,
+          approver.emp_name AS approver_name,
+          cf.control_number,
+          cf.standard_control_description
+        FROM approver_assignments aa
+        INNER JOIN control_forms cf
+          ON cf.company_identifier = aa.company_identifier
+         AND cf.form_id = aa.form_id
+        LEFT JOIN ifc_users approver
+          ON approver.company_identifier = aa.company_identifier
+         AND LOWER(TRIM(approver.email_id)) = LOWER(TRIM(aa.approver_email_id))
+        WHERE aa.company_identifier = $1
+          AND aa.assignment_scope = 'RACM'
+          AND aa.form_id = ANY($2::text[])
+        ORDER BY cf.control_number ASC NULLS LAST, aa.created_at DESC
+      `,
+      [companyIdentifier, formIds]
+    );
+
+    if (existingAssignmentsResult.rows.length > 0 && !confirmReplaceExisting) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        code: 'CONFIRM_REPLACE_RACM_APPROVER',
+        message: 'One or more selected RACMs already have RACM-level approver assignments',
+        requiresConfirmation: true,
+        existingAssignments: existingAssignmentsResult.rows,
+      });
+    }
+
+    await client.query(
+      `
+        DELETE FROM approver_assignments
+        WHERE company_identifier = $1
+          AND assignment_scope = 'RACM'
+          AND form_id = ANY($2::text[])
+      `,
+      [companyIdentifier, formIds]
+    );
+
+    const insertResult = await client.query(
+      `
+        INSERT INTO approver_assignments (
+          company_identifier,
+          approver_email_id,
+          assignment_scope,
+          unit_id,
+          business_process,
+          form_id
+        )
+        SELECT
+          $1,
+          $2,
+          'RACM',
+          NULL,
+          NULL,
+          form_id
+        FROM UNNEST($3::text[]) AS form_id
+        RETURNING id, approver_email_id, assignment_scope, form_id, created_at
+      `,
+      [companyIdentifier, approverEmailId, formIds]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Approver assignment saved successfully',
+      data: {
+        assignmentCount: insertResult.rowCount,
+        replacedCount: existingAssignmentsResult.rows.length,
+        approver: approverResult.rows[0],
+        assignments: insertResult.rows,
+      },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Assign RACM approver error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to save approver assignment',
+    });
+  } finally {
+    client.release();
   }
 }
 
@@ -1932,180 +2344,132 @@ async function getUnitManagement(req, res) {
       });
     }
 
-    const buildDistinctPeopleQuery = (responsibilityType) => `
-      WITH distinct_people AS (
-        SELECT DISTINCT LOWER(TRIM(user_email_id)) AS email_id
-        FROM company_unit_responsibilities
-        WHERE company_identifier = $1
-          AND responsibility_type = '${responsibilityType}'
-          AND COALESCE(TRIM(user_email_id), '') <> ''
-      )
-      SELECT
-        dp.email_id,
-        COALESCE(NULLIF(TRIM(u.emp_name), ''), dp.email_id) AS display_name
-      FROM distinct_people dp
-      LEFT JOIN ifc_users u
-        ON LOWER(TRIM(u.email_id)) = dp.email_id
-       AND u.company_identifier = $1
-      ORDER BY display_name ASC, dp.email_id ASC
-    `;
-
-    const buildUnmappedUnitsQuery = (responsibilityType) => `
-      SELECT cum.id, cum.unit_id, cum.unit_name
-      FROM company_unit_master cum
-      WHERE cum.company_identifier = $1
-        AND NOT EXISTS (
-          SELECT 1
-          FROM company_unit_responsibilities cur
-          WHERE cur.company_identifier = cum.company_identifier
-            AND cur.unit_id = cum.unit_id
-            AND cur.responsibility_type = '${responsibilityType}'
-        )
-      ORDER BY cum.unit_name ASC, cum.id ASC
-    `;
-
     const [
       currentUnitsRows,
       approversRows,
       coordinatorsRows,
-      unmappedRoleUsersRows,
-      unmappedCoordinatorUnitsRows,
-      unmappedApproverUnitsRows,
       assignmentCoordinatorsRows,
       assignmentApproversRows,
       unitsRows,
     ] = await Promise.all([
-      prisma.$queryRawUnsafe(
+      pool.query(
         `
           SELECT cum.id, cum.unit_id, cum.unit_name, cum.unit_address
           FROM company_unit_master cum
-          INNER JOIN company_unit_responsibilities cur
-            ON cur.company_identifier = cum.company_identifier
-           AND cur.unit_id = cum.unit_id
-           AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+          INNER JOIN coordinator_unit_assignments cua
+            ON cua.company_identifier = cum.company_identifier
+           AND cua.unit_id = cum.unit_id
           WHERE cum.company_identifier = $1
-            AND LOWER(TRIM(cur.user_email_id)) = $2
+            AND LOWER(TRIM(cua.coordinator_email_id)) = $2
           ORDER BY cum.unit_name ASC, cum.id ASC
         `,
-        companyIdentifier,
-        coordinatorEmail
+        [companyIdentifier, coordinatorEmail]
       ),
-      prisma.$queryRawUnsafe(buildDistinctPeopleQuery(UNIT_RESPONSIBILITY_TYPES.APPROVER), companyIdentifier),
-      prisma.$queryRawUnsafe(buildDistinctPeopleQuery(UNIT_RESPONSIBILITY_TYPES.COORDINATOR), companyIdentifier),
-      prisma.$queryRawUnsafe(
+      pool.query(
         `
-          SELECT *
-          FROM (
-            SELECT
-              LOWER(TRIM(u.email_id)) AS email_id,
-              COALESCE(NULLIF(TRIM(u.emp_name), ''), LOWER(TRIM(u.email_id))) AS display_name,
-              'company_co' AS role
-            FROM ifc_users u
-            WHERE u.company_identifier = $1
-              AND u.role = 'company_co'
-              AND COALESCE(TRIM(u.email_id), '') <> ''
-              AND NOT EXISTS (
-                SELECT 1
-                FROM company_unit_responsibilities cur
-                WHERE cur.company_identifier = u.company_identifier
-                  AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-                  AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
-              )
-
-            UNION ALL
-
-            SELECT
-              LOWER(TRIM(u.email_id)) AS email_id,
-              COALESCE(NULLIF(TRIM(u.emp_name), ''), LOWER(TRIM(u.email_id))) AS display_name,
-              'approver' AS role
-            FROM ifc_users u
-            WHERE u.company_identifier = $1
-              AND u.role = 'approver'
-              AND COALESCE(TRIM(u.email_id), '') <> ''
-              AND NOT EXISTS (
-                SELECT 1
-                FROM company_unit_responsibilities cur
-                WHERE cur.company_identifier = u.company_identifier
-                  AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
-                  AND LOWER(TRIM(cur.user_email_id)) = LOWER(TRIM(u.email_id))
-              )
-          ) unmapped_role_users
-          ORDER BY role ASC, display_name ASC, email_id ASC
-        `,
-        companyIdentifier
-      ),
-      prisma.$queryRawUnsafe(buildUnmappedUnitsQuery(UNIT_RESPONSIBILITY_TYPES.COORDINATOR), companyIdentifier),
-      prisma.$queryRawUnsafe(buildUnmappedUnitsQuery(UNIT_RESPONSIBILITY_TYPES.APPROVER), companyIdentifier),
-      prisma.$queryRawUnsafe(
-        `
-          SELECT
-            LOWER(TRIM(email_id)) AS email_id,
-            COALESCE(NULLIF(TRIM(emp_name), ''), LOWER(TRIM(email_id))) AS display_name
-          FROM ifc_users
-          WHERE company_identifier = $1
-            AND role = 'company_co'
-            AND COALESCE(TRIM(email_id), '') <> ''
-          ORDER BY display_name ASC, email_id ASC
-        `,
-        companyIdentifier
-      ),
-      prisma.$queryRawUnsafe(
-        `
-          SELECT
-            LOWER(TRIM(email_id)) AS email_id,
-            COALESCE(NULLIF(TRIM(emp_name), ''), LOWER(TRIM(email_id))) AS display_name
+          SELECT id, email_id, COALESCE(NULLIF(TRIM(emp_name), ''), email_id) AS display_name
           FROM ifc_users
           WHERE company_identifier = $1
             AND role = 'approver'
-            AND COALESCE(TRIM(email_id), '') <> ''
-          ORDER BY display_name ASC, email_id ASC
+          ORDER BY display_name ASC
         `,
-        companyIdentifier
+        [companyIdentifier]
       ),
-      prisma.$queryRawUnsafe(
+      pool.query(
+        `
+          SELECT
+            u.id,
+            u.email_id,
+            COALESCE(NULLIF(TRIM(u.emp_name), ''), u.email_id) AS display_name,
+            COALESCE(
+              json_agg(cua.unit_id ORDER BY cua.unit_id) FILTER (WHERE cua.unit_id IS NOT NULL),
+              '[]'::json
+            ) AS unit_ids
+          FROM ifc_users u
+          LEFT JOIN coordinator_unit_assignments cua
+            ON cua.company_identifier = u.company_identifier
+           AND LOWER(TRIM(cua.coordinator_email_id)) = LOWER(TRIM(u.email_id))
+          WHERE u.company_identifier = $1
+            AND u.role = 'company_co'
+          GROUP BY u.id, u.email_id, u.emp_name
+          ORDER BY display_name ASC
+        `,
+        [companyIdentifier]
+      ),
+      pool.query(
+        `
+          SELECT
+            aa.id,
+            aa.approver_email_id AS email_id,
+            COALESCE(NULLIF(TRIM(u.emp_name), ''), aa.approver_email_id) AS display_name,
+            aa.assignment_scope,
+            COALESCE(aa.unit_id, cf.unit_id) AS unit_id,
+            COALESCE(unit_direct.unit_name, unit_cf.unit_name) AS unit_name,
+            aa.business_process,
+            aa.form_id,
+            aa.created_at
+          FROM approver_assignments aa
+          LEFT JOIN ifc_users u
+            ON u.company_identifier = aa.company_identifier
+           AND LOWER(TRIM(u.email_id)) = LOWER(TRIM(aa.approver_email_id))
+          LEFT JOIN control_forms cf
+            ON aa.assignment_scope = 'RACM'
+           AND cf.company_identifier = aa.company_identifier
+           AND cf.form_id = aa.form_id
+          LEFT JOIN company_unit_master unit_direct
+            ON unit_direct.company_identifier = aa.company_identifier
+           AND unit_direct.unit_id = aa.unit_id
+          LEFT JOIN company_unit_master unit_cf
+            ON unit_cf.company_identifier = cf.company_identifier
+           AND unit_cf.unit_id = cf.unit_id
+          WHERE aa.company_identifier = $1
+          ORDER BY aa.created_at DESC
+        `,
+        [companyIdentifier]
+      ),
+      pool.query(
         `
           SELECT
             cum.id,
             cum.unit_id,
             cum.unit_name,
-            coordinator_map.user_email_id AS coordinator_email_id,
-            COALESCE(NULLIF(TRIM(coordinator.emp_name), ''), coordinator_map.user_email_id) AS coordinator_display_name,
-            approver_map.user_email_id AS approver_email_id,
-            COALESCE(NULLIF(TRIM(approver.emp_name), ''), approver_map.user_email_id) AS approver_display_name
+            cua.coordinator_email_id,
+            COALESCE(NULLIF(TRIM(coordinator.emp_name), ''), cua.coordinator_email_id) AS coordinator_display_name,
+            aa.approver_email_id,
+            COALESCE(NULLIF(TRIM(approver.emp_name), ''), aa.approver_email_id) AS approver_display_name
           FROM company_unit_master cum
-          LEFT JOIN company_unit_responsibilities coordinator_map
-            ON coordinator_map.company_identifier = cum.company_identifier
-           AND coordinator_map.unit_id = cum.unit_id
-           AND coordinator_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-          LEFT JOIN company_unit_responsibilities approver_map
-            ON approver_map.company_identifier = cum.company_identifier
-           AND approver_map.unit_id = cum.unit_id
-           AND approver_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
+          LEFT JOIN coordinator_unit_assignments cua
+            ON cua.company_identifier = cum.company_identifier
+           AND cua.unit_id = cum.unit_id
+          LEFT JOIN approver_assignments aa
+            ON aa.company_identifier = cum.company_identifier
+           AND aa.unit_id = cum.unit_id
+           AND aa.assignment_scope = 'UNIT'
           LEFT JOIN ifc_users coordinator
-            ON LOWER(TRIM(coordinator.email_id)) = LOWER(TRIM(COALESCE(coordinator_map.user_email_id, '')))
+            ON LOWER(TRIM(coordinator.email_id)) = LOWER(TRIM(COALESCE(cua.coordinator_email_id, '')))
            AND coordinator.company_identifier = cum.company_identifier
           LEFT JOIN ifc_users approver
-            ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.user_email_id, '')))
+            ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(aa.approver_email_id, '')))
            AND approver.company_identifier = cum.company_identifier
           WHERE cum.company_identifier = $1
           ORDER BY cum.unit_name ASC, cum.id ASC
         `,
-        companyIdentifier
+        [companyIdentifier]
       ),
     ]);
 
     return res.status(200).json({
       success: true,
       data: {
-        currentCoordinatorUnits: currentUnitsRows,
-        approvers: approversRows,
-        coordinators: coordinatorsRows,
-        unmappedRoleUsers: unmappedRoleUsersRows,
-        unmappedCoordinatorUnits: unmappedCoordinatorUnitsRows,
-        unmappedApproverUnits: unmappedApproverUnitsRows,
-        assignmentCoordinators: assignmentCoordinatorsRows,
-        assignmentApprovers: assignmentApproversRows,
-        units: unitsRows,
+        currentCoordinatorUnits: currentUnitsRows.rows,
+        approvers: approversRows.rows,
+        coordinators: coordinatorsRows.rows,
+        unmappedRoleUsers: [],
+        unmappedCoordinatorUnits: [],
+        unmappedApproverUnits: [],
+        assignmentCoordinators: assignmentCoordinatorsRows.rows,
+        assignmentApprovers: assignmentApproversRows.rows,
+        units: unitsRows.rows,
       },
     });
   } catch (error) {
@@ -2535,6 +2899,8 @@ async function createUser(req, res) {
     department,
     mobile,
     unit_id,
+    unit_ids,
+    confirm_existing_user_units,
   } = req.body;
   const coordinator = req.user;
 
@@ -2545,8 +2911,10 @@ async function createUser(req, res) {
     const userDesignation = String(designation || '').trim() || null;
     const userDepartment = String(department || '').trim() || null;
     const userMobile = normalizeMobileDigits(mobile) || null;
-    const unitId = String(unit_id || '').trim() || null;
+    const selectedUnitIds = normalizeSelectedUnitIds(unit_ids, unit_id);
     const companyIdentifier = coordinator.company_identifier || null;
+    const coordinatorEmail = normalizeEmail(coordinator.email_id);
+    const confirmExistingUserUnits = Boolean(confirm_existing_user_units);
 
     if (!emailId) {
       return res.status(400).json({
@@ -2562,17 +2930,29 @@ async function createUser(req, res) {
       });
     }
 
-    if (userMobile) {
-      const mobileError = getMobileValidationError(userMobile);
-      if (mobileError) {
-        return res.status(400).json({
-          success: false,
-          message: mobileError,
-        });
-      }
+    if (!userMobile) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mobile number is required',
+      });
     }
 
-    if (unitId && !companyIdentifier) {
+    const mobileError = getMobileValidationError(userMobile);
+    if (mobileError) {
+      return res.status(400).json({
+        success: false,
+        message: mobileError,
+      });
+    }
+
+    if (selectedUnitIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one unit is required',
+      });
+    }
+
+    if (selectedUnitIds.length > 0 && !companyIdentifier) {
       return res.status(400).json({
         success: false,
         message: 'Company identifier is required',
@@ -2584,29 +2964,22 @@ async function createUser(req, res) {
     const coordinatorName = String(coordinator.emp_name || '').trim() || 'Company Coordinator';
 
     const { user: newUser, loginEmailQueued, tempPassword, empName: createdEmpName } = await prisma.$transaction(async (tx) => {
-      if (unitId) {
-        const assignedUnit = await tx.companyUnitMaster.findFirst({
-          where: {
-            companyIdentifier,
-            unitId,
-            responsibilities: {
-              some: {
-                responsibilityType: UNIT_RESPONSIBILITY_TYPES.COORDINATOR,
-                userEmailId: {
-                  equals: normalizeEmail(coordinator.email_id),
-                  mode: 'insensitive',
-                },
-              },
-            },
-          },
-          select: { unitId: true },
-        });
-
-        if (!assignedUnit) {
-          const error = new Error('Selected unit is not mapped with this company coordinator');
-          error.statusCode = 403;
-          throw error;
-        }
+      const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+      const mappedUnitIds = new Set(
+        mappedUnits
+          .map((row) => String(row?.unit_id || '').trim())
+          .filter(Boolean)
+      );
+      const unauthorizedUnitIds = selectedUnitIds.filter((selectedUnitId) => !mappedUnitIds.has(selectedUnitId));
+      if (unauthorizedUnitIds.length > 0) {
+        const error = new Error(
+          unauthorizedUnitIds.length === 1
+            ? 'Selected unit is not mapped with this company coordinator'
+            : 'One or more selected units are not mapped with this company coordinator'
+        );
+        error.statusCode = 403;
+        error.unauthorizedUnits = unauthorizedUnitIds;
+        throw error;
       }
 
       const existingUser = await tx.ifcUser.findFirst({
@@ -2616,13 +2989,75 @@ async function createUser(req, res) {
             mode: 'insensitive',
           },
         },
-        select: { id: true },
+        select: {
+          id: true,
+          emailId: true,
+          companyIdentifier: true,
+          role: true,
+          empName: true,
+        },
       });
 
       if (existingUser) {
-        const error = new Error('User with this email already exists');
-        error.statusCode = 409;
-        throw error;
+        if (existingUser.companyIdentifier !== companyIdentifier || existingUser.role !== 'user') {
+          const error = new Error('User with this email already exists');
+          error.statusCode = 409;
+          throw error;
+        }
+
+        const existingMembershipUnitIds = await getUserMembershipUnitIds(tx, companyIdentifier, emailId);
+        const existingMembershipUnitSet = new Set(existingMembershipUnitIds);
+        const unitIdsToAdd = selectedUnitIds.filter((selectedUnitId) => !existingMembershipUnitSet.has(selectedUnitId));
+
+        if (unitIdsToAdd.length === 0) {
+          const error = new Error('User is already mapped to the selected unit(s)');
+          error.statusCode = 409;
+          error.code = 'USER_ALREADY_MAPPED_TO_UNITS';
+          error.existingUnitIds = existingMembershipUnitIds;
+          throw error;
+        }
+
+        if (!confirmExistingUserUnits) {
+          const error = new Error(
+            unitIdsToAdd.length === 1
+              ? `User already exists in another unit. Are you sure you want to create user in ${unitIdsToAdd[0]} unit?`
+              : 'User already exists in other units. Confirm to add the selected units for this user.'
+          );
+          error.statusCode = 409;
+          error.code = 'CONFIRM_EXISTING_USER_UNITS';
+          error.requiresConfirmation = true;
+          error.user = {
+            email_id: existingUser.emailId,
+            existing_unit_ids: existingMembershipUnitIds,
+            target_unit_ids: selectedUnitIds,
+            units_to_add: unitIdsToAdd,
+          };
+          throw error;
+        }
+
+        await tx.userUnitMembership.createMany({
+          data: unitIdsToAdd.map((selectedUnitId) => ({
+            companyIdentifier,
+            userEmailId: emailId,
+            unitId: selectedUnitId,
+          })),
+          skipDuplicates: true,
+        });
+
+        return {
+          user: {
+            id: existingUser.id,
+            email_id: existingUser.emailId,
+            company_identifier: existingUser.companyIdentifier,
+            role: 'user',
+            unit_id: unitIdsToAdd[0] || selectedUnitIds[0] || null,
+            unit_ids: [...new Set([...existingMembershipUnitIds, ...unitIdsToAdd])],
+            membershipAdded: true,
+          },
+          loginEmailQueued: false,
+          tempPassword: null,
+          empName: existingUser.empName || empName,
+        };
       }
 
       const tempPassword = crypto.randomBytes(8).toString('hex');
@@ -2641,7 +3076,6 @@ async function createUser(req, res) {
           designation: userDesignation,
           department: userDepartment,
           mobile: userMobile,
-          unitId,
           loginEmailSent: false,
           tempPasswordEncrypted,
         },
@@ -2649,8 +3083,16 @@ async function createUser(req, res) {
           id: true,
           emailId: true,
           companyIdentifier: true,
-          unitId: true,
         },
+      });
+
+      await tx.userUnitMembership.createMany({
+        data: selectedUnitIds.map((selectedUnitId) => ({
+          companyIdentifier,
+          userEmailId: emailId,
+          unitId: selectedUnitId,
+        })),
+        skipDuplicates: true,
       });
 
       return {
@@ -2658,7 +3100,10 @@ async function createUser(req, res) {
           id: createdUser.id,
           email_id: createdUser.emailId,
           company_identifier: createdUser.companyIdentifier,
-          unit_id: createdUser.unitId,
+          role: 'user',
+          unit_id: selectedUnitIds[0] || null,
+          unit_ids: selectedUnitIds,
+          membershipAdded: false,
         },
         loginEmailQueued: true,
         tempPassword,
@@ -2666,34 +3111,37 @@ async function createUser(req, res) {
       };
     });
 
-    try {
-      const emailSent = await sendUserCreationEmail(pool, {
-        userId: newUser.id,
-        emailId: newUser.email_id,
-        role: newUser.role,
-        userName: createdEmpName,
-        coordinatorName,
-        coordinatorEmail: coordinator.email_id,
-        companyName,
-        tempPassword,
-      });
-      if (!emailSent) {
-        console.warn(`Warning: failed to send user creation email to ${newUser.email_id}`);
+    if (loginEmailQueued && tempPassword) {
+      try {
+        const emailSent = await sendUserCreationEmail(pool, {
+          userId: newUser.id,
+          emailId: newUser.email_id,
+          role: newUser.role,
+          userName: createdEmpName,
+          coordinatorName,
+          coordinatorEmail: coordinator.email_id,
+          companyName,
+          tempPassword,
+        });
+        if (!emailSent) {
+          console.warn(`Warning: failed to send user creation email to ${newUser.email_id}`);
+        }
+      } catch (emailError) {
+        console.error('User creation email error:', emailError);
       }
-    } catch (emailError) {
-      console.error('User creation email error:', emailError);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    return res.status(201).json({
+    return res.status(loginEmailQueued ? 201 : 200).json({
       success: true,
-      message: 'User created successfully',
+      message: loginEmailQueued ? 'User created successfully' : 'User unit assignment updated successfully',
       user: {
         id: newUser.id,
         email_id: newUser.email_id,
         company_identifier: newUser.company_identifier,
         unit_id: newUser.unit_id,
+        unit_ids: newUser.unit_ids || [],
       },
       loginEmailQueued,
     });
@@ -2704,6 +3152,11 @@ async function createUser(req, res) {
       return res.status(error.statusCode).json({
         success: false,
         message: error.message,
+        code: error.code,
+        requiresConfirmation: Boolean(error.requiresConfirmation),
+        user: error.user,
+        existingUnitIds: error.existingUnitIds,
+        unauthorizedUnits: error.unauthorizedUnits,
       });
     }
 
@@ -2733,14 +3186,13 @@ async function createUsersBulk(req, res) {
   const companyIdentifier = coordinator.company_identifier || null;
   const inputEmails = Array.isArray(req.body?.email_ids) ? req.body.email_ids : [];
   const usersInput = Array.isArray(req.body?.users) ? req.body.users : [];
-  const selectedUnitId = req.body?.unit_id && String(req.body.unit_id).trim()
-    ? String(req.body.unit_id).trim()
-    : null;
+  const selectedUnitIds = normalizeSelectedUnitIds(req.body?.unit_ids, req.body?.unit_id);
+  const confirmExistingUserUnits = Boolean(req.body?.confirm_existing_user_units);
 
-  if (usersInput.length > 0 && !selectedUnitId) {
+  if (usersInput.length > 0 && selectedUnitIds.length === 0) {
     return res.status(400).json({
       success: false,
-      message: 'Unit is required for bulk user upload',
+      message: 'At least one unit is required for bulk user upload',
     });
   }
 
@@ -2754,6 +3206,14 @@ async function createUsersBulk(req, res) {
   const normalizedEmails = [...new Set(inputEmails.map(normalizeEmail).filter(Boolean))];
   const invalidEmails = normalizedEmails.filter((email) => !isValidEmail(email));
   const legacyEmailIds = normalizedEmails.filter((email) => isValidEmail(email));
+
+  if (usersInput.length === 0 && legacyEmailIds.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Mobile number is required for user creation. Use the user management form or bulk upload sheet with Mobile column.',
+      invalidEmails,
+    });
+  }
 
   const uploadRows = [];
   const skippedRows = [];
@@ -2783,16 +3243,23 @@ async function createUsersBulk(req, res) {
       }
 
       const mobileDigits = normalizeMobileDigits(row?.mobile);
-      if (mobileDigits) {
-        const mobileError = getMobileValidationError(mobileDigits);
-        if (mobileError) {
-          skippedRows.push({
-            rowNumber,
-            email_id: emailId,
-            reason: mobileError,
-          });
-          return;
-        }
+      if (!mobileDigits) {
+        skippedRows.push({
+          rowNumber,
+          email_id: emailId,
+          reason: 'Mobile number is required',
+        });
+        return;
+      }
+
+      const mobileError = getMobileValidationError(mobileDigits);
+      if (mobileError) {
+        skippedRows.push({
+          rowNumber,
+          email_id: emailId,
+          reason: mobileError,
+        });
+        return;
       }
 
       uploadRows.push({
@@ -2803,7 +3270,7 @@ async function createUsersBulk(req, res) {
           department: row?.department || null,
           designation: row?.designation || null,
           mobile: mobileDigits || null,
-          unit_id: selectedUnitId,
+          unit_ids: selectedUnitIds,
         },
       });
     });
@@ -2838,27 +3305,19 @@ async function createUsersBulk(req, res) {
     const coordinatorName = String(coordinator.emp_name || '').trim() || 'Company Coordinator';
 
     const coordinatorEmail = normalizeEmail(coordinator.email_id);
-    if (selectedUnitId) {
-      const assignedUnit = await prisma.companyUnitMaster.findFirst({
-        where: {
-          companyIdentifier,
-          unitId: selectedUnitId,
-          responsibilities: {
-            some: {
-              responsibilityType: UNIT_RESPONSIBILITY_TYPES.COORDINATOR,
-              userEmailId: {
-                equals: coordinatorEmail,
-                mode: 'insensitive',
-              },
-            },
-          },
-        },
-        select: { unitId: true },
-      });
+    if (selectedUnitIds.length > 0) {
+      const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+      const mappedUnitSet = new Set(
+        mappedUnits
+          .map((row) => String(row?.unit_id || '').trim())
+          .filter(Boolean)
+      );
+      const unauthorizedUnits = selectedUnitIds.filter((unitId) => !mappedUnitSet.has(unitId));
 
-      if (!assignedUnit) {
+      if (unauthorizedUnits.length > 0) {
         const error = new Error('Selected unit is not mapped with this company coordinator');
         error.statusCode = 403;
+        error.unauthorizedUnits = unauthorizedUnits;
         throw error;
       }
     }
@@ -2873,9 +3332,83 @@ async function createUsersBulk(req, res) {
           },
         })),
       },
-      select: { emailId: true },
+      select: {
+        id: true,
+        emailId: true,
+        companyIdentifier: true,
+        role: true,
+      },
     });
-    const existingEmailSet = new Set(existingUsers.map((u) => normalizeEmail(u.emailId)));
+    const existingUsersByEmail = new Map(existingUsers.map((user) => [normalizeEmail(user.emailId), user]));
+    const sameCompanyExistingUserEmails = existingUsers
+      .filter((user) => user.companyIdentifier === companyIdentifier && user.role === 'user')
+      .map((user) => normalizeEmail(user.emailId));
+
+    const existingMembershipRows = sameCompanyExistingUserEmails.length > 0
+      ? await prisma.userUnitMembership.findMany({
+        where: {
+          companyIdentifier,
+          OR: sameCompanyExistingUserEmails.map((emailId) => ({
+            userEmailId: {
+              equals: emailId,
+              mode: 'insensitive',
+            },
+          })),
+        },
+        select: {
+          userEmailId: true,
+          unitId: true,
+        },
+      })
+      : [];
+
+    const existingMembershipsByEmail = new Map();
+    existingMembershipRows.forEach((row) => {
+      const normalizedEmail = normalizeEmail(row.userEmailId);
+      const current = existingMembershipsByEmail.get(normalizedEmail) || [];
+      current.push(String(row.unitId || '').trim());
+      existingMembershipsByEmail.set(normalizedEmail, current.filter(Boolean));
+    });
+
+    const usersNeedingConfirmation = [];
+    const usersAlreadyMapped = [];
+    if (selectedUnitIds.length > 0) {
+      for (const emailId of targetEmails) {
+        const existingUser = existingUsersByEmail.get(emailId);
+        if (!existingUser || existingUser.companyIdentifier !== companyIdentifier || existingUser.role !== 'user') {
+          continue;
+        }
+
+        const existingUnitIds = existingMembershipsByEmail.get(emailId) || [];
+        const existingUnitSet = new Set(existingUnitIds);
+        const unitsToAdd = selectedUnitIds.filter((unitId) => !existingUnitSet.has(unitId));
+
+        if (unitsToAdd.length === 0) {
+          usersAlreadyMapped.push({
+            email_id: emailId,
+            existing_unit_ids: existingUnitIds,
+          });
+          continue;
+        }
+
+        usersNeedingConfirmation.push({
+          email_id: emailId,
+          existing_unit_ids: existingUnitIds,
+          target_unit_ids: selectedUnitIds,
+          units_to_add: unitsToAdd,
+        });
+      }
+    }
+
+    if (usersNeedingConfirmation.length > 0 && !confirmExistingUserUnits) {
+      return res.status(409).json({
+        success: false,
+        code: 'CONFIRM_EXISTING_USER_UNITS',
+        requiresConfirmation: true,
+        message: 'Some users already exist in other units. Confirm to add them to the selected units.',
+        users: usersNeedingConfirmation,
+      });
+    }
 
     for (const item of rowsToCreate) {
       if (requestAborted) {
@@ -2887,30 +3420,84 @@ async function createUsersBulk(req, res) {
       const emailId = normalizeEmail(item.payload?.email_id);
       const mobileValue = normalizeMobileDigits(item.payload?.mobile) || null;
 
-      if (mobileValue) {
-        const mobileError = getMobileValidationError(mobileValue);
-        if (mobileError) {
+      if (!mobileValue) {
+        if (item.rowNumber != null) {
+          skippedRows.push({
+            rowNumber: item.rowNumber,
+            email_id: emailId,
+            reason: 'Mobile number is required',
+          });
+        }
+        continue;
+      }
+
+      const mobileError = getMobileValidationError(mobileValue);
+      if (mobileError) {
+        if (item.rowNumber != null) {
+          skippedRows.push({
+            rowNumber: item.rowNumber,
+            email_id: emailId,
+            reason: mobileError,
+          });
+        }
+        continue;
+      }
+
+      const existingUser = existingUsersByEmail.get(emailId);
+      const payloadUnitIds = normalizeSelectedUnitIds(item.payload?.unit_ids, item.payload?.unit_id);
+      const existingMembershipUnitIds = existingMembershipsByEmail.get(emailId) || [];
+      const existingMembershipUnitSet = new Set(existingMembershipUnitIds);
+
+      if (existingUser) {
+        if (existingUser.companyIdentifier !== companyIdentifier || existingUser.role !== 'user') {
+          const duplicateEmail = normalizeEmail(item.payload?.email_id);
+          skippedEmails.push(duplicateEmail);
           if (item.rowNumber != null) {
-            skippedRows.push({
+            duplicateRows.push({
               rowNumber: item.rowNumber,
-              email_id: emailId,
-              reason: mobileError,
+              email_id: duplicateEmail,
+              reason: 'User already exists',
             });
           }
           continue;
         }
-      }
 
-      if (existingEmailSet.has(emailId)) {
-        const duplicateEmail = normalizeEmail(item.payload?.email_id);
-        skippedEmails.push(duplicateEmail);
-        if (item.rowNumber != null) {
-          duplicateRows.push({
-            rowNumber: item.rowNumber,
-            email_id: duplicateEmail,
-            reason: 'User already exists',
-          });
+        const unitIdsToAdd = payloadUnitIds.filter((unitId) => !existingMembershipUnitSet.has(unitId));
+        if (unitIdsToAdd.length === 0) {
+          const duplicateEmail = normalizeEmail(item.payload?.email_id);
+          skippedEmails.push(duplicateEmail);
+          if (item.rowNumber != null) {
+            duplicateRows.push({
+              rowNumber: item.rowNumber,
+              email_id: duplicateEmail,
+              reason: 'User already exists in selected unit(s)',
+            });
+          }
+          continue;
         }
+
+        await prisma.userUnitMembership.createMany({
+          data: unitIdsToAdd.map((unitId) => ({
+            companyIdentifier,
+            userEmailId: emailId,
+            unitId,
+          })),
+          skipDuplicates: true,
+        });
+
+        existingMembershipsByEmail.set(emailId, [...new Set([...existingMembershipUnitIds, ...unitIdsToAdd])]);
+        createdUsers.push({
+          id: existingUser.id,
+          email_id: existingUser.emailId,
+          company_identifier: existingUser.companyIdentifier,
+          role: 'user',
+          unit_id: unitIdsToAdd[0] || null,
+          unit_ids: [...new Set([...existingMembershipUnitIds, ...unitIdsToAdd])],
+          loginEmailQueued: false,
+          tempPassword: null,
+          emp_name: item.payload?.emp_name || null,
+          membershipAdded: true,
+        });
         continue;
       }
 
@@ -2931,7 +3518,6 @@ async function createUsersBulk(req, res) {
             designation: item.payload?.designation || null,
             department: item.payload?.department || null,
             mobile: mobileValue,
-            unitId: item.payload?.unit_id || null,
             loginEmailSent: false,
             tempPasswordEncrypted,
           },
@@ -2939,19 +3525,38 @@ async function createUsersBulk(req, res) {
             id: true,
             emailId: true,
             companyIdentifier: true,
-            unitId: true,
           },
         });
 
-        existingEmailSet.add(emailId);
+        if (payloadUnitIds.length > 0) {
+          await prisma.userUnitMembership.createMany({
+            data: payloadUnitIds.map((unitId) => ({
+              companyIdentifier,
+              userEmailId: emailId,
+              unitId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        existingUsersByEmail.set(emailId, {
+          id: createdUser.id,
+          emailId: createdUser.emailId,
+          companyIdentifier: createdUser.companyIdentifier,
+          role: 'user',
+        });
+        existingMembershipsByEmail.set(emailId, payloadUnitIds);
         createdUsers.push({
           id: createdUser.id,
           email_id: createdUser.emailId,
           company_identifier: createdUser.companyIdentifier,
-          unit_id: createdUser.unitId,
+          role: 'user',
+          unit_id: payloadUnitIds[0] || null,
+          unit_ids: payloadUnitIds,
           loginEmailQueued: true,
           tempPassword,
           emp_name: item.payload?.emp_name || null,
+          membershipAdded: false,
         });
       } catch (createError) {
         if (createError.code === 'P2002') {
@@ -2964,7 +3569,6 @@ async function createUsersBulk(req, res) {
               reason: 'User already exists',
             });
           }
-          existingEmailSet.add(emailId);
           continue;
         }
         throw createError;
@@ -2972,6 +3576,10 @@ async function createUsersBulk(req, res) {
     }
 
     for (const createdUser of createdUsers) {
+      if (!createdUser.loginEmailQueued || !createdUser.tempPassword) {
+        continue;
+      }
+
       try {
         const emailSent = await sendUserCreationEmail(pool, {
           userId: createdUser.id,
@@ -2997,7 +3605,14 @@ async function createUsersBulk(req, res) {
       createdUsers: createdUsers.map(({ tempPassword: _tempPassword, emp_name: _empName, ...rest }) => rest),
       skippedEmails,
       invalidEmails: [...invalidEmails, ...invalidRowEmails],
-      skippedRows: [...skippedRows, ...duplicateRows],
+      skippedRows: [
+        ...skippedRows,
+        ...duplicateRows,
+        ...usersAlreadyMapped.map((user) => ({
+          email_id: user.email_id,
+          reason: 'User already exists in selected unit(s)',
+        })),
+      ],
     });
   } catch (error) {
     console.error('Error creating users in bulk:', error);
@@ -3016,6 +3631,10 @@ async function createUsersBulk(req, res) {
       return res.status(error.statusCode).json({
         success: false,
         message: error.message,
+        code: error.code,
+        requiresConfirmation: Boolean(error.requiresConfirmation),
+        users: error.users,
+        unauthorizedUnits: error.unauthorizedUnits,
       });
     }
 
@@ -3032,6 +3651,7 @@ async function createUsersBulk(req, res) {
 async function deleteUsers(req, res) {
   const coordinator = req.user;
   const companyIdentifier = coordinator.company_identifier;
+  const coordinatorDisplayName = String(coordinator?.emp_name || '').trim() || null;
 
   const emailIdsInput = Array.isArray(req.body?.email_ids) ? req.body.email_ids : [];
   const normalizedEmails = [...new Set(emailIdsInput.map(normalizeEmail).filter(Boolean))];
@@ -3060,24 +3680,9 @@ async function deleteUsers(req, res) {
   }
 
   try {
-    const coordinatorUnits = await prisma.companyUnitMaster.findMany({
-      where: {
-        companyIdentifier,
-        responsibilities: {
-          some: {
-            responsibilityType: UNIT_RESPONSIBILITY_TYPES.COORDINATOR,
-            userEmailId: {
-              equals: normalizeEmail(coordinator.email_id),
-              mode: 'insensitive',
-            },
-          },
-        },
-      },
-      select: { unitId: true },
-    });
-
+    const coordinatorUnits = await getCoordinatorMappedUnits(companyIdentifier, normalizeEmail(coordinator.email_id));
     const mappedUnitIds = coordinatorUnits
-      .map((row) => (row.unitId == null ? '' : String(row.unitId).trim()))
+      .map((row) => (row.unit_id == null ? '' : String(row.unit_id).trim()))
       .filter(Boolean);
 
     if (mappedUnitIds.length === 0) {
@@ -3095,16 +3700,37 @@ async function deleteUsers(req, res) {
       select: {
         id: true,
         emailId: true,
+      },
+    });
+
+    const userMemberships = await prisma.userUnitMembership.findMany({
+      where: {
+        companyIdentifier,
+        unitId: {
+          in: mappedUnitIds,
+        },
+      },
+      select: {
+        userEmailId: true,
         unitId: true,
       },
     });
+
+    const membershipsByEmail = userMemberships.reduce((acc, row) => {
+      const emailId = normalizeEmail(row.userEmailId);
+      if (!acc.has(emailId)) {
+        acc.set(emailId, []);
+      }
+      acc.get(emailId).push(String(row.unitId || '').trim());
+      return acc;
+    }, new Map());
 
     const emailSet = new Set(normalizedEmails);
     const usersToDelete = candidateUsers
       .map((row) => ({
         id: row.id,
         email_id: normalizeEmail(row.emailId),
-        unit_id: row.unitId,
+        unit_ids: membershipsByEmail.get(normalizeEmail(row.emailId)) || [],
       }))
       .filter((row) => emailSet.has(row.email_id));
 
@@ -3120,8 +3746,7 @@ async function deleteUsers(req, res) {
 
     const mappedUnitSet = new Set(mappedUnitIds);
     const unauthorizedUsers = usersToDelete.filter((row) => {
-      const userUnitId = row.unit_id == null ? '' : String(row.unit_id).trim();
-      return !userUnitId || !mappedUnitSet.has(userUnitId);
+      return row.unit_ids.length === 0 || row.unit_ids.some((unitId) => !mappedUnitSet.has(unitId));
     });
 
     if (unauthorizedUsers.length > 0) {
@@ -3151,6 +3776,15 @@ async function deleteUsers(req, res) {
         mappedUnitIds
       );
 
+      await tx.userUnitMembership.deleteMany({
+        where: {
+          companyIdentifier,
+          userEmailId: {
+            in: authorizedEmails,
+          },
+        },
+      });
+
       const deletedUsers = await tx.ifcUser.deleteMany({
         where: {
           id: {
@@ -3161,6 +3795,21 @@ async function deleteUsers(req, res) {
 
       return [deactivatedCount, deletedUsers.count];
     });
+
+    for (const emailId of authorizedEmails) {
+      try {
+        const subject = 'IFC : Account Removed';
+        const text = coordinatorDisplayName
+          ? `Your account has been removed by Company Coordinator ${coordinatorDisplayName}.`
+          : 'Your account has been removed by the Company Coordinator.';
+        const emailSent = await sendEmail(emailId, subject, text);
+        if (!emailSent) {
+          console.warn(`Warning: failed to send user deletion email to ${emailId}`);
+        }
+      } catch (emailError) {
+        console.error(`User deletion email error for ${emailId}:`, emailError);
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -3866,6 +4515,9 @@ async function deleteCommunicationMatrixEntries(req, res) {
 
 module.exports = {
   getUsers,
+  getAssignedUnits,
+  getApproverAssignments,
+  assignRacmApprover,
   getHomeStats,
   getDashboardFilters,
   getDashboardSummary,

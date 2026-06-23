@@ -9,6 +9,7 @@ import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
 import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
+import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { apiUrl } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
@@ -87,6 +88,13 @@ function CompanyAdminHome() {
       description: 'Search approvers, review assignment status, and update unit or process scope.',
       path: '/company_admin/approver-management',
       icon: <ManageAccountsRoundedIcon sx={{ fontSize: 38 }} />,
+    },
+    {
+      eyebrow: 'Process Master',
+      title: 'Business Process Management',
+      description: 'Add company specific business processes and maintain the process master used across company workflows.',
+      path: '/company_admin/business-processes',
+      icon: <AccountTreeRoundedIcon sx={{ fontSize: 38 }} />,
     },
     {
       eyebrow: 'RACM',

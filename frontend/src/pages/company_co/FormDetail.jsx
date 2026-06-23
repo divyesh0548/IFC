@@ -47,6 +47,7 @@ import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
 import { formatIndianDateTime } from '../../lib/dateTime'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
+import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
 const DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
 
@@ -92,6 +93,7 @@ function FormDetail() {
   const [updating, setUpdating] = useState(false)
   const [createUserConfirmDialogOpen, setCreateUserConfirmDialogOpen] = useState(false)
   const [processOwnerEmail, setProcessOwnerEmail] = useState('')
+  const [createUserMobile, setCreateUserMobile] = useState('')
   const [isEditMode, setIsEditMode] = useState(false)
   const [editableFields, setEditableFields] = useState({})
   const [saving, setSaving] = useState(false)
@@ -424,6 +426,17 @@ function FormDetail() {
       return
     }
 
+    if (!createUserMobile.trim()) {
+      toast.error('Mobile number is required')
+      return
+    }
+
+    const mobileError = getMobileValidationError(createUserMobile.trim())
+    if (mobileError) {
+      toast.error(mobileError)
+      return
+    }
+
     setCreatingUser(true)
     try {
       const response = await fetch(apiUrl('/api/company-co/create-user'), {
@@ -435,6 +448,7 @@ function FormDetail() {
         body: JSON.stringify({
           email_id: email,
           unit_id: unitId,
+          mobile: normalizeMobileDigits(createUserMobile) || null,
         }),
       })
 
@@ -443,6 +457,7 @@ function FormDetail() {
         toast.success('User created successfully')
         setCreateUserConfirmDialogOpen(false)
         setProcessOwnerEmail('')
+        setCreateUserMobile('')
         await validateAndToggleActive('1')
       } else {
         toast.error(data.message || 'Failed to create user')
@@ -459,6 +474,7 @@ function FormDetail() {
     if (creatingUser) return
     setCreateUserConfirmDialogOpen(false)
     setProcessOwnerEmail('')
+    setCreateUserMobile('')
   }
 
   const handleModifyClick = () => {
@@ -3969,6 +3985,23 @@ function FormDetail() {
           >
           User with email <strong>{processOwnerEmail}</strong> does not exist as a user in your company (with role set to &quot;user&quot;). Please create a user account to proceed with setting the RACM to Active.
           </DialogContentText>
+          <TextField
+            id="create-user-mobile"
+            label="Mobile Number"
+            type="tel"
+            value={createUserMobile}
+            onChange={(event) => setCreateUserMobile(event.target.value)}
+            required
+            fullWidth
+            inputProps={{ maxLength: 10 }}
+            error={!createUserMobile.trim() || !!getMobileValidationError(createUserMobile)}
+            helperText={
+              (!createUserMobile.trim() && 'Mobile number is required') ||
+              getMobileValidationError(createUserMobile) ||
+              'Enter a valid 10-digit mobile number.'
+            }
+            sx={{ mt: 2 }}
+          />
         </DialogContent>
         <DialogActions
           sx={{

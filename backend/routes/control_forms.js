@@ -172,6 +172,23 @@ const VALID_RACM_ASSIGNMENT_EXISTS_SQL = `
   )
 `;
 
+const VALID_RACM_APPROVER_ASSIGNMENT_EXISTS_SQL = `
+  EXISTS (
+    SELECT 1
+    FROM approver_assignments aa
+    WHERE aa.company_identifier = cf.company_identifier
+      AND (
+        (aa.assignment_scope = 'RACM' AND aa.form_id = cf.form_id)
+        OR (
+          aa.assignment_scope = 'BUSINESS_PROCESS'
+          AND aa.unit_id = cf.unit_id
+          AND LOWER(TRIM(COALESCE(aa.business_process, ''))) = LOWER(TRIM(COALESCE(cf.business_process, '')))
+        )
+        OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = cf.unit_id)
+      )
+  )
+`;
+
 const CONTROL_FORMS_LIST_FROM = `
   FROM control_forms cf
   ${CONTROLS_REMINDER_JOIN_SQL}
@@ -182,6 +199,33 @@ const CONTROL_FORMS_LIST_FROM = `
     ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
    AND u.company_identifier = cf.company_identifier
    AND u.role = 'user'
+  LEFT JOIN LATERAL (
+    SELECT aa.approver_email_id
+    FROM approver_assignments aa
+    WHERE aa.company_identifier = cf.company_identifier
+      AND (
+        (aa.assignment_scope = 'RACM' AND aa.form_id = cf.form_id)
+        OR (
+          aa.assignment_scope = 'BUSINESS_PROCESS'
+          AND aa.unit_id = cf.unit_id
+          AND LOWER(TRIM(COALESCE(aa.business_process, ''))) = LOWER(TRIM(COALESCE(cf.business_process, '')))
+        )
+        OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = cf.unit_id)
+      )
+    ORDER BY
+      CASE aa.assignment_scope
+        WHEN 'RACM' THEN 1
+        WHEN 'BUSINESS_PROCESS' THEN 2
+        WHEN 'UNIT' THEN 3
+        ELSE 4
+      END,
+      aa.created_at DESC
+    LIMIT 1
+  ) approver_map ON TRUE
+  LEFT JOIN ifc_users approver_user
+    ON LOWER(TRIM(approver_user.email_id)) = LOWER(TRIM(COALESCE(approver_map.approver_email_id, '')))
+   AND approver_user.company_identifier = cf.company_identifier
+   AND approver_user.role = 'approver'
   LEFT JOIN user_unit_memberships owner_membership
     ON owner_membership.company_identifier = cf.company_identifier
    AND owner_membership.unit_id = cf.unit_id
@@ -193,7 +237,10 @@ const CONTROL_FORMS_LIST_SELECT = `
     cf.*,
     ${CONTROLS_REMINDER_SELECT_SQL},
     NULLIF(TRIM(cum.unit_name), '') AS unit_name,
-    NULLIF(TRIM(u.emp_name), '') AS control_owner_name
+    NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
+    NULLIF(TRIM(approver_map.approver_email_id), '') AS approver_email_id,
+    NULLIF(TRIM(approver_user.emp_name), '') AS approver_name,
+    NULLIF(TRIM(approver_user.emp_name), '') AS approver_display_name
 `;
 
 function appendControlFormsListFilters(req, options, queryParts) {
@@ -202,6 +249,7 @@ function appendControlFormsListFilters(req, options, queryParts) {
     assignment,
     company_identifier,
     control_owner,
+    control_number,
     active,
     business_process,
     status,
@@ -212,6 +260,7 @@ function appendControlFormsListFilters(req, options, queryParts) {
     conclusion,
     pending_changes,
     active_or_valid_assignment,
+    assignment_target,
   } = req.query;
 
   let { whereClause, queryParams, paramIndex } = queryParts;
@@ -249,6 +298,12 @@ function appendControlFormsListFilters(req, options, queryParts) {
   if (control_owner) {
     whereClause += ` AND LOWER(TRIM(cf.control_owner)) = LOWER(TRIM($${paramIndex}))`;
     queryParams.push(control_owner.trim());
+    paramIndex += 1;
+  }
+
+  if (control_number) {
+    whereClause += ` AND LOWER(TRIM(COALESCE(cf.control_number, ''))) = LOWER(TRIM($${paramIndex}))`;
+    queryParams.push(String(control_number).trim());
     paramIndex += 1;
   }
 
@@ -333,9 +388,17 @@ function appendControlFormsListFilters(req, options, queryParts) {
   }
 
   if (assignment === 'assigned') {
-    whereClause += ` AND ${VALID_RACM_ASSIGNMENT_EXISTS_SQL}`;
+    if (String(assignment_target || '').trim().toLowerCase() === 'approver') {
+      whereClause += ` AND ${VALID_RACM_APPROVER_ASSIGNMENT_EXISTS_SQL}`;
+    } else {
+      whereClause += ` AND ${VALID_RACM_ASSIGNMENT_EXISTS_SQL}`;
+    }
   } else if (assignment === 'unassigned') {
-    whereClause += ` AND NOT ${VALID_RACM_ASSIGNMENT_EXISTS_SQL}`;
+    if (String(assignment_target || '').trim().toLowerCase() === 'approver') {
+      whereClause += ` AND NOT ${VALID_RACM_APPROVER_ASSIGNMENT_EXISTS_SQL}`;
+    } else {
+      whereClause += ` AND NOT ${VALID_RACM_ASSIGNMENT_EXISTS_SQL}`;
+    }
   }
 
   if (parseActiveFilter(active_or_valid_assignment) === true) {
@@ -363,7 +426,7 @@ function buildControlFormsListQueryParts(req, options = {}) {
 
 async function getControlFormsForList(req, options = {}) {
   const { whereClause, queryParams } = buildControlFormsListQueryParts(req, options);
-  const orderByClause = ' ORDER BY cf.created_at DESC';
+  const orderByClause = ' ORDER BY COALESCE(cf.updated_at, cf.created_at) DESC, cf.created_at DESC';
   const shouldPaginate = req.query.page !== undefined || req.query.page_size !== undefined;
 
   if (!shouldPaginate) {
@@ -695,6 +758,55 @@ if (!fs.existsSync(userDocsDir)) {
 // Configure multer for Excel file uploads (memory storage for S3 upload)
 const storage = multer.memoryStorage();
 
+const ALLOWED_DOCUMENT_EXTENSIONS = new Set([
+  '.pdf',
+  '.xls',
+  '.xlsx',
+  '.xlsm',
+  '.xlsb',
+  '.xlt',
+  '.xltx',
+  '.xltm',
+  '.xlam',
+  '.csv',
+  '.doc',
+  '.docx',
+  '.docm',
+  '.dot',
+  '.dotx',
+  '.dotm',
+  '.ppt',
+  '.pptx',
+  '.pptm',
+  '.pot',
+  '.potx',
+  '.potm',
+  '.pps',
+  '.ppsx',
+  '.ppsm',
+  '.txt',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.bmp',
+  '.webp',
+  '.tif',
+  '.tiff',
+]);
+
+const DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+
+function documentUploadFileFilter(req, file, cb) {
+  const extension = path.extname(String(file?.originalname || '')).toLowerCase();
+  if (ALLOWED_DOCUMENT_EXTENSIONS.has(extension)) {
+    cb(null, true);
+    return;
+  }
+
+  cb(new Error('Invalid file type. Allowed file types: PDF, Excel, PowerPoint, Word, TXT, and image files.'));
+}
+
 // Configure multer for user document uploads
 const userDocsStorage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -729,14 +841,47 @@ const upload = multer({
 // Multer for user document uploads (memory storage for S3 upload)
 const uploadUserDoc = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  limits: { fileSize: DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES },
+  fileFilter: documentUploadFileFilter,
 });
 
-const DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const uploadDeficiencyResponseDoc = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES },
+  limits: { fileSize: DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES },
+  fileFilter: documentUploadFileFilter,
 });
+
+function handleUserDocumentUpload(req, res, next) {
+  uploadUserDoc.fields([
+    { name: 'documents', maxCount: 20 },
+    { name: 'document', maxCount: 1 },
+  ])(req, res, (error) => {
+    if (!error) {
+      next();
+      return;
+    }
+
+    if (error instanceof multer.MulterError) {
+      if (error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Each uploaded document must be 25 MB or smaller',
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Failed to upload documents',
+      });
+    }
+
+    console.error('User document upload middleware error:', error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to upload documents',
+    });
+  });
+}
 
 function handleDeficiencyResponseUpload(req, res, next) {
   uploadDeficiencyResponseDoc.fields([
@@ -752,7 +897,7 @@ function handleDeficiencyResponseUpload(req, res, next) {
       if (error.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({
           success: false,
-          message: 'Each deficiency response document must be 20 MB or smaller',
+          message: 'Each deficiency response document must be 25 MB or smaller',
         });
       }
 
@@ -1659,7 +1804,7 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
         approver_map.approver_email_id AS approver_email_id,
         NULLIF(TRIM(approver.emp_name), '') AS approver_name,
         approver.temp_login AS approver_temp_login,
-        COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(approver_map.approver_email_id), '')) AS approver_display_name
+        NULLIF(TRIM(approver.emp_name), '') AS approver_display_name
       FROM control_forms cf
       ${CONTROLS_REMINDER_JOIN_SQL}
       LEFT JOIN company_unit_master cum
@@ -3530,6 +3675,8 @@ router.post('/', verifyAuth, async (req, res) => {
 
     await client.query('COMMIT');
 
+    await logAuditEvent('RACM created', req.user.email_id, formId);
+
     res.status(201).json({
       success: true,
       message: 'RACM created successfully',
@@ -3916,16 +4063,11 @@ router.get('/:form_id/approver-status', verifyUserAuth, async (req, res) => {
   }
 });
 
-// Upload user document for a specific form
-// NOTE: This route now ONLY uploads to S3 and does NOT modify any table columns.
-// The control_forms row is updated later when the user actually resubmits the form.
+// Upload user document for a specific form and persist it immediately.
 router.post(
   '/:form_id/upload-document',
   verifyUserAuth,
-  uploadUserDoc.fields([
-    { name: 'documents', maxCount: 20 },
-    { name: 'document', maxCount: 1 },
-  ]),
+  handleUserDocumentUpload,
   async (req, res) => {
   const { form_id } = req.params;
   const files = [
@@ -3996,15 +4138,18 @@ router.post(
       });
       console.log(`User document uploaded to S3 with key: ${s3Key}`);
 
+      const insertedDoc = await insertUserDocument(pool, form_id, s3Key);
       uploadedDocs.push({
+        id: insertedDoc?.id || null,
+        form_id: insertedDoc?.form_id || form_id,
         doc_uploaded_by_user: s3Key,
+        created_at: insertedDoc?.created_at || null,
         file_name: fileName,
       });
     }
 
     const latestDoc = uploadedDocs[uploadedDocs.length - 1] || null;
 
-    // Do NOT update control_forms here; just return the S3 key to the frontend
     res.status(200).json({
       success: true,
       message: uploadedDocs.length === 1

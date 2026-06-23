@@ -15,7 +15,7 @@ async function getHomeStats(req, res) {
         [req.user.id]
       ),
       pool.query('SELECT COUNT(*)::int AS count FROM companies'),
-      pool.query("SELECT COUNT(*)::int AS count FROM ifc_users WHERE role NOT IN ('siteadmin', 'auditor')"),
+      pool.query("SELECT COUNT(*)::int AS count FROM ifc_users WHERE role = 'user'"),
       pool.query('SELECT COUNT(*)::int AS count FROM control_forms'),
     ]);
 
@@ -82,7 +82,7 @@ async function getCompanies(req, res) {
         `
           SELECT
             c.company_identifier,
-            COUNT(DISTINCT CASE WHEN u.role NOT IN ('siteadmin', 'auditor') THEN u.id END)::int AS total_users,
+            COUNT(DISTINCT CASE WHEN u.role = 'user' THEN u.id END)::int AS total_users,
             COUNT(DISTINCT cf.id)::int AS total_racms
           FROM companies c
           LEFT JOIN ifc_users u

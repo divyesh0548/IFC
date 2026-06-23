@@ -65,7 +65,7 @@ function DashboardLayout() {
   const isSiteadminRoute = location.pathname.startsWith('/siteadmin')
   const isCreateCompanyPage = location.pathname === '/siteadmin/create-company'
   const isFullWidthPage =
-    isCreateCompanyPage || location.pathname.startsWith('/company_co/upload-excel')
+    isCreateCompanyPage || location.pathname.startsWith('/company_co/control-creation')
   const boundaryPaddingX = { xs: 3, sm: 4, md: 5 }
 
   useEffect(() => {

@@ -23,6 +23,19 @@ router.get('/communication-matrix', verifyCompanyCoordinator, controller.getComm
 router.post('/communication-matrix/common', verifyCompanyCoordinator, controller.addCommonCommunicationEmails);
 router.post('/communication-matrix/specific', verifyCompanyCoordinator, controller.addBusinessProcessSpecificCommunicationEmails);
 router.post('/communication-matrix/delete', verifyCompanyCoordinator, controller.deleteCommunicationMatrixEntries);
-router.post('/business-processes', verifyCompanyCoordinator, controller.createCompanyBusinessProcess);
+router.get('/users', verifyCompanyCoordinator, controller.getUsers);
+router.get('/assigned-units', verifyCompanyCoordinator, controller.getAssignedUnits);
+router.get('/approvers/:email_id/assignments', verifyCompanyCoordinator, controller.getApproverAssignments);
+router.post('/racm-approver-assignments', verifyCompanyCoordinator, controller.assignRacmApprover);
+router.get('/unit-management', verifyCompanyCoordinator, controller.getUnitManagement);
+router.post('/unit-management/coordinators', verifyCompanyCoordinator, controller.createUnitCoordinator);
+router.post('/unit-management/approvers', verifyCompanyCoordinator, controller.createUnitApprover);
+router.post('/unit-management/units', verifyCompanyCoordinator, controller.createCompanyUnit);
+router.patch('/unit-management/units/:unit_id/assignment', verifyCompanyCoordinator, controller.updateUnitAssignment);
+router.post('/create-user', verifyCompanyCoordinator, controller.createUser);
+router.post('/create-users-bulk', verifyCompanyCoordinator, controller.createUsersBulk);
+router.post('/delete-users', verifyCompanyCoordinator, controller.deleteUsers);
+router.get('/check-user', verifyCompanyCoordinator, controller.checkUser);
+router.get('/check-user-role', verifyCompanyCoordinator, controller.checkUserRole);
 
 module.exports = router;

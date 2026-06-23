@@ -76,6 +76,8 @@ function RacmManagementDashboard() {
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
   const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific assigned unit
   const [filterConclusion, setFilterConclusion] = useState('all')
+  const [controlNumberInput, setControlNumberInput] = useState('')
+  const [controlNumberFilter, setControlNumberFilter] = useState('')
   const [conclusionOptions, setConclusionOptions] = useState([])
   const [coordinatorUnits, setCoordinatorUnits] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
@@ -159,7 +161,7 @@ function RacmManagementDashboard() {
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterActive, filterStatus, filterBusinessProcess, filterFinancialYear, filterUnit, filterConclusion, page, rowsPerPage])
+  }, [companyIdentifier, filterActive, filterStatus, filterBusinessProcess, filterFinancialYear, filterUnit, filterConclusion, controlNumberFilter, page, rowsPerPage])
 
   useEffect(() => {
     if (!pendingChangeRequestDialogOpen || !companyIdentifier) {
@@ -173,15 +175,17 @@ function RacmManagementDashboard() {
       if (!companyIdentifier) return
 
       try {
-        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
+        const response = await fetch(apiUrl('/api/company-co/assigned-units'), {
           method: 'GET',
           credentials: 'include',
         })
         const data = await response.json()
 
         if (response.ok && data.success) {
-          const assignedUnits = Array.isArray(data.data?.currentCoordinatorUnits)
-            ? data.data.currentCoordinatorUnits
+          const assignedUnits = Array.isArray(data.units)
+            ? data.units
+            : Array.isArray(data.data?.currentCoordinatorUnits)
+              ? data.data.currentCoordinatorUnits
             : []
           setCoordinatorUnits(assignedUnits)
 
@@ -309,6 +313,10 @@ function RacmManagementDashboard() {
       params.set('conclusion', filterConclusion)
     }
 
+    if (controlNumberFilter) {
+      params.set('control_number', controlNumberFilter)
+    }
+
     Object.entries(extraParams).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
         params.set(key, String(value))
@@ -316,6 +324,18 @@ function RacmManagementDashboard() {
     })
 
     return `${API_BASE_URL}/api/control-forms?${params.toString()}`
+  }
+
+  const handleControlNumberSearchSubmit = (event) => {
+    event.preventDefault()
+    setControlNumberFilter(controlNumberInput.trim())
+    setPage(0)
+  }
+
+  const handleControlNumberSearchClear = () => {
+    setControlNumberInput('')
+    setControlNumberFilter('')
+    setPage(0)
   }
 
   const fetchPendingChangeRequestForms = async () => {
@@ -365,10 +385,10 @@ function RacmManagementDashboard() {
       if (response.ok && data.success) {
         const nextForms = Array.isArray(data.data) ? data.data : []
         const nextTotal = Number(data.count || 0)
-        const nextPage = Math.max(0, Number(data.page || 1) - 1)
+        const lastValidPage = Math.max(0, Math.ceil(nextTotal / rowsPerPage) - 1)
 
-        if (nextTotal > 0 && nextForms.length === 0 && nextPage > 0) {
-          setPage(nextPage - 1)
+        if (nextTotal > 0 && nextForms.length === 0 && page > lastValidPage) {
+          setPage(lastValidPage)
           return
         }
 
@@ -829,7 +849,7 @@ function RacmManagementDashboard() {
       setMissingRacmCount(0)
       setNonUserRoleCount(0)
       setNonUserRoleEmails([])
-      fetchForms()
+      await fetchForms()
     } catch (error) {
       console.error('Error setting forms to active:', error)
       toast.error('Error setting forms to active')
@@ -1411,7 +1431,7 @@ function RacmManagementDashboard() {
         }}
       >
         <Button
-          onClick={() => navigate('/company_co/create-form')}
+          onClick={() => navigate('/company_co/manual-control-creation')}
           disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
           variant="contained"
           color="secondary"
@@ -1947,13 +1967,52 @@ function RacmManagementDashboard() {
               <Box
                 sx={{
                   display: 'flex',
-                  justifyContent: 'flex-end',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
                   mb: 1.5,
                   flexWrap: 'wrap',
                   gap: 1,
                 }}
               >
+                <Box
+                  component="form"
+                  onSubmit={handleControlNumberSearchSubmit}
+                  sx={{
+                    display: 'flex',
+                    flexDirection: { xs: 'column', sm: 'row' },
+                    gap: 1,
+                    alignItems: { xs: 'stretch', sm: 'center' },
+                  }}
+                >
+                  <TextField
+                    label="Control Number"
+                    value={controlNumberInput}
+                    onChange={(e) => setControlNumberInput(e.target.value)}
+                    disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
+                    size="small"
+                    sx={{
+                      minWidth: { xs: '100%', sm: 260 },
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: 'transparent',
+                      },
+                    }}
+                  />
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
+                  >
+                    Search
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outlined"
+                    onClick={handleControlNumberSearchClear}
+                    disabled={(deleteMode || setActiveMode || setDueDateMode || replicateMode) || (!controlNumberInput && !controlNumberFilter)}
+                  >
+                    Clear
+                  </Button>
+                </Box>
                 <FormControlLabel
                   control={
                     <Switch
@@ -2132,7 +2191,7 @@ function RacmManagementDashboard() {
                         maxWidth: '120px',
                       }}
                     >
-                      Active Status
+                      Activity Status
                     </Box>
                     <Box
                       component="th"
@@ -2479,7 +2538,7 @@ function RacmManagementDashboard() {
           <DialogContent sx={{ px: 3, pt: 2, pb: 3 }}>
             <DialogContentText
               id="set-due-date-dialog-description"
-              sx={{ color: theme.palette.text.secondary, mb: 2 }}
+              sx={{ color: theme.palette.text.secondary, mt: 1.5,mb:1.5 }}
             >
               This will replace the Due Date and Reminder Frequency for the selected RACM(s).
             </DialogContentText>

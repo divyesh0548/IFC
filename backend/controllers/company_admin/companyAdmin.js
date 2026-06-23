@@ -3,7 +3,10 @@ const { pool } = require('../../utils/db');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
 const { encryptTempPassword, sendUserCreationEmail } = require('../../utils/login_email');
 const { getMobileValidationError, normalizeMobileDigits } = require('../../utils/mobile_validation');
-const { listBusinessProcessesForCompany } = require('../../utils/business_process_master');
+const {
+  listBusinessProcessesForCompany,
+  createBusinessProcessMasterEntry,
+} = require('../../utils/business_process_master');
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -395,11 +398,12 @@ async function createRoleUser(req, res, role) {
   if (!emailId || !isValidEmail(emailId)) {
     return res.status(400).json({ success: false, message: 'Valid email ID is required' });
   }
-  if (mobile) {
-    const mobileError = getMobileValidationError(mobile);
-    if (mobileError) {
-      return res.status(400).json({ success: false, message: mobileError });
-    }
+  if (!mobile) {
+    return res.status(400).json({ success: false, message: 'Mobile number is required' });
+  }
+  const mobileError = getMobileValidationError(mobile);
+  if (mobileError) {
+    return res.status(400).json({ success: false, message: mobileError });
   }
 
   try {
@@ -496,7 +500,7 @@ async function getHomeStats(req, res) {
           SELECT COUNT(*)::int AS total_users
           FROM ifc_users
           WHERE company_identifier = $1
-            AND role IN ('user', 'company_co', 'approver')
+            AND role = 'user'
         `,
         [companyIdentifier]
       ),
@@ -661,6 +665,18 @@ async function createUsersBulk(req, res) {
         continue;
       }
 
+      const mobile = normalizeMobileDigits(row?.mobile) || null;
+      if (!mobile) {
+        skippedRows.push({ rowNumber, email_id: emailId, reason: 'Mobile number is required' });
+        continue;
+      }
+
+      const mobileError = getMobileValidationError(mobile);
+      if (mobileError) {
+        skippedRows.push({ rowNumber, email_id: emailId, reason: mobileError });
+        continue;
+      }
+
       await client.query('BEGIN');
       try {
         const { user, tempPassword } = await createTempLoginUser(client, {
@@ -670,7 +686,7 @@ async function createUsersBulk(req, res) {
           empName: String(row?.emp_name || '').trim() || null,
           designation: String(row?.designation || '').trim() || null,
           department: String(row?.department || '').trim() || null,
-          mobile: String(row?.mobile || '').trim() || null,
+          mobile,
         });
 
         await client.query('COMMIT');
@@ -938,6 +954,39 @@ async function getDashboardRacms(req, res) {
   } catch (error) {
     console.error('Company admin dashboard RACMs error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+}
+
+async function createCompanyBusinessProcess(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is missing for company admin',
+      });
+    }
+
+    const created = await createBusinessProcessMasterEntry({
+      ...(req.body || {}),
+      company_identifier: companyIdentifier,
+      created_by_email: req.user?.email_id || null,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Company specific business process created successfully',
+      data: created,
+    });
+  } catch (error) {
+    const statusCode = Number(error.statusCode || 500);
+    if (statusCode >= 500) {
+      console.error('Create company admin business process error:', error);
+    }
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Failed to create company specific business process',
+    });
   }
 }
 
@@ -1313,4 +1362,5 @@ module.exports = {
   assignApprover,
   getDashboardFilters,
   getDashboardRacms,
+  createCompanyBusinessProcess,
 };

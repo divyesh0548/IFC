@@ -12,6 +12,7 @@ const simpleColumnMapping = {
   'application name': 'application_name',
   'control performer': 'control_performer',
   'control owner': 'control_owner',
+  'process owner': 'control_owner',
 };
 
 // Columns that should never be imported from Excel into control_forms (cells / header mapping).
@@ -176,10 +177,12 @@ const columnPatterns = [
     priority: 1
   },
   {
-    keywords: ['control', 'owner'],
+    keywordGroups: [
+      ['control', 'owner'],
+      ['process', 'owner'],
+    ],
     dbColumn: 'control_owner',
     priority: 1,
-    requireAllKeywords: true
   },
   {
     keywords: ['fraud', 'risk', 'whether'],

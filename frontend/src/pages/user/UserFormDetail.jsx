@@ -72,8 +72,73 @@ const REQUEST_CHANGE_BOOLEAN_FIELDS = new Set([
   'presentation_and_disclosure',
 ])
 
-const DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
-const USER_DOCUMENT_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+const DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+const ALLOWED_DOCUMENT_EXTENSIONS = new Set([
+  '.pdf',
+  '.xls',
+  '.xlsx',
+  '.xlsm',
+  '.xlsb',
+  '.xlt',
+  '.xltx',
+  '.xltm',
+  '.xlam',
+  '.csv',
+  '.doc',
+  '.docx',
+  '.docm',
+  '.dot',
+  '.dotx',
+  '.dotm',
+  '.ppt',
+  '.pptx',
+  '.pptm',
+  '.pot',
+  '.potx',
+  '.potm',
+  '.pps',
+  '.ppsx',
+  '.ppsm',
+  '.txt',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.bmp',
+  '.webp',
+  '.tif',
+  '.tiff',
+])
+const DOCUMENT_UPLOAD_ACCEPT = Array.from(ALLOWED_DOCUMENT_EXTENSIONS).join(',')
+
+const getFileExtension = (fileName) => {
+  const lastDotIndex = String(fileName || '').lastIndexOf('.')
+  if (lastDotIndex < 0) return ''
+  return String(fileName).slice(lastDotIndex).toLowerCase()
+}
+
+const splitUploadValidation = (files) => {
+  const validFiles = []
+  const invalidTypeFiles = []
+  const invalidSizeFiles = []
+
+  files.forEach((file) => {
+    const extension = getFileExtension(file.name)
+    if (!ALLOWED_DOCUMENT_EXTENSIONS.has(extension)) {
+      invalidTypeFiles.push(file)
+      return
+    }
+
+    if (file.size > DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES) {
+      invalidSizeFiles.push(file)
+      return
+    }
+
+    validFiles.push(file)
+  })
+
+  return { validFiles, invalidTypeFiles, invalidSizeFiles }
+}
 
 const REQUEST_CHANGE_DROPDOWN_OPTIONS = {
   risk_heat: ['High', 'Low', 'Medium'],
@@ -145,6 +210,7 @@ function UserFormDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [uploadingUserDocuments, setUploadingUserDocuments] = useState(false)
   const [requestChangeSaving, setRequestChangeSaving] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState([])
   const [remarksByUser, setRemarksByUser] = useState('')
@@ -173,7 +239,7 @@ function UserFormDetail() {
   const [deficiencyResponseFiles, setDeficiencyResponseFiles] = useState([])
   const [deficiencyResponseSubmitting, setDeficiencyResponseSubmitting] = useState(false)
 
-  useSyncGlobalLoading(loading || saving || requestChangeSaving || changeRequestHistoryLoading || deficiencyResponseSubmitting)
+  useSyncGlobalLoading(loading || saving || uploadingUserDocuments || requestChangeSaving || changeRequestHistoryLoading || deficiencyResponseSubmitting)
 
   // Removed editableFields state - users can only edit remarks_by_user
 
@@ -333,11 +399,14 @@ function UserFormDetail() {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
 
-    const validFiles = files.filter((file) => file.size <= USER_DOCUMENT_MAX_FILE_SIZE_BYTES)
-    const invalidFiles = files.filter((file) => file.size > USER_DOCUMENT_MAX_FILE_SIZE_BYTES)
+    const { validFiles, invalidTypeFiles, invalidSizeFiles } = splitUploadValidation(files)
 
-    if (invalidFiles.length > 0) {
-      toast.error('Each uploaded document must be 50 MB or smaller')
+    if (invalidTypeFiles.length > 0) {
+      toast.error('Only PDF, Excel, PowerPoint, Word, TXT, and image files are allowed')
+    }
+
+    if (invalidSizeFiles.length > 0) {
+      toast.error('Each uploaded document must be 25 MB or smaller')
     }
 
     if (validFiles.length === 0) {
@@ -460,20 +529,46 @@ function UserFormDetail() {
     }
   }
 
-  const handleSendForApproval = async () => {
-    // Validation: Check if document is uploaded (either existing or newly selected)
-    const existingUploadedDocs = getUserUploadedDocs().filter(
-      (doc) => !removedUploadedDocPaths.includes(doc.doc_uploaded_by_user)
-    )
-    const hasExistingDocument = existingUploadedDocs.length > 0
-    const hasNewDocument = selectedFiles.length > 0
-
-    if (isRejected && !hasNewDocument) {
-      toast.error('Please upload at least one new document before resubmitting for approval')
+  const handleUploadUserDocuments = async () => {
+    if (selectedFiles.length === 0) {
+      toast.error('Please select at least one document to upload')
       return
     }
 
-    if (!hasExistingDocument && !hasNewDocument) {
+    setUploadingUserDocuments(true)
+    try {
+      const formDataUpload = new FormData()
+      selectedFiles.forEach((file) => {
+        formDataUpload.append('documents', file)
+      })
+
+      const uploadResponse = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/upload-document`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formDataUpload,
+      })
+      const uploadData = await uploadResponse.json()
+
+      if (uploadResponse.ok && uploadData.success) {
+        toast.success(uploadData.message || 'Documents uploaded successfully')
+        setSelectedFiles([])
+        await fetchFormData()
+      } else {
+        toast.error(uploadData.message || 'Failed to upload documents')
+      }
+    } catch (error) {
+      console.error('Error uploading user documents:', error)
+      toast.error('Failed to upload documents')
+    } finally {
+      setUploadingUserDocuments(false)
+    }
+  }
+
+  const handleSendForApproval = async () => {
+    const existingUploadedDocs = getUserUploadedDocs().filter(
+      (doc) => !removedUploadedDocPaths.includes(doc.doc_uploaded_by_user)
+    )
+    if (existingUploadedDocs.length === 0) {
       toast.error('Please upload at least one document before sending for approval')
       return
     }
@@ -491,48 +586,13 @@ function UserFormDetail() {
     setSaving(true)
 
     try {
-      // First, upload document if one is selected
-      let uploadedDocumentPaths = isRejected
-        ? []
-        : existingUploadedDocs
-            .map((doc) => doc.doc_uploaded_by_user)
-            .filter(Boolean)
-
-      if (selectedFiles.length > 0) {
-        const formDataUpload = new FormData()
-        selectedFiles.forEach((file) => {
-          formDataUpload.append('documents', file)
-        })
-
-        const uploadResponse = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/upload-document`, {
-          method: 'POST',
-          credentials: 'include',
-          body: formDataUpload
-        })
-
-        const uploadData = await uploadResponse.json()
-
-        if (uploadResponse.ok && uploadData.success) {
-          const newUploadedPaths = Array.isArray(uploadData.data.doc_uploaded_by_user_docs)
-            ? uploadData.data.doc_uploaded_by_user_docs
-                .map((doc) => doc.doc_uploaded_by_user)
-                .filter(Boolean)
-            : [uploadData.data.doc_uploaded_by_user].filter(Boolean)
-          uploadedDocumentPaths = [...uploadedDocumentPaths, ...newUploadedPaths]
-        } else {
-          const errorMessage = uploadData.message || 'Failed to upload documents'
-          toast.error(errorMessage)
-          setSaving(false)
-          return
-        }
-      }
-
-      uploadedDocumentPaths = [...new Set(uploadedDocumentPaths.filter(Boolean))]
-
+      const uploadedDocumentPaths = [...new Set(
+        existingUploadedDocs
+          .map((doc) => doc.doc_uploaded_by_user)
+          .filter(Boolean)
+      )]
       const documentPath = uploadedDocumentPaths[uploadedDocumentPaths.length - 1] || null
-      const shouldReplaceUploadedDocuments = isRejected || removedUploadedDocPaths.length > 0
-
-      // Then update only remarks, document, and status (users cannot edit other fields)
+      const shouldReplaceUploadedDocuments = removedUploadedDocPaths.length > 0
       const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'PUT',
         headers: {
@@ -540,11 +600,13 @@ function UserFormDetail() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          doc_uploaded_by_user: documentPath,
-          doc_uploaded_by_user_docs: uploadedDocumentPaths,
-          replace_user_documents: shouldReplaceUploadedDocuments,
           remarks_by_user: remarksByUser,
-          status: 'sent for approval'
+          status: 'sent for approval',
+          ...(shouldReplaceUploadedDocuments ? {
+            doc_uploaded_by_user: documentPath,
+            doc_uploaded_by_user_docs: uploadedDocumentPaths,
+            replace_user_documents: true,
+          } : {}),
         })
       })
 
@@ -569,7 +631,6 @@ function UserFormDetail() {
           setFormData({
             ...formData,
             status: 'sent for approval',
-            doc_uploaded_by_user: documentPath,
             remarks_by_user: remarksByUser
           })
         }
@@ -768,11 +829,14 @@ function UserFormDetail() {
   const handleDeficiencyResponseFileSelect = (e) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
-    const validFiles = files.filter((file) => file.size <= DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES)
-    const invalidFiles = files.filter((file) => file.size > DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES)
+    const { validFiles, invalidTypeFiles, invalidSizeFiles } = splitUploadValidation(files)
 
-    if (invalidFiles.length > 0) {
-      toast.error('Each deficiency response document must be 20 MB or smaller')
+    if (invalidTypeFiles.length > 0) {
+      toast.error('Only PDF, Excel, PowerPoint, Word, TXT, and image files are allowed')
+    }
+
+    if (invalidSizeFiles.length > 0) {
+      toast.error('Each deficiency response document must be 25 MB or smaller')
     }
 
     if (validFiles.length > 0) {
@@ -1503,6 +1567,43 @@ function UserFormDetail() {
                       }}
                     >
                       {formData?.financial_year || '-'}
+                    </Typography>
+                  </Box>
+
+                  {/* Unit */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 600,
+                        mb: 1,
+                        color: 'text.secondary',
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Unit
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formData?.unit_name || formData?.unit_id || '-'}
                     </Typography>
                   </Box>
 
@@ -2306,41 +2407,52 @@ function UserFormDetail() {
                             fontSize: theme.typography.customSizes.small,
                           }}
                         >
-                          Document listed above will be uploaded for approval.
+                          Upload selected documents first, then send the RACM for approval.
                         </Typography>
                       )}
                       {isEditable && (
-                        <label>
-                          <input
-                            type="file"
-                            multiple
-                            style={{ display: 'none' }}
-                            onChange={handleFileSelect}
-                            disabled={!isEditable}
-                          />
-                          <IconButton
-                            component="span"
-                            disabled={!isEditable}
-                            sx={{
-                              border: '1px solid',
-                              borderColor: 'divider',
-                              mt: 0.5,
-                              color:
-                                theme.palette.mode === 'dark'
-                                  ? theme.palette.primary.light
-                                  : theme.palette.primary.main,
-                              '&:hover': {
-                                backgroundColor: 'action.hover',
-                              },
-                              '&.Mui-disabled': {
-                                color: 'action.disabled',
-                                borderColor: 'action.disabledBackground',
-                              },
-                            }}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap', mt: 0.5 }}>
+                          <label>
+                            <input
+                              type="file"
+                              multiple
+                              accept={DOCUMENT_UPLOAD_ACCEPT}
+                              style={{ display: 'none' }}
+                              onChange={handleFileSelect}
+                              disabled={!isEditable || uploadingUserDocuments}
+                            />
+                            <IconButton
+                              component="span"
+                              disabled={!isEditable || uploadingUserDocuments}
+                              sx={{
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                color:
+                                  theme.palette.mode === 'dark'
+                                    ? theme.palette.primary.light
+                                    : theme.palette.primary.main,
+                                '&:hover': {
+                                  backgroundColor: 'action.hover',
+                                },
+                                '&.Mui-disabled': {
+                                  color: 'action.disabled',
+                                  borderColor: 'action.disabledBackground',
+                                },
+                              }}
+                            >
+                              <AttachFileIcon />
+                            </IconButton>
+                          </label>
+                          <Button
+                            onClick={handleUploadUserDocuments}
+                            disabled={!isEditable || uploadingUserDocuments || selectedFiles.length === 0}
+                            variant="outlined"
+                            size="small"
+                            sx={{ textTransform: 'none' }}
                           >
-                            <AttachFileIcon />
-                          </IconButton>
-                        </label>
+                            {uploadingUserDocuments ? 'Uploading...' : 'Upload Documents'}
+                          </Button>
+                        </Box>
                       )}
                     </Box>
                   </Box>
@@ -2525,7 +2637,7 @@ function UserFormDetail() {
                         <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
                           <Button
                             onClick={handleSendForApproval}
-                            disabled={saving}
+                            disabled={saving || uploadingUserDocuments}
                             variant="contained"
                             color="secondary"
                             sx={{
@@ -2939,7 +3051,7 @@ function UserFormDetail() {
                             sx={{ alignSelf: 'flex-start', textTransform: 'none' }}
                           >
                             Upload Documents
-                            <input hidden type="file" multiple onChange={handleDeficiencyResponseFileSelect} />
+                            <input hidden type="file" multiple accept={DOCUMENT_UPLOAD_ACCEPT} onChange={handleDeficiencyResponseFileSelect} />
                           </Button>
                           {deficiencyResponseFiles.map((file, index) => (
                             <Box key={`${file.name}-${file.size}-${file.lastModified}`} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

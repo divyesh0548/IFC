@@ -25,6 +25,7 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import DeleteIcon from '@mui/icons-material/Delete'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import ChecklistRoundedIcon from '@mui/icons-material/ChecklistRounded'
+import AddIcon from '@mui/icons-material/Add'
 import { toast } from 'react-hot-toast'
 import dayjs from 'dayjs'
 import { parseRacmExcelFromArrayBuffer } from '../../utils/racmExcelParse'
@@ -106,15 +107,13 @@ function ExcelUpload() {
 
     const fetchUnits = async () => {
       try {
-        const response = await fetch(apiUrl('/api/company-co/unit-management'), {
+        const response = await fetch(apiUrl('/api/company-co/assigned-units'), {
           credentials: 'include',
         })
         const result = await response.json()
 
         if (!cancelled && response.ok && result?.success) {
-          const units = Array.isArray(result.data?.currentCoordinatorUnits)
-            ? result.data.currentCoordinatorUnits
-            : []
+          const units = Array.isArray(result.units) ? result.units : []
           setUnitOptions(units)
           setUnitId((current) => current || units[0]?.unit_id || '')
         }
@@ -468,7 +467,7 @@ function ExcelUpload() {
     }
     setMappingDialogOpen(false)
     setPendingImport(null)
-    navigate('/company_co/upload-excel/column-map')
+    navigate('/company_co/control-creation/column-map')
   }
 
   const handleControlFrequencyMappingCancel = () => {
@@ -578,7 +577,7 @@ function ExcelUpload() {
                 color: theme.palette.text.secondary,
               }}
             >
-              Add a validated `.xlsx` file, pick business process and financial year, optionally set due date and reminders.
+              Upload RACMs in bulk with Excel or switch to the manual creation flow for individual entries.
             </Typography>
           </Box>
 
@@ -655,27 +654,43 @@ function ExcelUpload() {
                 Upload Setup
               </Typography>
               <Typography sx={{ mt: 0.6, fontSize: '0.93rem', color: theme.palette.text.secondary }}>
-                Configure the file and submission details below.
+                Configure the file and submission details below, or open manual RACM creation.
               </Typography>
             </Box>
-            <Button
-              type="button"
-              onClick={() => navigate('/company_co/dashboard')}
-              variant="outlined"
-              sx={{
-                textTransform: 'none',
-                fontWeight: 400,
-                borderRadius: 999,
-                px: 2,
-                borderColor:
-                  theme.palette.mode === 'dark'
-                    ? alpha(theme.palette.common.white, 0.16)
-                    : alpha(theme.palette.text.primary, 0.14),
-                color: theme.palette.text.primary,
-              }}
-            >
-              Back to Dashboard
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Button
+                type="button"
+                onClick={() => navigate('/company_co/manual-control-creation')}
+                variant="contained"
+                startIcon={<AddIcon />}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  borderRadius: 999,
+                  px: 2.2,
+                }}
+              >
+                Manual RACM Creation
+              </Button>
+              <Button
+                type="button"
+                onClick={() => navigate('/company_co/dashboard')}
+                variant="outlined"
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 400,
+                  borderRadius: 999,
+                  px: 2,
+                  borderColor:
+                    theme.palette.mode === 'dark'
+                      ? alpha(theme.palette.common.white, 0.16)
+                      : alpha(theme.palette.text.primary, 0.14),
+                  color: theme.palette.text.primary,
+                }}
+              >
+                Back to Dashboard
+              </Button>
+            </Box>
           </Box>
 
           <form onSubmit={handleSubmit}>

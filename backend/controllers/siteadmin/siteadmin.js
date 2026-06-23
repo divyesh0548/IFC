@@ -7,6 +7,10 @@ const { deleteFileFromS3 } = require('../../utils/s3Upload');
 const { createBusinessProcessMasterEntry } = require('../../utils/business_process_master');
 const { sendEmail } = require('../../utils/send_email');
 const {
+  getMobileValidationError,
+  normalizeMobileDigits,
+} = require('../../utils/mobile_validation');
+const {
   UNIT_RESPONSIBILITY_TYPES,
   getUnitResponsibilityConfig,
 } = require('../../utils/unit_responsibilities');
@@ -69,6 +73,37 @@ function normalizeCompanyAdminEmails(companyAdminEmails, fallbackEmail) {
       .map((email) => normalizeEmail(email))
       .filter(Boolean)
   )];
+}
+
+function normalizeCompanyAdminEntries(companyAdminEntries, companyAdminEmails, fallbackEmail) {
+  const rawEntries = Array.isArray(companyAdminEntries) && companyAdminEntries.length > 0
+    ? companyAdminEntries
+    : normalizeCompanyAdminEmails(companyAdminEmails, fallbackEmail).map((emailId) => ({ email_id: emailId }));
+
+  const normalizedEntries = rawEntries
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        return {
+          email_id: normalizeEmail(entry),
+          mobile: null,
+        };
+      }
+
+      return {
+        email_id: normalizeEmail(entry?.email_id),
+        mobile: normalizeMobileDigits(entry?.mobile) || null,
+      };
+    })
+    .filter((entry) => entry.email_id);
+
+  const entriesByEmail = new Map();
+  normalizedEntries.forEach((entry) => {
+    if (!entriesByEmail.has(entry.email_id)) {
+      entriesByEmail.set(entry.email_id, entry);
+    }
+  });
+
+  return Array.from(entriesByEmail.values());
 }
 
 async function getCompanyName(companyIdentifier) {
@@ -459,10 +494,12 @@ async function createCompany(req, res) {
     pan,
     number_of_corporate_offices,
     number_of_factory_units,
+    company_admins,
     company_admin_emails,
     company_admin_email,
   } = req.body;
-  const companyAdminEmails = normalizeCompanyAdminEmails(company_admin_emails, company_admin_email);
+  const companyAdminEntries = normalizeCompanyAdminEntries(company_admins, company_admin_emails, company_admin_email);
+  const companyAdminEmails = companyAdminEntries.map((entry) => entry.email_id);
 
   // Validate required fields
   if (!company_name || !registered_email || !registered_address ||
@@ -478,6 +515,24 @@ async function createCompany(req, res) {
     return res.status(400).json({
       success: false,
       message: 'One or more company admin emails are invalid'
+    });
+  }
+
+  const missingAdminMobile = companyAdminEntries.some((entry) => !entry.mobile);
+  if (missingAdminMobile) {
+    return res.status(400).json({
+      success: false,
+      message: 'Mobile number is required for every company admin',
+    });
+  }
+
+  const invalidAdminMobile = companyAdminEntries
+    .map((entry) => getMobileValidationError(entry.mobile))
+    .find(Boolean);
+  if (invalidAdminMobile) {
+    return res.status(400).json({
+      success: false,
+      message: invalidAdminMobile,
     });
   }
 
@@ -523,7 +578,8 @@ async function createCompany(req, res) {
       });
 
       const createdCompanyAdmins = [];
-      for (const emailId of companyAdminEmails) {
+      for (const companyAdminEntry of companyAdminEntries) {
+        const emailId = companyAdminEntry.email_id;
         const tempPassword = crypto.randomBytes(8).toString('hex');
         const tempPasswordHash = await hashPassword(tempPassword);
         const tempPasswordEncrypted = encryptTempPassword(tempPassword);
@@ -534,6 +590,7 @@ async function createCompany(req, res) {
             role: 'company_admin',
             companyIdentifier: company_identifier,
             tempLogin: true,
+            mobile: companyAdminEntry.mobile,
             loginEmailSent: false,
             tempPasswordEncrypted,
           },

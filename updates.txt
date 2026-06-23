@@ -1,5 +1,7 @@
 We need to apply a different stratagy for risk analysis of the RACMs. Risk description and sub-porcess extracted from excel file do not explain much. They are very short and AI.
 
+Ask the difference between daily/recurring/ and as and when needed.
+
 One user can exist in multiple units of a company.
 
-Provide a way to create approver for either a specific RACM, For Business Process or For whole unit.
+Provide a way to change the email body. First fetch default email then user will change it to requirement.

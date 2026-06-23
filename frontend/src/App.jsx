@@ -44,13 +44,13 @@ const CreateControlForm = lazy(() => import('./pages/company_co/CreateControlFor
 const RacmManagementDashboard = lazy(() => import('./pages/company_co/RacmManagementDashboard'))
 const RacmUserDocuments = lazy(() => import('./pages/company_co/RacmUserDocuments'))
 const CommunicationMatrix = lazy(() => import('./pages/company_co/CommunicationMatrix'))
-const CompanyCoordinatorBusinessProcessManagement = lazy(() => import('./pages/company_co/BusinessProcessManagement'))
 const Company_co_home = lazy(() => import('./pages/company_co/Company_co_home'))
 const CreateUser = lazy(() => import('./pages/company_co/CreateUser'))
 const UnclassifiedControls = lazy(() => import('./pages/company_co/UnclassifiedControls'))
 const KeyManualAiInsightsSummary = lazy(() => import('./pages/company_co/KeyManualAiInsightsSummary'))
 const RiskAnalysis = lazy(() => import('./pages/company_co/RiskAnalysis'))
 const CompanyAdminHome = lazy(() => import('./pages/company_admin/companyAdminHome'))
+const CompanyAdminBusinessProcessManagement = lazy(() => import('./pages/company_admin/BusinessProcessManagement'))
 const CompanyAdminCompanyDetails = lazy(() => import('./pages/company_admin/CompanyAdminCompanyDetails'))
 const CompanyAdminUserManagement = lazy(() => import('./pages/company_admin/CompanyAdminUserManagement'))
 const CompanyAdminUnitManagement = lazy(() => import('./pages/company_admin/CompanyAdminUnitManagement'))
@@ -336,14 +336,13 @@ function App() {
               <Route path="racm-management" element={<RacmManagementDashboard />} />
               <Route path="racm-user-documents" element={<RacmUserDocuments />} />
               <Route path="racm-communication" element={<CommunicationMatrix />} />
-              <Route path="business-processes" element={<CompanyCoordinatorBusinessProcessManagement />} />
               <Route path="racm-assignment" element={<RacmAssignment />} />
               <Route path="user-management" element={<UserManagement />} />
               <Route path="unit-management" element={<UnitManagement />} />
               <Route path="create-user" element={<CreateUser />} />
-              <Route path="upload-excel" element={<ExcelUpload />} />
-              <Route path="upload-excel/column-map" element={<ExcelColumnMap />} />
-              <Route path="create-form" element={<CreateControlForm />} />
+              <Route path="control-creation" element={<ExcelUpload />} />
+              <Route path="control-creation/column-map" element={<ExcelColumnMap />} />
+              <Route path="manual-control-creation" element={<CreateControlForm />} />
               <Route path="form/:form_id" element={<FormDetail />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.company_co} replace />} />
@@ -360,6 +359,7 @@ function App() {
               <Route index element={<Navigate to={ROLE_HOME_ROUTES.company_admin} replace />} />
               <Route path="home" element={<CompanyAdminHome />} />
               <Route path="company-details" element={<CompanyAdminCompanyDetails />} />
+              <Route path="business-processes" element={<CompanyAdminBusinessProcessManagement />} />
               <Route path="user-management" element={<CompanyAdminUserManagement />} />
               <Route path="unit-management" element={<CompanyAdminUnitManagement />} />
               <Route path="approver-management" element={<CompanyAdminApproverManagement />} />
