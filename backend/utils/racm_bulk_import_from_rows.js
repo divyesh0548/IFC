@@ -2,10 +2,14 @@ const crypto = require('crypto');
 const { normalizeColumnName } = require('./column_mapping');
 const { logAuditEvent } = require('./auditLog');
 const {
-  calculateSampleRequired,
   getSampleSizeByFrequency,
   normalizeControlFrequencyValue,
 } = require('./sample_required');
+const {
+  loadUnitFrequencySampleSizeMap,
+  resolveUnitDefaultSampleSize,
+  buildSampleSizeForFrequency,
+} = require('./sample_size_resolver');
 const { getBusinessProcessCodeForCompany } = require('./business_process_master');
 
 function generateFormId() {
@@ -512,6 +516,9 @@ async function insertRacmRowsFromTransformedData(client, options) {
   let duplicateCount = 0;
   const duplicateControlNumberSamples = [];
   const createdAuditEvents = [];
+  const unitSampleSizeMap = unitId
+    ? await loadUnitFrequencySampleSizeMap(client, companyIdentifier, unitId)
+    : new Map();
 
   for (let i = 0; i < transformedData.length; i++) {
     const row = transformedData[i];
@@ -526,8 +533,15 @@ async function insertRacmRowsFromTransformedData(client, options) {
       const currentTimestamp = new Date();
       const controlFrequencyRaw = row.control_frequency || null;
       const controlFrequency = controlFrequencyRaw ? String(controlFrequencyRaw).trim() : null;
-      const sampleRequired = calculateSampleRequired(controlFrequency, currentTimestamp);
-      const sampleSize = getSampleSizeByFrequency(controlFrequency);
+      const defaultSampleSize = resolveUnitDefaultSampleSize(controlFrequency, unitSampleSizeMap);
+      const builtSample = buildSampleSizeForFrequency(controlFrequency, currentTimestamp, defaultSampleSize);
+      if (!builtSample.ok) {
+        errorCount++;
+        console.error(`  ✗ Row ${i + 1}: ${builtSample.message}`);
+        continue;
+      }
+      const sampleSize = builtSample.sampleSize;
+      const sampleRequired = builtSample.sampleRequired;
 
       const values = INSERT_COLUMNS.map((col) => {
         if (col === 'company_identifier') return companyIdentifier;

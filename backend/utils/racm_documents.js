@@ -9,13 +9,42 @@ function sanitizeS3PathSegment(value, fallback = 'unknown') {
   return cleaned || fallback;
 }
 
-function buildUserDocumentS3FolderPath({ companyName, unitName, businessProcess, formId }) {
+function buildRacmS3BaseFolderPath({ companyName, unitName, businessProcess, formId }) {
   const companySegment = sanitizeS3PathSegment(companyName, 'unknown-company');
   const unitSegment = sanitizeS3PathSegment(unitName, 'unknown-unit');
   const processSegment = sanitizeS3PathSegment(businessProcess, 'unknown-process');
   const formSegment = sanitizeS3PathSegment(formId, 'unknown-form');
 
   return `${companySegment}/${unitSegment}/${processSegment}/${formSegment}`;
+}
+
+function buildRacmDocumentSubfolderPath(baseFolderPath, subfolderName) {
+  const normalizedBaseFolder = String(baseFolderPath || '').trim().replace(/[\/\\]+$/g, '');
+  const sanitizedSubfolder = sanitizeS3PathSegment(subfolderName, 'documents');
+  return `${normalizedBaseFolder}/${sanitizedSubfolder}`;
+}
+
+function buildUserDocumentS3FolderPath(context) {
+  return buildRacmS3BaseFolderPath(context);
+}
+
+function buildSampleDocumentS3FolderPath(context) {
+  return buildRacmDocumentSubfolderPath(buildRacmS3BaseFolderPath(context), 'Sample Documents');
+}
+
+function formatDeficiencyResponseFolderName(responseType) {
+  const normalizedType = String(responseType || '').trim().toLowerCase();
+  if (normalizedType === 'compensatory_racm') {
+    return 'Compensatory RACM';
+  }
+  return 'Mitigation Plan';
+}
+
+function buildDeficiencyResponseS3FolderPath(context, responseType) {
+  return buildRacmDocumentSubfolderPath(
+    buildRacmS3BaseFolderPath(context),
+    formatDeficiencyResponseFolderName(responseType)
+  );
 }
 
 async function getControlFormUserDocumentContext(db, formId) {
@@ -71,8 +100,8 @@ async function getControlFormDocumentRows(db, formIds) {
   );
   const userResult = await db.query(
     `
-      SELECT id, form_id, doc_uploaded_by_user, created_at
-      FROM doc_uploaded_by_user
+      SELECT id, form_id, doc_uploaded_by_user, user_id, created_at
+      FROM racm_docs
       WHERE form_id = ANY($1::text[])
       ORDER BY id ASC
     `,
@@ -128,7 +157,7 @@ async function getLatestUserDocument(db, formId) {
   const result = await db.query(
     `
       SELECT doc_uploaded_by_user
-      FROM doc_uploaded_by_user
+      FROM racm_docs
       WHERE form_id = $1
       ORDER BY id DESC
       LIMIT 1
@@ -140,17 +169,18 @@ async function getLatestUserDocument(db, formId) {
   return value == null || String(value).trim() === '' ? null : value;
 }
 
-async function insertUserDocument(db, formId, docUrl) {
+async function insertUserDocument(db, formId, docUrl, userId = null) {
   const value = docUrl == null ? '' : String(docUrl).trim();
   if (!value) return null;
+  const normalizedUserId = userId == null ? null : String(userId).trim() || null;
 
   const result = await db.query(
     `
-      INSERT INTO doc_uploaded_by_user (form_id, doc_uploaded_by_user, created_at)
-      VALUES ($1, $2, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
-      RETURNING id, form_id, doc_uploaded_by_user, created_at
+      INSERT INTO racm_docs (form_id, doc_uploaded_by_user, user_id, created_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
+      RETURNING id, form_id, doc_uploaded_by_user, user_id, created_at
     `,
-    [formId, value]
+    [formId, value, normalizedUserId]
   );
 
   return result.rows[0] || null;
@@ -174,7 +204,12 @@ async function insertSampleDocument(db, formId, docUrl) {
 
 module.exports = {
   attachControlFormDocuments,
+  buildDeficiencyResponseS3FolderPath,
+  buildRacmDocumentSubfolderPath,
+  buildRacmS3BaseFolderPath,
+  buildSampleDocumentS3FolderPath,
   buildUserDocumentS3FolderPath,
+  formatDeficiencyResponseFolderName,
   getControlFormDocumentRows,
   getControlFormUserDocumentContext,
   getLatestUserDocument,

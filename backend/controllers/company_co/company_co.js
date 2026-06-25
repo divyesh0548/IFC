@@ -31,6 +31,12 @@ const {
   UNIT_RESPONSIBILITY_TYPES,
   getUnitResponsibilityConfig,
 } = require('../../utils/unit_responsibilities');
+const {
+  loadUnitFrequencySampleSizeMap,
+  validateSampleSizeValue,
+  buildSampleSizeForFrequency,
+  buildUnitSampleSizeConfigResponse,
+} = require('../../utils/sample_size_resolver');
 
 const KEY_MANUAL_AI_PROMPT_VERSION = 'v1';
 
@@ -4513,6 +4519,164 @@ async function deleteCommunicationMatrixEntries(req, res) {
   }
 }
 
+async function getUnitSampleSizeConfig(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const unitId = String(req.query?.unit_id || '').trim();
+
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(400).json({ success: false, message: 'Company context is required' });
+    }
+    if (!unitId) {
+      return res.status(400).json({ success: false, message: 'unit_id is required' });
+    }
+
+    const hasAccess = await assertCoordinatorHasMappedUnit(companyIdentifier, coordinatorEmail, unitId);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, message: 'Access denied for selected unit' });
+    }
+
+    const unitMap = await loadUnitFrequencySampleSizeMap(pool, companyIdentifier, unitId);
+    return res.status(200).json({
+      success: true,
+      data: {
+        unit_id: unitId,
+        settings: buildUnitSampleSizeConfigResponse(unitMap),
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching unit sample size config:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch sample size settings' });
+  }
+}
+
+async function updateUnitSampleSizeConfig(req, res) {
+  const client = await pool.connect();
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const unitId = String(req.body?.unit_id || '').trim();
+    const settings = Array.isArray(req.body?.settings) ? req.body.settings : [];
+
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(400).json({ success: false, message: 'Company context is required' });
+    }
+    if (!unitId) {
+      return res.status(400).json({ success: false, message: 'unit_id is required' });
+    }
+
+    const hasAccess = await assertCoordinatorHasMappedUnit(companyIdentifier, coordinatorEmail, unitId);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, message: 'Access denied for selected unit' });
+    }
+
+    await client.query('BEGIN');
+
+    for (const item of settings) {
+      const frequencyKey = String(item?.frequency_key || '').trim();
+      const sampleSizeRaw = item?.sample_size;
+
+      if (!frequencyKey) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: 'frequency_key is required for each setting' });
+      }
+
+      const validation = validateSampleSizeValue(frequencyKey, sampleSizeRaw);
+      if (!validation.ok) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: validation.message });
+      }
+
+      const minimum = validation.minimum;
+      if (validation.sampleSize === minimum) {
+        await client.query(
+          `
+            DELETE FROM company_frequency_sample_size
+            WHERE company_identifier = $1
+              AND unit_id = $2
+              AND frequency_key = $3
+          `,
+          [companyIdentifier, unitId, frequencyKey]
+        );
+        continue;
+      }
+
+      await client.query(
+        `
+          INSERT INTO company_frequency_sample_size (
+            company_identifier,
+            unit_id,
+            frequency_key,
+            sample_size,
+            updated_by,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+          ON CONFLICT (company_identifier, unit_id, frequency_key)
+          DO UPDATE SET
+            sample_size = EXCLUDED.sample_size,
+            updated_by = EXCLUDED.updated_by,
+            updated_at = CURRENT_TIMESTAMP
+        `,
+        [companyIdentifier, unitId, frequencyKey, validation.sampleSize, coordinatorEmail]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    const unitMap = await loadUnitFrequencySampleSizeMap(pool, companyIdentifier, unitId);
+    return res.status(200).json({
+      success: true,
+      message: 'Sample size settings updated successfully',
+      data: {
+        unit_id: unitId,
+        settings: buildUnitSampleSizeConfigResponse(unitMap),
+      },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error updating unit sample size config:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update sample size settings' });
+  } finally {
+    client.release();
+  }
+}
+
+async function previewSampleRequired(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const controlFrequency = String(req.body?.control_frequency || '').trim();
+    const sampleSize = req.body?.sample_size;
+    const createdAt = req.body?.created_at || new Date();
+
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(400).json({ success: false, message: 'Company context is required' });
+    }
+    if (!controlFrequency) {
+      return res.status(400).json({ success: false, message: 'control_frequency is required' });
+    }
+
+    const built = buildSampleSizeForFrequency(controlFrequency, createdAt, sampleSize);
+    if (!built.ok) {
+      return res.status(400).json({ success: false, message: built.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        sample_size: built.sampleSize,
+        sample_required: built.sampleRequired,
+        minimum_sample_size: built.minimum,
+      },
+    });
+  } catch (error) {
+    console.error('Error previewing sample required:', error);
+    return res.status(500).json({ success: false, message: 'Failed to preview sample required' });
+  }
+}
+
 module.exports = {
   getUsers,
   getAssignedUnits,
@@ -4548,4 +4712,7 @@ module.exports = {
   addBusinessProcessSpecificCommunicationEmails,
   deleteCommunicationMatrixEntries,
   createCompanyBusinessProcess,
+  getUnitSampleSizeConfig,
+  updateUnitSampleSizeConfig,
+  previewSampleRequired,
 };

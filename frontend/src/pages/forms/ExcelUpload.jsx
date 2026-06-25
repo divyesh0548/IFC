@@ -6,6 +6,7 @@ import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import Alert from '@mui/material/Alert'
+import Collapse from '@mui/material/Collapse'
 import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
 import FormControl from '@mui/material/FormControl'
@@ -39,6 +40,7 @@ import { apiUrl } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
 import ControlFrequencyValueMapDialog from '../../components/racm/ControlFrequencyValueMapDialog'
+import { SampleSizeSettingsButton } from '../../components/company_co/UnitSampleSizeSettingsDialog'
 
 const MAX_BULK_IMPORT_ROWS = 5000
 const DUPLICATE_CONTROL_NUMBER_MESSAGE = 'Duplicate Control Number already exists for this company'
@@ -72,6 +74,7 @@ function ExcelUpload() {
     ctx: null,
     selections: {},
   })
+  const [showSampleSizeNotice, setShowSampleSizeNotice] = useState(false)
   const accentColor = theme.palette.primary.main
   const accentSoft = alpha(accentColor, theme.palette.mode === 'dark' ? 0.18 : 0.12)
   const accentBorder = alpha(accentColor, theme.palette.mode === 'dark' ? 0.22 : 0.14)
@@ -93,6 +96,14 @@ function ExcelUpload() {
     hasAnyProgress,
     'Your progress will be lost on this upload page. Do you want to continue?'
   )
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setShowSampleSizeNotice(true)
+    }, 200)
+    return () => window.clearTimeout(timer)
+  }, [])
+
   // Show 2 FY ranges based on current year (e.g. 2026 -> 2025-26, 2026-27)
   const currentYear = new Date().getFullYear()
   const baseFYStart = currentYear - 1
@@ -501,6 +512,68 @@ function ExcelUpload() {
     >
       <Box
         sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'stretch', sm: 'center' },
+          gap: 1.5,
+        }}
+      >
+        <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', alignItems: 'center' }}>
+          <SampleSizeSettingsButton unitOptions={unitOptions} selectedUnitId={unitId} />
+          <Button
+            type="button"
+            onClick={() => navigate('/company_co/manual-control-creation')}
+            variant="contained"
+            startIcon={<AddIcon />}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 700,
+              borderRadius: 999,
+              px: 2.2,
+            }}
+          >
+            Manual RACM Creation
+          </Button>
+        </Box>
+        <Button
+          type="button"
+          onClick={() => navigate('/company_co/dashboard')}
+          variant="outlined"
+          sx={{
+            textTransform: 'none',
+            fontWeight: 400,
+            borderRadius: 999,
+            px: 2,
+            alignSelf: { xs: 'flex-start', sm: 'center' },
+            borderColor:
+              theme.palette.mode === 'dark'
+                ? alpha(theme.palette.common.white, 0.16)
+                : alpha(theme.palette.text.primary, 0.14),
+            color: theme.palette.text.primary,
+          }}
+        >
+          Back to Dashboard
+        </Button>
+      </Box>
+
+      <Collapse in={showSampleSizeNotice}>
+        <Alert
+          severity="info"
+          onClose={() => setShowSampleSizeNotice(false)}
+          sx={{
+            borderRadius: 2,
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 24px rgba(0, 0, 0, 0.24)'
+              : '0 8px 24px rgba(15, 23, 42, 0.08)',
+          }}
+        >
+          Review the sample size for each control frequency before creating RACMs.
+        </Alert>
+      </Collapse>
+
+      <Box
+        sx={{
           position: 'relative',
           overflow: 'hidden',
           borderRadius: 3,
@@ -617,83 +690,32 @@ function ExcelUpload() {
         </Box>
       </Box>
 
-      <Box
+      <Paper
+        elevation={0}
         sx={{
-          width: '100%',
-          display: 'block',
+          p: { xs: 2.2, sm: 3, md: 3.25 },
+          borderRadius: 3,
+          border: '1px solid',
+          borderColor:
+            theme.palette.mode === 'dark'
+              ? alpha(theme.palette.common.white, 0.08)
+              : alpha(theme.palette.divider, 1),
+          backgroundColor: alpha(theme.palette.background.paper, 0.96),
+          boxShadow: theme.palette.mode === 'dark'
+            ? '0 18px 36px rgba(0, 0, 0, 0.2)'
+            : '0 18px 36px rgba(15, 23, 42, 0.05)',
         }}
       >
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 2.2, sm: 3, md: 3.25 },
-            borderRadius: 3,
-            border: '1px solid',
-            borderColor:
-              theme.palette.mode === 'dark'
-                ? alpha(theme.palette.common.white, 0.08)
-                : alpha(theme.palette.divider, 1),
-            backgroundColor: alpha(theme.palette.background.paper, 0.96),
-            boxShadow: theme.palette.mode === 'dark'
-              ? '0 18px 36px rgba(0, 0, 0, 0.2)'
-              : '0 18px 36px rgba(15, 23, 42, 0.05)',
-          }}
-        >
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: { xs: 'column', sm: 'row' },
-              justifyContent: 'space-between',
-              alignItems: { xs: 'flex-start', sm: 'center' },
-              gap: 1.5,
-              mb: 2.5,
-            }}
-          >
-            <Box>
-              <Typography sx={{ fontSize: '1.35rem', fontWeight: 900, color: theme.palette.text.primary }}>
-                Upload Setup
-              </Typography>
-              <Typography sx={{ mt: 0.6, fontSize: '0.93rem', color: theme.palette.text.secondary }}>
-                Configure the file and submission details below, or open manual RACM creation.
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', alignItems: 'center' }}>
-              <Button
-                type="button"
-                onClick={() => navigate('/company_co/manual-control-creation')}
-                variant="contained"
-                startIcon={<AddIcon />}
-                sx={{
-                  textTransform: 'none',
-                  fontWeight: 700,
-                  borderRadius: 999,
-                  px: 2.2,
-                }}
-              >
-                Manual RACM Creation
-              </Button>
-              <Button
-                type="button"
-                onClick={() => navigate('/company_co/dashboard')}
-                variant="outlined"
-                sx={{
-                  textTransform: 'none',
-                  fontWeight: 400,
-                  borderRadius: 999,
-                  px: 2,
-                  borderColor:
-                    theme.palette.mode === 'dark'
-                      ? alpha(theme.palette.common.white, 0.16)
-                      : alpha(theme.palette.text.primary, 0.14),
-                  color: theme.palette.text.primary,
-                }}
-              >
-                Back to Dashboard
-              </Button>
-            </Box>
-          </Box>
+        <Box sx={{ mb: 2.5 }}>
+          <Typography sx={{ fontSize: '1.35rem', fontWeight: 900, color: theme.palette.text.primary }}>
+            Upload Setup
+          </Typography>
+          <Typography sx={{ mt: 0.6, fontSize: '0.93rem', color: theme.palette.text.secondary }}>
+            Configure the file and submission details below.
+          </Typography>
+        </Box>
 
-          <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit}>
               {duplicateControlNumberNotice ? (
                 <Alert severity="warning" sx={{ mb: 2.5 }}>
                   {duplicateControlNumberNotice}
@@ -1089,8 +1111,7 @@ function ExcelUpload() {
                 </Button>
               </Box>
             </form>
-          </Paper>
-      </Box>
+      </Paper>
 
       <Dialog
         open={mappingDialogOpen}

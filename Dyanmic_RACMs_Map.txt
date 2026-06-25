@@ -1,0 +1,19 @@
+Fixed Columns :
+1. Sub-Process
+2. Risk Description
+3. Risk Heat
+4. Control Objective
+5. Standard Control Description
+6. Control type (Manual/Automated)
+7. Control type (Financial/Operational)
+8. Nature of Control (Preventive/Detective)
+9. Process Activity and Wlathrough details
+10. Key Control
+11. Application name
+12. Completeness
+13. Existence & Occurence
+14. Valuation & Allocation
+15. Rights and Obligation
+16. Presentation and Disclosure
+17. Control Evidence to be obtained
+18. Whether fraud risk exists? (Yes/No)

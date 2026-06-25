@@ -35,6 +35,7 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { formatIndianDateTime } from '../../lib/dateTime'
+import { formatRacmUserDocumentSubtitle } from '../../lib/racmUserDocuments'
 
 const DEFAULT_ROWS_PER_PAGE = 10
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50]
@@ -935,10 +936,6 @@ function RacmUserDocuments() {
                 <strong>Business Process:</strong> {selectedForm.business_process || 'N/A'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                <strong>Standard Control Description:</strong>{' '}
-                {selectedForm.standard_control_description || 'N/A'}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
                 <strong>Process Owner:</strong> {formatProcessOwner(selectedForm)}
               </Typography>
             </Box>
@@ -974,9 +971,10 @@ function RacmUserDocuments() {
                         {getFileName(docPath)}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {doc.created_at
-                          ? formatIndianDateTime(doc.created_at, 'Uploaded document')
-                          : 'Uploaded document'}
+                        {formatRacmUserDocumentSubtitle(
+                          doc,
+                          (value) => formatIndianDateTime(value, 'Uploaded document')
+                        )}
                       </Typography>
                     </Box>
                     <Tooltip title="Download">

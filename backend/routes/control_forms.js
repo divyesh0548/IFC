@@ -2,7 +2,6 @@ const express = require('express');
 const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const fs = require('fs');
 const path = require('path');
 const { prisma } = require('../lib/prisma');
 const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
@@ -29,13 +28,26 @@ const {
   getSupportedControlFrequencyCategories,
 } = require('../utils/sample_required');
 const {
+  resolveEffectiveSampleSizeForUnit,
+  buildSampleSizeForFrequency,
+} = require('../utils/sample_size_resolver');
+const { validateRacmUnitUserAssignment } = require('../utils/unit_user_validation');
+const {
   attachControlFormDocuments,
+  buildDeficiencyResponseS3FolderPath,
+  buildSampleDocumentS3FolderPath,
   buildUserDocumentS3FolderPath,
   getControlFormDocumentRows,
   getControlFormUserDocumentContext,
   insertSampleDocument,
   insertUserDocument,
 } = require('../utils/racm_documents');
+const {
+  DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES,
+  DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE,
+  DEFICIENCY_RESPONSE_INVALID_SIZE_MESSAGE,
+  documentUploadFileFilter,
+} = require('../utils/document_upload_restrictions');
 const {
   DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE,
   formatBulkImportZeroInsertedMessage,
@@ -259,6 +271,7 @@ function appendControlFormsListFilters(req, options, queryParts) {
     unit_id,
     conclusion,
     pending_changes,
+    deficiency_action_status,
     active_or_valid_assignment,
     assignment_target,
   } = req.query;
@@ -302,8 +315,8 @@ function appendControlFormsListFilters(req, options, queryParts) {
   }
 
   if (control_number) {
-    whereClause += ` AND LOWER(TRIM(COALESCE(cf.control_number, ''))) = LOWER(TRIM($${paramIndex}))`;
-    queryParams.push(String(control_number).trim());
+    whereClause += ` AND LOWER(TRIM(COALESCE(cf.control_number, ''))) LIKE $${paramIndex}`;
+    queryParams.push(`%${String(control_number).trim().toLowerCase()}%`);
     paramIndex += 1;
   }
 
@@ -384,6 +397,15 @@ function appendControlFormsListFilters(req, options, queryParts) {
       whereClause += ' AND COALESCE(cf.pending_changes, FALSE) = TRUE';
     } else if (pendingChangesFilter === false) {
       whereClause += ' AND COALESCE(cf.pending_changes, FALSE) = FALSE';
+    }
+  }
+
+  if (deficiency_action_status !== undefined) {
+    const deficiencyActionFilter = parseActiveFilter(deficiency_action_status);
+    if (deficiencyActionFilter === true) {
+      whereClause += ' AND COALESCE(cf.deficiency_action_status, FALSE) = TRUE';
+    } else if (deficiencyActionFilter === false) {
+      whereClause += ' AND COALESCE(cf.deficiency_action_status, FALSE) = FALSE';
     }
   }
 
@@ -700,7 +722,7 @@ router.get('/control-number-preview', verifyAuth, async (req, res) => {
   }
 });
 
-const { pool } = require('../utils/db');
+const { pool, connectPgClient, releasePgClient, isPgConnectionError, getDatabaseUnavailableMessage, queryWithRetry } = require('../utils/db');
 const { getColumnMappingConfig } = require('../utils/column_mapping');
 const {
   applyControlFrequencyValueMapping,
@@ -743,83 +765,8 @@ router.get('/control-frequency-options', verifyAuth, async (req, res) => {
   }
 });
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, '..', 'uploads', 'excel_files');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Create User_Docs directory if it doesn't exist
-const userDocsDir = path.join(__dirname, '..', 'uploads', 'User_Docs');
-if (!fs.existsSync(userDocsDir)) {
-  fs.mkdirSync(userDocsDir, { recursive: true });
-}
-
 // Configure multer for Excel file uploads (memory storage for S3 upload)
 const storage = multer.memoryStorage();
-
-const ALLOWED_DOCUMENT_EXTENSIONS = new Set([
-  '.pdf',
-  '.xls',
-  '.xlsx',
-  '.xlsm',
-  '.xlsb',
-  '.xlt',
-  '.xltx',
-  '.xltm',
-  '.xlam',
-  '.csv',
-  '.doc',
-  '.docx',
-  '.docm',
-  '.dot',
-  '.dotx',
-  '.dotm',
-  '.ppt',
-  '.pptx',
-  '.pptm',
-  '.pot',
-  '.potx',
-  '.potm',
-  '.pps',
-  '.ppsx',
-  '.ppsm',
-  '.txt',
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.bmp',
-  '.webp',
-  '.tif',
-  '.tiff',
-]);
-
-const DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
-
-function documentUploadFileFilter(req, file, cb) {
-  const extension = path.extname(String(file?.originalname || '')).toLowerCase();
-  if (ALLOWED_DOCUMENT_EXTENSIONS.has(extension)) {
-    cb(null, true);
-    return;
-  }
-
-  cb(new Error('Invalid file type. Allowed file types: PDF, Excel, PowerPoint, Word, TXT, and image files.'));
-}
-
-// Configure multer for user document uploads
-const userDocsStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, userDocsDir);
-  },
-  filename: function (req, file, cb) {
-    // Generate unique filename with timestamp and form_id
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    const formId = req.params.form_id || 'unknown';
-    cb(null, `form_${formId}_${uniqueSuffix}${ext}`);
-  }
-});
 
 const upload = multer({ 
   storage: storage,
@@ -865,7 +812,7 @@ function handleUserDocumentUpload(req, res, next) {
       if (error.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({
           success: false,
-          message: 'Each uploaded document must be 25 MB or smaller',
+          message: DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE,
         });
       }
 
@@ -897,7 +844,7 @@ function handleDeficiencyResponseUpload(req, res, next) {
       if (error.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({
           success: false,
-          message: 'Each deficiency response document must be 25 MB or smaller',
+          message: DEFICIENCY_RESPONSE_INVALID_SIZE_MESSAGE,
         });
       }
 
@@ -1108,12 +1055,7 @@ function shapeControlFormJsonForProcessOwner(row) {
 }
 
 function isDatabaseConnectionError(error) {
-  return (
-    error?.code === 'ECONNRESET' ||
-    error?.code === 'ECONNREFUSED' ||
-    error?.code === 'ETIMEDOUT' ||
-    String(error?.message || '').includes('ECONNRESET')
-  );
+  return isPgConnectionError(error);
 }
 
 const MISSING_UNIT_APPROVER_MESSAGE = 'No approver is assigned for current company unit';
@@ -1175,17 +1117,7 @@ async function getAuthorizedControlFormForDeficiency(clientOrPool, formId, user)
 
 async function queryAuthenticatedUser(emailId) {
   const userQuery = 'SELECT id, email_id, role, company_identifier FROM ifc_users WHERE email_id = $1';
-
-  try {
-    return await pool.query(userQuery, [emailId]);
-  } catch (error) {
-    if (!isDatabaseConnectionError(error)) {
-      throw error;
-    }
-
-    console.warn('Auth user lookup connection reset; retrying once:', error.message);
-    return pool.query(userQuery, [emailId]);
-  }
+  return queryWithRetry(userQuery, [emailId]);
 }
 
 // Middleware to verify authentication (unified authentication system)
@@ -1260,131 +1192,6 @@ async function verifyAuth(req, res, next) {
     });
   }
 }
-
-// Bulk upload - Upload file to S3 and record in excel_files table (processed = 0)
-router.post('/bulk-upload', verifyAuth, upload.single('excelFile'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({
-      success: false,
-      message: 'No file uploaded'
-    });
-  }
-
-  // Validate business_process is provided
-  const businessProcess = req.body.businessProcess;
-  if (!businessProcess || businessProcess.trim() === '') {
-    return res.status(400).json({
-      success: false,
-      message: 'Business process is required'
-    });
-  }
-
-  // Validate financial_year is provided
-  const financialYear = req.body.financialYear;
-  if (!financialYear || financialYear.trim() === '') {
-    return res.status(400).json({
-      success: false,
-      message: 'Financial year is required'
-    });
-  }
-
-  // Optional reminder settings (both-or-none)
-  const dueDate = req.body.due_date ? String(req.body.due_date).trim() : '';
-  const reminderFrequency = req.body.reminder_frequency ? String(req.body.reminder_frequency).trim() : '';
-
-  if ((dueDate && !reminderFrequency) || (!dueDate && reminderFrequency)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Please provide both due_date and reminder_frequency (or keep both empty)'
-    });
-  }
-
-  if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid due_date format. Expected YYYY-MM-DD'
-    });
-  }
-
-  if (reminderFrequency) {
-    const allowed = new Set(['Daily', 'Weekly', 'Monthly']);
-    if (!allowed.has(reminderFrequency)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid reminder_frequency. Allowed values: Daily, Weekly, Monthly'
-      });
-    }
-  }
-
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    // Get user's company_identifier from the database
-    const userEmail = req.user.email_id;
-    const getUserQuery = 'SELECT company_identifier FROM ifc_users WHERE email_id = $1';
-    const userResult = await client.query(getUserQuery, [userEmail]);
-    
-    let companyIdentifier = null;
-    if (userResult.rows.length > 0 && userResult.rows[0].company_identifier) {
-      companyIdentifier = userResult.rows[0].company_identifier;
-    }
-
-    const fileName = req.file.originalname;
-    const fileBuffer = req.file.buffer;
-
-    // Upload file to S3
-    console.log(`Uploading file to S3: ${fileName}`);
-    const s3Key = await uploadFileToS3(fileBuffer, fileName, 'IFC/control_form_excel_files');
-    console.log(`File uploaded to S3 with key: ${s3Key}`);
-
-    // Save S3 key to excel_files table with processed = 0, company_identifier, coordinator_email_id, business_process, and financial_year
-    const insertFileQuery = `
-      INSERT INTO excel_files (
-        file_path, file_name, processed, company_identifier, coordinator_email_id, business_process, financial_year,
-        due_date, reminder_frequency
-      )
-      VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8)
-      RETURNING id;
-    `;
-
-    const fileResult = await client.query(insertFileQuery, [
-      s3Key, // Store S3 key instead of local file path
-      fileName,
-      companyIdentifier,
-      userEmail, // coordinator_email_id
-      businessProcess, // business_process
-      financialYear, // financial_year
-      dueDate || null,
-      reminderFrequency || null,
-    ]);
-
-    await client.query('COMMIT');
-
-    await logAuditEvent(EXCEL_BULK_RACM_UPLOAD_ACTION, userEmail, null, null);
-
-    res.status(200).json({
-      success: true,
-      message: 'File uploaded successfully. It will be processed automatically within 1 minute.',
-      fileId: fileResult.rows[0].id,
-      fileName: fileName,
-      s3Key: s3Key
-    });
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error uploading file to S3:', error);
-    
-    res.status(500).json({
-      success: false,
-      message: 'Error uploading file to S3',
-      error: error.message
-    });
-  } finally {
-    client.release();
-  }
-});
 
 // Client-parsed Excel rows → immediate RACM insert (no S3 / excel_files queue)
 router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
@@ -1899,6 +1706,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     completeness, existence_occurrence, rights_and_obligation,
     valuation_and_allocation, presentation_and_disclosure,
     due_date, reminder_frequency,
+    sample_size,
     doc_uploaded_by_user, doc_uploaded_by_user_docs, replace_user_documents, active, status, reason_by_approver, remarks_by_user,
     modifiedFields,
     modifiedChanges
@@ -1960,6 +1768,35 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     });
   }
 
+  const racmUnitId = String(currentForm.unitId || '').trim();
+  const racmCompanyId = String(currentForm.companyIdentifier || '').trim();
+
+  if (control_owner !== undefined) {
+    const ownerValidation = await validateRacmUnitUserAssignment(pool, {
+      companyIdentifier: racmCompanyId,
+      unitId: racmUnitId,
+      email: control_owner,
+      fieldLabel: 'Process owner',
+      requireUserRole: true,
+    });
+    if (!ownerValidation.ok) {
+      return res.status(400).json({ success: false, message: ownerValidation.message });
+    }
+  }
+
+  if (control_performer !== undefined) {
+    const performerValidation = await validateRacmUnitUserAssignment(pool, {
+      companyIdentifier: racmCompanyId,
+      unitId: racmUnitId,
+      email: control_performer,
+      fieldLabel: 'Control performer',
+      requireUserRole: true,
+    });
+    if (!performerValidation.ok) {
+      return res.status(400).json({ success: false, message: performerValidation.message });
+    }
+  }
+
   const parseDateOnlyInput = (value) => {
     if (value == null) return null;
     const s = String(value).trim();
@@ -2005,11 +1842,42 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
   const nextControlFrequency = control_frequency !== undefined ? (control_frequency ? String(control_frequency).trim() : null) : undefined;
   const isControlFrequencyChange = control_frequency !== undefined
     && normalizeFrequencyForCompare(nextControlFrequency) !== normalizeFrequencyForCompare(currentForm.controlFrequency);
-  const derivedSampleSize = control_frequency !== undefined ? getSampleSizeByFrequency(nextControlFrequency) : undefined;
-  const sampleSizeForUpdate = control_frequency !== undefined ? (derivedSampleSize !== null ? String(derivedSampleSize) : null) : undefined;
-  const sampleRequiredForUpdate = isControlFrequencyChange
-    ? calculateSampleRequired(nextControlFrequency, currentForm.createdAt || new Date())
-    : undefined;
+  const isSampleSizeChange = sample_size !== undefined
+    && String(sample_size ?? '').trim() !== String(currentForm.sampleSize ?? '').trim();
+  const frequencyForSample = control_frequency !== undefined ? nextControlFrequency : currentForm.controlFrequency;
+  const shouldRecalculateSampleFields = isControlFrequencyChange || isSampleSizeChange;
+
+  let sampleSizeForUpdate;
+  let sampleRequiredForUpdate;
+
+  if (shouldRecalculateSampleFields) {
+    const createdAtForSample = currentForm.createdAt || new Date();
+    const resolvedSize = await resolveEffectiveSampleSizeForUnit(pool, {
+      companyIdentifier: currentForm.companyIdentifier,
+      unitId: currentForm.unitId,
+      controlFrequency: frequencyForSample,
+      explicitSampleSize: sample_size !== undefined
+        ? sample_size
+        : (isControlFrequencyChange ? undefined : currentForm.sampleSize),
+    });
+
+    if (!resolvedSize.ok) {
+      return res.status(400).json({ success: false, message: resolvedSize.message });
+    }
+
+    const built = buildSampleSizeForFrequency(
+      frequencyForSample,
+      createdAtForSample,
+      resolvedSize.sampleSize
+    );
+
+    if (!built.ok) {
+      return res.status(400).json({ success: false, message: built.message });
+    }
+
+    sampleSizeForUpdate = String(built.sampleSize);
+    sampleRequiredForUpdate = built.sampleRequired;
+  }
 
   const data = {
     standardControlDescription: standard_control_description,
@@ -2076,6 +1944,12 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
   const wasSentForApproval = String(currentForm?.status || '').trim().toLowerCase() === 'sent for approval';
   const isNowSentForApprovalRequest = status !== undefined
     && String(status || '').trim().toLowerCase() === 'sent for approval';
+  if (isNowSentForApprovalRequest && Boolean(currentForm.pendingChanges)) {
+    return res.status(400).json({
+      success: false,
+      message: 'This RACM has a pending change request and cannot be sent for approval until it is resolved.',
+    });
+  }
   if (isNowSentForApprovalRequest && !wasSentForApproval) {
     data.sentForApprovalTimestamp = new Date();
   }
@@ -2137,23 +2011,46 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
 
       if (replace_user_documents === true) {
-        const existing = await tx.docUploadedByUser.findMany({
+        const existing = await tx.racmDoc.findMany({
           where: { formId: normalizedFormId },
-          select: { docUploadedByUser: true },
+          select: { docUploadedByUser: true, userId: true },
         });
         const replacementDocSet = new Set(uploadedUserDocumentUrls);
+        const existingUploaderByDocUrl = new Map(
+          existing
+            .map((row) => {
+              const docUrl = row.docUploadedByUser == null ? '' : String(row.docUploadedByUser).trim();
+              const userId = row.userId == null ? '' : String(row.userId).trim();
+              return [docUrl, userId || null];
+            })
+            .filter(([docUrl]) => Boolean(docUrl))
+        );
         const docsToDeleteFromS3 = existing
           .map((row) => row.docUploadedByUser == null ? '' : String(row.docUploadedByUser).trim())
           .filter((docUrl) => docUrl && !replacementDocSet.has(docUrl));
         for (const docUrl of docsToDeleteFromS3) {
           await deleteFileFromS3(docUrl);
         }
-        await tx.docUploadedByUser.deleteMany({ where: { formId: normalizedFormId } });
-      }
-      for (const userDocUrl of uploadedUserDocumentUrls) {
-        await tx.docUploadedByUser.create({
-          data: { formId: normalizedFormId, docUploadedByUser: userDocUrl },
-        });
+        await tx.racmDoc.deleteMany({ where: { formId: normalizedFormId } });
+        for (const userDocUrl of uploadedUserDocumentUrls) {
+          await tx.racmDoc.create({
+            data: {
+              formId: normalizedFormId,
+              docUploadedByUser: userDocUrl,
+              userId: existingUploaderByDocUrl.get(userDocUrl) || req.user?.email_id || null,
+            },
+          });
+        }
+      } else {
+        for (const userDocUrl of uploadedUserDocumentUrls) {
+          await tx.racmDoc.create({
+            data: {
+              formId: normalizedFormId,
+              docUploadedByUser: userDocUrl,
+              userId: req.user?.email_id || null,
+            },
+          });
+        }
       }
     });
 
@@ -2199,7 +2096,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     }
     const reminderFields = mapControlsReminderToApi(form.controlsReminder);
     const sampleDocs = await prisma.sampleDoc.findMany({ where: { formId: normalizedFormId }, orderBy: { id: 'asc' } });
-    const userDocs = await prisma.docUploadedByUser.findMany({ where: { formId: normalizedFormId }, orderBy: { id: 'asc' } });
+    const userDocs = await prisma.racmDoc.findMany({ where: { formId: normalizedFormId }, orderBy: { id: 'asc' } });
     const updatedRow = {
       id: form.id,
       standard_control_description: form.standardControlDescription,
@@ -2250,7 +2147,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       approval_status_change_timestamp: form.approvalStatusChangeTs,
       user_mail_sent: form.userMailSent,
       sample_docs: sampleDocs.map((d) => ({ id: d.id, form_id: d.formId, sample_doc: d.sampleDoc, created_at: d.createdAt })),
-      doc_uploaded_by_user_docs: userDocs.map((d) => ({ id: d.id, form_id: d.formId, doc_uploaded_by_user: d.docUploadedByUser, created_at: d.createdAt })),
+      doc_uploaded_by_user_docs: userDocs.map((d) => ({ id: d.id, form_id: d.formId, doc_uploaded_by_user: d.docUploadedByUser, user_id: d.userId, created_at: d.createdAt })),
       sample_doc: sampleDocs.length > 0 ? sampleDocs[sampleDocs.length - 1].sampleDoc : null,
       doc_uploaded_by_user: userDocs.length > 0 ? userDocs[userDocs.length - 1].docUploadedByUser : null,
     };
@@ -2520,6 +2417,7 @@ router.post(
   handleDeficiencyResponseUpload,
   async (req, res) => {
     const normalizedFormId = String(req.params.form_id || '').trim();
+    const responseType = String(req.body?.response_type || '').trim();
     const files = [
       ...((req.files && req.files.documents) || []),
       ...((req.files && req.files.document) || []),
@@ -2531,6 +2429,13 @@ router.post(
 
     if (files.length === 0) {
       return res.status(400).json({ success: false, message: 'No files uploaded' });
+    }
+
+    if (!['mitigation_plan', 'compensatory_racm'].includes(responseType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'response_type must be either mitigation_plan or compensatory_racm',
+      });
     }
 
     try {
@@ -2546,12 +2451,27 @@ router.post(
         });
       }
 
+      const docContext = await getControlFormUserDocumentContext(pool, normalizedFormId);
+      if (!docContext) {
+        return res.status(404).json({
+          success: false,
+          message: 'RACM not found',
+        });
+      }
+
+      const deficiencyResponseFolderPath = buildDeficiencyResponseS3FolderPath({
+        companyName: docContext.company_name,
+        unitName: docContext.unit_name,
+        businessProcess: docContext.business_process,
+        formId: docContext.form_id,
+      }, responseType);
+
       const uploadedFiles = [];
       for (const file of files) {
         const s3Key = await uploadFileToS3(
           file.buffer,
           file.originalname,
-          `IFC/Deficiency Response/${normalizedFormId}`,
+          deficiencyResponseFolderPath,
           { preserveFileName: true }
         );
         uploadedFiles.push({
@@ -2607,7 +2527,8 @@ router.post('/:form_id/request-change', verifyAuth, async (req, res) => {
     });
   }
 
-  const client = await pool.connect();
+  const client = await connectPgClient();
+  let dbError;
   try {
     await client.query('BEGIN');
 
@@ -2810,18 +2731,21 @@ router.post('/:form_id/request-change', verifyAuth, async (req, res) => {
       },
     });
   } catch (error) {
+    dbError = error;
     try {
       await client.query('ROLLBACK');
     } catch (rollbackError) {
       console.error('Request change rollback error:', rollbackError);
     }
     console.error('Request change error:', error);
-    return res.status(500).json({
+    return res.status(isPgConnectionError(error) ? 503 : 500).json({
       success: false,
-      message: 'Failed to submit RACM change request',
+      message: isPgConnectionError(error)
+        ? getDatabaseUnavailableMessage()
+        : 'Failed to submit RACM change request',
     });
   } finally {
-    client.release();
+    releasePgClient(client, dbError);
   }
 });
 
@@ -2854,6 +2778,7 @@ router.get('/:form_id/change-request/active', verifyAuth, async (req, res) => {
           cr.requested_at,
           cr.status,
           cr.reviewed_by_email,
+          cr.reviewed_at,
           COALESCE(NULLIF(TRIM(reviewed_user.emp_name), ''), cr.reviewed_by_email) AS reviewed_by_display,
           cr.request_reason,
           cr.reviewer_comment,
@@ -2959,6 +2884,7 @@ router.get('/:form_id/change-request/history', verifyAuth, async (req, res) => {
           cr.requested_at,
           cr.status,
           cr.reviewed_by_email,
+          cr.reviewed_at,
           COALESCE(NULLIF(TRIM(reviewed_user.emp_name), ''), cr.reviewed_by_email) AS reviewed_by_display,
           cr.request_reason,
           cr.reviewer_comment,
@@ -3068,7 +2994,8 @@ router.post('/:form_id/change-request/:request_id/review', verifyAuth, async (re
     });
   }
 
-  const client = await pool.connect();
+  const client = await connectPgClient();
+  let dbError;
   try {
     await client.query('BEGIN');
 
@@ -3219,6 +3146,47 @@ router.post('/:form_id/change-request/:request_id/review', verifyAuth, async (re
           `,
           updateValues
         );
+
+        const approvedFieldNames = approvedItems.map((item) => String(item.field_db_name || '').trim());
+        if (approvedFieldNames.includes('control_frequency') || approvedFieldNames.includes('sample_size')) {
+          const formAfterUpdate = await client.query(
+            `
+              SELECT control_frequency, created_at, company_identifier, unit_id, sample_size
+              FROM control_forms
+              WHERE form_id = $1
+              LIMIT 1
+            `,
+            [normalizedFormId]
+          );
+          const formRow = formAfterUpdate.rows[0];
+          if (formRow) {
+            const resolvedSample = await resolveEffectiveSampleSizeForUnit(client, {
+              companyIdentifier: formRow.company_identifier,
+              unitId: formRow.unit_id,
+              controlFrequency: formRow.control_frequency,
+              explicitSampleSize: formRow.sample_size,
+            });
+            if (resolvedSample.ok) {
+              const builtSample = buildSampleSizeForFrequency(
+                formRow.control_frequency,
+                formRow.created_at || new Date(),
+                resolvedSample.sampleSize
+              );
+              if (builtSample.ok) {
+                await client.query(
+                  `
+                    UPDATE control_forms
+                    SET sample_size = $2,
+                        sample_required = $3,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE form_id = $1
+                  `,
+                  [normalizedFormId, String(builtSample.sampleSize), builtSample.sampleRequired]
+                );
+              }
+            }
+          }
+        }
       } else {
         await client.query(
           `
@@ -3247,6 +3215,7 @@ router.post('/:form_id/change-request/:request_id/review', verifyAuth, async (re
         UPDATE change_request
         SET status = $1,
             reviewed_by_email = $2,
+            reviewed_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
             reviewer_comment = $3,
             updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
         WHERE id = $4
@@ -3275,18 +3244,21 @@ router.post('/:form_id/change-request/:request_id/review', verifyAuth, async (re
       },
     });
   } catch (error) {
+    dbError = error;
     try {
       await client.query('ROLLBACK');
     } catch (rollbackError) {
       console.error('Review change request rollback error:', rollbackError);
     }
     console.error('Review change request error:', error);
-    return res.status(500).json({
+    return res.status(isPgConnectionError(error) ? 503 : 500).json({
       success: false,
-      message: 'Failed to review suggested changes',
+      message: isPgConnectionError(error)
+        ? getDatabaseUnavailableMessage()
+        : 'Failed to review suggested changes',
     });
   } finally {
-    client.release();
+    releasePgClient(client, dbError);
   }
 });
 
@@ -3519,6 +3491,7 @@ router.post('/', verifyAuth, async (req, res) => {
     key_control, application_name, control_performer, control_owner,
     control_type_fo, control_type_ma,
     company_identifier, business_process, financial_year, unit_id,
+    sample_size,
     completeness, existence_occurrence, rights_and_obligation,
     valuation_and_allocation, presentation_and_disclosure
   } = req.body;
@@ -3603,6 +3576,30 @@ router.post('/', verifyAuth, async (req, res) => {
       }
     }
 
+    const ownerValidation = await validateRacmUnitUserAssignment(client, {
+      companyIdentifier: userCompanyIdentifier,
+      unitId,
+      email: control_owner,
+      fieldLabel: 'Process owner',
+      requireUserRole: true,
+    });
+    if (!ownerValidation.ok) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: ownerValidation.message });
+    }
+
+    const performerValidation = await validateRacmUnitUserAssignment(client, {
+      companyIdentifier: userCompanyIdentifier,
+      unitId,
+      email: control_performer,
+      fieldLabel: 'Control performer',
+      requireUserRole: true,
+    });
+    if (!performerValidation.ok) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: performerValidation.message });
+    }
+
     // Prevent duplicate RACM creation (company_identifier + control_number)
     const cnKey = control_number != null ? String(control_number).trim() : ''
     if (userCompanyIdentifier && cnKey) {
@@ -3633,8 +3630,27 @@ router.post('/', verifyAuth, async (req, res) => {
     const currentTimestamp = new Date();
     // Ensure control_frequency is a string and handle null/undefined
     const controlFrequencyValue = control_frequency ? String(control_frequency).trim() : null;
-    const sampleRequired = calculateSampleRequired(controlFrequencyValue, currentTimestamp);
-    const sampleSize = getSampleSizeByFrequency(controlFrequencyValue);
+    const resolvedSample = await resolveEffectiveSampleSizeForUnit(client, {
+      companyIdentifier: userCompanyIdentifier,
+      unitId: unit_id ? String(unit_id).trim() : '',
+      controlFrequency: controlFrequencyValue,
+      explicitSampleSize: sample_size,
+    });
+    if (!resolvedSample.ok) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: resolvedSample.message });
+    }
+    const builtSample = buildSampleSizeForFrequency(
+      controlFrequencyValue,
+      currentTimestamp,
+      resolvedSample.sampleSize
+    );
+    if (!builtSample.ok) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: builtSample.message });
+    }
+    const sampleSize = builtSample.sampleSize;
+    const sampleRequired = builtSample.sampleRequired;
     console.log('[control_forms POST] control_frequency:', control_frequency, 'normalized:', controlFrequencyValue, 'sample_required result:', sampleRequired);
 
     const insertQuery = `
@@ -3836,24 +3852,31 @@ router.post('/replicate', verifyAuth, async (req, res) => {
       const currentTimestamp = new Date();
       const controlFrequencyValue = insertObj.control_frequency ? String(insertObj.control_frequency).trim() : null;
 
-      // Recompute Sample Required from the RACM creation timestamp.
       try {
-        if ('sample_required' in insertObj) {
-          insertObj.sample_required = calculateSampleRequired(controlFrequencyValue, currentTimestamp);
+        const companyId = coordinatorCompany || insertObj.company_identifier || null;
+        const unitIdValue = insertObj.unit_id ? String(insertObj.unit_id).trim() : '';
+        const resolvedSample = await resolveEffectiveSampleSizeForUnit(client, {
+          companyIdentifier: companyId,
+          unitId: unitIdValue,
+          controlFrequency: controlFrequencyValue,
+        });
+        if (resolvedSample.ok) {
+          const builtSample = buildSampleSizeForFrequency(
+            controlFrequencyValue,
+            currentTimestamp,
+            resolvedSample.sampleSize
+          );
+          if (builtSample.ok) {
+            if ('sample_required' in insertObj) {
+              insertObj.sample_required = builtSample.sampleRequired;
+            }
+            if ('sample_size' in insertObj) {
+              insertObj.sample_size = String(builtSample.sampleSize);
+            }
+          }
         }
       } catch (e) {
         console.error('[control_forms replicate] sample_required recalculation error:', e);
-      }
-
-      // Recompute sample_size if it exists in schema (based on control_frequency)
-      try {
-        if ('sample_size' in insertObj) {
-          const sampleSize = getSampleSizeByFrequency(controlFrequencyValue);
-          insertObj.sample_size = sampleSize !== null ? String(sampleSize) : null;
-        }
-      } catch (e) {
-        // Don't fail replication if sample util fails; keep copied values
-        console.error('[control_forms replicate] sample calc error:', e);
       }
 
       const columns = Object.keys(insertObj);
@@ -3928,6 +3951,7 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       select: {
         id: true,
         companyIdentifier: true,
+        active: true,
       },
     });
 
@@ -3947,13 +3971,20 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       });
     }
 
+    if (form.active === true) {
+      return res.status(400).json({
+        success: false,
+        message: 'Active RACM cannot be deleted. Please set the RACM Inactive first.',
+      });
+    }
+
     // Delete all sample and user-uploaded documents from S3 before deleting DB rows.
     const [sampleDocs, userDocs] = await Promise.all([
       prisma.sampleDoc.findMany({
         where: { formId: form_id },
         select: { sampleDoc: true },
       }),
-      prisma.docUploadedByUser.findMany({
+      prisma.racmDoc.findMany({
         where: { formId: form_id },
         select: { docUploadedByUser: true },
       }),
@@ -3983,7 +4014,7 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
     }
 
     const deleteResult = await prisma.$transaction(async (tx) => {
-      const deletedUserDocsResult = await tx.docUploadedByUser.deleteMany({
+      const deletedUserDocsResult = await tx.racmDoc.deleteMany({
         where: { formId: form_id },
       });
       const deletedSampleDocsResult = await tx.sampleDoc.deleteMany({
@@ -4138,11 +4169,12 @@ router.post(
       });
       console.log(`User document uploaded to S3 with key: ${s3Key}`);
 
-      const insertedDoc = await insertUserDocument(pool, form_id, s3Key);
+      const insertedDoc = await insertUserDocument(pool, form_id, s3Key, req.user?.email_id || null);
       uploadedDocs.push({
         id: insertedDoc?.id || null,
         form_id: insertedDoc?.form_id || form_id,
         doc_uploaded_by_user: s3Key,
+        user_id: insertedDoc?.user_id || req.user?.email_id || null,
         created_at: insertedDoc?.created_at || null,
         file_name: fileName,
       });
@@ -4330,6 +4362,21 @@ router.post(
       });
     }
 
+    const docContext = await getControlFormUserDocumentContext(pool, form_id);
+    if (!docContext) {
+      return res.status(404).json({
+        success: false,
+        message: 'Control form not found'
+      });
+    }
+
+    const sampleDocumentFolderPath = buildSampleDocumentS3FolderPath({
+      companyName: docContext.company_name,
+      unitName: docContext.unit_name,
+      businessProcess: docContext.business_process,
+      formId: docContext.form_id,
+    });
+
     const uploadedS3Keys = [];
     const sampleDocs = [];
     try {
@@ -4339,7 +4386,7 @@ router.post(
 
         // Upload file to S3 first (outside DB transaction to avoid long txn wait/P2028)
         console.log(`Uploading sampling Excel file to S3: ${fileName}`);
-        const s3Key = await uploadFileToS3(fileBuffer, fileName, `IFC/sample_docs/${form_id}`, {
+        const s3Key = await uploadFileToS3(fileBuffer, fileName, sampleDocumentFolderPath, {
           preserveFileName: true,
         });
         console.log(`Sampling Excel file uploaded to S3 with key: ${s3Key}`);

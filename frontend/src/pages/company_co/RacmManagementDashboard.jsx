@@ -37,6 +37,7 @@ import {
   STATUS_BADGE_PILL_SX,
   getApprovalStatusBadgeSolidColors,
   getConclusionBadgeSolidColors,
+  isMuiAlertCloseActionClick,
 } from '../../uiConstants'
 
 /** Display order for Set Active selection notice (single-RACM list); missing-user line last. */
@@ -67,6 +68,8 @@ function RacmManagementDashboard() {
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
   const [totalCount, setTotalCount] = useState(0)
   const [actionRequiredCount, setActionRequiredCount] = useState(0)
+  const [actionRequiredForms, setActionRequiredForms] = useState([])
+  const [actionRequiredFormsLoading, setActionRequiredFormsLoading] = useState(false)
   const [pendingChangeRequestCount, setPendingChangeRequestCount] = useState(0)
   const [pendingChangeRequestForms, setPendingChangeRequestForms] = useState([])
   const [pendingChangeRequestFormsLoading, setPendingChangeRequestFormsLoading] = useState(false)
@@ -121,6 +124,7 @@ function RacmManagementDashboard() {
   const [creatingMissingUsers, setCreatingMissingUsers] = useState(false)
   const [setActiveClassifying, setSetActiveClassifying] = useState(false)
   const [actionRequiredAlertDismissed, setActionRequiredAlertDismissed] = useState(false)
+  const [actionRequiredDialogOpen, setActionRequiredDialogOpen] = useState(false)
   const [pendingChangeRequestAlertDismissed, setPendingChangeRequestAlertDismissed] = useState(false)
   const [pendingChangeRequestDialogOpen, setPendingChangeRequestDialogOpen] = useState(false)
   const userRoleChecksRef = useRef({})
@@ -169,6 +173,13 @@ function RacmManagementDashboard() {
     }
     fetchPendingChangeRequestForms()
   }, [pendingChangeRequestDialogOpen, companyIdentifier])
+
+  useEffect(() => {
+    if (!actionRequiredDialogOpen || !companyIdentifier) {
+      return
+    }
+    fetchActionRequiredForms()
+  }, [actionRequiredDialogOpen, companyIdentifier])
 
   useEffect(() => {
     const fetchCoordinatorUnits = async () => {
@@ -366,6 +377,37 @@ function RacmManagementDashboard() {
       setPendingChangeRequestForms([])
     } finally {
       setPendingChangeRequestFormsLoading(false)
+    }
+  }
+
+  const fetchActionRequiredForms = async () => {
+    if (!companyIdentifier) return
+
+    setActionRequiredFormsLoading(true)
+    try {
+      const params = new URLSearchParams({
+        company_identifier: companyIdentifier,
+        deficiency_action_status: 'true',
+        page: '1',
+        page_size: '500',
+      })
+      const url = `${API_BASE_URL}/api/control-forms?${params.toString()}`
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setActionRequiredForms(Array.isArray(data.data) ? data.data : [])
+      } else {
+        setActionRequiredForms([])
+      }
+    } catch (error) {
+      console.error('Error fetching ineffective RACMs:', error)
+      setActionRequiredForms([])
+    } finally {
+      setActionRequiredFormsLoading(false)
     }
   }
 
@@ -1225,6 +1267,20 @@ function RacmManagementDashboard() {
       setDeleteMode(false)
       return
     }
+
+    const activeSelectedCount = forms.filter(
+      (form) => selectedForms.has(form.form_id) && form.active === true
+    ).length
+
+    if (activeSelectedCount > 0) {
+      toast.error(
+        activeSelectedCount === 1
+          ? 'Active RACM cannot be deleted. Please set the RACM Inactive first.'
+          : `${activeSelectedCount} active RACM(s) cannot be deleted. Please set them Inactive first.`
+      )
+      return
+    }
+
     setDeleteConfirmDialogOpen(true)
   }
 
@@ -1618,21 +1674,17 @@ function RacmManagementDashboard() {
           borderRadius: 2,
         }}
       >
-        {actionRequiredCount > 0 && !actionRequiredAlertDismissed ? (
+        {!loading && actionRequiredCount > 0 && !actionRequiredAlertDismissed ? (
           <Alert
             severity="warning"
-            onClose={() => setActionRequiredAlertDismissed(true)}
-            sx={{ mb: 3, alignItems: 'center' }}
-          >
-            Action Required - {actionRequiredCount} RACMs are found ineffective
-          </Alert>
-        ) : null}
-
-        {!loading && pendingChangeRequestCount > 0 && !pendingChangeRequestAlertDismissed ? (
-          <Alert
-            severity="warning"
-            onClose={() => setPendingChangeRequestAlertDismissed(true)}
-            onClick={() => setPendingChangeRequestDialogOpen(true)}
+            onClose={(event) => {
+              event?.stopPropagation?.()
+              setActionRequiredAlertDismissed(true)
+            }}
+            onClick={(event) => {
+              if (isMuiAlertCloseActionClick(event)) return
+              setActionRequiredDialogOpen(true)
+            }}
             sx={{
               mb: 3,
               alignItems: 'center',
@@ -1643,7 +1695,36 @@ function RacmManagementDashboard() {
             }}
           >
             <Typography sx={{ fontWeight: 700 }}>
-              Warning - {pendingChangeRequestCount} RACMs have pending change requests
+              {actionRequiredCount} RACMs are found ineffective
+            </Typography>
+            <Typography variant="body2">
+              Click to view the RACM list.
+            </Typography>
+          </Alert>
+        ) : null}
+
+        {!loading && pendingChangeRequestCount > 0 && !pendingChangeRequestAlertDismissed ? (
+          <Alert
+            severity="warning"
+            onClose={(event) => {
+              event?.stopPropagation?.()
+              setPendingChangeRequestAlertDismissed(true)
+            }}
+            onClick={(event) => {
+              if (isMuiAlertCloseActionClick(event)) return
+              setPendingChangeRequestDialogOpen(true)
+            }}
+            sx={{
+              mb: 3,
+              alignItems: 'center',
+              cursor: 'pointer',
+              '& .MuiAlert-message': {
+                width: '100%',
+              },
+            }}
+          >
+            <Typography sx={{ fontWeight: 700 }}>
+              {pendingChangeRequestCount} RACMs have pending change requests
             </Typography>
             <Typography variant="body2">
               Click to view the RACM list.
@@ -1958,10 +2039,6 @@ function RacmManagementDashboard() {
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography color="text.secondary">Loading forms...</Typography>
             </Box>
-          ) : totalCount === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <Typography color="text.secondary">No forms found.</Typography>
-            </Box>
           ) : (
             <Box>
               <Box
@@ -2033,6 +2110,14 @@ function RacmManagementDashboard() {
                   }}
                 />
               </Box>
+              {totalCount === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography color="text.secondary">
+                    {controlNumberFilter ? 'No forms match the control number search.' : 'No forms found.'}
+                  </Typography>
+                </Box>
+              ) : (
+                <>
             <Box sx={DASHBOARD_TABLE_WRAP_SX}>
               <Box
                 component="table"
@@ -2502,6 +2587,8 @@ function RacmManagementDashboard() {
                 },
               }}
             />
+                </>
+              )}
             </Box>
           )}
         </Paper>
@@ -3481,6 +3568,107 @@ function RacmManagementDashboard() {
                 {bulkUpdating ? 'Setting...' : 'Set Active Other RACM(s)'}
               </Button>
             )}
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
+          open={actionRequiredDialogOpen}
+          onClose={() => setActionRequiredDialogOpen(false)}
+          fullWidth
+          maxWidth="md"
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              minWidth: { xs: '90%', sm: '560px' },
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+                : '0 8px 32px rgba(0, 0, 0, 0.12)',
+            },
+          }}
+        >
+          <DialogTitle
+            sx={{
+              pb: 2.5,
+              pt: 3,
+              px: 3,
+              fontWeight: 600,
+              fontSize: '1.25rem',
+              color: theme.palette.text.primary,
+            }}
+          >
+            Ineffective RACMs
+          </DialogTitle>
+          <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
+            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mb: 2 }}>
+              Click any RACM below to open its details in a new page.
+            </Typography>
+            {actionRequiredFormsLoading ? (
+              <Typography color="text.secondary">Loading ineffective RACMs...</Typography>
+            ) : actionRequiredForms.length === 0 ? (
+              <Typography color="text.secondary">No ineffective RACMs found.</Typography>
+            ) : null}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              {actionRequiredForms.map((form) => (
+                <Box
+                  key={`action-required-dialog-${form.form_id}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => window.open(`/company_co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      window.open(`/company_co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')
+                    }
+                  }}
+                  sx={{
+                    p: 1.75,
+                    borderRadius: 1.5,
+                    border: `1px solid ${theme.palette.divider}`,
+                    backgroundColor: theme.palette.background.paper,
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s, border-color 0.2s',
+                    '&:hover, &:focus-visible': {
+                      backgroundColor: TABLE_ROW_HOVER_BG,
+                      borderColor: alpha(theme.palette.warning.main, 0.45),
+                      outline: 'none',
+                    },
+                  }}
+                >
+                  <Typography sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+                    {form.control_number || form.form_id}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.25 }}>
+                    {[form.business_process, form.sub_process, form.financial_year].filter(Boolean).join(' | ') || form.form_id}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </DialogContent>
+          <DialogActions
+            sx={{
+              px: 3,
+              pb: 3,
+              pt: 2.5,
+              gap: 1.5,
+              borderTop: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            <Button
+              onClick={() => setActionRequiredDialogOpen(false)}
+              variant="outlined"
+              sx={{
+                textTransform: 'none',
+                px: 3,
+                py: 1,
+                minWidth: '100px',
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.23)'
+                  : 'rgba(0, 0, 0, 0.23)',
+              }}
+            >
+              Close
+            </Button>
           </DialogActions>
         </Dialog>
 

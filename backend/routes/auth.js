@@ -1,6 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { pool } = require('../utils/db');
+const { pool, isPgConnectionError, queryWithRetry } = require('../utils/db');
 const { logAuditEvent } = require('../utils/auditLog');
 const { sendEmail } = require('../utils/send_email');
 const { encryptToken, decryptToken, generateTempPassword } = require('../utils/auth_utility');
@@ -30,27 +30,12 @@ const AUTH_SESSION_DURATION_HOURS = getAuthSessionDurationHours();
 const AUTH_SESSION_MAX_AGE_MS = getAuthSessionMaxAgeMs();
 
 function isDatabaseConnectionError(error) {
-  return (
-    error?.code === 'ECONNRESET' ||
-    error?.code === 'ECONNREFUSED' ||
-    error?.code === 'ETIMEDOUT' ||
-    String(error?.message || '').includes('ECONNRESET')
-  );
+  return isPgConnectionError(error);
 }
 
 async function queryUserByEmailForAuth(emailId, columns = 'id, email_id, role, company_identifier, emp_name, temp_login') {
   const userQuery = `SELECT ${columns} FROM ifc_users WHERE email_id = $1`;
-
-  try {
-    return await pool.query(userQuery, [emailId]);
-  } catch (error) {
-    if (!isDatabaseConnectionError(error)) {
-      throw error;
-    }
-
-    console.warn('Auth user lookup connection reset; retrying once:', error.message);
-    return pool.query(userQuery, [emailId]);
-  }
+  return queryWithRetry(userQuery, [emailId]);
 }
 
 async function hasAssignmentForPrivilegedUser(user) {

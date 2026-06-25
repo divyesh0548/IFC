@@ -2,6 +2,48 @@ function normalizeText(value) {
   return String(value || '').trim();
 }
 
+const APPROVER_ASSIGNMENT_PRECEDENCE_SQL = `
+  CASE aa.assignment_scope
+    WHEN 'RACM' THEN 1
+    WHEN 'BUSINESS_PROCESS' THEN 2
+    WHEN 'UNIT' THEN 3
+    ELSE 4
+  END
+`;
+
+function buildResolvedApproverLateralSubquery(formAlias = 'cf') {
+  return `
+    SELECT
+      aa.approver_email_id,
+      aa.assignment_scope
+    FROM approver_assignments aa
+    WHERE aa.company_identifier = ${formAlias}.company_identifier
+      AND (
+        (aa.assignment_scope = 'RACM' AND aa.form_id = ${formAlias}.form_id)
+        OR (
+          aa.assignment_scope = 'BUSINESS_PROCESS'
+          AND aa.unit_id = ${formAlias}.unit_id
+          AND LOWER(TRIM(COALESCE(aa.business_process, ''))) = LOWER(TRIM(COALESCE(${formAlias}.business_process, '')))
+        )
+        OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = ${formAlias}.unit_id)
+      )
+    ORDER BY
+      ${APPROVER_ASSIGNMENT_PRECEDENCE_SQL},
+      aa.created_at DESC,
+      aa.id DESC
+    LIMIT 1
+  `;
+}
+
+function buildScopedApproverJoinSql(formAlias = 'cf', emailParam = '$1', resolvedAlias = 'resolved_approver') {
+  return `
+    INNER JOIN LATERAL (
+      ${buildResolvedApproverLateralSubquery(formAlias)}
+    ) ${resolvedAlias}
+      ON LOWER(TRIM(${resolvedAlias}.approver_email_id)) = LOWER(TRIM(${emailParam}))
+  `;
+}
+
 async function resolveApproverForRacm(clientOrPool, {
   companyIdentifier,
   unitId,
@@ -32,12 +74,9 @@ async function resolveApproverForRacm(clientOrPool, {
           OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = $4)
         )
       ORDER BY
-        CASE aa.assignment_scope
-          WHEN 'RACM' THEN 1
-          WHEN 'BUSINESS_PROCESS' THEN 2
-          WHEN 'UNIT' THEN 3
-          ELSE 4
-        END
+        ${APPROVER_ASSIGNMENT_PRECEDENCE_SQL},
+        aa.created_at DESC,
+        aa.id DESC
       LIMIT 1
     `,
     [
@@ -84,6 +123,8 @@ async function getControlFormApproverDetails(clientOrPool, formId) {
 }
 
 module.exports = {
+  buildResolvedApproverLateralSubquery,
+  buildScopedApproverJoinSql,
   resolveApproverForRacm,
   getControlFormApproverDetails,
 };

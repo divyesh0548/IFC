@@ -27,6 +27,7 @@ model Company {
   approverAssignments        ApproverAssignment[]
   controlForms               ControlForm[]
   businessProcesses          BusinessProcessMaster[]
+  frequencySampleSizes       CompanyFrequencySampleSize[]
 
   @@map("companies")
 }
@@ -176,7 +177,7 @@ model ControlForm {
   controlFormHistory         ControlFormHistory[]
   deficiencyResponses        DeficiencyResponse[]
   sampleDocs                 SampleDoc[]
-  userUploadedDocs           DocUploadedByUser[]
+  racmDocs                   RacmDoc[]
   controlsReminder           ControlsReminder?
 
   company Company?            @relation(fields: [companyIdentifier], references: [companyIdentifier], onDelete: SetNull, onUpdate: Cascade)
@@ -259,6 +260,7 @@ model ChangeRequest {
   requestedAt       DateTime?           @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)")) @map("requested_at") @db.Timestamp(6)
   status            String              @db.VarChar(50)
   reviewedByEmail   String?             @map("reviewed_by_email") @db.VarChar(255)
+  reviewedAt        DateTime?           @map("reviewed_at") @db.Timestamp(6)
   requestReason     String?             @map("request_reason")
   reviewerComment   String?             @map("reviewer_comment")
   createdAt         DateTime?           @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)")) @map("created_at") @db.Timestamp(6)
@@ -371,15 +373,18 @@ model SampleDoc {
   @@map("sample_docs")
 }
 
-model DocUploadedByUser {
+model RacmDoc {
   id                Int       @id @default(autoincrement())
   formId            String?   @map("form_id") @db.VarChar(255)
   docUploadedByUser String?   @map("doc_uploaded_by_user") @db.VarChar(255)
+  userId            String?   @map("user_id") @db.VarChar(255)
   createdAt         DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @map("created_at") @db.Timestamp(6)
 
   controlForm ControlForm? @relation(fields: [formId], references: [formId], onDelete: SetNull, onUpdate: Cascade)
 
-  @@map("doc_uploaded_by_user")
+  @@index([formId], map: "racm_docs_form_id_idx")
+  @@index([userId], map: "racm_docs_user_id_idx")
+  @@map("racm_docs")
 }
 
 model BusinessProcessMaster {
@@ -410,6 +415,22 @@ model RacmCcUser {
 
   @@unique([emailId, businessProcess, unitId])
   @@map("racm_cc_users")
+}
+
+model CompanyFrequencySampleSize {
+  id                Int       @id @default(autoincrement())
+  companyIdentifier String    @map("company_identifier") @db.VarChar(255)
+  unitId            String    @map("unit_id") @db.VarChar(255)
+  frequencyKey      String    @map("frequency_key") @db.VarChar(50)
+  sampleSize        Int       @map("sample_size")
+  updatedBy         String?   @map("updated_by") @db.VarChar(255)
+  updatedAt         DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  company Company? @relation(fields: [companyIdentifier], references: [companyIdentifier], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([companyIdentifier, unitId, frequencyKey], map: "company_frequency_sample_size_company_unit_freq_key")
+  @@index([companyIdentifier, unitId], map: "company_frequency_sample_size_company_unit_idx")
+  @@map("company_frequency_sample_size")
 }
 
 model AuditLog {

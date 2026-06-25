@@ -37,5 +37,8 @@ router.post('/create-users-bulk', verifyCompanyCoordinator, controller.createUse
 router.post('/delete-users', verifyCompanyCoordinator, controller.deleteUsers);
 router.get('/check-user', verifyCompanyCoordinator, controller.checkUser);
 router.get('/check-user-role', verifyCompanyCoordinator, controller.checkUserRole);
+router.get('/unit-sample-size-config', verifyCompanyCoordinator, controller.getUnitSampleSizeConfig);
+router.put('/unit-sample-size-config', verifyCompanyCoordinator, controller.updateUnitSampleSizeConfig);
+router.post('/preview-sample-required', verifyCompanyCoordinator, controller.previewSampleRequired);
 
 module.exports = router;

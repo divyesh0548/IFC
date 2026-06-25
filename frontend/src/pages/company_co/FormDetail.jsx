@@ -44,12 +44,33 @@ import { fetchUnitUsers } from '../../components/company_co/unitUserSearch'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
+import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistoryList'
 import { formatIndianDateTime } from '../../lib/dateTime'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
+import {
+  getEffectiveSampleSizeForFrequency,
+  validateSampleSizeForFrequency,
+} from '../../utils/controlFrequencyValidation'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
+import {
+  DOCUMENT_UPLOAD_ACCEPT,
+  DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE,
+  DOCUMENT_UPLOAD_INVALID_TYPE_MESSAGE,
+  validateDocumentUploadFiles,
+} from '../../lib/documentUploadRestrictions'
+import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments } from '../../lib/racmUserDocuments'
 
-const DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
+function formatNameWithEmail(name, email) {
+  const normalizedName = String(name || '').trim()
+  const normalizedEmail = String(email || '').trim()
+
+  if (normalizedName && normalizedEmail && normalizedName.toLowerCase() !== normalizedEmail.toLowerCase()) {
+    return `${normalizedName} (${normalizedEmail})`
+  }
+
+  return normalizedName || normalizedEmail || '-'
+}
 
 function getDefaultDeficiencyResponseForm() {
   return {
@@ -96,6 +117,7 @@ function FormDetail() {
   const [createUserMobile, setCreateUserMobile] = useState('')
   const [isEditMode, setIsEditMode] = useState(false)
   const [editableFields, setEditableFields] = useState({})
+  const [unitSampleSizeSettings, setUnitSampleSizeSettings] = useState([])
   const [saving, setSaving] = useState(false)
   const [uploadingSampling, setUploadingSampling] = useState(false)
   const [samplingExists, setSamplingExists] = useState(false)
@@ -103,6 +125,7 @@ function FormDetail() {
   const [userDocsDialogOpen, setUserDocsDialogOpen] = useState(false)
   const [deletingSampleDocId, setDeletingSampleDocId] = useState(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [setActiveConfirmDialogOpen, setSetActiveConfirmDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [moreActionsDialogOpen, setMoreActionsDialogOpen] = useState(false)
   const [replicateDialogOpen, setReplicateDialogOpen] = useState(false)
@@ -136,7 +159,6 @@ function FormDetail() {
   const [changeRequestHistoryCount, setChangeRequestHistoryCount] = useState(0)
   const [changeRequestHistoryLoading, setChangeRequestHistoryLoading] = useState(false)
   const [changeRequestHistoryDialogOpen, setChangeRequestHistoryDialogOpen] = useState(false)
-  const [expandedHistoryRequestIds, setExpandedHistoryRequestIds] = useState({})
   const [deficiencyResponseForm, setDeficiencyResponseForm] = useState({
     response_type: 'mitigation_plan',
     explaination: '',
@@ -161,6 +183,7 @@ function FormDetail() {
     activeChangeRequestLoading ||
     reviewSaving ||
     changeRequestHistoryLoading ||
+    auditLogLoading ||
     deficiencyResponseSubmitting
   )
 
@@ -316,7 +339,12 @@ function FormDetail() {
     const isCurrentlyActive = Boolean(formData?.active)
     const newActiveStatus = isCurrentlyActive ? '0' : '1'
 
-    await validateAndToggleActive(newActiveStatus)
+    if (newActiveStatus === '1') {
+      await validateAndToggleActive(newActiveStatus)
+      return
+    }
+
+    await performToggleActive(newActiveStatus)
   }
 
   const validateAndToggleActive = async (newActiveStatus) => {
@@ -370,8 +398,7 @@ function FormDetail() {
       toast('Sample document is missing. Proceeding to set Active.')
     }
 
-    // Proceed with setting active/inactive
-    await performToggleActive(newActiveStatus)
+    setSetActiveConfirmDialogOpen(true)
   }
 
   const performToggleActive = async (newActiveStatus) => {
@@ -507,6 +534,7 @@ function FormDetail() {
     // Reset editable fields to original form data (exclude approver-only fields)
     const initialFields = {}
     fieldOrder.forEach(key => {
+      if (key === 'sample_required') return
       if (!excludedFields.includes(key) && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)) {
         if (assertionFields.includes(key)) {
           initialFields[key] = formData[key] === true || formData[key] === 'true' || formData[key] === '1' || formData[key] === 1
@@ -519,10 +547,21 @@ function FormDetail() {
   }
 
   const handleFieldChange = (field, value) => {
-    setEditableFields(prev => ({
-      ...prev,
-      [field]: value
-    }))
+    setEditableFields((prev) => {
+      const next = {
+        ...prev,
+        [field]: value,
+      }
+
+      if (field === 'control_frequency' && value) {
+        const meta = getEffectiveSampleSizeForFrequency(unitSampleSizeSettings, value)
+        if (meta.sampleSize != null) {
+          next.sample_size = String(meta.sampleSize)
+        }
+      }
+
+      return next
+    })
   }
 
   const formatDateForInput = (dateValue) => {
@@ -749,6 +788,43 @@ function FormDetail() {
     }
   }, [formData?.control_performer, formData?.unit_id])
 
+  useEffect(() => {
+    let cancelled = false
+    const unitId = String(formData?.unit_id || '').trim()
+
+    if (!unitId) {
+      setUnitSampleSizeSettings([])
+      return undefined
+    }
+
+    const fetchUnitSampleSizeSettings = async () => {
+      try {
+        const response = await fetch(
+          apiUrl(`/api/company-co/unit-sample-size-config?unit_id=${encodeURIComponent(unitId)}`),
+          { credentials: 'include' }
+        )
+        const data = await response.json()
+        if (cancelled) return
+        if (response.ok && data.success) {
+          setUnitSampleSizeSettings(Array.isArray(data.data?.settings) ? data.data.settings : [])
+        } else {
+          setUnitSampleSizeSettings([])
+        }
+      } catch (error) {
+        console.error('Error fetching unit sample size settings:', error)
+        if (!cancelled) {
+          setUnitSampleSizeSettings([])
+        }
+      }
+    }
+
+    fetchUnitSampleSizeSettings()
+
+    return () => {
+      cancelled = true
+    }
+  }, [formData?.unit_id])
+
   const handleSaveChanges = async () => {
     // Check status again before saving
     const status = formData?.status
@@ -765,6 +841,7 @@ function FormDetail() {
     const modifiedChanges = []
     const changedFieldsPayload = {}
     fieldOrder.forEach(key => {
+      if (key === 'sample_required') return
       if (!excludedFields.includes(key) && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)) {
         const originalValue = assertionFields.includes(key)
           ? (formData[key] === true || formData[key] === 'true' || formData[key] === '1' || formData[key] === 1)
@@ -793,6 +870,20 @@ function FormDetail() {
     if (modifiedFields.length === 0) {
       toast.error('No changes to save')
       return
+    }
+
+    const frequency = String(editableFields.control_frequency || formData?.control_frequency || '').trim()
+    const sampleSizeValue = String(editableFields.sample_size ?? formData?.sample_size ?? '').trim()
+    if (frequency && sampleSizeValue) {
+      const sampleValidation = validateSampleSizeForFrequency(
+        unitSampleSizeSettings,
+        frequency,
+        sampleSizeValue
+      )
+      if (!sampleValidation.ok) {
+        toast.error(sampleValidation.message)
+        return
+      }
     }
 
     setSaving(true)
@@ -929,6 +1020,7 @@ function FormDetail() {
         setActiveChangeRequest(null)
         setReviewDecisions({})
         fetchFormData()
+        fetchChangeRequestHistory()
       } else {
         toast.error(data.message || 'Failed to review suggested changes')
       }
@@ -949,13 +1041,6 @@ function FormDetail() {
 
   const handleCloseChangeRequestHistoryDialog = () => {
     setChangeRequestHistoryDialogOpen(false)
-  }
-
-  const handleToggleHistoryRequest = (requestId) => {
-    setExpandedHistoryRequestIds((prev) => ({
-      ...prev,
-      [requestId]: !prev[requestId],
-    }))
   }
 
   const formatStatus = (status) => {
@@ -1019,11 +1104,14 @@ function FormDetail() {
   const handleDeficiencyResponseFileSelect = (e) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
-    const validFiles = files.filter((file) => file.size <= DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES)
-    const invalidFiles = files.filter((file) => file.size > DEFICIENCY_RESPONSE_MAX_FILE_SIZE_BYTES)
+    const { validFiles, invalidTypeFiles, invalidSizeFiles } = validateDocumentUploadFiles(files)
 
-    if (invalidFiles.length > 0) {
-      toast.error('Each deficiency response document must be 20 MB or smaller')
+    if (invalidTypeFiles.length > 0) {
+      toast.error(DOCUMENT_UPLOAD_INVALID_TYPE_MESSAGE)
+    }
+
+    if (invalidSizeFiles.length > 0) {
+      toast.error(DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE)
     }
 
     if (validFiles.length > 0) {
@@ -1072,6 +1160,7 @@ function FormDetail() {
 
       if (deficiencyResponseFiles.length > 0) {
         const uploadFormData = new FormData()
+        uploadFormData.append('response_type', responseType)
         deficiencyResponseFiles.forEach((file) => {
           uploadFormData.append('documents', file)
         })
@@ -1147,23 +1236,10 @@ function FormDetail() {
   }
 
   const getUserDocs = () => {
-    const docs = Array.isArray(formData?.doc_uploaded_by_user_docs)
-      ? formData.doc_uploaded_by_user_docs
-      : []
-    const normalizedDocs = docs
-      .map((doc, index) => ({
-        id: doc.id || `user-doc-${index}`,
-        doc_uploaded_by_user: doc.doc_uploaded_by_user,
-        created_at: doc.created_at,
-      }))
-      .filter((doc) => String(doc.doc_uploaded_by_user || '').trim() !== '')
-
-    if (normalizedDocs.length > 0) return normalizedDocs
-
-    const legacyDoc = String(formData?.doc_uploaded_by_user || '').trim()
-    return legacyDoc
-      ? [{ id: 'user-doc-current', doc_uploaded_by_user: legacyDoc, created_at: null }]
-      : []
+    return normalizeRacmUserDocuments(
+      formData?.doc_uploaded_by_user_docs,
+      formData?.doc_uploaded_by_user
+    )
   }
 
   const hasSampleDocs = () => getSampleDocs().length > 0
@@ -1415,6 +1491,10 @@ function FormDetail() {
   }
 
   const handleDeleteClick = () => {
+    if (Boolean(formData?.active)) {
+      toast.error('Active RACM cannot be deleted. Please set the RACM Inactive first.')
+      return
+    }
     setDeleteDialogOpen(true)
   }
 
@@ -1448,6 +1528,16 @@ function FormDetail() {
       toast.error('Error deleting RACM')
       setDeleting(false)
     }
+  }
+
+  const handleSetActiveConfirm = async () => {
+    setSetActiveConfirmDialogOpen(false)
+    await performToggleActive('1')
+  }
+
+  const handleSetActiveCancel = () => {
+    if (updating) return
+    setSetActiveConfirmDialogOpen(false)
   }
 
   // Given a Financial Year like "2025-26" or "2025-2026" or "2025",
@@ -2606,7 +2696,6 @@ function FormDetail() {
                     isEditMode &&
                     key !== 'doc_uploaded_by_user' &&
                     key !== 'control_owner' &&
-                    key !== 'sample_size' &&
                     !approverOnlyFields.includes(key)
                   const isTextArea = ['risk_description'].includes(key)
 
@@ -2925,6 +3014,9 @@ function FormDetail() {
                     if (['doc_uploaded_by_user', 'remarks_by_user'].includes(key)) {
                       return false
                     }
+                    if (isEditMode && key === 'sample_required') {
+                      return false
+                    }
                     return formData.hasOwnProperty(key) && !excludedFields.includes(key)
                   }),
                   fieldOrder
@@ -2937,7 +3029,6 @@ function FormDetail() {
                       isEditMode &&
                       key !== 'doc_uploaded_by_user' &&
                       key !== 'control_owner' &&
-                      key !== 'sample_size' &&
                       !approverOnlyFields.includes(key)
                     const isTextArea = [
                       'standard_control_description',
@@ -3020,8 +3111,33 @@ function FormDetail() {
                                     />
                                   )
                                 })()
-                              : key === 'sample_required' ? (
-                              renderSampleRequiredDownload()
+                              : key === 'sample_size' ? (
+                              (() => {
+                                const frequencyMeta = getEffectiveSampleSizeForFrequency(
+                                  unitSampleSizeSettings,
+                                  editableFields.control_frequency || formData?.control_frequency
+                                )
+                                return (
+                                  <TextField
+                                    label={label}
+                                    variant="outlined"
+                                    type="number"
+                                    value={editableFields.sample_size || ''}
+                                    onChange={(e) => handleFieldChange('sample_size', e.target.value)}
+                                    fullWidth
+                                    disabled={saving}
+                                    inputProps={{
+                                      min: frequencyMeta.minimum ?? 1,
+                                      step: 1,
+                                    }}
+                                    helperText={
+                                      frequencyMeta.minimum != null
+                                        ? `Minimum sample size: ${frequencyMeta.minimum}`
+                                        : undefined
+                                    }
+                                  />
+                                )
+                              })()
                             ) : editableDropdownOptions[key] ? (
                               <FormControl fullWidth disabled={saving}>
                                 <InputLabel id={`${key}-edit-label`}>{label}</InputLabel>
@@ -3913,7 +4029,7 @@ function FormDetail() {
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
                         <Button component="label" variant="outlined" startIcon={<CloudUploadIcon />} sx={{ alignSelf: 'flex-start', textTransform: 'none' }}>
                           Upload Documents
-                          <input hidden type="file" multiple onChange={handleDeficiencyResponseFileSelect} />
+                          <input hidden type="file" multiple accept={DOCUMENT_UPLOAD_ACCEPT} onChange={handleDeficiencyResponseFileSelect} />
                         </Button>
                         {deficiencyResponseFiles.map((file, index) => (
                           <Box key={`${file.name}-${file.size}-${file.lastModified}`} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -4233,7 +4349,7 @@ function FormDetail() {
                         {getFileName(docPath)}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                        {formatRacmUserDocumentSubtitle(doc, formatDateTime)}
                       </Typography>
                     </Box>
                     <Tooltip title="Download">
@@ -4365,15 +4481,28 @@ function FormDetail() {
         onClose={handleCloseSuggestedChangesDialog}
         maxWidth="md"
         fullWidth
+        sx={{
+          zIndex: (dialogTheme) => dialogTheme.zIndex.modal + 20,
+        }}
+        PaperProps={{
+          sx: {
+            mt: { xs: 8, sm: 10 },
+          },
+        }}
       >
         <DialogTitle sx={{ fontWeight: 700 }}>
           Suggested Changes
         </DialogTitle>
         <DialogContent dividers>
-          {String(activeChangeRequest?.requested_by_display || '').trim() ? (
-            <Box sx={{ mb: 2 }}>
+          {(String(activeChangeRequest?.requested_by_display || '').trim()
+            || String(activeChangeRequest?.requested_by_email || '').trim()
+            || activeChangeRequest?.requested_at) ? (
+            <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                Requested by: {activeChangeRequest.requested_by_display}
+                Requested by: {formatNameWithEmail(activeChangeRequest?.requested_by_display, activeChangeRequest?.requested_by_email)}
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                Requested on: {activeChangeRequest?.requested_at ? formatDateTime(activeChangeRequest.requested_at) : '-'}
               </Typography>
             </Box>
           ) : null}
@@ -4485,123 +4614,11 @@ function FormDetail() {
           Change Requests
         </DialogTitle>
         <DialogContent dividers>
-          {changeRequestHistory.length > 0 ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {changeRequestHistory.map((request) => {
-                const isExpanded = Boolean(expandedHistoryRequestIds[request.request_id])
-                return (
-                  <Box
-                    key={request.request_id}
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 2,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <Button
-                      fullWidth
-                      onClick={() => handleToggleHistoryRequest(request.request_id)}
-                      sx={{
-                        justifyContent: 'space-between',
-                        textTransform: 'none',
-                        px: 2,
-                        py: 1.5,
-                        color: 'text.primary',
-                        fontWeight: 700,
-                      }}
-                    >
-                      <Box sx={{ textAlign: 'left' }}>
-                        <Typography sx={{ fontWeight: 700 }}>
-                          {request.request_id}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                          Outcome: {String(request.status || '').trim() || '-'}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                          Requested on: {request.requested_at ? formatDateTime(request.requested_at) : '-'}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                          Requested by: {String(request.requested_by_display || request.requested_by_email || '').trim() || '-'}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {isExpanded ? 'Hide' : 'View'}
-                      </Typography>
-                    </Button>
-                    {isExpanded ? (
-                      <Box sx={{ px: 2, pb: 2 }}>
-                        {String(request.request_reason || '').trim() ? (
-                          <Box sx={{ mb: 2 }}>
-                            <Typography sx={{ fontWeight: 700, color: 'text.primary', mb: 0.75 }}>
-                              Reason for Change
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: 'text.secondary', whiteSpace: 'pre-wrap' }}>
-                              {request.request_reason}
-                            </Typography>
-                          </Box>
-                        ) : null}
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          {(Array.isArray(request.items) ? request.items : []).map((item) => (
-                            <Box
-                              key={item.id}
-                              sx={{
-                                border: '1px solid',
-                                borderColor: 'divider',
-                                borderRadius: 2,
-                                p: 2,
-                              }}
-                            >
-                              <Typography sx={{ fontWeight: 700, color: 'text.primary', mb: 1 }}>
-                                {item.field_label || item.field_db_name}
-                              </Typography>
-                              <Box
-                                sx={{
-                                  display: 'grid',
-                                  gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-                                  gap: 2,
-                                  mb: 1.5,
-                                }}
-                              >
-                                <Box>
-                                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-                                    Old Value
-                                  </Typography>
-                                  <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
-                                    {String(item.old_value_text || '').trim() || '-'}
-                                  </Typography>
-                                </Box>
-                                <Box>
-                                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-                                    New Value
-                                  </Typography>
-                                  <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
-                                    {String(item.new_value_text || '').trim() || '-'}
-                                  </Typography>
-                                </Box>
-                              </Box>
-                              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                Status: {String(item.status || '').trim() || '-'}
-                              </Typography>
-                              {String(item.rejection_reason || '').trim() ? (
-                                <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.75, whiteSpace: 'pre-wrap' }}>
-                                  Reason: {item.rejection_reason}
-                                </Typography>
-                              ) : null}
-                            </Box>
-                          ))}
-                        </Box>
-                      </Box>
-                    ) : null}
-                  </Box>
-                )
-              })}
-            </Box>
-          ) : (
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              No change request history found.
-            </Typography>
-          )}
+          <ChangeRequestHistoryList
+            requests={changeRequestHistory}
+            formatDateTime={formatDateTime}
+            formatNameWithEmail={formatNameWithEmail}
+          />
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={handleCloseChangeRequestHistoryDialog}>Close</Button>
@@ -4633,7 +4650,7 @@ function FormDetail() {
         <DialogContent sx={{ px: 3, pt: 1, pb: 3 }}>
           <DialogContentText
             id="more-actions-dialog-description"
-            sx={{ color: theme.palette.text.secondary, fontSize: '0.9375rem', lineHeight: 1.5, m: 0, mb: 2 }}
+            sx={{ color: theme.palette.text.secondary, fontSize: '0.9375rem', lineHeight: 1.5, m: 0, my: 2 }}
           >
             Choose an action for this RACM.
           </DialogContentText>
@@ -4830,6 +4847,66 @@ function FormDetail() {
             }}
           >
             Yes
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={setActiveConfirmDialogOpen}
+        onClose={handleSetActiveCancel}
+        aria-labelledby="set-active-dialog-title"
+        aria-describedby="set-active-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '400px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="set-active-dialog-title"
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 600,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          Confirm Set Active
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContentText
+            id="set-active-dialog-description"
+            sx={{
+              color: theme.palette.text.secondary,
+              fontSize: '0.9375rem',
+              lineHeight: 1.5,
+              m: 0,
+            }}
+          >
+            Are you sure you want to set this RACM Active?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            pt: 0,
+            gap: 1.5,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Button onClick={handleSetActiveCancel} disabled={updating} variant="outlined" sx={{ textTransform: 'none', px: 3, py: 1 }}>
+            Cancel
+          </Button>
+          <Button onClick={handleSetActiveConfirm} disabled={updating} variant="contained" color="secondary" sx={{ textTransform: 'none', px: 3, py: 1, fontWeight: 600 }}>
+            {updating ? 'Setting...' : 'Set Active'}
           </Button>
         </DialogActions>
       </Dialog>

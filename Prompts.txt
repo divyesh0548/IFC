@@ -1,25 +1,3 @@
-"approver/dashboard" need to change approver's APIs according to newly changed schema. Now consider approver_assignment table. According to that all RACMs that are assigne to the approver should be displayed on dashboard. One important detail to keep intact : Do not list those RACMs which are assigned to approver, but another assignment with higher precedence exists for other approver. Display only those RACMs which are eligible after assignment resolution.
+In email for Inactive RACMs include control number in it.
 
-Apply this type of assignment check in APIs of approver, whether the RACM is eligible for the approver or not, for sucurity purpose.
-
-Also modify the dashboard statistics API according to new logic.
-
-
-
-
-Prompt for file storage in S3:
-
-Currently all user uploaded documents are stored according this S3 key: Company Name/Unit Name/Business Process/Form Id/{documents}.
-
-Other documents for the RACM should be stored in same folder as user uploaded documents, but keep them in another folder as I describe it. 
-
-For deficiency response : .....Business Process/Form Id/{deficiency_response_type}/{documents}. deficiency_response_type means : "Mitigation Plan" or "Compensatory RACM".
-
-List other documents which are missing to be addressed in this. 
-
-
-
-
-
-For keeping track of who uploaded documents.
-Rename the table doc_uploaded_by_user to 'racm_docs'. Add a new column user_id in it. Now whoever uploads a documents store the document url with the user's email id.
+"C:\Divyesh\IFC\IFC_Prisma\frontend\src\pages\company_co\FormDetail.jsx" if in this page do not display process owner name by fetching it from email id. If name is not available then just display email id.

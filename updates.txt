@@ -1,7 +1,7 @@
-We need to apply a different stratagy for risk analysis of the RACMs. Risk description and sub-porcess extracted from excel file do not explain much. They are very short and AI.
+Analyze RACMs and make a list of fixed columns and discuss it with Mayank sir.
 
-Ask the difference between daily/recurring/ and as and when needed.
+Ask if coordinator can upload documents then most likely they must submit it too. Will there be any case, where coordinator and porcess owner both need to upload documents.
 
-One user can exist in multiple units of a company.
+Ask for sample email formats.
 
 Provide a way to change the email body. First fetch default email then user will change it to requirement.

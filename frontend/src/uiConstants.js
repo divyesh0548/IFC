@@ -135,3 +135,8 @@ export function getConclusionBadgeSolidColors(value) {
   return STATUS_BADGE_SOLID.neutral
 }
 
+/** True when a click originated from the MUI Alert dismiss (X) action area. */
+export function isMuiAlertCloseActionClick(event) {
+  return Boolean(event?.target?.closest?.('.MuiAlert-action'))
+}
+

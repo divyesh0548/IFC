@@ -15,6 +15,7 @@ const {
   isNotEffectiveConclusion,
 } = require('../../utils/controls_reminder');
 const { buildRacmDetailsSection } = require('../../utils/racm_email_details');
+const { buildScopedApproverJoinSql } = require('../../utils/approver_assignment_resolver');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -37,26 +38,13 @@ async function getApproverMappedUnits(approverEmail) {
         cum.unit_id,
         cum.unit_name,
         cum.unit_address
-      FROM company_unit_master cum
-      INNER JOIN approver_assignments aa
-       ON aa.company_identifier = cum.company_identifier
-       AND (
-          (aa.assignment_scope = 'UNIT' AND aa.unit_id = cum.unit_id)
-          OR (aa.assignment_scope = 'BUSINESS_PROCESS' AND aa.unit_id = cum.unit_id)
-          OR (
-            aa.assignment_scope = 'RACM'
-            AND EXISTS (
-              SELECT 1
-              FROM control_forms cf
-              WHERE cf.company_identifier = cum.company_identifier
-                AND cf.unit_id = cum.unit_id
-                AND cf.form_id = aa.form_id
-            )
-          )
-       )
+      FROM control_forms cf
+      ${buildScopedApproverJoinSql('cf', '$1', 'resolved_approver')}
+      INNER JOIN company_unit_master cum
+        ON cum.company_identifier = cf.company_identifier
+       AND cum.unit_id = cf.unit_id
       LEFT JOIN companies c
         ON c.company_identifier = cum.company_identifier
-      WHERE LOWER(TRIM(aa.approver_email_id)) = LOWER(TRIM($1))
       GROUP BY
         cum.company_identifier,
         c.company_name,
@@ -78,39 +66,15 @@ async function getApproverMappedUnits(approverEmail) {
   return result.rows;
 }
 
-function scopedApproverRacmJoin(alias = 'cf') {
-  return `
-    INNER JOIN LATERAL (
-      SELECT aa.approver_email_id
-      FROM approver_assignments aa
-      WHERE aa.company_identifier = ${alias}.company_identifier
-        AND (
-          (aa.assignment_scope = 'RACM' AND aa.form_id = ${alias}.form_id)
-          OR (
-            aa.assignment_scope = 'BUSINESS_PROCESS'
-            AND aa.unit_id = ${alias}.unit_id
-            AND LOWER(TRIM(aa.business_process)) = LOWER(TRIM(${alias}.business_process))
-          )
-          OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = ${alias}.unit_id)
-        )
-      ORDER BY
-        CASE aa.assignment_scope
-          WHEN 'RACM' THEN 1
-          WHEN 'BUSINESS_PROCESS' THEN 2
-          WHEN 'UNIT' THEN 3
-          ELSE 4
-        END
-      LIMIT 1
-    ) approver_assignments
-      ON LOWER(TRIM(approver_assignments.approver_email_id)) = LOWER(TRIM($1))
-  `;
-}
-
 function normalizeConclusion(conclusion) {
   return String(conclusion || '')
     .trim()
     .toLowerCase()
     .replace(/[\s_-]+/g, ' ');
+}
+
+function scopedApproverRacmJoin(alias = 'cf', emailParam = '$1') {
+  return buildScopedApproverJoinSql(alias, emailParam, 'resolved_approver');
 }
 
 /**
@@ -222,8 +186,8 @@ async function getHomeStats(req, res) {
   try {
     const approverEmail = req.user.email_id;
     const requestedUnitId = req.query.unit_id ? String(req.query.unit_id).trim() : '';
-    const unitFilterSql = requestedUnitId ? ' AND uum.unit_id = $2' : '';
-    const racmUnitFilterSql = requestedUnitId ? ' WHERE cf.unit_id = $2' : '';
+    const unitFilterSql = requestedUnitId ? ' AND cf.unit_id = $2' : '';
+    const racmUnitFilterSql = requestedUnitId ? ' AND cf.unit_id = $2' : '';
     const scopedParams = requestedUnitId ? [approverEmail, requestedUnitId] : [approverEmail];
 
     const [
@@ -265,15 +229,13 @@ async function getHomeStats(req, res) {
       pool.query(
         `
           SELECT COUNT(DISTINCT u.id)::int AS count
-          FROM approver_assignments aa
-          INNER JOIN user_unit_memberships uum
-            ON uum.company_identifier = aa.company_identifier
-           AND (aa.assignment_scope <> 'UNIT' OR uum.unit_id = aa.unit_id)
+          FROM control_forms cf
+          ${scopedApproverRacmJoin('cf')}
           INNER JOIN ifc_users u
-            ON u.company_identifier = uum.company_identifier
-           AND LOWER(TRIM(u.email_id)) = LOWER(TRIM(uum.user_email_id))
+            ON u.company_identifier = cf.company_identifier
+           AND LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
            AND u.role = 'user'
-          WHERE LOWER(TRIM(aa.approver_email_id)) = LOWER(TRIM($1))
+          WHERE 1=1
           ${unitFilterSql}
         `,
         scopedParams
@@ -302,6 +264,7 @@ async function getHomeStats(req, res) {
           )::int AS total_racms
         FROM control_forms cf
         ${scopedApproverRacmJoin('cf')}
+        WHERE 1=1
         ${racmUnitFilterSql}
       `,
         scopedParams
@@ -510,38 +473,31 @@ async function approveForm(req, res) {
       }
 
       updateValues.push(form_id);
-      updateValues.push(approver.email_id);
+
+      const lockedFormResult = await client.query(
+        `
+          SELECT cf.form_id
+          FROM control_forms cf
+          ${scopedApproverRacmJoin('cf')}
+          WHERE cf.form_id = $2
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [approver.email_id, form_id]
+      );
+
+      if (lockedFormResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({
+          success: false,
+          message: 'RACM not found or not assigned to this approver',
+        });
+      }
 
       const updateQuery = `
-        UPDATE control_forms 
+        UPDATE control_forms
         SET ${updateFields.join(', ')}
         WHERE form_id = $${paramIndex}
-          AND EXISTS (
-            SELECT 1
-            FROM LATERAL (
-              SELECT aa.approver_email_id
-              FROM approver_assignments aa
-              WHERE aa.company_identifier = control_forms.company_identifier
-                AND (
-                  (aa.assignment_scope = 'RACM' AND aa.form_id = control_forms.form_id)
-                  OR (
-                    aa.assignment_scope = 'BUSINESS_PROCESS'
-                    AND aa.unit_id = control_forms.unit_id
-                    AND LOWER(TRIM(aa.business_process)) = LOWER(TRIM(control_forms.business_process))
-                  )
-                  OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = control_forms.unit_id)
-                )
-              ORDER BY
-                CASE aa.assignment_scope
-                  WHEN 'RACM' THEN 1
-                  WHEN 'BUSINESS_PROCESS' THEN 2
-                  WHEN 'UNIT' THEN 3
-                  ELSE 4
-                END
-              LIMIT 1
-            ) approver_units
-            WHERE LOWER(TRIM(approver_units.approver_email_id)) = LOWER(TRIM($${paramIndex + 1}))
-          )
         RETURNING *
       `;
 
@@ -699,40 +655,15 @@ async function changeApprovalDecision(req, res) {
       }
 
       const updateResult = await client.query(
-        `UPDATE control_forms
-         SET status = $1,
-             reason_by_approver = $2,
-             approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE form_id = $3
-           AND EXISTS (
-             SELECT 1
-             FROM LATERAL (
-               SELECT aa.approver_email_id
-               FROM approver_assignments aa
-               WHERE aa.company_identifier = control_forms.company_identifier
-                 AND (
-                   (aa.assignment_scope = 'RACM' AND aa.form_id = control_forms.form_id)
-                   OR (
-                     aa.assignment_scope = 'BUSINESS_PROCESS'
-                     AND aa.unit_id = control_forms.unit_id
-                     AND LOWER(TRIM(aa.business_process)) = LOWER(TRIM(control_forms.business_process))
-                   )
-                   OR (aa.assignment_scope = 'UNIT' AND aa.unit_id = control_forms.unit_id)
-                 )
-               ORDER BY
-                 CASE aa.assignment_scope
-                   WHEN 'RACM' THEN 1
-                   WHEN 'BUSINESS_PROCESS' THEN 2
-                   WHEN 'UNIT' THEN 3
-                   ELSE 4
-                 END
-               LIMIT 1
-             ) approver_units
-             WHERE LOWER(TRIM(approver_units.approver_email_id)) = LOWER(TRIM($4))
-           )
-         RETURNING *`,
-        [status, reasonFinal, form_id, approver.email_id]
+        `
+          SELECT cf.form_id
+          FROM control_forms cf
+          ${scopedApproverRacmJoin('cf')}
+          WHERE cf.form_id = $2
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [approver.email_id, form_id]
       );
 
       if (updateResult.rows.length === 0) {
@@ -740,8 +671,24 @@ async function changeApprovalDecision(req, res) {
         return res.status(404).json({ success: false, message: 'RACM not found or not assigned to this approver' });
       }
 
+      const updatedResult = await client.query(
+        `UPDATE control_forms
+         SET status = $1,
+             reason_by_approver = $2,
+             approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE form_id = $3
+         RETURNING *`,
+        [status, reasonFinal, form_id]
+      );
+
+      if (updatedResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, message: 'RACM not found or not assigned to this approver' });
+      }
+
       await client.query('COMMIT');
-      updatedForm = updateResult.rows[0];
+      updatedForm = updatedResult.rows[0];
       await attachControlFormDocuments(client, [updatedForm]);
     } catch (dbErr) {
       try {
@@ -788,10 +735,13 @@ async function getControlForms(req, res) {
         cf.*,
         c.company_name,
         NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
-        NULLIF(TRIM(approver_units.unit_name), '') AS unit_name
+        NULLIF(TRIM(cum.unit_name), '') AS unit_name
       FROM control_forms cf
       ${scopedApproverRacmJoin('cf')}
       LEFT JOIN companies c ON cf.company_identifier = c.company_identifier
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = cf.company_identifier
+       AND cum.unit_id = cf.unit_id
       LEFT JOIN ifc_users u ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
       WHERE 1=1
     `;
@@ -855,10 +805,13 @@ async function getControlFormById(req, res) {
         cf.*,
         c.company_name,
         NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
-        NULLIF(TRIM(approver_units.unit_name), '') AS unit_name
+        NULLIF(TRIM(cum.unit_name), '') AS unit_name
       FROM control_forms cf
       ${scopedApproverRacmJoin('cf')}
       LEFT JOIN companies c ON cf.company_identifier = c.company_identifier
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = cf.company_identifier
+       AND cum.unit_id = cf.unit_id
       LEFT JOIN ifc_users u
         ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
       WHERE cf.form_id = $2
@@ -894,15 +847,38 @@ async function checkControlFormAccess(req, res) {
     const { form_id } = req.params;
     const approverEmail = req.approver.email_id;
 
+    const existsResult = await pool.query(
+      `
+        SELECT 1
+        FROM control_forms
+        WHERE form_id = $1
+        LIMIT 1
+      `,
+      [form_id]
+    );
+
+    if (existsResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'RACM doesn\'t exist',
+        data: {
+          allowed: false,
+        },
+      });
+    }
+
     const result = await pool.query(
       `
         SELECT
           cf.form_id,
           cf.unit_id AS racm_unit_id,
-          NULLIF(TRIM(approver_units.unit_id), '') AS approver_unit_id,
-          NULLIF(TRIM(approver_units.unit_name), '') AS approver_unit_name
+          cf.unit_id AS approver_unit_id,
+          NULLIF(TRIM(cum.unit_name), '') AS approver_unit_name
         FROM control_forms cf
         ${scopedApproverRacmJoin('cf')}
+        LEFT JOIN company_unit_master cum
+          ON cum.company_identifier = cf.company_identifier
+         AND cum.unit_id = cf.unit_id
         WHERE cf.form_id = $2
         LIMIT 1
       `,
@@ -1137,10 +1113,13 @@ async function reviewDeficiencyResponse(req, res) {
           cf.*,
           c.company_name,
           NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
-          NULLIF(TRIM(approver_units.unit_name), '') AS unit_name
+          NULLIF(TRIM(cum.unit_name), '') AS unit_name
         FROM control_forms cf
         ${scopedApproverRacmJoin('cf')}
         LEFT JOIN companies c ON cf.company_identifier = c.company_identifier
+        LEFT JOIN company_unit_master cum
+          ON cum.company_identifier = cf.company_identifier
+         AND cum.unit_id = cf.unit_id
         LEFT JOIN ifc_users u
           ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
         WHERE cf.form_id = $2

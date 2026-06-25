@@ -718,7 +718,7 @@ async function deleteCompany(req, res) {
           select: { formId: true, sampleDoc: true },
           orderBy: { id: 'asc' },
         }),
-        prisma.docUploadedByUser.findMany({
+        prisma.racmDoc.findMany({
           where: { formId: { in: formIds } },
           select: { formId: true, docUploadedByUser: true },
           orderBy: { id: 'asc' },
@@ -746,7 +746,7 @@ async function deleteCompany(req, res) {
       }
 
       const racmDeleteCounts = await prisma.$transaction(async (tx) => {
-        const deletedUserDocsResult = await tx.docUploadedByUser.deleteMany({
+        const deletedUserDocsResult = await tx.racmDoc.deleteMany({
           where: { formId: { in: formIds } },
         });
         const deletedSampleDocsResult = await tx.sampleDoc.deleteMany({

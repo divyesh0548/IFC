@@ -12,6 +12,13 @@ import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Switch from '@mui/material/Switch'
 import Alert from '@mui/material/Alert'
+import Button from '@mui/material/Button'
+import TextField from '@mui/material/TextField'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import { alpha } from '@mui/material/styles'
 import {
   DASHBOARD_PAGE_OUTER_SX,
   DASHBOARD_PAPER_SX,
@@ -22,6 +29,7 @@ import {
   STATUS_BADGE_PILL_SX,
   getApprovalStatusBadgeSolidColors,
   getConclusionBadgeSolidColors,
+  isMuiAlertCloseActionClick,
 } from '../../uiConstants'
 import { STORAGE_KEYS } from '../../storageKeys'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
@@ -46,6 +54,9 @@ function ApproverDashboard() {
   const [mappedUnits, setMappedUnits] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
   const [actionRequiredAlertDismissed, setActionRequiredAlertDismissed] = useState(false)
+  const [actionRequiredDialogOpen, setActionRequiredDialogOpen] = useState(false)
+  const [controlNumberInput, setControlNumberInput] = useState('')
+  const [controlNumberFilter, setControlNumberFilter] = useState('')
   const showUnitContext = mappedUnits.length > 1
   const { businessProcessOptions } = useBusinessProcesses()
 
@@ -278,6 +289,16 @@ function ApproverDashboard() {
     )
   }
 
+  const handleControlNumberSearchSubmit = (event) => {
+    event.preventDefault()
+    setControlNumberFilter(controlNumberInput.trim())
+  }
+
+  const handleControlNumberSearchClear = () => {
+    setControlNumberInput('')
+    setControlNumberFilter('')
+  }
+
   const formsToDisplay = forms.filter((form) => {
     const normalizedBusinessProcess = (form.business_process ?? '').toString().trim()
     const normalizedFinancialYear = (form.financial_year ?? '').toString().trim()
@@ -299,15 +320,24 @@ function ApproverDashboard() {
       return false
     }
 
+    if (controlNumberFilter) {
+      const needle = controlNumberFilter.toLowerCase()
+      const controlNumber = String(form.control_number || form.form_id || '').trim().toLowerCase()
+      if (!controlNumber.includes(needle)) {
+        return false
+      }
+    }
+
     if (!isActive) {
       return false
     }
 
     return true
   })
-  const approverActionRequiredCount = (forms || []).filter((form) =>
+  const approverActionRequiredForms = (forms || []).filter((form) =>
     String(form?.deficiency_response_status || '').trim().toLowerCase() === 'submitted_for_review'
-  ).length
+  )
+  const approverActionRequiredCount = approverActionRequiredForms.length
 
   useEffect(() => {
     if (approverActionRequiredCount > 0) {
@@ -424,10 +454,29 @@ function ApproverDashboard() {
         {approverActionRequiredCount > 0 && !actionRequiredAlertDismissed ? (
           <Alert
             severity="warning"
-            onClose={() => setActionRequiredAlertDismissed(true)}
-            sx={{ mb: 3, alignItems: 'center' }}
+            onClose={(event) => {
+              event?.stopPropagation?.()
+              setActionRequiredAlertDismissed(true)
+            }}
+            onClick={(event) => {
+              if (isMuiAlertCloseActionClick(event)) return
+              setActionRequiredDialogOpen(true)
+            }}
+            sx={{
+              mb: 3,
+              alignItems: 'center',
+              cursor: 'pointer',
+              '& .MuiAlert-message': {
+                width: '100%',
+              },
+            }}
           >
-            Action Required - {approverActionRequiredCount} RACMs are awaiting deficiency response review
+            <Typography sx={{ fontWeight: 700 }}>
+              Action Required - {approverActionRequiredCount} RACMs are awaiting deficiency response review
+            </Typography>
+            <Typography variant="body2">
+              Click to view control numbers.
+            </Typography>
           </Alert>
         ) : null}
         <Box
@@ -567,22 +616,52 @@ function ApproverDashboard() {
           <Box sx={{ textAlign: 'center', py: 4 }}>
             <Typography color="text.secondary">Loading forms...</Typography>
           </Box>
-        ) : formsToDisplay.length === 0 ? (
-          <Box sx={{ textAlign: 'center', py: 4 }}>
-            <Typography color="text.secondary">No forms found.</Typography>
-          </Box>
         ) : (
           <Box>
             <Box
               sx={{
                 display: 'flex',
-                justifyContent: 'flex-end',
+                justifyContent: 'space-between',
                 alignItems: 'center',
                 mb: 1.5,
                 flexWrap: 'wrap',
                 gap: 1,
               }}
             >
+              <Box
+                component="form"
+                onSubmit={handleControlNumberSearchSubmit}
+                sx={{
+                  display: 'flex',
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  gap: 1,
+                  alignItems: { xs: 'stretch', sm: 'center' },
+                }}
+              >
+                <TextField
+                  label="Control Number"
+                  value={controlNumberInput}
+                  onChange={(e) => setControlNumberInput(e.target.value)}
+                  size="small"
+                  sx={{
+                    minWidth: { xs: '100%', sm: 260 },
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'transparent',
+                    },
+                  }}
+                />
+                <Button type="submit" variant="contained">
+                  Search
+                </Button>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  onClick={handleControlNumberSearchClear}
+                  disabled={!controlNumberInput && !controlNumberFilter}
+                >
+                  Clear
+                </Button>
+              </Box>
               <FormControlLabel
                 control={
                   <Switch
@@ -603,12 +682,19 @@ function ApproverDashboard() {
                 }}
               />
             </Box>
-            <Box
-              sx={{
-                overflowX: 'auto',
-                scrollbarGutter: 'stable',
-              }}
-            >
+            {formsToDisplay.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <Typography color="text.secondary">
+                  {controlNumberFilter ? 'No forms match the control number search.' : 'No forms found.'}
+                </Typography>
+              </Box>
+            ) : (
+              <Box
+                sx={{
+                  overflowX: 'auto',
+                  scrollbarGutter: 'stable',
+                }}
+              >
             <Box
               component="table"
               sx={{
@@ -1009,9 +1095,98 @@ function ApproverDashboard() {
                 })}
               </Box>
             </Box>
-          </Box>
+              </Box>
+            )}
           </Box>
         )}
+
+        <Dialog
+          open={actionRequiredDialogOpen}
+          onClose={() => setActionRequiredDialogOpen(false)}
+          fullWidth
+          maxWidth="md"
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              minWidth: { xs: '90%', sm: '560px' },
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+                : '0 8px 32px rgba(0, 0, 0, 0.12)',
+            },
+          }}
+        >
+          <DialogTitle
+            sx={{
+              pb: 2.5,
+              pt: 3,
+              px: 3,
+              fontWeight: 600,
+              fontSize: '1.25rem',
+              color: theme.palette.text.primary,
+            }}
+          >
+            Deficiency Response Review Required
+          </DialogTitle>
+          <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
+            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mb: 2 }}>
+              Click any control below to open its details in a new page.
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              {approverActionRequiredForms.map((form) => (
+                <Box
+                  key={`action-required-dialog-${form.form_id}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleFormClick(form.form_id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      handleFormClick(form.form_id)
+                    }
+                  }}
+                  sx={{
+                    p: 1.75,
+                    borderRadius: 1.5,
+                    border: `1px solid ${theme.palette.divider}`,
+                    backgroundColor: theme.palette.background.paper,
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s, border-color 0.2s',
+                    '&:hover, &:focus-visible': {
+                      backgroundColor: TABLE_ROW_HOVER_BG,
+                      borderColor: alpha(theme.palette.warning.main, 0.45),
+                      outline: 'none',
+                    },
+                  }}
+                >
+                  <Typography sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+                    {form.control_number || form.form_id}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.25 }}>
+                    {[form.business_process, form.sub_process, form.financial_year].filter(Boolean).join(' | ') || form.form_id}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </DialogContent>
+          <DialogActions
+            sx={{
+              px: 3,
+              pb: 3,
+              pt: 2.5,
+              gap: 1.5,
+              borderTop: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            <Button
+              onClick={() => setActionRequiredDialogOpen(false)}
+              variant="outlined"
+              sx={{ textTransform: 'none', px: 3, py: 1, minWidth: '100px' }}
+            >
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Paper>
     </Box>
   )

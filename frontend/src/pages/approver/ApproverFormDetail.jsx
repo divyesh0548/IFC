@@ -40,6 +40,7 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext';
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 import { apiUrl } from '../../config/api';
 import { formatIndianDateTime } from '../../lib/dateTime';
+import { formatRacmUserDocumentSubtitle } from '../../lib/racmUserDocuments';
 
 function ApproverFormDetail() {
   const theme = useTheme()
@@ -1930,19 +1931,22 @@ function ApproverFormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  Approval
+                  Approval Details
                 </Typography>
                 <Box
                   sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: 'repeat(2, 1fr)',
+                    },
                     gap: 3,
                     mt: 2,
                   }}
                 >
                   {isPending && !isApproved && !isRejected && (
                     <>
-                      <FormControl fullWidth>
+                      <FormControl fullWidth sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}>
                         <InputLabel id="approval-decision-label">Decision</InputLabel>
                         <Select
                           labelId="approval-decision-label"
@@ -1956,13 +1960,7 @@ function ApproverFormDetail() {
                       </FormControl>
 
                       {showApproveFlowFields ? (
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 2.5,
-                          }}
-                        >
+                        <>
                           {groupedApproverFields
                             .filter((key) => key !== 'design_deficiency_desc' || showDesignDeficiencyField)
                             .map((key) => {
@@ -1975,12 +1973,9 @@ function ApproverFormDetail() {
                                 || (key === 'design_deficiency_desc' && selectedDesignConclusion === 'Not Effective')
 
                               return (
-                                <Box
-                                  key={key}
-                                  sx={{ p: 0, border: 'none', borderRadius: 0 }}
-                                >
+                                <React.Fragment key={key}>
                                   {key === 'control_design_conclusion' ? (
-                                    <FormControl fullWidth required={isRequired}>
+                                    <FormControl fullWidth required={isRequired} sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}>
                                       <InputLabel id={`${key}-label`}>{label}</InputLabel>
                                       <Select
                                         labelId={`${key}-label`}
@@ -2003,6 +1998,7 @@ function ApproverFormDetail() {
                                       required={isRequired}
                                       multiline={isTextArea}
                                       rows={isTextArea ? 4 : 1}
+                                      sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}
                                     />
                                   )}
                                   {!isPending ? (
@@ -2020,10 +2016,10 @@ function ApproverFormDetail() {
                                       {isEmpty ? '-' : String(value)}
                                     </Typography>
                                   ) : null}
-                                </Box>
+                                </React.Fragment>
                               )
                             })}
-                        </Box>
+                        </>
                       ) : null}
 
                       {showRejectFlowFields ? (
@@ -2035,6 +2031,7 @@ function ApproverFormDetail() {
                           fullWidth
                           multiline
                           rows={4}
+                          sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}
                         />
                       ) : null}
 
@@ -2054,6 +2051,7 @@ function ApproverFormDetail() {
                           variant="outlined"
                           required={approvalDecision === 'Rejected'}
                           sx={{
+                            gridColumn: { xs: '1', md: '1 / -1' },
                             '& .MuiOutlinedInput-root': {
                               backgroundColor: 'transparent',
                               borderRadius: 1.5,
@@ -2075,6 +2073,7 @@ function ApproverFormDetail() {
                           gap: 2,
                           justifyContent: 'flex-end',
                           mt: 1,
+                          gridColumn: { xs: '1', md: '1 / -1' },
                         }}
                       >
                         <Button
@@ -2116,24 +2115,15 @@ function ApproverFormDetail() {
                   {!isPending ? (
                     <Box
                       sx={{
-                        p: 2.5,
-                        borderRadius: 2,
-                        border: '1px solid',
-                        borderColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.08)'
-                          : 'rgba(0, 0, 0, 0.06)',
-                        backgroundColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.02)'
-                          : 'rgba(0, 0, 0, 0.015)',
+                        display: 'grid',
+                        gridTemplateColumns: {
+                          xs: '1fr',
+                          md: 'repeat(2, 1fr)',
+                        },
+                        gap: 3,
+                        gridColumn: { xs: '1', md: '1 / -1' },
                       }}
                     >
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 3,
-                        }}
-                      >
                         {groupedApproverFields
                           .filter((key) => {
                             if (key === 'design_deficiency_desc' && !showDesignDeficiencyField) {
@@ -2160,6 +2150,7 @@ function ApproverFormDetail() {
                                   borderColor: theme.palette.mode === 'dark'
                                     ? 'rgba(255, 255, 255, 0.08)'
                                     : 'rgba(0, 0, 0, 0.06)',
+                                  gridColumn: { xs: '1', md: '1 / -1' },
                                 }}
                               >
                                 <Typography
@@ -2193,12 +2184,10 @@ function ApproverFormDetail() {
                               </Box>
                             )
                           })}
-                      </Box>
 
                       {String(formData?.reason_by_approver || '').trim() !== '' ? (
                         <Box
                           sx={{
-                            mt: 3,
                             p: 2.5,
                             borderRadius: 2,
                             backgroundColor: theme.palette.mode === 'dark'
@@ -2208,6 +2197,7 @@ function ApproverFormDetail() {
                             borderColor: theme.palette.mode === 'dark'
                               ? 'rgba(255, 255, 255, 0.08)'
                               : 'rgba(0, 0, 0, 0.06)',
+                            gridColumn: { xs: '1', md: '1 / -1' },
                           }}
                         >
                           <Typography
@@ -2764,7 +2754,7 @@ function ApproverFormDetail() {
                         {getFileName(doc.doc_uploaded_by_user)}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                        {formatRacmUserDocumentSubtitle(doc, formatDateTime)}
                       </Typography>
                     </Box>
                     <Tooltip title="Download">
@@ -2819,7 +2809,7 @@ function ApproverFormDetail() {
           >
             Rejection History
           </DialogTitle>
-          <DialogContent sx={{ px: 3, pt: 0, pb: 2, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <DialogContent sx={{ px: 3, mt: 2.5, pb: 2, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <TableContainer
               sx={{
                 maxHeight: 'min(420px, 58vh)',
@@ -2829,7 +2819,7 @@ function ApproverFormDetail() {
                 borderRadius: 1,
               }}
             >
-              <Table size="small" stickyHeader sx={{ tableLayout: 'fixed', width: '100%' }}>
+              <Table size="small" stickyHeader sx={{ tableLayout: 'fixed', width: '100%'}}>
                 <TableHead>
                   <TableRow>
                     <TableCell
@@ -2840,7 +2830,7 @@ function ApproverFormDetail() {
                         borderColor: 'divider',
                       }}
                     >
-                      Rejection Timestamp
+                      Rejected On
                     </TableCell>
                     <TableCell
                       sx={{

@@ -241,6 +241,40 @@ function User_dashboard() {
         }),
   })
 
+  const USER_TABLE_COL_PX = {
+    idx: 48,
+    businessProcess: 130,
+    subProcess: 140,
+    standardControl: 180,
+    financialYear: 100,
+    unit: 110,
+    status: 110,
+    conclusion: 120,
+    dueDate: 100,
+  }
+  const userTableColWidthsOrdered = [
+    USER_TABLE_COL_PX.idx,
+    USER_TABLE_COL_PX.businessProcess,
+    USER_TABLE_COL_PX.subProcess,
+    USER_TABLE_COL_PX.standardControl,
+    USER_TABLE_COL_PX.financialYear,
+    USER_TABLE_COL_PX.unit,
+    USER_TABLE_COL_PX.status,
+    USER_TABLE_COL_PX.conclusion,
+    USER_TABLE_COL_PX.dueDate,
+  ]
+  const userTableTotalWidthPx = userTableColWidthsOrdered.reduce((a, b) => a + b, 0)
+  const pctColSx = (px) => {
+    const pct = (100 * px) / userTableTotalWidthPx
+    const s = `${pct}%`
+    return {
+      width: s,
+      minWidth: s,
+      maxWidth: s,
+      boxSizing: 'border-box',
+    }
+  }
+
   return (
     <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Paper
@@ -357,6 +391,60 @@ function User_dashboard() {
           </Box>
         </Box>
 
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: 1.5,
+            flexWrap: 'wrap',
+            gap: 1,
+          }}
+        >
+          <Box
+            component="form"
+            onSubmit={handleControlNumberSearchSubmit}
+            sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: 1,
+              alignItems: { xs: 'stretch', sm: 'center' },
+            }}
+          >
+            <TextField
+              label="Control Number"
+              value={controlNumberInput}
+              onChange={(e) => setControlNumberInput(e.target.value)}
+              size="small"
+              sx={{
+                minWidth: { xs: '100%', sm: 260 },
+                '& .MuiOutlinedInput-root': {
+                  backgroundColor: 'transparent',
+                },
+              }}
+            />
+            <Button type="submit" variant="contained">
+              Search
+            </Button>
+            <Button type="button" variant="outlined" onClick={handleControlNumberSearchClear} disabled={!controlNumberInput && !controlNumberFilter}>
+              Clear
+            </Button>
+          </Box>
+
+          <FormControlLabel
+            control={<Switch checked={cellWordWrap} onChange={(e) => setCellWordWrap(e.target.checked)} size="small" color="primary" />}
+            label="Word wrap"
+            sx={{
+              mr: 0,
+              userSelect: 'none',
+              '& .MuiFormControlLabel-label': {
+                fontSize: '0.8125rem',
+                color: theme.palette.text.secondary,
+              },
+            }}
+          />
+        </Box>
+
         {loading ? (
           <Box sx={{ textAlign: 'center', py: 4 }}>
             <Typography color="text.secondary">Loading forms...</Typography>
@@ -364,193 +452,145 @@ function User_dashboard() {
         ) : displayedForms.length === 0 ? (
           <Box sx={{ textAlign: 'center', py: 4 }}>
             <Typography color="text.secondary">
-              {filter === 'all'
-                ? 'No active forms assigned to you.'
-                : filter === 'pending'
-                  ? 'No pending forms.'
-                  : filter === 'sent for approval'
-                    ? 'No forms sent for approval.'
-                    : filter === 'approved'
-                      ? 'No approved forms.'
-                      : 'No rejected forms.'}
+              {controlNumberFilter
+                ? 'No forms match the control number search.'
+                : filter === 'all'
+                  ? 'No active forms assigned to you.'
+                  : filter === 'pending'
+                    ? 'No pending forms.'
+                    : filter === 'sent for approval'
+                      ? 'No forms sent for approval.'
+                      : filter === 'approved'
+                        ? 'No approved forms.'
+                        : 'No rejected forms.'}
             </Typography>
           </Box>
         ) : (
           <Box>
             <Box
+              component="table"
               sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                mb: 1.5,
-                flexWrap: 'wrap',
-                gap: 1,
+                tableLayout: 'fixed',
+                width: '100%',
+                borderCollapse: 'collapse',
+                '& th, & td': {
+                  borderBottom: `1px solid ${theme.palette.divider}`,
+                },
               }}
             >
-              <Box
-                component="form"
-                onSubmit={handleControlNumberSearchSubmit}
-                sx={{
-                  display: 'flex',
-                  flexDirection: { xs: 'column', sm: 'row' },
-                  gap: 1,
-                  alignItems: { xs: 'stretch', sm: 'center' },
-                }}
-              >
-                <TextField
-                  label="Control Number"
-                  value={controlNumberInput}
-                  onChange={(e) => setControlNumberInput(e.target.value)}
-                  size="small"
-                  sx={{
-                    minWidth: { xs: '100%', sm: 260 },
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'transparent',
-                    },
-                  }}
-                />
-                <Button type="submit" variant="contained">
-                  Search
-                </Button>
-                <Button type="button" variant="outlined" onClick={handleControlNumberSearchClear} disabled={!controlNumberInput && !controlNumberFilter}>
-                  Clear
-                </Button>
+              <Box component="colgroup">
+                {userTableColWidthsOrdered.map((w, i) => (
+                  <Box key={i} component="col" sx={pctColSx(w)} />
+                ))}
               </Box>
-
-              <FormControlLabel
-                control={<Switch checked={cellWordWrap} onChange={(e) => setCellWordWrap(e.target.checked)} size="small" color="primary" />}
-                label="Word wrap"
-                sx={{
-                  mr: 0,
-                  userSelect: 'none',
-                  '& .MuiFormControlLabel-label': {
-                    fontSize: '0.8125rem',
-                    color: theme.palette.text.secondary,
-                  },
-                }}
-              />
-            </Box>
-
-            <Box sx={{ overflowX: 'auto' }}>
-              <Box
-                component="table"
-                sx={{
-                  minWidth: '100%',
-                  borderCollapse: 'collapse',
-                  '& th, & td': {
-                    borderBottom: `1px solid ${theme.palette.divider}`,
-                  },
-                }}
-              >
-                <Box component="thead" sx={{ backgroundColor: TABLE_HEADER_BG }}>
-                  <Box component="tr">
-                    <Box component="th" sx={{ px: 3, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary }}>
-                      #
-                    </Box>
-                    <Box component="th" sx={{ px: 3, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, width: '260px', minWidth: '220px', maxWidth: '300px' }}>
-                      Business Process
-                    </Box>
-                    <Box component="th" sx={{ px: 3, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, width: '280px', minWidth: '240px', maxWidth: '340px' }}>
-                      Sub Process
-                    </Box>
-                    <Box component="th" sx={{ px: 3, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, width: '500px', minWidth: '500px', maxWidth: '600px' }}>
-                      Description
-                    </Box>
-                    <Box component="th" sx={{ px: 3, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary }}>
-                      Financial Year
-                    </Box>
-                    <Box component="th" sx={{ px: 3, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, width: '220px', minWidth: '180px', maxWidth: '240px' }}>
-                      Unit
-                    </Box>
-                    <Box component="th" sx={{ px: 3, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary }}>
-                      Status
-                    </Box>
-                    <Box component="th" sx={{ px: 3, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, width: '200px', minWidth: '180px', maxWidth: '220px' }}>
-                      Conclusion
-                    </Box>
-                    <Box component="th" sx={{ px: 3, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary }}>
-                      Due Date
-                    </Box>
+              <Box component="thead" sx={{ backgroundColor: TABLE_HEADER_BG }}>
+                <Box component="tr">
+                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.idx) }}>
+                    #
+                  </Box>
+                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.businessProcess) }}>
+                    Business Process
+                  </Box>
+                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.subProcess) }}>
+                    Sub Process
+                  </Box>
+                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.standardControl) }}>
+                    Description
+                  </Box>
+                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.financialYear) }}>
+                    Financial Year
+                  </Box>
+                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.unit) }}>
+                    Unit
+                  </Box>
+                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.status) }}>
+                    Status
+                  </Box>
+                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.conclusion) }}>
+                    Conclusion
+                  </Box>
+                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.dueDate) }}>
+                    Due Date
                   </Box>
                 </Box>
-                <Box component="tbody">
-                  {displayedForms.map((form, index) => (
-                    <Box
-                      component="tr"
-                      key={form.id}
-                      onClick={() => handleFormClick(form.form_id)}
-                      sx={{
-                        cursor: 'pointer',
-                        transition: 'background-color 0.2s',
-                        '&:hover': {
-                          backgroundColor: TABLE_ROW_HOVER_BG,
-                        },
-                      }}
-                    >
-                      <Box component="td" sx={{ px: 3, py: 2, whiteSpace: 'nowrap', fontSize: '0.875rem', fontWeight: 500, color: theme.palette.text.primary }}>
-                        {index + 1}
-                      </Box>
-                      <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, width: '260px', minWidth: '220px', maxWidth: '300px' })}>
-                        <Tooltip title={form.business_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.business_process || 'N/A'}
-                          </Box>
-                        </Tooltip>
-                      </Box>
-                      <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, width: '280px', minWidth: '240px', maxWidth: '340px' })}>
-                        <Tooltip title={form.sub_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.sub_process || 'N/A'}
-                          </Box>
-                        </Tooltip>
-                      </Box>
-                      <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, width: '500px', minWidth: '400px', maxWidth: '600px' })}>
-                        <Tooltip title={form.standard_control_description || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.standard_control_description || 'N/A'}
-                          </Box>
-                        </Tooltip>
-                      </Box>
-                      <Box component="td" sx={dataCellSx({ px: 3, py: 2, width: '200px', minWidth: '180px', maxWidth: '220px', fontSize: '0.875rem', color: theme.palette.text.primary })}>
+              </Box>
+              <Box component="tbody">
+                {displayedForms.map((form, index) => (
+                  <Box
+                    component="tr"
+                    key={form.id}
+                    onClick={() => handleFormClick(form.form_id)}
+                    sx={{
+                      cursor: 'pointer',
+                      transition: 'background-color 0.2s',
+                      '&:hover': {
+                        backgroundColor: TABLE_ROW_HOVER_BG,
+                      },
+                    }}
+                  >
+                    <Box component="td" sx={{ px: 2, py: 2, whiteSpace: 'nowrap', fontSize: '0.875rem', fontWeight: 500, color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.idx), ...(cellWordWrap ? { verticalAlign: 'top' } : {}) }}>
+                      {index + 1}
+                    </Box>
+                    <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.businessProcess) })}>
+                      <Tooltip title={form.business_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
                         <Box component="span" sx={dataCellTextSx}>
-                          {form.financial_year || 'N/A'}
+                          {form.business_process || 'N/A'}
                         </Box>
-                      </Box>
-                      <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, width: '220px', minWidth: '180px', maxWidth: '240px' })}>
-                        <Tooltip title={form.unit_name || form.unit_id || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.unit_name || form.unit_id || 'N/A'}
-                          </Box>
-                        </Tooltip>
-                      </Box>
-                      <Box component="td" sx={{ px: 3, py: 2, whiteSpace: 'nowrap' }}>
-                        <Chip
-                          label={formatStatus(form.status)}
-                          size="small"
-                          sx={{
-                            height: 'auto',
-                            py: 0.5,
-                            borderRadius: '9999px',
-                            backgroundColor: getStatusBadgeSolidColors(form.status).backgroundColor,
-                            color: getStatusBadgeSolidColors(form.status).color,
-                            fontWeight: 600,
-                            '& .MuiChip-label': { px: 1 },
-                          }}
-                        />
-                      </Box>
-                      <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary })}>
-                        <Box component="span" sx={{ ...STATUS_BADGE_PILL_SX, ...getConclusionBadgeSolidColors(form.control_design_conclusion) }}>
-                          {formatConclusion(form.control_design_conclusion)}
-                        </Box>
-                      </Box>
-                      <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary })}>
+                      </Tooltip>
+                    </Box>
+                    <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.subProcess) })}>
+                      <Tooltip title={form.sub_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
                         <Box component="span" sx={dataCellTextSx}>
-                          {formatDate(form.due_date)}
+                          {form.sub_process || 'N/A'}
                         </Box>
+                      </Tooltip>
+                    </Box>
+                    <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.standardControl) })}>
+                      <Tooltip title={form.standard_control_description || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                        <Box component="span" sx={dataCellTextSx}>
+                          {form.standard_control_description || 'N/A'}
+                        </Box>
+                      </Tooltip>
+                    </Box>
+                    <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.financialYear) })}>
+                      <Box component="span" sx={dataCellTextSx}>
+                        {form.financial_year || 'N/A'}
                       </Box>
                     </Box>
-                  ))}
-                </Box>
+                    <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.unit) })}>
+                      <Tooltip title={form.unit_name || form.unit_id || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                        <Box component="span" sx={dataCellTextSx}>
+                          {form.unit_name || form.unit_id || 'N/A'}
+                        </Box>
+                      </Tooltip>
+                    </Box>
+                    <Box component="td" sx={{ px: 2, py: 2, whiteSpace: 'nowrap', ...pctColSx(USER_TABLE_COL_PX.status), ...(cellWordWrap ? { verticalAlign: 'top' } : {}) }}>
+                      <Chip
+                        label={formatStatus(form.status)}
+                        size="small"
+                        sx={{
+                          height: 'auto',
+                          py: 0.5,
+                          borderRadius: '9999px',
+                          backgroundColor: getStatusBadgeSolidColors(form.status).backgroundColor,
+                          color: getStatusBadgeSolidColors(form.status).color,
+                          fontWeight: 600,
+                          '& .MuiChip-label': { px: 1 },
+                        }}
+                      />
+                    </Box>
+                    <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.conclusion) })}>
+                      <Box component="span" sx={{ ...STATUS_BADGE_PILL_SX, ...getConclusionBadgeSolidColors(form.control_design_conclusion) }}>
+                        {formatConclusion(form.control_design_conclusion)}
+                      </Box>
+                    </Box>
+                    <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.dueDate) })}>
+                      <Box component="span" sx={dataCellTextSx}>
+                        {formatDate(form.due_date)}
+                      </Box>
+                    </Box>
+                  </Box>
+                ))}
               </Box>
             </Box>
           </Box>

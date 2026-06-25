@@ -32,6 +32,14 @@ import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
+import {
+  DOCUMENT_UPLOAD_ACCEPT,
+  DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE,
+  DOCUMENT_UPLOAD_INVALID_TYPE_MESSAGE,
+  validateDocumentUploadFiles,
+} from '../../lib/documentUploadRestrictions'
+import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments } from '../../lib/racmUserDocuments'
+import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistoryList'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatIndianDateTime } from '../../lib/dateTime'
@@ -72,72 +80,15 @@ const REQUEST_CHANGE_BOOLEAN_FIELDS = new Set([
   'presentation_and_disclosure',
 ])
 
-const DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
-const ALLOWED_DOCUMENT_EXTENSIONS = new Set([
-  '.pdf',
-  '.xls',
-  '.xlsx',
-  '.xlsm',
-  '.xlsb',
-  '.xlt',
-  '.xltx',
-  '.xltm',
-  '.xlam',
-  '.csv',
-  '.doc',
-  '.docx',
-  '.docm',
-  '.dot',
-  '.dotx',
-  '.dotm',
-  '.ppt',
-  '.pptx',
-  '.pptm',
-  '.pot',
-  '.potx',
-  '.potm',
-  '.pps',
-  '.ppsx',
-  '.ppsm',
-  '.txt',
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.bmp',
-  '.webp',
-  '.tif',
-  '.tiff',
-])
-const DOCUMENT_UPLOAD_ACCEPT = Array.from(ALLOWED_DOCUMENT_EXTENSIONS).join(',')
+function formatNameWithEmail(name, email) {
+  const normalizedName = String(name || '').trim()
+  const normalizedEmail = String(email || '').trim()
 
-const getFileExtension = (fileName) => {
-  const lastDotIndex = String(fileName || '').lastIndexOf('.')
-  if (lastDotIndex < 0) return ''
-  return String(fileName).slice(lastDotIndex).toLowerCase()
-}
+  if (normalizedName && normalizedEmail && normalizedName.toLowerCase() !== normalizedEmail.toLowerCase()) {
+    return `${normalizedName} (${normalizedEmail})`
+  }
 
-const splitUploadValidation = (files) => {
-  const validFiles = []
-  const invalidTypeFiles = []
-  const invalidSizeFiles = []
-
-  files.forEach((file) => {
-    const extension = getFileExtension(file.name)
-    if (!ALLOWED_DOCUMENT_EXTENSIONS.has(extension)) {
-      invalidTypeFiles.push(file)
-      return
-    }
-
-    if (file.size > DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES) {
-      invalidSizeFiles.push(file)
-      return
-    }
-
-    validFiles.push(file)
-  })
-
-  return { validFiles, invalidTypeFiles, invalidSizeFiles }
+  return normalizedName || normalizedEmail || '-'
 }
 
 const REQUEST_CHANGE_DROPDOWN_OPTIONS = {
@@ -224,7 +175,6 @@ function UserFormDetail() {
   const [changeRequestHistoryCount, setChangeRequestHistoryCount] = useState(0)
   const [changeRequestHistoryLoading, setChangeRequestHistoryLoading] = useState(false)
   const [changeRequestHistoryDialogOpen, setChangeRequestHistoryDialogOpen] = useState(false)
-  const [expandedHistoryRequestIds, setExpandedHistoryRequestIds] = useState({})
   const [expandedDeficiencyVersions, setExpandedDeficiencyVersions] = useState({})
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [sampleDocsDialogOpen, setSampleDocsDialogOpen] = useState(false)
@@ -399,14 +349,14 @@ function UserFormDetail() {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
 
-    const { validFiles, invalidTypeFiles, invalidSizeFiles } = splitUploadValidation(files)
+    const { validFiles, invalidTypeFiles, invalidSizeFiles } = validateDocumentUploadFiles(files)
 
     if (invalidTypeFiles.length > 0) {
-      toast.error('Only PDF, Excel, PowerPoint, Word, TXT, and image files are allowed')
+      toast.error(DOCUMENT_UPLOAD_INVALID_TYPE_MESSAGE)
     }
 
     if (invalidSizeFiles.length > 0) {
-      toast.error('Each uploaded document must be 25 MB or smaller')
+      toast.error(DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE)
     }
 
     if (validFiles.length === 0) {
@@ -440,23 +390,10 @@ function UserFormDetail() {
   }
 
   const getUserUploadedDocs = () => {
-    const docs = Array.isArray(formData?.doc_uploaded_by_user_docs)
-      ? formData.doc_uploaded_by_user_docs
-      : []
-    const normalizedDocs = docs
-      .map((doc, index) => ({
-        id: doc.id || `user-doc-${index}`,
-        doc_uploaded_by_user: doc.doc_uploaded_by_user,
-        created_at: doc.created_at,
-      }))
-      .filter((doc) => String(doc.doc_uploaded_by_user || '').trim() !== '')
-
-    if (normalizedDocs.length > 0) return normalizedDocs
-
-    const legacyDoc = String(formData?.doc_uploaded_by_user || '').trim()
-    return legacyDoc
-      ? [{ id: 'user-doc-current', doc_uploaded_by_user: legacyDoc, created_at: null }]
-      : []
+    return normalizeRacmUserDocuments(
+      formData?.doc_uploaded_by_user_docs,
+      formData?.doc_uploaded_by_user
+    )
   }
 
   const handleOpenUserDocsDialog = () => {
@@ -565,6 +502,11 @@ function UserFormDetail() {
   }
 
   const handleSendForApproval = async () => {
+    if (Boolean(formData?.pending_changes)) {
+      toast.error('This RACM has a pending change request and cannot be sent for approval until it is resolved.')
+      return
+    }
+
     const existingUploadedDocs = getUserUploadedDocs().filter(
       (doc) => !removedUploadedDocPaths.includes(doc.doc_uploaded_by_user)
     )
@@ -773,13 +715,6 @@ function UserFormDetail() {
     setChangeRequestHistoryDialogOpen(false)
   }
 
-  const handleToggleHistoryRequest = (requestId) => {
-    setExpandedHistoryRequestIds((prev) => ({
-      ...prev,
-      [requestId]: !prev[requestId],
-    }))
-  }
-
   const toggleDeficiencySubmissionExpansion = (submissionId) => {
     setExpandedDeficiencyVersions((prev) => ({
       ...prev,
@@ -829,14 +764,14 @@ function UserFormDetail() {
   const handleDeficiencyResponseFileSelect = (e) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
-    const { validFiles, invalidTypeFiles, invalidSizeFiles } = splitUploadValidation(files)
+    const { validFiles, invalidTypeFiles, invalidSizeFiles } = validateDocumentUploadFiles(files)
 
     if (invalidTypeFiles.length > 0) {
-      toast.error('Only PDF, Excel, PowerPoint, Word, TXT, and image files are allowed')
+      toast.error(DOCUMENT_UPLOAD_INVALID_TYPE_MESSAGE)
     }
 
     if (invalidSizeFiles.length > 0) {
-      toast.error('Each deficiency response document must be 25 MB or smaller')
+      toast.error(DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE)
     }
 
     if (validFiles.length > 0) {
@@ -885,6 +820,7 @@ function UserFormDetail() {
 
       if (deficiencyResponseFiles.length > 0) {
         const uploadFormData = new FormData()
+        uploadFormData.append('response_type', responseType)
         deficiencyResponseFiles.forEach((file) => {
           uploadFormData.append('documents', file)
         })
@@ -2637,7 +2573,7 @@ function UserFormDetail() {
                         <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
                           <Button
                             onClick={handleSendForApproval}
-                            disabled={saving || uploadingUserDocuments}
+                            disabled={saving || uploadingUserDocuments || hasPendingChanges}
                             variant="contained"
                             color="secondary"
                             sx={{
@@ -3143,7 +3079,7 @@ function UserFormDetail() {
                       {getFileName(doc.doc_uploaded_by_user)}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                      {formatRacmUserDocumentSubtitle(doc, formatDateTime)}
                     </Typography>
                   </Box>
                   <Tooltip title="Download">
@@ -3274,123 +3210,11 @@ function UserFormDetail() {
           Change Requests
         </DialogTitle>
         <DialogContent dividers>
-          {changeRequestHistory.length > 0 ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {changeRequestHistory.map((request) => {
-                const isExpanded = Boolean(expandedHistoryRequestIds[request.request_id])
-                return (
-                  <Box
-                    key={request.request_id}
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 2,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <Button
-                      fullWidth
-                      onClick={() => handleToggleHistoryRequest(request.request_id)}
-                      sx={{
-                        justifyContent: 'space-between',
-                        textTransform: 'none',
-                        px: 2,
-                        py: 1.5,
-                        color: 'text.primary',
-                        fontWeight: 700,
-                      }}
-                    >
-                      <Box sx={{ textAlign: 'left' }}>
-                        <Typography sx={{ fontWeight: 700 }}>
-                          {request.request_id}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                          Outcome: {String(request.status || '').trim() || '-'}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                          Requested on: {request.requested_at ? formatDateTime(request.requested_at) : '-'}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                          Reviewed by: {String(request.reviewed_by_display || request.reviewed_by_email || '').trim() || '-'}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {isExpanded ? 'Hide' : 'View'}
-                      </Typography>
-                    </Button>
-                    {isExpanded ? (
-                      <Box sx={{ px: 2, pb: 2 }}>
-                        {String(request.request_reason || '').trim() ? (
-                          <Box sx={{ mb: 2 }}>
-                            <Typography sx={{ fontWeight: 700, color: 'text.primary', mb: 0.75 }}>
-                              Reason for Change
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: 'text.secondary', whiteSpace: 'pre-wrap' }}>
-                              {request.request_reason}
-                            </Typography>
-                          </Box>
-                        ) : null}
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          {(Array.isArray(request.items) ? request.items : []).map((item) => (
-                            <Box
-                              key={item.id}
-                              sx={{
-                                border: '1px solid',
-                                borderColor: 'divider',
-                                borderRadius: 2,
-                                p: 2,
-                              }}
-                            >
-                              <Typography sx={{ fontWeight: 700, color: 'text.primary', mb: 1 }}>
-                                {item.field_label || item.field_db_name}
-                              </Typography>
-                              <Box
-                                sx={{
-                                  display: 'grid',
-                                  gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-                                  gap: 2,
-                                  mb: 1.5,
-                                }}
-                              >
-                                <Box>
-                                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-                                    Old Value
-                                  </Typography>
-                                  <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
-                                    {String(item.old_value_text || '').trim() || '-'}
-                                  </Typography>
-                                </Box>
-                                <Box>
-                                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-                                    New Value
-                                  </Typography>
-                                  <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
-                                    {String(item.new_value_text || '').trim() || '-'}
-                                  </Typography>
-                                </Box>
-                              </Box>
-                              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                Status: {String(item.status || '').trim() || '-'}
-                              </Typography>
-                              {String(item.rejection_reason || '').trim() ? (
-                                <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.75, whiteSpace: 'pre-wrap' }}>
-                                  Reason: {item.rejection_reason}
-                                </Typography>
-                              ) : null}
-                            </Box>
-                          ))}
-                        </Box>
-                      </Box>
-                    ) : null}
-                  </Box>
-                )
-              })}
-            </Box>
-          ) : (
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              No change request history found.
-            </Typography>
-          )}
+          <ChangeRequestHistoryList
+            requests={changeRequestHistory}
+            formatDateTime={formatDateTime}
+            formatNameWithEmail={formatNameWithEmail}
+          />
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={handleCloseChangeRequestHistoryDialog}>Close</Button>

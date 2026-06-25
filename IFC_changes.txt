@@ -1,37 +1,4 @@
 Mayank sir suggested to implement dynamic User controls. Curently each user role is fixed and can't be changed. But it should be dynamic and adjusted by siteadmin or coordinator.
 
-Add these new insights in the dashboard : Key+Manual, Key+Automated, Key+High+Manual (If high, low risk levels are given)
-
-Add a semi-automated column if avaialble.
-
-Display controls which are not classified for any column. (Display in red if possible to show urgency) Also display total number of RACMs not classified.
-
-Write "Controls" instaed of RACMs.
-
-Try to run AI models locally and generate insights from it for RACMs. 
-
 Approver/auditor should be notified via mail if process_owner submits any documents.
-
-Develop a dashboard like table which displays RACM wise document submission status.
-
-Provide flexibility to upload docuemnts at diffrent times. Currently website requires user to upload and submit in one go.
-
-There must be way for approver to increase smaple size. As sometimes approver needs more sample due to less credibility of client or number of employee is larger.
-
-Current sample size is not accurate with ICAI guidelines. (Discuss with Mayank sir)
-
-Need to classify controls which are both preventive/detective before giving to AI.
-
-Do not include ELC business process into High Risk category.
-
-Try to summarize for each business process too.
-
-
-
-
-
-
- 
-
-In Capex IFC of Rubamin there is a control frequency which is "Once in 3 year".
 

@@ -1,4 +1,4 @@
-const { pool } = require('../utils/db');
+const { queryWithRetry } = require('../utils/db');
 const { sendEmail } = require('../utils/send_email');
 const { getCcEmailsForRacm } = require('../utils/racm_cc_recipients');
 const {
@@ -7,7 +7,7 @@ const {
 } = require('../utils/racm_status_user_email');
 
 async function runPendingRacmInactiveUserEmails() {
-  const pendingResult = await pool.query(
+  const pendingResult = await queryWithRetry(
     `
       ${RACM_STATUS_EMAIL_SELECT}
       WHERE COALESCE(TRIM(cf.control_owner), '') <> ''
@@ -44,7 +44,7 @@ async function runPendingRacmInactiveUserEmails() {
         continue;
       }
 
-      await pool.query(
+      await queryWithRetry(
         `
           UPDATE control_forms
           SET inactive_mail_pending = FALSE,

@@ -25,6 +25,7 @@ import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { API_BASE_URL } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments } from '../../lib/racmUserDocuments'
 
 function formatDateTime(dateString) {
   if (!dateString) return 'N/A'
@@ -197,19 +198,10 @@ function AuditorFormDetail() {
   }
 
   const getUserDocs = () => {
-    const docs = Array.isArray(formData?.doc_uploaded_by_user_docs) ? formData.doc_uploaded_by_user_docs : []
-    const normalizedDocs = docs
-      .map((doc, index) => ({
-        id: doc.id || `user-doc-${index}`,
-        doc_uploaded_by_user: doc.doc_uploaded_by_user,
-        created_at: doc.created_at,
-      }))
-      .filter((doc) => String(doc.doc_uploaded_by_user || '').trim() !== '')
-
-    if (normalizedDocs.length > 0) return normalizedDocs
-
-    const legacyDoc = String(formData?.doc_uploaded_by_user || '').trim()
-    return legacyDoc ? [{ id: 'user-doc-current', doc_uploaded_by_user: legacyDoc, created_at: null }] : []
+    return normalizeRacmUserDocuments(
+      formData?.doc_uploaded_by_user_docs,
+      formData?.doc_uploaded_by_user
+    )
   }
 
   const getSampleRequiredRows = (value) => {
@@ -1351,7 +1343,7 @@ function AuditorFormDetail() {
                       {getFileName(doc.doc_uploaded_by_user)}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                      {formatRacmUserDocumentSubtitle(doc, formatDateTime)}
                     </Typography>
                   </Box>
                   <Tooltip title="Download">
