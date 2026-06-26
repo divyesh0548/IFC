@@ -23,17 +23,33 @@ import {
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import { toast } from 'react-hot-toast'
 import { apiUrl } from '../../config/api'
+import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+
+function serializeSampleSizeSettings(rows) {
+  return JSON.stringify(
+    rows
+      .map((row) => ({
+        frequency_key: row.frequency_key,
+        effective_sample_size: Number.parseInt(String(row.effective_sample_size ?? '').trim(), 10),
+      }))
+      .sort((a, b) => a.frequency_key.localeCompare(b.frequency_key))
+  )
+}
 
 function UnitSampleSizeSettingsDialog({ open, onClose, unitOptions = [], initialUnitId = '' }) {
   const [unitId, setUnitId] = useState(initialUnitId || '')
   const [settings, setSettings] = useState([])
+  const [savedSettingsSnapshot, setSavedSettingsSnapshot] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  useSyncGlobalLoading(loading || saving)
 
   const fetchSettings = useCallback(async (selectedUnitId) => {
     const normalizedUnitId = String(selectedUnitId || '').trim()
     if (!normalizedUnitId) {
       setSettings([])
+      setSavedSettingsSnapshot('')
       return
     }
 
@@ -47,13 +63,17 @@ function UnitSampleSizeSettingsDialog({ open, onClose, unitOptions = [], initial
       if (!response.ok || !data.success) {
         toast.error(data.message || 'Failed to load sample size settings')
         setSettings([])
+        setSavedSettingsSnapshot('')
         return
       }
-      setSettings(Array.isArray(data.data?.settings) ? data.data.settings : [])
+      const nextSettings = Array.isArray(data.data?.settings) ? data.data.settings : []
+      setSettings(nextSettings)
+      setSavedSettingsSnapshot(serializeSampleSizeSettings(nextSettings))
     } catch (error) {
       console.error('Error loading sample size settings:', error)
       toast.error('Failed to load sample size settings')
       setSettings([])
+      setSavedSettingsSnapshot('')
     } finally {
       setLoading(false)
     }
@@ -115,7 +135,9 @@ function UnitSampleSizeSettingsDialog({ open, onClose, unitOptions = [], initial
         return
       }
       toast.success(data.message || 'Sample size settings saved')
-      setSettings(Array.isArray(data.data?.settings) ? data.data.settings : settings)
+      const nextSettings = Array.isArray(data.data?.settings) ? data.data.settings : settings
+      setSettings(nextSettings)
+      setSavedSettingsSnapshot(serializeSampleSizeSettings(nextSettings))
       onClose?.()
     } catch (error) {
       console.error('Error saving sample size settings:', error)
@@ -124,6 +146,10 @@ function UnitSampleSizeSettingsDialog({ open, onClose, unitOptions = [], initial
       setSaving(false)
     }
   }
+
+  const hasSampleSizeChanges =
+    settings.length > 0 &&
+    serializeSampleSizeSettings(settings) !== savedSettingsSnapshot
 
   return (
     <Dialog open={open} onClose={saving ? undefined : onClose} maxWidth="md" fullWidth>
@@ -195,8 +221,12 @@ function UnitSampleSizeSettingsDialog({ open, onClose, unitOptions = [], initial
         <Button onClick={onClose} disabled={saving}>
           Cancel
         </Button>
-        <Button variant="contained" onClick={handleSave} disabled={saving || loading || !unitId}>
-          {saving ? 'Saving...' : 'Save Settings'}
+        <Button
+          variant="contained"
+          onClick={handleSave}
+          disabled={saving || loading || !unitId || !hasSampleSizeChanges}
+        >
+          {saving ? 'Saving...' : 'Save Changes'}
         </Button>
       </DialogActions>
     </Dialog>

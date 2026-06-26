@@ -43,12 +43,6 @@ function Control_form() {
     effectiveOrNotEffective: '',
     done: '',
     findings: '',
-    // Assertions (boolean)
-    completeness: false,
-    existence_occurrence: false,
-    rights_and_obligation: false,
-    valuation_and_allocation: false,
-    presentation_and_disclosure: false,
     due_date: '',
     reminder_frequency: '',
   })
@@ -99,14 +93,6 @@ function Control_form() {
       ...prev,
       [name]: value,
       ...(name === 'unit_id' ? { processOwner: '', processOwnerUser: null } : {}),
-    }))
-  }
-
-  const handleAssertionToggle = (field) => (e) => {
-    const checked = !!e.target.checked
-    setFormData((prev) => ({
-      ...prev,
-      [field]: checked,
     }))
   }
 
@@ -664,38 +650,6 @@ function Control_form() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
                   placeholder="Enter gap description and resolution"
                 />
-              </div>
-            </div>
-
-            {/* Assertions (checkboxes) */}
-            <div className="border-b border-gray-300 pb-4">
-              <h2 className="text-xl font-semibold text-secondary mb-4">Assertions</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { key: 'completeness', label: 'Completeness' },
-                  { key: 'existence_occurrence', label: 'Existence & Occurrence' },
-                  { key: 'rights_and_obligation', label: 'Rights and Obligations' },
-                  { key: 'valuation_and_allocation', label: 'Valuation & Allocation' },
-                  { key: 'presentation_and_disclosure', label: 'Presentation and Disclosure' },
-                ].map((a) => (
-                  <div
-                    key={a.key}
-                    className="flex items-center justify-between border border-gray-200 rounded-md px-4 py-2"
-                  >
-                    <span className="text-sm font-medium text-secondary">{a.label}</span>
-                    <FormControlLabel
-                      sx={{ m: 0 }}
-                      control={
-                        <Checkbox
-                          checked={!!formData[a.key]}
-                          onChange={handleAssertionToggle(a.key)}
-                          disabled={loading}
-                        />
-                      }
-                      label={formData[a.key] ? 'True' : 'False'}
-                    />
-                  </div>
-                ))}
               </div>
             </div>
 

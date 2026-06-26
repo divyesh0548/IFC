@@ -74,6 +74,29 @@ async function ensureDefaultBusinessProcesses() {
   console.log(`[bootstrap] Default business processes synced. Inserted: ${result.inserted}, Updated: ${result.updated}.`);
 }
 
+async function ensureDefaultRacmTemplates() {
+  const { pool } = require('../utils/db');
+  const {
+    seedDefaultTemplatesForAllUnits,
+    isRacmTemplateSchemaReady,
+  } = require('../utils/racm_templates');
+  const client = await pool.connect();
+
+  try {
+    if (!(await isRacmTemplateSchemaReady(client))) {
+      console.warn('[bootstrap] racm_templates tables missing. Skipping RACM template seed.');
+      return;
+    }
+
+    const result = await seedDefaultTemplatesForAllUnits(client);
+    console.log(
+      `[bootstrap] RACM templates synced. Scanned: ${result.scanned}, Created: ${result.created}.`
+    );
+  } finally {
+    client.release();
+  }
+}
+
 async function runBootstrap() {
   if (bootstrapPromise) {
     return bootstrapPromise;
@@ -83,6 +106,7 @@ async function runBootstrap() {
     try {
       await ensureDefaultBusinessProcesses();
       await ensureAdminUserFromEnv();
+      await ensureDefaultRacmTemplates();
     } catch (error) {
       console.error('[bootstrap] Startup bootstrap failed:', error);
       throw error;

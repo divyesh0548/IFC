@@ -202,6 +202,65 @@ async function insertSampleDocument(db, formId, docUrl) {
   return result.rows[0] || null;
 }
 
+function normalizeS3DocumentKey(value) {
+  if (value == null) return '';
+  return String(value).trim();
+}
+
+function uniqueS3DocumentKeys(urls) {
+  return Array.from(
+    new Set(
+      (Array.isArray(urls) ? urls : [])
+        .map(normalizeS3DocumentKey)
+        .filter(Boolean)
+    )
+  );
+}
+
+/**
+ * Collect all S3 object keys linked to one or more RACMs (sample docs, user docs,
+ * and deficiency response attachments).
+ * @param {import('../generated/prisma').PrismaClient} prisma
+ * @param {string|string[]} formIds
+ */
+async function collectRacmS3DocumentKeys(prisma, formIds) {
+  const ids = Array.from(
+    new Set(
+      (Array.isArray(formIds) ? formIds : [formIds])
+        .map((id) => (id == null ? '' : String(id).trim()))
+        .filter(Boolean)
+    )
+  );
+  if (ids.length === 0) return [];
+
+  const [sampleDocs, userDocs, deficiencyAttachments] = await Promise.all([
+    prisma.sampleDoc.findMany({
+      where: { formId: { in: ids } },
+      select: { sampleDoc: true },
+    }),
+    prisma.racmDoc.findMany({
+      where: { formId: { in: ids } },
+      select: { docUploadedByUser: true },
+    }),
+    prisma.deficiencyResponseAttachment.findMany({
+      where: {
+        submission: {
+          deficiencyResponse: {
+            formId: { in: ids },
+          },
+        },
+      },
+      select: { fileUrl: true },
+    }),
+  ]);
+
+  return uniqueS3DocumentKeys([
+    ...userDocs.map((doc) => doc.docUploadedByUser),
+    ...sampleDocs.map((doc) => doc.sampleDoc),
+    ...deficiencyAttachments.map((doc) => doc.fileUrl),
+  ]);
+}
+
 module.exports = {
   attachControlFormDocuments,
   buildDeficiencyResponseS3FolderPath,
@@ -209,6 +268,7 @@ module.exports = {
   buildRacmS3BaseFolderPath,
   buildSampleDocumentS3FolderPath,
   buildUserDocumentS3FolderPath,
+  collectRacmS3DocumentKeys,
   formatDeficiencyResponseFolderName,
   getControlFormDocumentRows,
   getControlFormUserDocumentContext,

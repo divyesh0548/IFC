@@ -33,10 +33,22 @@ const {
 } = require('../utils/sample_size_resolver');
 const { validateRacmUnitUserAssignment } = require('../utils/unit_user_validation');
 const {
+  ensureActiveTemplateForUnit,
+  getActiveTemplateWithFields,
+  getTemplateWithFieldsById,
+  validateDynamicValuesAgainstTemplate,
+  saveDynamicFieldValues,
+  incrementTemplateLinkedRacmCount,
+  decrementTemplateLinkedRacmCount,
+  loadDynamicFieldValuesForForm,
+  isRacmTemplateSchemaReady,
+} = require('../utils/racm_templates');
+const {
   attachControlFormDocuments,
   buildDeficiencyResponseS3FolderPath,
   buildSampleDocumentS3FolderPath,
   buildUserDocumentS3FolderPath,
+  collectRacmS3DocumentKeys,
   getControlFormDocumentRows,
   getControlFormUserDocumentContext,
   insertSampleDocument,
@@ -894,20 +906,7 @@ const REQUEST_CHANGE_ALLOWED_FIELDS = new Set([
   'nature_of_control',
   'sample_size',
   'sample_required',
-  'completeness',
-  'existence_occurrence',
-  'rights_and_obligation',
-  'valuation_and_allocation',
-  'presentation_and_disclosure',
   'due_date',
-]);
-
-const REQUEST_CHANGE_BOOLEAN_FIELDS = new Set([
-  'completeness',
-  'existence_occurrence',
-  'rights_and_obligation',
-  'valuation_and_allocation',
-  'presentation_and_disclosure',
 ]);
 
 const REQUEST_CHANGE_FIELD_LABELS = {
@@ -935,11 +934,6 @@ const REQUEST_CHANGE_FIELD_LABELS = {
   nature_of_control: 'Nature of Control',
   sample_size: 'Sample Size',
   sample_required: 'Sample Required',
-  completeness: 'Completeness',
-  existence_occurrence: 'Existence & Occurrence',
-  rights_and_obligation: 'Rights and Obligations',
-  valuation_and_allocation: 'Valuation & Allocation',
-  presentation_and_disclosure: 'Presentation and Disclosure',
   due_date: 'Due Date',
 };
 
@@ -950,12 +944,6 @@ function generateChangeRequestId() {
 
 function normalizeChangeRequestTextValue(fieldName, value) {
   if (value == null) return '';
-
-  if (REQUEST_CHANGE_BOOLEAN_FIELDS.has(fieldName)) {
-    if (value === true || value === 'true' || value === '1' || value === 1) return 'true';
-    if (value === false || value === 'false' || value === '0' || value === 0) return 'false';
-    return '';
-  }
 
   if (fieldName === 'due_date') {
     const raw = String(value).trim();
@@ -986,13 +974,6 @@ function parseApprovedChangeRequestValue(fieldName, value) {
   if (value == null) return null;
   const raw = String(value).trim();
   if (!raw) return null;
-
-  if (REQUEST_CHANGE_BOOLEAN_FIELDS.has(fieldName)) {
-    const normalized = raw.toLowerCase();
-    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
-    if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
-    return null;
-  }
 
   if (fieldName === 'due_date') {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
@@ -1261,12 +1242,34 @@ router.post('/bulk-import-rows', verifyAuth, async (req, res) => {
 
     const coordinatorEmailId = req.user.email_id;
     const columnMapping = req.body.column_mapping;
+
+    let allowedExtraFieldKeys = null;
+    if (unitId) {
+      const schemaClient = await pool.connect();
+      try {
+        if (await isRacmTemplateSchemaReady(schemaClient)) {
+          const templateResult = await getActiveTemplateWithFields(
+            schemaClient,
+            companyIdentifier,
+            unitId
+          );
+          if (templateResult.ok) {
+            allowedExtraFieldKeys = new Set(
+              (templateResult.extra_fields || []).map((field) => field.field_key)
+            );
+          }
+        }
+      } finally {
+        schemaClient.release();
+      }
+    }
+
     const transformedDataBase =
       columnMapping &&
       typeof columnMapping === 'object' &&
       !Array.isArray(columnMapping) &&
       Object.keys(columnMapping).length > 0
-        ? transformExcelDataWithColumnMapping(rows, columnMapping)
+        ? transformExcelDataWithColumnMapping(rows, columnMapping, allowedExtraFieldKeys)
         : transformExcelData(rows);
     const controlFrequencyValueMapping =
       req.body.control_frequency_value_mapping &&
@@ -1677,6 +1680,20 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
         ? shapeControlFormJsonForProcessOwner(formData)
         : formData;
 
+    if (await isRacmTemplateSchemaReady(pool)) {
+      const templateId = dataForClient.template_id;
+      if (templateId) {
+        const templatePayload = await getTemplateWithFieldsById(pool, templateId);
+        if (templatePayload.ok) {
+          dataForClient.template = templatePayload.template;
+          dataForClient.field_definitions = templatePayload.fields;
+        }
+      }
+      const dynamicPayload = await loadDynamicFieldValuesForForm(pool, form_id);
+      dataForClient.dynamic_values = dynamicPayload.dynamic_values;
+      dataForClient.dynamic_value_rows = dynamicPayload.dynamic_value_rows;
+    }
+
     res.status(200).json({
       success: true,
       data: dataForClient
@@ -1703,10 +1720,9 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     control_performer, control_owner, control_design_procs,
     control_design_conclusion, design_deficiency_desc,
     control_type_fo, control_type_ma,
-    completeness, existence_occurrence, rights_and_obligation,
-    valuation_and_allocation, presentation_and_disclosure,
     due_date, reminder_frequency,
     sample_size,
+    dynamic_values,
     doc_uploaded_by_user, doc_uploaded_by_user_docs, replace_user_documents, active, status, reason_by_approver, remarks_by_user,
     modifiedFields,
     modifiedChanges
@@ -1904,11 +1920,6 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     sampleRequired: sampleRequiredForUpdate,
     controlTypeFo: control_type_fo,
     controlTypeMa: control_type_ma,
-    completeness: normalizeNullableBoolean(completeness),
-    existenceOccurrence: normalizeNullableBoolean(existence_occurrence),
-    rightsAndObligation: normalizeNullableBoolean(rights_and_obligation),
-    valuationAndAllocation: normalizeNullableBoolean(valuation_and_allocation),
-    presentationAndDisclosure: normalizeNullableBoolean(presentation_and_disclosure),
     dueDate: due_date !== undefined ? parseDateOnlyInput(due_date) : undefined,
     reminderFrequency: reminder_frequency,
     status,
@@ -1954,7 +1965,8 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     data.sentForApprovalTimestamp = new Date();
   }
   const cleanedUpdateData = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
-  if (Object.keys(cleanedUpdateData).length === 0 && !isRacmAssignmentOperation && active === undefined && !hasUserDocumentUpload) {
+  const hasDynamicValuesUpdate = dynamic_values !== undefined && typeof dynamic_values === 'object';
+  if (Object.keys(cleanedUpdateData).length === 0 && !isRacmAssignmentOperation && active === undefined && !hasUserDocumentUpload && !hasDynamicValuesUpdate) {
     return res.status(400).json({ success: false, message: 'No fields to update' });
   }
 
@@ -2054,6 +2066,31 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       }
     });
 
+    if (hasDynamicValuesUpdate && await isRacmTemplateSchemaReady(pool)) {
+      const templateId = currentForm.templateId;
+      if (templateId) {
+        const templateDetails = await getTemplateWithFieldsById(pool, templateId);
+        if (templateDetails.ok) {
+          const dynamicValidation = validateDynamicValuesAgainstTemplate(
+            templateDetails.extra_fields || [],
+            dynamic_values
+          );
+          if (!dynamicValidation.ok) {
+            return res.status(400).json({ success: false, message: dynamicValidation.message });
+          }
+          const saveDynamicResult = await saveDynamicFieldValues(
+            pool,
+            normalizedFormId,
+            templateId,
+            dynamicValidation.dynamicValues
+          );
+          if (!saveDynamicResult.ok) {
+            return res.status(400).json({ success: false, message: saveDynamicResult.message });
+          }
+        }
+      }
+    }
+
     if (status === 'sent for approval' && req.user && req.user.email_id) {
       await logAuditEvent('Sent RACM for approval', req.user.email_id, form_id, null);
     }
@@ -2119,11 +2156,6 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       business_process: form.businessProcess,
       financial_year: form.financialYear,
       sample_required: form.sampleRequired,
-      completeness: form.completeness,
-      existence_occurrence: form.existenceOccurrence,
-      rights_and_obligation: form.rightsAndObligation,
-      valuation_and_allocation: form.valuationAndAllocation,
-      presentation_and_disclosure: form.presentationAndDisclosure,
       control_number: form.controlNumber,
       area: form.area,
       risk_heat: form.riskHeat,
@@ -2142,6 +2174,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       control_type_ma: form.controlTypeMa,
       due_date: form.dueDate,
       reminder_frequency: form.reminderFrequency,
+      template_id: form.templateId,
       ...reminderFields,
       sent_for_approval_timestamp: form.sentForApprovalTimestamp,
       approval_status_change_timestamp: form.approvalStatusChangeTs,
@@ -2218,6 +2251,19 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     }
 
     updatedRow.deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
+    if (await isRacmTemplateSchemaReady(pool)) {
+      const templateId = updatedRow.template_id || form.templateId;
+      if (templateId) {
+        const templatePayload = await getTemplateWithFieldsById(pool, templateId);
+        if (templatePayload.ok) {
+          updatedRow.template = templatePayload.template;
+          updatedRow.field_definitions = templatePayload.fields;
+        }
+      }
+      const dynamicPayload = await loadDynamicFieldValuesForForm(pool, normalizedFormId);
+      updatedRow.dynamic_values = dynamicPayload.dynamic_values;
+      updatedRow.dynamic_value_rows = dynamicPayload.dynamic_value_rows;
+    }
     const dataForClient = req.user.role === 'user' ? shapeControlFormJsonForProcessOwner(updatedRow) : updatedRow;
     res.status(200).json({ success: true, message: 'RACM updated successfully', data: dataForClient });
   } catch (error) {
@@ -3492,8 +3538,6 @@ router.post('/', verifyAuth, async (req, res) => {
     control_type_fo, control_type_ma,
     company_identifier, business_process, financial_year, unit_id,
     sample_size,
-    completeness, existence_occurrence, rights_and_obligation,
-    valuation_and_allocation, presentation_and_disclosure
   } = req.body;
 
   const unitId = unit_id != null ? String(unit_id).trim() : '';
@@ -3653,6 +3697,32 @@ router.post('/', verifyAuth, async (req, res) => {
     const sampleRequired = builtSample.sampleRequired;
     console.log('[control_forms POST] control_frequency:', control_frequency, 'normalized:', controlFrequencyValue, 'sample_required result:', sampleRequired);
 
+    let activeTemplateId = null;
+    let validatedDynamicValues = {};
+    if (await isRacmTemplateSchemaReady(client)) {
+      const templateResult = await ensureActiveTemplateForUnit(client, {
+        companyIdentifier: userCompanyIdentifier,
+        unitId,
+        createdBy: req.user.email_id,
+      });
+      if (!templateResult.ok) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: templateResult.message });
+      }
+
+      activeTemplateId = templateResult.template.id;
+      const templateDetails = await getTemplateWithFieldsById(client, activeTemplateId);
+      const dynamicValidation = validateDynamicValuesAgainstTemplate(
+        templateDetails.extra_fields || [],
+        req.body.dynamic_values
+      );
+      if (!dynamicValidation.ok) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: dynamicValidation.message });
+      }
+      validatedDynamicValues = dynamicValidation.dynamicValues;
+    }
+
     const insertQuery = `
       INSERT INTO control_forms (
         standard_control_description, sub_process, risk_description,
@@ -3664,11 +3734,10 @@ router.post('/', verifyAuth, async (req, res) => {
         sample_size, control_type_fo, control_type_ma,
         form_id, company_identifier, business_process, financial_year, unit_id, sample_required,
         due_date, reminder_frequency,
-        completeness, existence_occurrence, rights_and_obligation,
-        valuation_and_allocation, presentation_and_disclosure,
+        template_id,
         created_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, NOW() AT TIME ZONE 'UTC')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, NOW() AT TIME ZONE 'UTC')
       RETURNING *;
     `;
 
@@ -3683,11 +3752,27 @@ router.post('/', verifyAuth, async (req, res) => {
       formId, userCompanyIdentifier, business_process, financial_year || null, unitId, sampleRequired,
       hasDueDate ? dueDateRaw : null,
       hasReminderFrequency ? reminderFrequencyRaw : null,
-      completeness || null, existence_occurrence || null, rights_and_obligation || null,
-      valuation_and_allocation || null, presentation_and_disclosure || null
+      activeTemplateId
     ]);
 
     console.log('[control_forms POST] Inserted RACM - sample_required in DB:', result.rows[0]?.sample_required);
+
+    if (activeTemplateId && Object.keys(validatedDynamicValues).length > 0) {
+      const saveDynamicResult = await saveDynamicFieldValues(
+        client,
+        formId,
+        activeTemplateId,
+        validatedDynamicValues
+      );
+      if (!saveDynamicResult.ok) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: saveDynamicResult.message });
+      }
+    }
+
+    if (activeTemplateId) {
+      await incrementTemplateLinkedRacmCount(client, activeTemplateId);
+    }
 
     await client.query('COMMIT');
 
@@ -3952,6 +4037,7 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
         id: true,
         companyIdentifier: true,
         active: true,
+        templateId: true,
       },
     });
 
@@ -3978,27 +4064,8 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       });
     }
 
-    // Delete all sample and user-uploaded documents from S3 before deleting DB rows.
-    const [sampleDocs, userDocs] = await Promise.all([
-      prisma.sampleDoc.findMany({
-        where: { formId: form_id },
-        select: { sampleDoc: true },
-      }),
-      prisma.racmDoc.findMany({
-        where: { formId: form_id },
-        select: { docUploadedByUser: true },
-      }),
-    ]);
-    const docUrlsToDelete = Array.from(
-      new Set(
-        [
-          ...userDocs.map((doc) => doc.docUploadedByUser),
-          ...sampleDocs.map((doc) => doc.sampleDoc),
-        ]
-          .map((value) => (value == null ? '' : String(value).trim()))
-          .filter(Boolean)
-      )
-    );
+    // Delete all sample, user-uploaded, and deficiency response documents from S3 before deleting DB rows.
+    const docUrlsToDelete = await collectRacmS3DocumentKeys(prisma, form_id);
 
     try {
       for (const s3Key of docUrlsToDelete) {
@@ -4028,6 +4095,15 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
         sample_doc_rows: deletedSampleDocsResult.count,
       };
     });
+
+    if (form.templateId && (await isRacmTemplateSchemaReady(pool))) {
+      const countClient = await pool.connect();
+      try {
+        await decrementTemplateLinkedRacmCount(countClient, form.templateId);
+      } finally {
+        countClient.release();
+      }
+    }
 
     res.status(200).json({
       success: true,

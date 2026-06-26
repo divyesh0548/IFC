@@ -41,4 +41,15 @@ router.get('/unit-sample-size-config', verifyCompanyCoordinator, controller.getU
 router.put('/unit-sample-size-config', verifyCompanyCoordinator, controller.updateUnitSampleSizeConfig);
 router.post('/preview-sample-required', verifyCompanyCoordinator, controller.previewSampleRequired);
 
+const racmTemplateController = require('../../controllers/company_co/racm_templates');
+router.get('/racm-templates', verifyCompanyCoordinator, racmTemplateController.getActiveRacmTemplate);
+router.get('/racm-templates/versions', verifyCompanyCoordinator, racmTemplateController.listRacmTemplateVersions);
+router.get('/racm-templates/:template_id', verifyCompanyCoordinator, racmTemplateController.getRacmTemplateById);
+router.post('/racm-templates/create-fresh', verifyCompanyCoordinator, racmTemplateController.createFreshRacmTemplate);
+router.post('/racm-templates/structural-save', verifyCompanyCoordinator, racmTemplateController.saveRacmTemplateStructure);
+router.patch('/racm-templates/keywords', verifyCompanyCoordinator, racmTemplateController.patchRacmTemplateKeywords);
+router.post('/racm-templates/copy', verifyCompanyCoordinator, racmTemplateController.copyRacmTemplate);
+router.patch('/racm-templates/:template_id/activate', verifyCompanyCoordinator, racmTemplateController.activateRacmTemplateVersion);
+router.delete('/racm-templates/:template_id', verifyCompanyCoordinator, racmTemplateController.removeRacmTemplateVersion);
+
 module.exports = router;

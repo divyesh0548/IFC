@@ -11,6 +11,7 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
+import TableViewRoundedIcon from '@mui/icons-material/TableViewRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { apiUrl } from '../../config/api'
 import DashboardGreeting from '../../components/DashboardGreeting'
@@ -68,6 +69,14 @@ function Company_co_home() {
       description: 'Manage common and process-specific communication contacts for RACM workflows.',
       path: '/company_co/racm-communication',
       icon: <MarkEmailReadRoundedIcon sx={{ fontSize: 38 }} />,
+      accent: sharedTileAccent,
+    },
+    {
+      eyebrow: 'Template',
+      title: 'RACM Templates',
+      description: 'Review unit templates, sections, and add new template columns with versioned changes.',
+      path: '/company_co/racm-templates',
+      icon: <TableViewRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },
     {

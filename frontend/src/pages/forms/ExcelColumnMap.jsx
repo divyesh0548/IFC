@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -27,175 +27,55 @@ import { apiUrl } from '../../config/api'
 import { getControlFrequencyValidationDetails } from '../../utils/controlFrequencyValidation'
 import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
 import ControlFrequencyValueMapDialog from '../../components/racm/ControlFrequencyValueMapDialog'
+import {
+  parseExtraFieldMappingValue,
+  toExtraFieldMappingValue,
+} from '../../utils/racmTemplateKeywords'
+import {
+  BULK_IMPORT_AUTO,
+  BULK_IMPORT_SKIP,
+  buildColumnMapping,
+  buildMappableFieldSet,
+  buildUniqueAutoDetectedByHeader,
+  collectBulkImportHeaders,
+  getEffectiveMappedField,
+} from '../../utils/racmBulkImportColumnMapping'
 
-const AUTO = '__auto__'
-const SKIP = '__skip__'
-const MAPPABLE_SET = new Set(RACM_BULK_IMPORT_MAPPABLE_FIELDS)
+const AUTO = BULK_IMPORT_AUTO
+const SKIP = BULK_IMPORT_SKIP
 const DUPLICATE_CONTROL_NUMBER_MESSAGE = 'Duplicate Control Number already exists for this company'
 const DUPLICATE_CONTROL_NUMBER_NOTICE =
   'Change the control number and re-upload the excel or do not import control number'
 
-function normalizeHeader(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-function hasKeywordMatch(normalizedHeader, keyword) {
-  const tokens = normalizedHeader.split(' ').filter(Boolean)
-  const k = keyword.toLowerCase()
-  if (k.length <= 2) return tokens.some((t) => t === k)
-  return tokens.some((t) => t === k || t.startsWith(k))
-}
-
-function getHeaderWords(normalizedHeader) {
-  return new Set(
-    String(normalizedHeader || '')
-      .split(' ')
-      .map((word) => word.trim().toLowerCase())
-      .filter(Boolean)
-  )
-}
-
-function detectDbColumnFromHeader(excelHeader, mappingConfig) {
-  if (!excelHeader) return null
-  if (!mappingConfig?.simpleColumnMapping || !Array.isArray(mappingConfig?.columnPatterns)) return null
-  const simpleColumnMapping = mappingConfig.simpleColumnMapping
-  const columnPatterns = mappingConfig.columnPatterns
-  const normalized = String(excelHeader)
-    .trim()
-    .toLowerCase()
-    .replace(/[/()&-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  const requiredFrequencyWords = ['frequency', 'control', 'of']
-  if (requiredFrequencyWords.every((word) => hasKeywordMatch(normalized, word))) {
-    return 'control_frequency'
-  }
-
-  if (simpleColumnMapping[normalized]) return simpleColumnMapping[normalized]
-
-  const withUnderscores = normalized.replace(/\s+/g, '_')
-  if (simpleColumnMapping[withUnderscores]) return simpleColumnMapping[withUnderscores]
-
-  let bestMatch = null
-  let bestScore = 0
-  const headerWords = getHeaderWords(normalized)
-  for (const pattern of columnPatterns) {
-    const keywordSets = Array.isArray(pattern.keywordGroups) && pattern.keywordGroups.length > 0
-      ? pattern.keywordGroups
-      : [pattern.keywords || []]
-
-    let patternBestScore = 0
-    for (const keywords of keywordSets) {
-      if (!Array.isArray(keywords) || keywords.length === 0) continue
-
-      if (Array.isArray(pattern.keywordGroups) && pattern.keywordGroups.length > 0) {
-        const hasAllGroupWords = keywords.every((keyword) => headerWords.has(String(keyword).toLowerCase()))
-        if (!hasAllGroupWords) continue
-        patternBestScore = Math.max(patternBestScore, pattern.priority || 1)
-        continue
-      }
-
-      let matchCount = 0
-      for (const keyword of keywords) {
-        if (hasKeywordMatch(normalized, keyword)) matchCount++
-      }
-      if (matchCount > 0) {
-        if (pattern.requireAllKeywords && matchCount !== keywords.length) continue
-        const score = (matchCount / keywords.length) * pattern.priority
-        if (score > patternBestScore) {
-          patternBestScore = score
-        }
-      }
-    }
-    if (patternBestScore > bestScore) {
-      bestScore = patternBestScore
-      bestMatch = pattern.dbColumn
-    }
-  }
-  if (bestMatch && bestScore >= 0.5) return bestMatch
-
-  if (hasKeywordMatch(normalized, 'risk') && !hasKeywordMatch(normalized, 'heat')) {
-    return 'risk_description'
-  }
-
-  return normalized.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || null
-}
-
-function collectHeaders(rows) {
-  const set = new Set()
-    ; (rows || []).forEach((row) => {
-      Object.keys(row || {}).forEach((k) => set.add(k))
-    })
-  return [...set]
-}
-
-function buildUniqueAutoDetectedByHeader(headers, mappingConfig) {
-  const usedFields = new Set()
-  const out = {}
-  headers.forEach((header) => {
-    const detected = detectDbColumnFromHeader(header, mappingConfig)
-    const resolved = detected && MAPPABLE_SET.has(detected) ? detected : null
-    if (resolved && !usedFields.has(resolved)) {
-      out[header] = resolved
-      usedFields.add(resolved)
-    } else {
-      out[header] = null
-    }
-  })
-  return out
-}
-
-/**
- * Effective RACM DB field for an Excel header after submit (skip / explicit / auto-detect).
- * Aligns with how bulk-import applies column_mapping + auto rules.
- */
-function getEffectiveMappedField(excelHeader, selections, autoDetectedByHeader, mappingConfig) {
-  const v = selections[excelHeader]
-  if (v === SKIP) return null
-  if (v && v !== AUTO) {
-    return MAPPABLE_SET.has(v) ? v : null
-  }
-  const detected = autoDetectedByHeader[excelHeader]
-  if (detected && MAPPABLE_SET.has(detected)) return detected
-  const fallback = detectDbColumnFromHeader(excelHeader, mappingConfig)
-  return fallback && MAPPABLE_SET.has(fallback) ? fallback : null
-}
-
 /**
  * @returns {{ ok: true } | { ok: false, fieldLabel: string, excelHeaders: string[] }}
  */
-function findDuplicateFieldMappings(headers, selections, autoDetectedByHeader, mappingConfig) {
+function findDuplicateFieldMappings(
+  headers,
+  selections,
+  autoDetectedByHeader,
+  mappingConfig,
+  mappableSet,
+  extraFields = []
+) {
   const byField = new Map()
   for (const h of headers) {
-    const field = getEffectiveMappedField(h, selections, autoDetectedByHeader, mappingConfig)
+    const field = getEffectiveMappedField(h, selections, autoDetectedByHeader, mappingConfig, mappableSet)
     if (!field) continue
     if (!byField.has(field)) byField.set(field, [])
     byField.get(field).push(h)
   }
   for (const [fieldKey, excelHeaders] of byField) {
     if (excelHeaders.length > 1) {
-      const fieldLabel = RACM_FIELD_LABELS[fieldKey] || fieldKey.replace(/_/g, ' ')
+      const parsedExtra = parseExtraFieldMappingValue(fieldKey)
+      const fieldLabel = parsedExtra
+        ? (extraFields.find((item) => item.field_key === parsedExtra)?.label
+          || parsedExtra.replace(/_/g, ' '))
+        : (RACM_FIELD_LABELS[fieldKey] || fieldKey.replace(/_/g, ' '))
       return { ok: false, fieldLabel, excelHeaders }
     }
   }
   return { ok: true }
-}
-
-function buildColumnMapping(headers, selections) {
-  const out = {}
-  for (const h of headers) {
-    const v = selections[h]
-    if (v === SKIP) {
-      out[h] = null
-    } else if (v && v !== AUTO) {
-      out[h] = v
-    }
-  }
-  return out
 }
 
 function ExcelColumnMap() {
@@ -203,8 +83,10 @@ function ExcelColumnMap() {
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const [payload, setPayload] = useState(null)
-  const [selections, setSelections] = useState(null)
   const [mappingConfig, setMappingConfig] = useState(null)
+  const [templateExtraFields, setTemplateExtraFields] = useState([])
+  const [templateFieldsLoaded, setTemplateFieldsLoaded] = useState(false)
+  const [userOverrides, setUserOverrides] = useState({})
   const [duplicateControlNumberNotice, setDuplicateControlNumberNotice] = useState('')
   const { controlFrequencyOptions, loading: controlFrequencyOptionsLoading } = useControlFrequencyOptions()
   const [controlFrequencyMappingDialogState, setControlFrequencyMappingDialogState] = useState({
@@ -213,16 +95,43 @@ function ExcelColumnMap() {
     submitContext: null,
     selections: {},
   })
-  const initialSelectionsRef = useRef(null)
   useSyncGlobalLoading(initializing || loading)
-  const headers = useMemo(() => (payload ? collectHeaders(payload.rows) : []), [payload])
+  const headers = useMemo(() => (payload ? collectBulkImportHeaders(payload.rows) : []), [payload])
 
-  const hasAnyProgress = useMemo(() => {
-    if (!selections) return false
-    const initial = initialSelectionsRef.current
-    if (!initial) return false
-    return headers.some((h) => selections[h] !== initial[h])
-  }, [selections, headers])
+  const mappableSet = useMemo(
+    () => buildMappableFieldSet(templateExtraFields),
+    [templateExtraFields]
+  )
+
+  const autoDetectedByHeader = useMemo(() => {
+    if (!mappingConfig || !templateFieldsLoaded) return {}
+    return buildUniqueAutoDetectedByHeader(headers, mappingConfig, templateExtraFields, mappableSet)
+  }, [headers, mappingConfig, templateExtraFields, mappableSet, templateFieldsLoaded])
+
+  const selections = useMemo(() => {
+    if (!mappingConfig || !payload || !templateFieldsLoaded) return null
+    const next = {}
+    headers.forEach((header) => {
+      if (Object.prototype.hasOwnProperty.call(userOverrides, header)) {
+        next[header] = userOverrides[header]
+      } else {
+        next[header] = autoDetectedByHeader[header] || SKIP
+      }
+    })
+    return next
+  }, [mappingConfig, payload, templateFieldsLoaded, headers, autoDetectedByHeader, userOverrides])
+
+  const getSelectValue = (header) => {
+    if (Object.prototype.hasOwnProperty.call(userOverrides, header)) {
+      return userOverrides[header]
+    }
+    return autoDetectedByHeader[header] || SKIP
+  }
+
+  const hasAnyProgress = useMemo(
+    () => Object.keys(userOverrides).length > 0,
+    [userOverrides]
+  )
 
   useUnsavedChangesWarning(
     hasAnyProgress,
@@ -258,7 +167,6 @@ function ExcelColumnMap() {
 
   useEffect(() => {
     try {
-      if (selections) return
       if (!mappingConfig) return
       const raw = sessionStorage.getItem(RACM_BULK_IMPORT_SESSION_KEY)
       if (!raw) {
@@ -274,51 +182,85 @@ function ExcelColumnMap() {
         return
       }
       setPayload(data)
-      const hdrs = collectHeaders(data.rows)
-      const uniqueAutoDetected = buildUniqueAutoDetectedByHeader(hdrs, mappingConfig)
-      const init = {}
-      hdrs.forEach((h) => {
-        init[h] = uniqueAutoDetected[h] ? AUTO : SKIP
-      })
-      initialSelectionsRef.current = init
-      setSelections(init)
     } catch (e) {
       console.error(e)
       toast.error('Could not load import session.')
       navigate('/company_co/control-creation', { replace: true })
-    } finally {
+    }
+  }, [navigate, mappingConfig])
+
+  useEffect(() => {
+    setUserOverrides({})
+  }, [payload?.unitId])
+
+  useEffect(() => {
+    if (!payload?.unitId) {
+      setTemplateExtraFields([])
+      return undefined
+    }
+
+    let cancelled = false
+    setTemplateExtraFields([])
+    setTemplateFieldsLoaded(false)
+    ;(async () => {
+      try {
+        const response = await fetch(
+          apiUrl(`/api/company-co/racm-templates?unit_id=${encodeURIComponent(payload.unitId)}`),
+          { credentials: 'include' }
+        )
+        const data = await response.json()
+        if (!cancelled && response.ok && data.success) {
+          setTemplateExtraFields(Array.isArray(data.data?.extra_fields) ? data.data.extra_fields : [])
+        }
+      } catch (error) {
+        console.error('Failed to load unit template fields for bulk import:', error)
+      } finally {
+        if (!cancelled) {
+          setUserOverrides({})
+          setTemplateFieldsLoaded(true)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [payload?.unitId])
+
+  useEffect(() => {
+    if (mappingConfig && payload && templateFieldsLoaded) {
       setInitializing(false)
     }
-  }, [navigate, mappingConfig, selections])
+  }, [mappingConfig, payload, templateFieldsLoaded])
 
   const rowCountLabel = useMemo(
     () => (payload?.rows?.length ? payload.rows.length.toLocaleString() : '0'),
     [payload]
   )
 
-  const fieldOptions = useMemo(
-    () =>
-      RACM_BULK_IMPORT_MAPPABLE_FIELDS.map((key) => ({
-        value: key,
-        label: RACM_FIELD_LABELS[key] || key.replace(/_/g, ' '),
-      })),
-    []
-  )
+  const fieldOptions = useMemo(() => {
+    const standard = RACM_BULK_IMPORT_MAPPABLE_FIELDS.map((key) => ({
+      value: key,
+      label: RACM_FIELD_LABELS[key] || key.replace(/_/g, ' '),
+    }))
+    const extras = templateExtraFields.map((field) => ({
+      value: toExtraFieldMappingValue(field.field_key),
+      label: `${field.label} (custom)`,
+    }))
+    return [...standard, ...extras]
+  }, [templateExtraFields])
   const fieldOptionMap = useMemo(
     () => new Map(fieldOptions.map((opt) => [opt.value, opt.label])),
     [fieldOptions]
   )
-  const autoDetectedByHeader = useMemo(() => {
-    return buildUniqueAutoDetectedByHeader(headers, mappingConfig)
-  }, [headers, mappingConfig])
   const mappedFieldByHeader = useMemo(() => {
     if (!selections) return {}
     const out = {}
     headers.forEach((header) => {
-      out[header] = getEffectiveMappedField(header, selections, autoDetectedByHeader, mappingConfig)
+      out[header] = getEffectiveMappedField(header, selections, autoDetectedByHeader, mappingConfig, mappableSet)
     })
     return out
-  }, [headers, selections, autoDetectedByHeader, mappingConfig])
+  }, [headers, selections, autoDetectedByHeader, mappingConfig, mappableSet])
   const isFieldUsedByAnotherHeader = (field, currentHeader) =>
     headers.some((header) => header !== currentHeader && mappedFieldByHeader[header] === field)
 
@@ -330,7 +272,14 @@ function ExcelColumnMap() {
   const handleSubmit = async () => {
     if (!payload || !selections) return
 
-    const dup = findDuplicateFieldMappings(headers, selections, autoDetectedByHeader, mappingConfig)
+    const dup = findDuplicateFieldMappings(
+      headers,
+      selections,
+      autoDetectedByHeader,
+      mappingConfig,
+      mappableSet,
+      templateExtraFields
+    )
     if (!dup.ok) {
       const cols = dup.excelHeaders.map((c) => `"${c}"`).join(', ')
       toast.error(`${dup.fieldLabel} cannot map to more than one Excel column (${cols}).`)
@@ -355,7 +304,13 @@ function ExcelColumnMap() {
           open: true,
           invalidValues: controlFrequencyValidation.invalidValues,
           submitContext: {
-            column_mapping: buildColumnMapping(headers, selections),
+            column_mapping: buildColumnMapping(
+              headers,
+              selections,
+              autoDetectedByHeader,
+              mappingConfig,
+              mappableSet
+            ),
           },
           selections: Object.fromEntries(
             controlFrequencyValidation.invalidValues.map((value) => [value, ''])
@@ -367,7 +322,13 @@ function ExcelColumnMap() {
       return
     }
 
-    const column_mapping = buildColumnMapping(headers, selections)
+    const column_mapping = buildColumnMapping(
+      headers,
+      selections,
+      autoDetectedByHeader,
+      mappingConfig,
+      mappableSet
+    )
     await submitImport(column_mapping)
   }
 
@@ -746,7 +707,7 @@ function ExcelColumnMap() {
                   <FormControl fullWidth size="small" disabled={loading}>
                     <Select
                       displayEmpty
-                      value={selections[header]}
+                      value={getSelectValue(header)}
                       renderValue={(value) => {
                         if (value === AUTO) {
                           const detected = autoDetectedByHeader[header]
@@ -757,7 +718,7 @@ function ExcelColumnMap() {
                         return fieldOptionMap.get(value) || value
                       }}
                       onChange={(e) =>
-                        setSelections((prev) => ({ ...prev, [header]: e.target.value }))
+                        setUserOverrides((prev) => ({ ...prev, [header]: e.target.value }))
                       }
                     >
                       <MenuItem value={AUTO}>

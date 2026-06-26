@@ -26,11 +26,6 @@ export const RACM_BULK_IMPORT_MAPPABLE_FIELDS = [
   'control_type_ma',
   'nature_of_control',
   'control_frequency',
-  'completeness',
-  'existence_occurrence',
-  'rights_and_obligation',
-  'valuation_and_allocation',
-  'presentation_and_disclosure',
 ]
 
 export const RACM_FIELD_LABELS = {
@@ -57,11 +52,6 @@ export const RACM_FIELD_LABELS = {
   control_frequency: 'Control Frequency',
   sample_size: 'Sample Size',
   sample_required: 'Sample Required',
-  completeness: 'Completeness',
-  existence_occurrence: 'Existence & Occurrence',
-  rights_and_obligation: 'Rights and Obligations',
-  valuation_and_allocation: 'Valuation & Allocation',
-  presentation_and_disclosure: 'Presentation and Disclosure',
   control_design_conclusion: 'Conclusion on Design of Control',
   design_deficiency_desc: 'Description of Deficiency in Control Design',
   doc_uploaded_by_user: 'Documents Uploaded by User',

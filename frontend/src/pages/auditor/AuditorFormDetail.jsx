@@ -26,6 +26,7 @@ import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailF
 import { API_BASE_URL } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments } from '../../lib/racmUserDocuments'
+import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 
 function formatDateTime(dateString) {
   if (!dateString) return 'N/A'
@@ -289,11 +290,6 @@ function AuditorFormDetail() {
     'control_frequency',
     'sample_size',
     'sample_required',
-    'completeness',
-    'existence_occurrence',
-    'rights_and_obligation',
-    'valuation_and_allocation',
-    'presentation_and_disclosure',
     'control_design_conclusion',
     'design_deficiency_desc',
     'doc_uploaded_by_user',
@@ -715,105 +711,22 @@ function AuditorFormDetail() {
                     </Box>
                   )
                 })}
+                <RacmTemplateSectionFields
+                  blendIntoParent
+                  sectionKey="process_and_risk"
+                  fieldDefinitions={formData.field_definitions}
+                  values={formData.dynamic_values || {}}
+                />
               </Box>
             </CardContent>
           </Card>
 
-          <Card
-            sx={{
-              borderRadius: 3,
-              boxShadow: theme.palette.mode === 'dark'
-                ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                : '0 2px 12px rgba(0, 0, 0, 0.08)',
-              border: '1px solid',
-              borderColor: theme.palette.mode === 'dark'
-                ? 'rgba(255, 255, 255, 0.12)'
-                : 'rgba(0, 0, 0, 0.08)',
-              overflow: 'hidden',
-            }}
-          >
-            <CardContent sx={{ p: 4 }}>
-              <Typography
-                variant="h6"
-                component="h3"
-                sx={{
-                  fontWeight: 700,
-                  mb: 3,
-                  color: 'text.primary',
-                  fontSize: '1.25rem',
-                  pb: 2,
-                  borderBottom: '2px solid',
-                  borderColor: 'divider',
-                }}
-              >
-                Assertions
-              </Typography>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    md: 'repeat(2, 1fr)',
-                  },
-                  gap: 3,
-                  mt: 2,
-                }}
-              >
-                {['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure'].map((key) => {
-                  if (!Object.prototype.hasOwnProperty.call(formData, key) || excludedFields.includes(key)) return null
-                  const label = fieldLabels[key]
-                  const value = formData[key]
-                  const isTruthy = value === true || value === 'true' || value === '1' || value === 1
-
-                  return (
-                    <Box
-                      key={key}
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 2,
-                        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
-                        border: '1px solid',
-                        borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
-                        transition: 'all 0.2s ease-in-out',
-                        '&:hover': {
-                          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                        },
-                      }}
-                    >
-                      <Typography
-                        variant="caption"
-                        component="dt"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          mb: 1.5,
-                          color: 'text.primary',
-                          fontSize: theme.typography.customSizes.small,
-                        }}
-                      >
-                        {label}
-                      </Typography>
-                      <Box component="dd" sx={{ m: 0, display: 'flex', alignItems: 'center', gap: 1, minHeight: 24 }}>
-                        <Checkbox checked={isTruthy} disabled sx={{ p: 0, mr: 0.5 }} />
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            color: isTruthy ? 'text.secondary' : 'text.disabled',
-                            lineHeight: 1.6,
-                            fontSize: theme.typography.customSizes.medium,
-                          }}
-                        >
-                          {isTruthy ? 'Selected' : 'Not selected'}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  )
-                })}
-              </Box>
-            </CardContent>
-          </Card>
+          <RacmTemplateSectionFields
+            sectionKey="assertions"
+            title="Assertions"
+            fieldDefinitions={formData.field_definitions}
+            values={formData.dynamic_values || {}}
+          />
 
           <Card
             sx={{
@@ -858,7 +771,7 @@ function AuditorFormDetail() {
                 {orderControlDetailKeys(
                   fieldOrder.filter((key) => {
                     if (groupedApproverFields.includes(key)) return false
-                    if (['control_number', 'area', 'sub_process', 'risk_description', 'risk_heat', 'completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure'].includes(key)) {
+                    if (['control_number', 'area', 'sub_process', 'risk_description', 'risk_heat'].includes(key)) {
                       return false
                     }
                     if (['doc_uploaded_by_user', 'remarks_by_user'].includes(key)) {
@@ -924,9 +837,22 @@ function AuditorFormDetail() {
                     </Box>
                   )
                 })}
+                <RacmTemplateSectionFields
+                  blendIntoParent
+                  sectionKey="control_details"
+                  fieldDefinitions={formData.field_definitions}
+                  values={formData.dynamic_values || {}}
+                />
               </Box>
             </CardContent>
           </Card>
+
+          <RacmTemplateSectionFields
+            sectionKey="others"
+            title="Others"
+            fieldDefinitions={formData.field_definitions}
+            values={formData.dynamic_values || {}}
+          />
 
           {hasGroupedFieldValue && (
             <Card

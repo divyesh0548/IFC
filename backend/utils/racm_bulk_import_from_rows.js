@@ -11,6 +11,23 @@ const {
   buildSampleSizeForFrequency,
 } = require('./sample_size_resolver');
 const { getBusinessProcessCodeForCompany } = require('./business_process_master');
+const {
+  ensureActiveTemplateForUnit,
+  getTemplateWithFieldsById,
+  validateDynamicValuesAgainstTemplate,
+  saveDynamicFieldValues,
+  incrementTemplateLinkedRacmCount,
+  isRacmTemplateSchemaReady,
+} = require('./racm_templates');
+
+const EXTRA_FIELD_MAPPING_PREFIX = 'extra:';
+
+function parseExtraFieldMappingValue(value) {
+  const raw = String(value || '');
+  if (!raw.startsWith(EXTRA_FIELD_MAPPING_PREFIX)) return null;
+  const fieldKey = raw.slice(EXTRA_FIELD_MAPPING_PREFIX.length).trim();
+  return fieldKey || null;
+}
 
 function generateFormId() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -57,29 +74,6 @@ function countEmptyValues(row) {
     }
   });
   return emptyCount;
-}
-
-function normalizeExcelTruthyToBoolean(value, columnName) {
-  if (value === null || value === undefined) return false;
-  const raw = String(value).trim();
-  if (raw === '') return false;
-
-  const normalized = raw.toLowerCase().replace(/[&/()-]/g, ' ').replace(/\s+/g, ' ').trim();
-  const placeholders = new Set(['na', 'n a', 'n/a', 'none', '-', '--']);
-  if (placeholders.has(normalized)) return false;
-
-  const headerLikeByColumn = {
-    completeness: new Set(['completeness']),
-    existence_occurrence: new Set(['existence occurrence', 'existence and occurrence', 'existence  occurrence']),
-    rights_and_obligation: new Set(['rights and obligations', 'rights obligations', 'rights and obligation']),
-    valuation_and_allocation: new Set(['valuation and allocation', 'valuation allocation']),
-    presentation_and_disclosure: new Set(['presentation and disclosure', 'presentation disclosure']),
-  };
-
-  const disallowed = headerLikeByColumn[columnName];
-  if (disallowed && disallowed.has(normalized)) return false;
-
-  return true;
 }
 
 function normalizeBusinessProcessValue(value) {
@@ -244,11 +238,6 @@ const MAPPABLE_DB_COLUMNS = new Set([
   'control_owner',
   'control_type_fo',
   'control_type_ma',
-  'completeness',
-  'existence_occurrence',
-  'rights_and_obligation',
-  'valuation_and_allocation',
-  'presentation_and_disclosure',
 ]);
 
 /**
@@ -314,11 +303,7 @@ const INSERT_COLUMNS = [
   'sample_required',
   'due_date',
   'reminder_frequency',
-  'completeness',
-  'existence_occurrence',
-  'rights_and_obligation',
-  'valuation_and_allocation',
-  'presentation_and_disclosure',
+  'template_id',
 ];
 
 function transformExcelData(excelRows) {
@@ -340,7 +325,7 @@ function transformExcelData(excelRows) {
  * @param {Array<Record<string, unknown>>} excelRows
  * @param {Record<string, string|null|undefined>} columnMapping - Excel header string -> DB column or null/__skip__ to ignore; omitted keys use normalizeColumnName
  */
-function transformExcelDataWithColumnMapping(excelRows, columnMapping) {
+function transformExcelDataWithColumnMapping(excelRows, columnMapping, allowedExtraFieldKeys = null) {
   const hasExplicitMapping =
     columnMapping && typeof columnMapping === 'object' && !Array.isArray(columnMapping);
 
@@ -355,6 +340,19 @@ function transformExcelDataWithColumnMapping(excelRows, columnMapping) {
           return;
         }
         const mapped = String(raw).trim();
+        const extraFieldKey = parseExtraFieldMappingValue(mapped);
+        if (extraFieldKey) {
+          if (allowedExtraFieldKeys && !allowedExtraFieldKeys.has(extraFieldKey)) {
+            return;
+          }
+          if (!dbRow.dynamic_values) dbRow.dynamic_values = {};
+          const value = row[excelColumn];
+          dbRow.dynamic_values[extraFieldKey] =
+            value !== null && value !== undefined && String(value).trim() !== ''
+              ? String(value).trim()
+              : '';
+          return;
+        }
         if (!MAPPABLE_DB_COLUMNS.has(mapped)) {
           return;
         }
@@ -520,6 +518,23 @@ async function insertRacmRowsFromTransformedData(client, options) {
     ? await loadUnitFrequencySampleSizeMap(client, companyIdentifier, unitId)
     : new Map();
 
+  let activeTemplateId = null;
+  let extraFields = [];
+  if (unitId && await isRacmTemplateSchemaReady(client)) {
+    const templateResult = await ensureActiveTemplateForUnit(client, {
+      companyIdentifier,
+      unitId,
+      createdBy: coordinatorEmailId || 'system',
+    });
+    if (templateResult.ok) {
+      activeTemplateId = templateResult.template.id;
+      const templateDetails = await getTemplateWithFieldsById(client, activeTemplateId);
+      if (templateDetails.ok) {
+        extraFields = templateDetails.extra_fields || [];
+      }
+    }
+  }
+
   for (let i = 0; i < transformedData.length; i++) {
     const row = transformedData[i];
     const emptyCount = countEmptyValues(row);
@@ -556,19 +571,44 @@ async function insertRacmRowsFromTransformedData(client, options) {
         if (col === 'sample_required') return sampleRequired;
         if (col === 'sample_size') return sampleSize !== null ? String(sampleSize) : null;
         if (col === 'active') return false;
-        if (
-          col === 'completeness' ||
-          col === 'existence_occurrence' ||
-          col === 'rights_and_obligation' ||
-          col === 'valuation_and_allocation' ||
-          col === 'presentation_and_disclosure'
-        ) {
-          return normalizeExcelTruthyToBoolean(row[col], col);
-        }
+        if (col === 'template_id') return activeTemplateId;
         return row[col] || null;
       });
 
       await client.query(insertQuery, values);
+
+      const dynamicValues =
+        row.dynamic_values && typeof row.dynamic_values === 'object' ? row.dynamic_values : {};
+      const filteredDynamicValues = {};
+      for (const field of extraFields) {
+        if (Object.prototype.hasOwnProperty.call(dynamicValues, field.field_key)) {
+          filteredDynamicValues[field.field_key] = dynamicValues[field.field_key];
+        }
+      }
+
+      if (activeTemplateId && Object.keys(filteredDynamicValues).length > 0) {
+        const dynamicValidation = validateDynamicValuesAgainstTemplate(
+          extraFields,
+          filteredDynamicValues
+        );
+        if (!dynamicValidation.ok) {
+          throw new Error(dynamicValidation.message);
+        }
+        const saveDynamicResult = await saveDynamicFieldValues(
+          client,
+          formId,
+          activeTemplateId,
+          dynamicValidation.dynamicValues
+        );
+        if (!saveDynamicResult.ok) {
+          throw new Error(saveDynamicResult.message);
+        }
+      }
+
+      if (activeTemplateId) {
+        await incrementTemplateLinkedRacmCount(client, activeTemplateId);
+      }
+
       insertedCount++;
 
       if (coordinatorEmailId) {

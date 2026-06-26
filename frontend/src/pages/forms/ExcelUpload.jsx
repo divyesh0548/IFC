@@ -41,6 +41,8 @@ import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
 import ControlFrequencyValueMapDialog from '../../components/racm/ControlFrequencyValueMapDialog'
 import { SampleSizeSettingsButton } from '../../components/company_co/UnitSampleSizeSettingsDialog'
+import ActiveRacmTemplateNotice from '../../components/company_co/ActiveRacmTemplateNotice'
+import { buildAutomaticColumnMappingForRows } from '../../utils/racmBulkImportColumnMapping'
 
 const MAX_BULK_IMPORT_ROWS = 5000
 const DUPLICATE_CONTROL_NUMBER_MESSAGE = 'Duplicate Control Number already exists for this company'
@@ -407,9 +409,49 @@ function ExcelUpload() {
     setPendingImport(null)
   }
 
+  const loadBulkImportMappingContext = async (selectedUnitId) => {
+    const [mappingResponse, templateResponse] = await Promise.all([
+      fetch(apiUrl('/api/control-forms/column-mapping-config'), { credentials: 'include' }),
+      fetch(
+        apiUrl(`/api/company-co/racm-templates?unit_id=${encodeURIComponent(selectedUnitId)}`),
+        { credentials: 'include' }
+      ),
+    ])
+    const mappingData = await mappingResponse.json()
+    const templateData = await templateResponse.json()
+    if (!mappingResponse.ok || !mappingData?.success || !mappingData?.data?.simpleColumnMapping) {
+      throw new Error('Could not load column mapping config')
+    }
+    const templateExtraFields =
+      templateResponse.ok && templateData.success && Array.isArray(templateData.data?.extra_fields)
+        ? templateData.data.extra_fields
+        : []
+    return {
+      mappingConfig: {
+        simpleColumnMapping: mappingData.data.simpleColumnMapping,
+        columnPatterns: mappingData.data.columnPatterns,
+      },
+      templateExtraFields,
+    }
+  }
+
   const handleAutomaticColumnMapping = async () => {
     if (!pendingImport) {
       handleMappingDialogCancel()
+      return
+    }
+
+    let columnMapping = {}
+    try {
+      const { mappingConfig, templateExtraFields } = await loadBulkImportMappingContext(pendingImport.unitId)
+      columnMapping = buildAutomaticColumnMappingForRows(
+        pendingImport.rows,
+        mappingConfig,
+        templateExtraFields
+      )
+    } catch (error) {
+      console.error('Failed to build automatic column mapping:', error)
+      toast.error('Could not prepare column mapping for import. Try manual column mapping.')
       return
     }
 
@@ -433,6 +475,7 @@ function ExcelUpload() {
           invalidValues: controlFrequencyValidation.invalidValues,
           ctx: {
             importCtx: pendingImport,
+            column_mapping: columnMapping,
           },
           selections: Object.fromEntries(
             controlFrequencyValidation.invalidValues.map((value) => [value, ''])
@@ -447,7 +490,7 @@ function ExcelUpload() {
     const ctx = pendingImport
     setMappingDialogOpen(false)
     setPendingImport(null)
-    await runBulkImport(ctx, {})
+    await runBulkImport(ctx, { column_mapping: columnMapping })
   }
 
   const handleCustomColumnMapping = () => {
@@ -495,6 +538,7 @@ function ExcelUpload() {
     handleControlFrequencyMappingCancel()
     if (!ctx?.importCtx) return
     await runBulkImport(ctx.importCtx, {
+      column_mapping: ctx.column_mapping,
       control_frequency_value_mapping: mapping,
     })
   }
@@ -571,6 +615,8 @@ function ExcelUpload() {
           Review the sample size for each control frequency before creating RACMs.
         </Alert>
       </Collapse>
+
+      <ActiveRacmTemplateNotice unitId={unitId} variant="bulk" />
 
       <Box
         sx={{
@@ -1156,8 +1202,9 @@ function ExcelUpload() {
             }}
           >
             Do you want to review and map Excel column headers to RACM fields? Use this when your sheet
-            uses names that do not match the template (for example, map &quot;Query Name&quot; to
-            Application Name). If you choose automatic import, the same header matching as before is used.
+            uses names that do not match the active template (for example, map &quot;Query Name&quot; to
+            Application Name). Automatic import uses the active template for the selected unit, including
+            custom and assertion columns where headers match template keywords.
           </DialogContentText>
           <Box sx={{ display: 'grid', gap: 1.5 }}>
             <Box
@@ -1176,7 +1223,7 @@ function ExcelUpload() {
                 Use automatic mapping
               </Typography>
               <Typography sx={{ fontSize: '0.9rem', lineHeight: 1.6, color: theme.palette.text.secondary }}>
-                Continue immediately when your Excel headers already resemble the RACM template.
+                Continue immediately when your Excel headers already match the active unit template.
               </Typography>
             </Box>
             <Box

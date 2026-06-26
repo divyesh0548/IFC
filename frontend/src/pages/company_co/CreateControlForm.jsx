@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTheme } from '@mui/material/styles'
 import { useNavigate } from 'react-router-dom'
 import Button from '@mui/material/Button'
@@ -11,7 +11,6 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import IconButton from '@mui/material/IconButton'
-import Checkbox from '@mui/material/Checkbox'
 import InputAdornment from '@mui/material/InputAdornment'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -25,6 +24,7 @@ import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import RacmUserAssignmentSection from '../../components/company_co/RacmUserAssignmentSection'
+import ActiveRacmTemplateNotice from '../../components/company_co/ActiveRacmTemplateNotice'
 import { getEffectiveSampleSizeForFrequency, validateSampleSizeForFrequency } from '../../utils/controlFrequencyValidation'
 
 function createEmptyFormData(unitId = '') {
@@ -53,14 +53,18 @@ function createEmptyFormData(unitId = '') {
     nature_of_control: '',
     control_frequency: '',
     sample_size: '',
-    completeness: false,
-    existence_occurrence: false,
-    rights_and_obligation: false,
-    valuation_and_allocation: false,
-    presentation_and_disclosure: false,
     due_date: '',
     reminder_frequency: '',
   }
+}
+
+const RACM_TEMPLATE_SECTION_ORDER = ['process_and_risk', 'assertions', 'control_details', 'others']
+
+const DEFAULT_SECTION_LABELS = {
+  process_and_risk: 'Process and Risk',
+  assertions: 'Assertions',
+  control_details: 'Control Details',
+  others: 'Others',
 }
 
 const EMPTY_CONTROL_NUMBER_META = {
@@ -80,7 +84,12 @@ function CreateControlForm() {
   const { businessProcessOptions, loading: businessProcessesLoading } = useBusinessProcesses()
   const [controlNumberMeta, setControlNumberMeta] = useState(EMPTY_CONTROL_NUMBER_META)
   const [assignmentSectionKey, setAssignmentSectionKey] = useState(0)
-  useSyncGlobalLoading(loading)
+  const [racmTemplate, setRacmTemplate] = useState(null)
+  const [extraTemplateFields, setExtraTemplateFields] = useState([])
+  const [sectionLabels, setSectionLabels] = useState(DEFAULT_SECTION_LABELS)
+  const [dynamicValues, setDynamicValues] = useState({})
+  const [templateLoading, setTemplateLoading] = useState(false)
+  useSyncGlobalLoading(loading || templateLoading)
 
   // Financial year options - dynamically based on current year
   // Example: if current year is 2026 -> [ '2025-26', '2026-27' ]
@@ -229,6 +238,95 @@ function CreateControlForm() {
     }
   }, [formData.unit_id])
 
+  useEffect(() => {
+    let cancelled = false
+    const unitId = String(formData.unit_id || '').trim()
+
+    if (!unitId) {
+      setRacmTemplate(null)
+      setExtraTemplateFields([])
+      setDynamicValues({})
+      setSectionLabels(DEFAULT_SECTION_LABELS)
+      return undefined
+    }
+
+    const fetchActiveTemplate = async () => {
+      setTemplateLoading(true)
+      try {
+        const response = await fetch(
+          apiUrl(`/api/company-co/racm-templates?unit_id=${encodeURIComponent(unitId)}`),
+          { credentials: 'include' }
+        )
+        const data = await response.json()
+        if (cancelled) return
+
+        if (response.ok && data.success) {
+          const extras = Array.isArray(data.data?.extra_fields) ? data.data.extra_fields : []
+          setRacmTemplate(data.data?.template || null)
+          setExtraTemplateFields(extras)
+          setSectionLabels({
+            ...DEFAULT_SECTION_LABELS,
+            ...(data.data?.section_labels || {}),
+          })
+          setDynamicValues((prev) => {
+            const next = {}
+            extras.forEach((field) => {
+              next[field.field_key] = prev[field.field_key] || ''
+            })
+            return next
+          })
+        } else {
+          setRacmTemplate(null)
+          setExtraTemplateFields([])
+          setDynamicValues({})
+        }
+      } catch (error) {
+        console.error('Error fetching active RACM template:', error)
+        if (!cancelled) {
+          setRacmTemplate(null)
+          setExtraTemplateFields([])
+          setDynamicValues({})
+        }
+      } finally {
+        if (!cancelled) {
+          setTemplateLoading(false)
+        }
+      }
+    }
+
+    fetchActiveTemplate()
+
+    return () => {
+      cancelled = true
+    }
+  }, [formData.unit_id])
+
+  const groupedExtraTemplateFields = useMemo(() => {
+    const groups = {}
+    extraTemplateFields.forEach((field) => {
+      const sectionKey = field.section_key || 'others'
+      if (!groups[sectionKey]) {
+        groups[sectionKey] = []
+      }
+      groups[sectionKey].push(field)
+    })
+    Object.values(groups).forEach((fields) => {
+      fields.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+    })
+    return groups
+  }, [extraTemplateFields])
+
+  const templateSectionsWithExtras = useMemo(
+    () => RACM_TEMPLATE_SECTION_ORDER.filter(
+      (sectionKey) =>
+        sectionKey !== 'assertions' &&
+        (groupedExtraTemplateFields[sectionKey] || []).length > 0
+    ),
+    [groupedExtraTemplateFields]
+  )
+
+  const assertionTemplateFields = groupedExtraTemplateFields.assertions || []
+
   const getControlFrequencySampleSizeMeta = useCallback(
     (frequencyLabel) => getEffectiveSampleSizeForFrequency(unitSampleSizeSettings, frequencyLabel),
     [unitSampleSizeSettings]
@@ -250,6 +348,7 @@ function CreateControlForm() {
     setOtherValues({})
     setControlNumberMeta(EMPTY_CONTROL_NUMBER_META)
     setAssignmentSectionKey((current) => current + 1)
+    setDynamicValues({})
   }, [unitOptions])
 
   useEffect(() => {
@@ -299,8 +398,17 @@ function CreateControlForm() {
           ...prev,
           control_frequency: '',
         }))
+        setDynamicValues({})
         return
       }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(dynamicValues, name)) {
+      setDynamicValues((prev) => ({
+        ...prev,
+        [name]: value,
+      }))
+      return
     }
 
     setFormData(prev => ({
@@ -403,14 +511,6 @@ function CreateControlForm() {
       }))
       toast.error('Failed to generate Control Number')
     }
-  }
-
-  const handleAssertionToggle = (field) => (e) => {
-    const checked = !!e.target.checked
-    setFormData((prev) => ({
-      ...prev,
-      [field]: checked,
-    }))
   }
 
   const handleDropdownChange = (field, value) => {
@@ -520,7 +620,8 @@ function CreateControlForm() {
         credentials: 'include',
         body: JSON.stringify({
           ...formData,
-          company_identifier: companyIdentifier
+          company_identifier: companyIdentifier,
+          dynamic_values: dynamicValues,
         })
       })
 
@@ -578,11 +679,6 @@ function CreateControlForm() {
   control_frequency: 'Frequency of Control',
   sample_size: 'Sample Size',
   whether_fraud_risks_exist: 'Whether fraud risk exists?',
-  completeness: 'Completeness',
-  existence_occurrence: 'Existence & Occurrence',
-  rights_and_obligation: 'Rights and Obligations',
-  valuation_and_allocation: 'Valuation & Allocation',
-  presentation_and_disclosure: 'Presentation and Disclosure'
   }
 
   // Exact display order requested for Control section (frontend-only ordering/wording)
@@ -739,6 +835,22 @@ function CreateControlForm() {
               })}
             </Box>
 
+            <ActiveRacmTemplateNotice
+              unitId={formData.unit_id}
+              variant="manual"
+              useParentSummary
+              templateSummary={
+                racmTemplate
+                  ? {
+                      templateName: racmTemplate.template_name,
+                      version: racmTemplate.version,
+                      extraFieldCount: extraTemplateFields.length,
+                    }
+                  : null
+              }
+              sx={{ mb: 4 }}
+            />
+
             {/* Process and risk section */}
             <Box
               sx={{
@@ -841,68 +953,54 @@ function CreateControlForm() {
               </Box>
             </Box>
 
-            {/* Assertions section */}
-            <Box
-              sx={{
-                mb: 4,
-                borderTop: '2px solid',
-                borderColor: 'divider',
-                pt: 3,
-              }}
-            >
-              <Typography
-                variant="h6"
-                component="h2"
-                sx={{
-                  fontWeight: 700,
-                  mb: 3,
-                  color: 'text.primary',
-                  fontSize: '1.125rem',
-                }}
-              >
-                Assertions
-              </Typography>
+            {assertionTemplateFields.length > 0 ? (
               <Box
                 sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    md: 'repeat(2, 1fr)',
-                  },
-                  gap: 3,
+                  mb: 4,
+                  borderTop: '2px solid',
+                  borderColor: 'divider',
+                  pt: 3,
                 }}
               >
-                {['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure'].map((field) => {
-                  const label = fieldLabels[field]
-                  const checked = !!formData[field]
-
-                  return (
-                    <Box
-                      key={field}
-                      sx={{
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        borderRadius: 1.5,
-                        px: 2,
-                        py: 1.5,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 2,
-                      }}
-                    >
-                      <Typography sx={{ fontWeight: 600, color: 'text.primary' }}>{label}</Typography>
-                      <Checkbox
-                        checked={checked}
-                        onChange={handleAssertionToggle(field)}
-                        disabled={loading}
-                        inputProps={{ 'aria-label': label }}
-                      />
-                    </Box>
-                  )
-                })}
+                <Typography
+                  variant="h6"
+                  component="h2"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.125rem',
+                  }}
+                >
+                  {sectionLabels.assertions || 'Assertions'}
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: 'repeat(2, 1fr)',
+                    },
+                    gap: 3,
+                  }}
+                >
+                  {assertionTemplateFields.map((field) => (
+                    <TextField
+                      key={field.field_key}
+                      name={field.field_key}
+                      label={field.label}
+                      value={dynamicValues[field.field_key] || ''}
+                      onChange={handleChange}
+                      fullWidth
+                      multiline
+                      rows={3}
+                      variant="outlined"
+                      disabled={loading || templateLoading}
+                    />
+                  ))}
+                </Box>
               </Box>
-            </Box>
+            ) : null}
 
             {/* Remaining fields section – Control */}
             <Box
@@ -1076,6 +1174,66 @@ function CreateControlForm() {
                   })}
               </Box>
             </Box>
+
+            {templateSectionsWithExtras.length > 0 ? (
+              <Box
+                sx={{
+                  borderTop: '1px solid',
+                  borderColor: 'divider',
+                  pt: 3,
+                  mb: 3,
+                }}
+              >
+                <Typography
+                  variant="h6"
+                  component="h2"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 1,
+                    color: 'text.primary',
+                    fontSize: '1.125rem',
+                  }}
+                >
+                  Unit Template Fields
+                </Typography>
+
+                {templateSectionsWithExtras.map((sectionKey) => (
+                  <Box key={sectionKey} sx={{ mb: 3 }}>
+                    <Typography
+                      variant="subtitle1"
+                      sx={{ fontWeight: 700, mb: 2, color: 'text.primary' }}
+                    >
+                      {sectionLabels[sectionKey] || sectionKey}
+                    </Typography>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: {
+                          xs: '1fr',
+                          md: 'repeat(2, 1fr)',
+                        },
+                        gap: 3,
+                      }}
+                    >
+                      {(groupedExtraTemplateFields[sectionKey] || []).map((field) => (
+                        <TextField
+                          key={field.field_key}
+                          name={field.field_key}
+                          label={field.label}
+                          value={dynamicValues[field.field_key] || ''}
+                          onChange={handleChange}
+                          fullWidth
+                          multiline
+                          rows={3}
+                          variant="outlined"
+                          disabled={loading || templateLoading}
+                        />
+                      ))}
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            ) : null}
 
             <RacmUserAssignmentSection
               key={`${formData.unit_id || 'no-unit'}-${assignmentSectionKey}`}

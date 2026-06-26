@@ -1,3 +1,0 @@
-In email for Inactive RACMs include control number in it.
-
-"C:\Divyesh\IFC\IFC_Prisma\frontend\src\pages\company_co\FormDetail.jsx" if in this page do not display process owner name by fetching it from email id. If name is not available then just display email id.

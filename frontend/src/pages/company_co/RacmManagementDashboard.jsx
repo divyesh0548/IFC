@@ -3810,8 +3810,8 @@ function RacmManagementDashboard() {
                 color: theme.palette.text.secondary,
                 fontSize: '0.9375rem',
                 lineHeight: 1.5,
-                m: 0,
-                mb: 2,
+                mt: 2,
+                mb: 1.5,
               }}
             >
               Are you sure you want to delete the selected RACM(s)? This action cannot be undone.

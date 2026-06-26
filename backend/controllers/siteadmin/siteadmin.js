@@ -4,6 +4,7 @@ const { prisma } = require('../../lib/prisma');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
 const { encryptTempPassword, sendUserCreationEmail } = require('../../utils/login_email');
 const { deleteFileFromS3 } = require('../../utils/s3Upload');
+const { collectRacmS3DocumentKeys } = require('../../utils/racm_documents');
 const { createBusinessProcessMasterEntry } = require('../../utils/business_process_master');
 const { sendEmail } = require('../../utils/send_email');
 const {
@@ -712,29 +713,7 @@ async function deleteCompany(req, res) {
     let deletedRacmRows = 0;
 
     if (deleteRacms && formIds.length > 0) {
-      const [sampleDocs, userDocs] = await Promise.all([
-        prisma.sampleDoc.findMany({
-          where: { formId: { in: formIds } },
-          select: { formId: true, sampleDoc: true },
-          orderBy: { id: 'asc' },
-        }),
-        prisma.racmDoc.findMany({
-          where: { formId: { in: formIds } },
-          select: { formId: true, docUploadedByUser: true },
-          orderBy: { id: 'asc' },
-        }),
-      ]);
-
-      const docUrlsToDelete = Array.from(
-        new Set(
-          [
-            ...userDocs.map((doc) => doc.docUploadedByUser),
-            ...sampleDocs.map((doc) => doc.sampleDoc),
-          ]
-            .map((value) => (value == null ? '' : String(value).trim()))
-            .filter(Boolean)
-        )
-      );
+      const docUrlsToDelete = await collectRacmS3DocumentKeys(prisma, formIds);
 
       for (const s3Key of docUrlsToDelete) {
         try {

@@ -17,3 +17,5 @@ Fixed Columns :
 16. Presentation and Disclosure
 17. Control Evidence to be obtained
 18. Whether fraud risk exists? (Yes/No)
+
+Columns fixed, but do not require column mapping. Business Process, Financial Year.

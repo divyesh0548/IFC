@@ -43,6 +43,7 @@ import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSear
 import { fetchUnitUsers } from '../../components/company_co/unitUserSearch'
 import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
 import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistoryList'
 import { formatIndianDateTime } from '../../lib/dateTime'
@@ -168,7 +169,7 @@ function FormDetail() {
   const [deficiencyResponseFiles, setDeficiencyResponseFiles] = useState([])
   const [deficiencyResponseSubmitting, setDeficiencyResponseSubmitting] = useState(false)
   const [expandedDeficiencyVersions, setExpandedDeficiencyVersions] = useState({})
-  const assertionFields = ['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure']
+  const [editableDynamicValues, setEditableDynamicValues] = useState({})
 
   useSyncGlobalLoading(
     loading ||
@@ -518,13 +519,10 @@ function FormDetail() {
     const initialFields = {}
     fieldOrder.forEach(key => {
       if (!excludedFields.includes(key) && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)) {
-        if (assertionFields.includes(key)) {
-          initialFields[key] = formData[key] === true || formData[key] === 'true' || formData[key] === '1' || formData[key] === 1
-        } else {
-          initialFields[key] = formData[key] ?? ''
-        }
+        initialFields[key] = formData[key] ?? ''
       }
     })
+    setEditableDynamicValues(formData.dynamic_values || {})
     setEditableFields(initialFields)
     setIsEditMode(true)
   }
@@ -536,14 +534,18 @@ function FormDetail() {
     fieldOrder.forEach(key => {
       if (key === 'sample_required') return
       if (!excludedFields.includes(key) && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)) {
-        if (assertionFields.includes(key)) {
-          initialFields[key] = formData[key] === true || formData[key] === 'true' || formData[key] === '1' || formData[key] === 1
-        } else {
-          initialFields[key] = formData[key] ?? ''
-        }
+        initialFields[key] = formData[key] ?? ''
       }
     })
+    setEditableDynamicValues(formData.dynamic_values || {})
     setEditableFields(initialFields)
+  }
+
+  const handleDynamicFieldChange = (fieldKey, value) => {
+    setEditableDynamicValues((prev) => ({
+      ...prev,
+      [fieldKey]: value,
+    }))
   }
 
   const handleFieldChange = (field, value) => {
@@ -843,18 +845,11 @@ function FormDetail() {
     fieldOrder.forEach(key => {
       if (key === 'sample_required') return
       if (!excludedFields.includes(key) && key !== 'doc_uploaded_by_user' && !approverOnlyFields.includes(key)) {
-        const originalValue = assertionFields.includes(key)
-          ? (formData[key] === true || formData[key] === 'true' || formData[key] === '1' || formData[key] === 1)
-          : (formData[key] ?? '')
-        const newValue = assertionFields.includes(key)
-          ? (editableFields[key] === true || editableFields[key] === 'true' || editableFields[key] === '1' || editableFields[key] === 1)
-          : (editableFields[key] ?? '')
+        const originalValue = formData[key] ?? ''
+        const newValue = editableFields[key] ?? ''
 
-        // Compare values (convert to string for comparison)
         if (String(originalValue).trim() !== String(newValue).trim()) {
-          const payloadValue = assertionFields.includes(key)
-            ? !!newValue
-            : (newValue === '' ? null : newValue)
+          const payloadValue = newValue === '' ? null : newValue
 
           changedFieldsPayload[key] = payloadValue
           modifiedFields.push(key)
@@ -867,7 +862,13 @@ function FormDetail() {
       }
     })
 
-    if (modifiedFields.length === 0) {
+    const originalDynamicValues = formData.dynamic_values || {}
+    const mergedDynamicValues = { ...originalDynamicValues, ...editableDynamicValues }
+    const hasDynamicChanges = Object.keys(mergedDynamicValues).some((key) => {
+      return String(originalDynamicValues[key] ?? '').trim() !== String(mergedDynamicValues[key] ?? '').trim()
+    })
+
+    if (modifiedFields.length === 0 && !hasDynamicChanges) {
       toast.error('No changes to save')
       return
     }
@@ -896,8 +897,9 @@ function FormDetail() {
         credentials: 'include',
         body: JSON.stringify({
           ...changedFieldsPayload,
-          modifiedFields: modifiedFields, // Backward-compatible metadata
-          modifiedChanges: modifiedChanges // [{ column_name, old_value, new_value }, ...]
+          ...(hasDynamicChanges ? { dynamic_values: mergedDynamicValues } : {}),
+          modifiedFields: modifiedFields,
+          modifiedChanges: modifiedChanges,
         }),
       })
 
@@ -1724,11 +1726,6 @@ function FormDetail() {
     'control_frequency',
     'sample_size',
     'sample_required',
-    'completeness',
-    'existence_occurrence',
-    'rights_and_obligation',
-    'valuation_and_allocation',
-    'presentation_and_disclosure',
     'control_design_conclusion',
     'design_deficiency_desc',
     'doc_uploaded_by_user'
@@ -1846,6 +1843,14 @@ function FormDetail() {
 
   const isActive = Boolean(formData?.active)
   const hasActiveSuggestedChanges = String(activeChangeRequest?.status || '').trim() === 'Review Pending'
+  const changeRequestsDataReady = !changeRequestHistoryLoading && !activeChangeRequestLoading
+  const hasAnyChangeRequests =
+    changeRequestHistoryCount > 0 || Boolean(activeChangeRequest?.request_id)
+  const showChangeRequestsButton = changeRequestsDataReady && hasAnyChangeRequests
+  const displayedChangeRequestCount = Math.max(
+    changeRequestHistoryCount,
+    activeChangeRequest?.request_id ? 1 : 0
+  )
   const areAllSuggestedChangesDecided =
     Array.isArray(activeChangeRequest?.items) &&
     activeChangeRequest.items.length > 0 &&
@@ -1886,21 +1891,23 @@ function FormDetail() {
       }}
     >
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-        <Button
-          onClick={handleOpenChangeRequestHistoryDialog}
-          disabled={changeRequestHistoryLoading}
-          variant="outlined"
-          sx={{
-            mr: 1.5,
-            py: 1,
-            fontWeight: 600,
-            textTransform: 'none',
-            fontSize: '0.9375rem',
-            borderRadius: 2,
-          }}
-        >
-          Change Requests ({changeRequestHistoryCount})
-        </Button>
+        {showChangeRequestsButton ? (
+          <Button
+            onClick={handleOpenChangeRequestHistoryDialog}
+            disabled={changeRequestHistoryLoading}
+            variant="outlined"
+            sx={{
+              mr: 1.5,
+              py: 1,
+              fontWeight: 600,
+              textTransform: 'none',
+              fontSize: '0.9375rem',
+              borderRadius: 2,
+            }}
+          >
+            Change Requests ({displayedChangeRequestCount})
+          </Button>
+        ) : null}
         {!isEditMode && hasActiveSuggestedChanges && (
           <Button
             onClick={handleOpenSuggestedChangesDialog}
@@ -2798,156 +2805,28 @@ function FormDetail() {
                     </Box>
                   )
                 })}
+                <RacmTemplateSectionFields
+                  blendIntoParent
+                  sectionKey="process_and_risk"
+                  fieldDefinitions={formData.field_definitions}
+                  values={isEditMode ? editableDynamicValues : (formData.dynamic_values || {})}
+                  isEditMode={isEditMode}
+                  onChange={handleDynamicFieldChange}
+                  disabled={saving}
+                />
               </Box>
             </CardContent>
           </Card>
 
-          {/* Assertions section */}
-          <Card
-            sx={{
-              borderRadius: 3,
-              boxShadow: theme.palette.mode === 'dark'
-                ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                : '0 2px 12px rgba(0, 0, 0, 0.08)',
-              border: '1px solid',
-              borderColor: theme.palette.mode === 'dark' 
-                ? 'rgba(255, 255, 255, 0.12)' 
-                : 'rgba(0, 0, 0, 0.08)',
-              overflow: 'hidden',
-            }}
-          >
-            <CardContent sx={{ p: 4 }}>
-              <Typography
-                variant="h6"
-                component="h3"
-                sx={{
-                  fontWeight: 700,
-                  mb: 3,
-                  color: 'text.primary',
-                  fontSize: '1.25rem',
-                  pb: 2,
-                  borderBottom: '2px solid',
-                  borderColor: 'divider',
-                }}
-              >
-                Assertions
-              </Typography>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    md: 'repeat(2, 1fr)',
-                  },
-                  gap: 3,
-                  mt: 2,
-                }}
-              >
-                {['completeness', 'existence_occurrence', 'valuation_and_allocation', 'rights_and_obligation', 'presentation_and_disclosure'].map((key) => {
-                  if (!formData.hasOwnProperty(key) || excludedFields.includes(key)) return null
-
-                  const label = fieldLabels[key]
-                  const value = formData[key]
-                  const isTruthy = value === true || value === 'true' || value === '1' || value === 1
-                  const editableChecked = editableFields[key] === true || editableFields[key] === 'true' || editableFields[key] === '1' || editableFields[key] === 1
-                  const isEditable = isEditMode && !approverOnlyFields.includes(key)
-
-                  return (
-                    <Box
-                      key={key}
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 2,
-                        backgroundColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.03)'
-                          : 'rgba(0, 0, 0, 0.02)',
-                        border: '1px solid',
-                        borderColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.08)'
-                          : 'rgba(0, 0, 0, 0.06)',
-                        transition: 'all 0.2s ease-in-out',
-                        '&:hover': {
-                          backgroundColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.05)'
-                            : 'rgba(0, 0, 0, 0.04)',
-                        },
-                      }}
-                    >
-                      <Typography
-                        variant="caption"
-                        component="dt"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          mb: 1.5,
-                          color: 'text.primary',
-                          fontSize: theme.typography.customSizes.small,
-                        }}
-                      >
-                        {label}
-                      </Typography>
-                      {isEditable ? (
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'flex-start',
-                          }}
-                        >
-                          <Checkbox
-                            checked={editableChecked}
-                            onChange={(e) => handleFieldChange(key, !!e.target.checked)}
-                            disabled={saving}
-                            inputProps={{ 'aria-label': label }}
-                          />
-                        </Box>
-                      ) : (
-                        <Box
-                          component="dd"
-                          sx={{
-                            m: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                            minHeight: 24,
-                          }}
-                        >
-                          {isTruthy ? (
-                            <>
-                              <CheckCircleIcon sx={{ fontSize: 18, color: '#10b981', flexShrink: 0 }} />
-                              <Typography
-                                variant="body2"
-                                sx={{
-                                  color: 'text.secondary',
-                                  lineHeight: 1.6,
-                                  fontSize: theme.typography.customSizes.medium,
-                                }}
-                              >
-                                Selected
-                              </Typography>
-                            </>
-                          ) : (
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                color: 'text.disabled',
-                                lineHeight: 1.6,
-                                fontSize: theme.typography.customSizes.medium,
-                              }}
-                            >
-                              Not selected
-                            </Typography>
-                          )}
-                        </Box>
-                      )}
-                    </Box>
-                  )
-                })}
-              </Box>
-            </CardContent>
-          </Card>
+          <RacmTemplateSectionFields
+            sectionKey="assertions"
+            title="Assertions"
+            fieldDefinitions={formData.field_definitions}
+            values={isEditMode ? editableDynamicValues : (formData.dynamic_values || {})}
+            isEditMode={isEditMode}
+            onChange={handleDynamicFieldChange}
+            disabled={saving}
+          />
 
           {/* Control Details section */}
           <Card
@@ -3001,11 +2880,6 @@ function FormDetail() {
                         'sub_process',
                         'risk_description',
                         'risk_heat',
-                        'completeness',
-                        'existence_occurrence',
-                        'valuation_and_allocation',
-                        'rights_and_obligation',
-                        'presentation_and_disclosure',
                       ].includes(key)
                     ) {
                       return false
@@ -3259,9 +3133,28 @@ function FormDetail() {
                       </Box>
                     )
                   })}
+                <RacmTemplateSectionFields
+                  blendIntoParent
+                  sectionKey="control_details"
+                  fieldDefinitions={formData.field_definitions}
+                  values={isEditMode ? editableDynamicValues : (formData.dynamic_values || {})}
+                  isEditMode={isEditMode}
+                  onChange={handleDynamicFieldChange}
+                  disabled={saving}
+                />
               </Box>
             </CardContent>
           </Card>
+
+          <RacmTemplateSectionFields
+            sectionKey="others"
+            title="Others"
+            fieldDefinitions={formData.field_definitions}
+            values={isEditMode ? editableDynamicValues : (formData.dynamic_values || {})}
+            isEditMode={isEditMode}
+            onChange={handleDynamicFieldChange}
+            disabled={saving}
+          />
 
           <Card
             sx={{
@@ -4660,7 +4553,7 @@ function FormDetail() {
                 Delete
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                This RACM will be removed permanently, including all sample documents and user-uploaded documents from storage and the database.
+                This RACM will be removed permanently, including all sample documents, user-uploaded documents, deficiency response attachments, and related database rows.
               </Typography>
             </Box>
             <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
@@ -4951,7 +4844,7 @@ function FormDetail() {
               mb: 2,
             }}
           >
-            Are you sure you want to delete this RACM? This action cannot be undone. The form, all sample documents, all user-uploaded documents, and their database rows will be removed permanently.
+            Are you sure you want to delete this RACM? This action cannot be undone. The form, all sample documents, all user-uploaded documents, deficiency response attachments, and their database rows will be removed permanently.
           </DialogContentText>
         </DialogContent>
         <DialogActions

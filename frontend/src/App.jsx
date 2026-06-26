@@ -45,6 +45,7 @@ const RacmManagementDashboard = lazy(() => import('./pages/company_co/RacmManage
 const RacmUserDocuments = lazy(() => import('./pages/company_co/RacmUserDocuments'))
 const CommunicationMatrix = lazy(() => import('./pages/company_co/CommunicationMatrix'))
 const Company_co_home = lazy(() => import('./pages/company_co/Company_co_home'))
+const RacmTemplates = lazy(() => import('./pages/company_co/RacmTemplates'))
 const CreateUser = lazy(() => import('./pages/company_co/CreateUser'))
 const UnclassifiedControls = lazy(() => import('./pages/company_co/UnclassifiedControls'))
 const KeyManualAiInsightsSummary = lazy(() => import('./pages/company_co/KeyManualAiInsightsSummary'))
@@ -336,6 +337,7 @@ function App() {
               <Route path="racm-management" element={<RacmManagementDashboard />} />
               <Route path="racm-user-documents" element={<RacmUserDocuments />} />
               <Route path="racm-communication" element={<CommunicationMatrix />} />
+              <Route path="racm-templates" element={<RacmTemplates />} />
               <Route path="racm-assignment" element={<RacmAssignment />} />
               <Route path="user-management" element={<UserManagement />} />
               <Route path="unit-management" element={<UnitManagement />} />

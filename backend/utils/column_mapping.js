@@ -92,17 +92,7 @@ const columnPatterns = [
     requireAllKeywords: true
   },
   {
-    keywords: ['rights', 'obligations'],
-    dbColumn: 'rights_and_obligation',
-    priority: 1
-  },
-  {
-    keywords: ['presentation', 'disclosure'],
-    dbColumn: 'presentation_and_disclosure',
-    priority: 1
-  },
-  {
-    keywords: [ 'control', 'description'],
+    keywords: ['control', 'description'],
     dbColumn: 'standard_control_description',
     priority: 1,
     // Prevent partial matches like "Control Description" from incorrectly mapping here.
@@ -130,26 +120,9 @@ const columnPatterns = [
     priority: 1
   },
   {
-    keywords: ['completeness'],
-    dbColumn: 'completeness',
-    priority: 1
-  },
-  {
-    keywords: ['existence'],
-    dbColumn: 'existence_occurrence',
-    priority: 1,
-    requireAllKeywords: true
-  },
-  {
-    keywords: ['valuation', 'allocation'],
-    dbColumn: 'valuation_and_allocation',
-    priority: 1,
-    requireAllKeywords: true
-  },
-  {
     keywords: ['nature', 'preventive', 'detective'],
     dbColumn: 'nature_of_control',
-    priority: 1
+    priority: 1,
   },
   {
     keywords: ['type', 'manual', 'automated'],

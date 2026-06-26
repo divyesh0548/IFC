@@ -308,6 +308,18 @@ async function createCompanyUnit(req, res) {
       }
     }
 
+    const {
+      ensureActiveTemplateForUnit,
+      isRacmTemplateSchemaReady,
+    } = require('../../utils/racm_templates');
+    if (await isRacmTemplateSchemaReady(client)) {
+      await ensureActiveTemplateForUnit(client, {
+        companyIdentifier,
+        unitId: insertedUnit.unit_id,
+        createdBy: req.user.email_id,
+      });
+    }
+
     await client.query('COMMIT');
     return res.status(201).json({
       success: true,
