@@ -34,14 +34,17 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
-import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants';
-import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields';
+import {
+  FORM_DETAIL_CONTENT_STACK_SX,
+  FORM_DETAIL_ROOT_SX,
+} from '../../uiConstants';
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields } from '../../racmFormDetailFields';
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext';
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields';
 import { apiUrl } from '../../config/api';
 import { formatIndianDateTime } from '../../lib/dateTime';
-import { formatRacmUserDocumentSubtitle } from '../../lib/racmUserDocuments';
+import { formatRacmUserDocumentSubtitle, normalizeSampleDocuments } from '../../lib/racmUserDocuments';
 
 function ApproverFormDetail() {
   const theme = useTheme()
@@ -657,7 +660,7 @@ function ApproverFormDetail() {
   ]
   
   // Grouped fields that should be displayed together and are editable by approver
-  const groupedApproverFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
+  const groupedApproverFields = APPROVAL_SECTION_FIELD_KEYS
 
   if (loading) {
     return (
@@ -690,9 +693,7 @@ function ApproverFormDetail() {
   const isPending = !formData?.status || formData.status === '' || formData.status === 'sent for approval'
   const isApproved = formData?.status === 'Approved'
   const isRejected = formData?.status === 'Rejected'
-  const sampleDocs = Array.isArray(formData?.sample_docs)
-    ? formData.sample_docs.filter((doc) => String(doc.sample_doc || '').trim() !== '')
-    : []
+  const sampleDocs = normalizeSampleDocuments(formData?.sample_docs, formData?.sample_doc)
   const uploadedDocs = Array.isArray(formData?.doc_uploaded_by_user_docs)
     ? formData.doc_uploaded_by_user_docs.filter((doc) => String(doc.doc_uploaded_by_user || '').trim() !== '')
     : []
@@ -747,16 +748,8 @@ function ApproverFormDetail() {
   const approvalStatusValueColor = isApproved ? '#10b981' : isRejected ? '#ef4444' : 'text.primary'
 
   return (
-    <Box
-      sx={{
-        width: '100%',
-        maxWidth: FORM_DETAIL_MAX_WIDTH,
-        mx: 'auto',
-        px: 0,
-        py: 0,
-      }}
-    >
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <Box sx={FORM_DETAIL_ROOT_SX}>
+      <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
           {/* Top summary card (matches coordinator design) */}
           <Box sx={{ width: '100%' }}>
             <Card
@@ -2013,14 +2006,7 @@ function ApproverFormDetail() {
                         gridColumn: { xs: '1', md: '1 / -1' },
                       }}
                     >
-                        {groupedApproverFields
-                          .filter((key) => {
-                            if (key === 'design_deficiency_desc' && !showDesignDeficiencyField) {
-                              return false
-                            }
-                            return String(formData?.[key] || '').trim() !== ''
-                          })
-                          .map((key) => {
+                        {getPopulatedApprovalSectionFields(formData).map((key) => {
                             const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                             const value = formData[key]
                             const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
@@ -2556,7 +2542,7 @@ function ApproverFormDetail() {
                         {getFileName(doc.sample_doc)}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                        {formatRacmUserDocumentSubtitle(doc, formatDateTime)}
                       </Typography>
                     </Box>
                     <Tooltip title="Download">

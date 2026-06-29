@@ -101,3 +101,59 @@ export const orderControlDetailKeys = (keys, fallbackOrder = []) => {
     return (fallbackIndex.get(a) ?? Number.MAX_SAFE_INTEGER) - (fallbackIndex.get(b) ?? Number.MAX_SAFE_INTEGER)
   })
 }
+
+/** Approver-filled fields shown in the Approval section on form detail pages. */
+export const APPROVAL_SECTION_FIELD_KEYS = [
+  'control_design_procs',
+  'control_design_conclusion',
+  'design_deficiency_desc',
+]
+
+export function hasRacmFieldValue(value) {
+  return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
+}
+
+export function getPopulatedApprovalSectionFields(formData, keys = APPROVAL_SECTION_FIELD_KEYS) {
+  if (!formData) return []
+  return keys.filter((key) => hasRacmFieldValue(formData[key]))
+}
+
+export function hasPopulatedApprovalSectionFields(formData, keys = APPROVAL_SECTION_FIELD_KEYS) {
+  return getPopulatedApprovalSectionFields(formData, keys).length > 0
+}
+
+export function isCoordinatorAssignedRacm(form) {
+  if (!form) return false
+  const flag = form.assigned_to_coordinator ?? form.assignedToCoordinator
+  if (flag === true || flag === 1) return true
+  if (flag === false || flag === 0 || flag == null) return false
+  const normalized = String(flag).trim().toLowerCase()
+  return normalized === 'true' || normalized === '1'
+}
+
+function parseTruthyApiBoolean(value) {
+  if (value === true || value === 1) return true
+  if (value === false || value === 0 || value == null) return false
+  const normalized = String(value).trim().toLowerCase()
+  return normalized === 'true' || normalized === '1'
+}
+
+/** Process owner counts as assigned only when user exists in the RACM unit (not bulk-upload placeholder). */
+export function hasValidProcessOwnerAssignment(form) {
+  if (!form) return false
+  if (form.has_valid_process_owner_assignment !== undefined && form.has_valid_process_owner_assignment !== null) {
+    return parseTruthyApiBoolean(form.has_valid_process_owner_assignment)
+  }
+  return false
+}
+
+export function isRacmProcessOwnerAssigned(form) {
+  return hasValidProcessOwnerAssignment(form)
+}
+
+export function isRacmAssigned(form) {
+  if (form?.is_racm_assigned !== undefined && form.is_racm_assigned !== null) {
+    return parseTruthyApiBoolean(form.is_racm_assigned)
+  }
+  return isCoordinatorAssignedRacm(form) || hasValidProcessOwnerAssignment(form)
+}

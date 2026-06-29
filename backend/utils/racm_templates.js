@@ -558,10 +558,14 @@ async function getNextVersionForTemplateName(client, companyIdentifier, unitId, 
   return Number(result.rows[0]?.max_version || 0) + 1;
 }
 
-async function syncTemplateExtraFields(client, templateId, extraFields, { allowRemove = true, allowAdd = true } = {}) {
+async function syncTemplateExtraFields(client, templateId, extraFields, {
+  allowRemove = true,
+  allowAdd = true,
+  allowLabelChange = true,
+} = {}) {
   const currentResult = await client.query(
     `
-      SELECT id, field_key
+      SELECT id, field_key, label
       FROM racm_template_fields
       WHERE template_id = $1
         AND is_fixed = FALSE
@@ -574,6 +578,14 @@ async function syncTemplateExtraFields(client, templateId, extraFields, { allowR
   for (const field of extraFields) {
     const existing = remainingByKey.get(field.field_key);
     if (existing) {
+      const currentLabel = String(existing.label || '').trim();
+      const nextLabel = String(field.label || '').trim();
+      if (!allowLabelChange && currentLabel !== nextLabel) {
+        return {
+          ok: false,
+          message: 'Cannot rename custom columns while RACMs are linked to this template. Create a new version instead.',
+        };
+      }
       await client.query(
         `
           UPDATE racm_template_fields
@@ -639,7 +651,13 @@ function classifyExtraFieldChanges(currentExtras, mergedExtraFields) {
   const nextKeys = new Set(mergedExtraFields.map((field) => field.field_key));
   const hasRemovals = [...currentKeys].some((key) => !nextKeys.has(key));
   const hasAdditions = [...nextKeys].some((key) => !currentKeys.has(key));
-  return { hasRemovals, hasAdditions };
+  const currentByKey = new Map(currentExtras.map((field) => [field.field_key, field]));
+  const hasLabelChanges = mergedExtraFields.some((field) => {
+    const existing = currentByKey.get(field.field_key);
+    if (!existing) return false;
+    return String(existing.label || '').trim() !== String(field.label || '').trim();
+  });
+  return { hasRemovals, hasAdditions, hasLabelChanges };
 }
 
 async function replaceTemplateExtraFields(client, templateId, extraFields) {
@@ -753,9 +771,16 @@ async function structuralSaveTemplate(client, {
           message: 'Cannot add custom columns in place while RACMs are linked. Create a new version instead.',
         };
       }
+      if (changeKind.hasLabelChanges) {
+        return {
+          ok: false,
+          message: 'Cannot rename custom columns while RACMs are linked to this template. Create a new version instead.',
+        };
+      }
       return updateActiveTemplateExtrasInPlace(client, active, mergedExtraFields, {
         allowRemove: false,
         allowAdd: false,
+        allowLabelChange: false,
       });
     }
     return updateActiveTemplateExtrasInPlace(client, active, mergedExtraFields);
@@ -1106,6 +1131,48 @@ async function saveDynamicFieldValues(client, formId, templateId, dynamicValues)
   return { ok: true };
 }
 
+async function applyApprovedDynamicFieldChanges(client, formId, templateId, fieldChanges) {
+  const template = await getTemplateWithFieldsById(client, templateId);
+  if (!template.ok) return template;
+
+  const fieldByKey = new Map(template.extra_fields.map((field) => [field.field_key, field]));
+
+  for (const [fieldKey, rawValue] of Object.entries(fieldChanges || {})) {
+    const normalizedKey = String(fieldKey || '').trim();
+    if (!normalizedKey) continue;
+
+    const field = fieldByKey.get(normalizedKey);
+    if (!field) {
+      return { ok: false, message: `Unknown extra field "${normalizedKey}"` };
+    }
+
+    const valueText = rawValue == null ? '' : String(rawValue).trim();
+    if (!valueText) {
+      await client.query(
+        `
+          DELETE FROM racm_field_values
+          WHERE form_id = $1
+            AND template_field_id = $2
+        `,
+        [formId, field.id]
+      );
+      continue;
+    }
+
+    await client.query(
+      `
+        INSERT INTO racm_field_values (form_id, template_field_id, value_text)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (form_id, template_field_id)
+        DO UPDATE SET value_text = EXCLUDED.value_text
+      `,
+      [formId, field.id, valueText]
+    );
+  }
+
+  return { ok: true };
+}
+
 async function loadDynamicFieldValuesForForm(client, formId) {
   const result = await client.query(
     `
@@ -1265,7 +1332,9 @@ module.exports = {
   validateDynamicValuesAgainstTemplate,
   sanitizeDynamicValues,
   saveDynamicFieldValues,
+  applyApprovedDynamicFieldChanges,
   loadDynamicFieldValuesForForm,
+  classifyExtraFieldChanges,
   incrementTemplateLinkedRacmCount,
   decrementTemplateLinkedRacmCount,
   getActualLinkedRacmCount,

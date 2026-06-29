@@ -39,6 +39,7 @@ import {
   getConclusionBadgeSolidColors,
   isMuiAlertCloseActionClick,
 } from '../../uiConstants'
+import { isCoordinatorAssignedRacm, isRacmAssigned } from '../../racmFormDetailFields'
 
 /** Display order for Set Active selection notice (single-RACM list); missing-user line last. */
 const DEFAULT_ROWS_PER_PAGE = 10
@@ -47,6 +48,8 @@ const ROWS_PER_PAGE_OPTIONS = [10, 25, 50]
 const SET_ACTIVE_SINGLE_NOTICE_LINE_ORDER = [
   'RACM assignment is pending (empty Process Owner).',
   'Process Owner role is not "user".',
+  'Process Owner is not assigned to this RACM\'s unit.',
+  'Process Owner does not have a valid mobile number.',
   'Due date / reminder frequency is missing.',
   'Process Owner user does not exist. Please create the user first.',
 ]
@@ -115,6 +118,10 @@ function RacmManagementDashboard() {
   const [missingUsersCount, setMissingUsersCount] = useState(0)
   const [missingUserEmailsForDialog, setMissingUserEmailsForDialog] = useState([])
   const [missingReminderCount, setMissingReminderCount] = useState(0)
+  const [notInUnitBlockedCount, setNotInUnitBlockedCount] = useState(0)
+  const [notInUnitBlockedEmails, setNotInUnitBlockedEmails] = useState([])
+  const [invalidMobileBlockedCount, setInvalidMobileBlockedCount] = useState(0)
+  const [invalidMobileBlockedEmails, setInvalidMobileBlockedEmails] = useState([])
   const [eligibleSetActiveFormIds, setEligibleSetActiveFormIds] = useState([])
   const [isSingleSetActiveSelectionNotice, setIsSingleSetActiveSelectionNotice] = useState(false)
   const [singleSelectionProblemLines, setSingleSelectionProblemLines] = useState([])
@@ -604,21 +611,62 @@ function RacmManagementDashboard() {
   }
 
 
-  const checkUserRole = async (email) => {
-    if (!email || !email.trim()) return { exists: false, role: null }
+  const checkUserRole = async (email, unitId = '') => {
+    if (!email || !email.trim()) {
+      return {
+        exists: false,
+        role: null,
+        unit_id: null,
+        in_unit: null,
+        has_valid_mobile: false,
+        mobile_error: 'Mobile number is required',
+      }
+    }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/company-co/check-user-role/${encodeURIComponent(email.trim())}`, {
-        method: 'GET',
-        credentials: 'include',
-      })
+      const params = new URLSearchParams()
+      const normalizedUnitId = String(unitId || '').trim()
+      if (normalizedUnitId) {
+        params.set('unit_id', normalizedUnitId)
+      }
+      const queryString = params.toString()
+      const response = await fetch(
+        `${API_BASE_URL}/api/company-co/check-user-role/${encodeURIComponent(email.trim())}${queryString ? `?${queryString}` : ''}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      )
 
       const data = await response.json()
-      if (!response.ok || !data.success) return { exists: false, role: null }
-      return { exists: !!data.exists, role: data.role ?? null }
+      if (!response.ok || !data.success) {
+        return {
+          exists: false,
+          role: null,
+          unit_id: null,
+          in_unit: normalizedUnitId ? false : null,
+          has_valid_mobile: false,
+          mobile_error: null,
+        }
+      }
+      return {
+        exists: !!data.exists,
+        role: data.role ?? null,
+        unit_id: data.unit_id ?? null,
+        in_unit: data.in_unit ?? null,
+        has_valid_mobile: !!data.has_valid_mobile,
+        mobile_error: data.mobile_error ?? null,
+      }
     } catch (error) {
       console.error('Error checking user role:', error)
-      return { exists: false, role: null }
+      return {
+        exists: false,
+        role: null,
+        unit_id: null,
+        in_unit: null,
+        has_valid_mobile: false,
+        mobile_error: null,
+      }
     }
   }
 
@@ -626,18 +674,32 @@ function RacmManagementDashboard() {
   const normalizeRole = (role) => (role || '').toString().trim().toLowerCase()
   const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email))
 
-  const getUserRoleCheck = async (email) => {
+  const getUserRoleCheckCacheKey = (email, unitId = '') => {
+    const normalizedEmail = normalizeEmail(email)
+    const normalizedUnitId = String(unitId || '').trim()
+    return normalizedUnitId ? `${normalizedEmail}::${normalizedUnitId}` : normalizedEmail
+  }
+
+  const getUserRoleCheck = async (email, unitId = '') => {
     const normalizedEmail = normalizeEmail(email)
     if (!normalizedEmail) {
-      return { exists: false, role: null }
+      return {
+        exists: false,
+        role: null,
+        unit_id: null,
+        in_unit: null,
+        has_valid_mobile: false,
+        mobile_error: 'Mobile number is required',
+      }
     }
 
-    if (userRoleChecksRef.current[normalizedEmail]) {
-      return userRoleChecksRef.current[normalizedEmail]
+    const cacheKey = getUserRoleCheckCacheKey(normalizedEmail, unitId)
+    if (userRoleChecksRef.current[cacheKey]) {
+      return userRoleChecksRef.current[cacheKey]
     }
 
-    const result = await checkUserRole(normalizedEmail)
-    userRoleChecksRef.current[normalizedEmail] = result
+    const result = await checkUserRole(normalizedEmail, unitId)
+    userRoleChecksRef.current[cacheKey] = result
     return result
   }
 
@@ -650,15 +712,43 @@ function RacmManagementDashboard() {
     const reminderMissingFormIds = []
     const sampleDocMissingFormIds = []
 
+    const notInUnitFormIds = []
+    const notInUnitEmails = []
+    const invalidMobileFormIds = []
+    const invalidMobileEmails = []
+
     for (const form of formsToCheck) {
+      if (isCoordinatorAssignedRacm(form)) {
+        const dueDate = form?.due_date
+        const reminderFrequency = form?.reminder_frequency
+        const hasDueDate = Boolean(dueDate)
+        const hasReminderFrequency = reminderFrequency !== null && reminderFrequency !== undefined && String(reminderFrequency).trim() !== ''
+        if (!hasDueDate || !hasReminderFrequency) {
+          reminderMissingFormIds.push(form.form_id)
+          continue
+        }
+
+        const hasSampleDoc =
+          form?.sample_doc !== null &&
+          form?.sample_doc !== undefined &&
+          String(form.sample_doc).trim() !== ''
+        if (!hasSampleDoc) {
+          sampleDocMissingFormIds.push(form.form_id)
+        }
+
+        validFormIds.push(form.form_id)
+        continue
+      }
+
       const email = normalizeEmail(form.control_owner)
+      const unitId = form?.unit_id ? String(form.unit_id).trim() : ''
 
       if (!email) {
         emptyOwnerFormIds.push(form.form_id)
         continue
       }
 
-      const userRoleCheck = await getUserRoleCheck(email)
+      const userRoleCheck = await getUserRoleCheck(email, unitId)
 
       if (!userRoleCheck.exists) {
         missingFormIds.push(form.form_id)
@@ -672,6 +762,18 @@ function RacmManagementDashboard() {
           email,
           role: userRoleCheck.role,
         })
+        continue
+      }
+
+      if (unitId && userRoleCheck.in_unit === false) {
+        notInUnitFormIds.push(form.form_id)
+        notInUnitEmails.push(email)
+        continue
+      }
+
+      if (!userRoleCheck.has_valid_mobile) {
+        invalidMobileFormIds.push(form.form_id)
+        invalidMobileEmails.push(email)
         continue
       }
 
@@ -707,6 +809,10 @@ function RacmManagementDashboard() {
       emptyOwnerFormIds,
       reminderMissingFormIds,
       sampleDocMissingFormIds,
+      notInUnitFormIds,
+      notInUnitEmails: [...new Set(notInUnitEmails)],
+      invalidMobileFormIds,
+      invalidMobileEmails: [...new Set(invalidMobileEmails)],
     }
   }
 
@@ -714,6 +820,8 @@ function RacmManagementDashboard() {
     emptyOwnerCount = 0,
     nonUserRoleForms = [],
     missingUserEmails = [],
+    notInUnitEmails = [],
+    invalidMobileEmails = [],
     reminderMissingCount = 0,
     sampleDocMissingCount = 0,
     eligibleFormIds = [],
@@ -722,12 +830,18 @@ function RacmManagementDashboard() {
   }) => {
     const uniqueNonUserEmails = [...new Set((nonUserRoleForms || []).map((item) => item.email).filter(Boolean))]
     const uniqueMissingUserEmails = [...new Set((missingUserEmails || []).filter(Boolean))]
+    const uniqueNotInUnitEmails = [...new Set((notInUnitEmails || []).filter(Boolean))]
+    const uniqueInvalidMobileEmails = [...new Set((invalidMobileEmails || []).filter(Boolean))]
 
     setPendingAssignmentCount(emptyOwnerCount)
     setNonUserRoleBlockedCount((nonUserRoleForms || []).length)
     setNonUserRoleBlockedEmails(uniqueNonUserEmails)
     setMissingUsersCount(uniqueMissingUserEmails.length)
     setMissingUserEmailsForDialog(uniqueMissingUserEmails)
+    setNotInUnitBlockedCount(uniqueNotInUnitEmails.length)
+    setNotInUnitBlockedEmails(uniqueNotInUnitEmails)
+    setInvalidMobileBlockedCount(uniqueInvalidMobileEmails.length)
+    setInvalidMobileBlockedEmails(uniqueInvalidMobileEmails)
     // Keep in sync with selection notice so "Create User" works from any path (confirm vs checkbox / select-all).
     setMissingProcessOwners(uniqueMissingUserEmails)
     setMissingReminderCount(reminderMissingCount)
@@ -796,13 +910,17 @@ function RacmManagementDashboard() {
       emptyOwnerFormIds,
       reminderMissingFormIds,
       sampleDocMissingFormIds,
+      notInUnitEmails,
+      invalidMobileEmails,
     } = classification
 
     const hasAnyIssues =
       (emptyOwnerFormIds?.length || 0) > 0 ||
       (reminderMissingFormIds?.length || 0) > 0 ||
       (nonUserRoleForms?.length || 0) > 0 ||
-      (missingFormIds?.length || 0) > 0
+      (missingFormIds?.length || 0) > 0 ||
+      (notInUnitEmails?.length || 0) > 0 ||
+      (invalidMobileEmails?.length || 0) > 0
 
     if (hasAnyIssues) {
       // Keep these for existing user-creation handler
@@ -816,6 +934,8 @@ function RacmManagementDashboard() {
         sampleDocMissingCount: sampleDocMissingFormIds?.length || 0,
         nonUserRoleForms: nonUserRoleForms || [],
         missingUserEmails: missingEmails || [],
+        notInUnitEmails: notInUnitEmails || [],
+        invalidMobileEmails: invalidMobileEmails || [],
         eligibleFormIds: validFormIds || [],
         isSingle: false,
       })
@@ -1112,6 +1232,8 @@ function RacmManagementDashboard() {
     }
   }
 
+  const isRacmActive = (form) => Boolean(form?.active)
+
   const handleSelectForm = async (formId) => {
     const newSelected = new Set(selectedForms)
     if (newSelected.has(formId)) {
@@ -1121,6 +1243,13 @@ function RacmManagementDashboard() {
     }
 
     if (!setActiveMode) {
+      if (deleteMode) {
+        const form = forms.find((item) => item.form_id === formId)
+        if (form && isRacmActive(form)) {
+          toast.error('Active RACM cannot be deleted. Please set the RACM Inactive first.')
+          return
+        }
+      }
       newSelected.add(formId)
       setSelectedForms(newSelected)
       return
@@ -1128,11 +1257,30 @@ function RacmManagementDashboard() {
 
     const form = forms.find((item) => item.form_id === formId)
     if (!form) return
-    const email = normalizeEmail(form.control_owner)
     const dueDate = form?.due_date
     const reminderFrequency = form?.reminder_frequency
     const hasDueDate = Boolean(dueDate)
     const hasReminderFrequency = reminderFrequency !== null && reminderFrequency !== undefined && String(reminderFrequency).trim() !== ''
+
+    if (isCoordinatorAssignedRacm(form)) {
+      if (!hasDueDate || !hasReminderFrequency) {
+        showSetActiveSelectionInfoDialog({
+          emptyOwnerCount: 0,
+          reminderMissingCount: 1,
+          eligibleFormIds: [],
+          isSingle: true,
+          singleProblemLines: ['Due date / reminder frequency is missing.'],
+        })
+        return
+      }
+
+      newSelected.add(formId)
+      setSelectedForms(newSelected)
+      return
+    }
+
+    const email = normalizeEmail(form.control_owner)
+    const unitId = form?.unit_id ? String(form.unit_id).trim() : ''
 
     // For single RACM selection, show ALL applicable problems (in precedence order),
     // but still block selection if any problem exists.
@@ -1143,11 +1291,15 @@ function RacmManagementDashboard() {
 
     let userRoleCheck = null
     if (email) {
-      userRoleCheck = await getUserRoleCheck(email)
+      userRoleCheck = await getUserRoleCheck(email, unitId)
       if (userRoleCheck.exists && normalizeRole(userRoleCheck.role) !== 'user') {
         problemLines.push('Process Owner role is not "user".')
       } else if (!userRoleCheck.exists) {
         problemLines.push('Process Owner user does not exist. Please create the user first.')
+      } else if (unitId && userRoleCheck.in_unit === false) {
+        problemLines.push('Process Owner is not assigned to this RACM\'s unit.')
+      } else if (!userRoleCheck.has_valid_mobile) {
+        problemLines.push('Process Owner does not have a valid mobile number.')
       }
     }
 
@@ -1163,10 +1315,12 @@ function RacmManagementDashboard() {
             ? [{ formId, email, role: userRoleCheck.role }]
             : [],
         missingUserEmails: email && userRoleCheck && !userRoleCheck.exists ? [email] : [],
+        notInUnitEmails: email && userRoleCheck?.exists && unitId && userRoleCheck.in_unit === false ? [email] : [],
+        invalidMobileEmails: email && userRoleCheck?.exists && !userRoleCheck.has_valid_mobile ? [email] : [],
         reminderMissingCount: (!hasDueDate || !hasReminderFrequency) ? 1 : 0,
         eligibleFormIds: [],
         isSingle: true,
-        singleProblemLines: problemLines,
+        singleProblemLines: sortSetActiveSingleNoticeLines(problemLines),
       })
       return
     }
@@ -1227,14 +1381,38 @@ function RacmManagementDashboard() {
     }
 
     if (!setActiveMode) {
-      const allFormIds = new Set(forms.map(form => form.form_id))
+      if (deleteMode) {
+        const deletableForms = forms.filter((form) => !isRacmActive(form))
+        const skippedActiveCount = forms.length - deletableForms.length
+        setSelectedForms(new Set(deletableForms.map((form) => form.form_id)))
+        if (skippedActiveCount > 0) {
+          toast(
+            skippedActiveCount === 1
+              ? '1 active RACM was skipped. Set it Inactive before deleting.'
+              : `${skippedActiveCount} active RACM(s) were skipped. Set them Inactive before deleting.`
+          )
+        }
+        return
+      }
+
+      const allFormIds = new Set(forms.map((form) => form.form_id))
       setSelectedForms(allFormIds)
       return
     }
 
     setValidatingSetActiveSelection(true)
     try {
-      const { selectedFormIds, nonUserRoleForms, emptyOwnerFormIds, missingEmails, reminderMissingFormIds, sampleDocMissingFormIds, validFormIds } = await classifyFormsForSetActive(forms)
+      const {
+        selectedFormIds,
+        nonUserRoleForms,
+        emptyOwnerFormIds,
+        missingEmails,
+        reminderMissingFormIds,
+        sampleDocMissingFormIds,
+        validFormIds,
+        notInUnitEmails,
+        invalidMobileEmails,
+      } = await classifyFormsForSetActive(forms)
       setSelectedForms(new Set(selectedFormIds))
 
       if ((sampleDocMissingFormIds?.length || 0) > 0) {
@@ -1245,6 +1423,8 @@ function RacmManagementDashboard() {
         (emptyOwnerFormIds?.length || 0) > 0 ||
         (nonUserRoleForms?.length || 0) > 0 ||
         (missingEmails?.length || 0) > 0 ||
+        (notInUnitEmails?.length || 0) > 0 ||
+        (invalidMobileEmails?.length || 0) > 0 ||
         (reminderMissingFormIds?.length || 0) > 0
       ) {
         showSetActiveSelectionInfoDialog({
@@ -1253,6 +1433,8 @@ function RacmManagementDashboard() {
           sampleDocMissingCount: sampleDocMissingFormIds?.length || 0,
           nonUserRoleForms: nonUserRoleForms || [],
           missingUserEmails: missingEmails || [],
+          notInUnitEmails: notInUnitEmails || [],
+          invalidMobileEmails: invalidMobileEmails || [],
           eligibleFormIds: validFormIds || [],
         })
       }
@@ -1269,7 +1451,7 @@ function RacmManagementDashboard() {
     }
 
     const activeSelectedCount = forms.filter(
-      (form) => selectedForms.has(form.form_id) && form.active === true
+      (form) => selectedForms.has(form.form_id) && isRacmActive(form)
     ).length
 
     if (activeSelectedCount > 0) {
@@ -1293,9 +1475,21 @@ function RacmManagementDashboard() {
     setDeleting(true)
 
     try {
-      const formIds = Array.from(selectedForms)
+      const selectedRecords = forms.filter((form) => selectedForms.has(form.form_id))
+      const activeSelected = selectedRecords.filter((form) => isRacmActive(form))
+      if (activeSelected.length > 0) {
+        toast.error(
+          activeSelected.length === 1
+            ? 'Active RACM cannot be deleted. Please set the RACM Inactive first.'
+            : `${activeSelected.length} active RACM(s) cannot be deleted. Please set them Inactive first.`
+        )
+        return
+      }
+
+      const formIds = selectedRecords.map((form) => form.form_id)
       let successCount = 0
       let failCount = 0
+      let activeBlockedCount = 0
       let deletedS3ObjectCount = 0
       let deletedSampleDocRows = 0
       let deletedUserDocRows = 0
@@ -1317,6 +1511,9 @@ function RacmManagementDashboard() {
             deletedUserDocRows += Number(data.deleted_documents?.user_uploaded_rows || 0)
           } else {
             failCount++
+            if (String(data.message || '').includes('Active RACM cannot be deleted')) {
+              activeBlockedCount++
+            }
             console.error(`Failed to delete form ${formId}:`, data.message)
           }
         } catch (error) {
@@ -1333,7 +1530,15 @@ function RacmManagementDashboard() {
         toast.success(`Successfully deleted ${successCount} RACM(s).${documentMessage}`)
       }
       if (failCount > 0) {
-        toast.error(`Failed to delete ${failCount} RACM(s)`)
+        if (activeBlockedCount > 0) {
+          toast.error(
+            activeBlockedCount === 1
+              ? 'Active RACM cannot be deleted. Please set the RACM Inactive first.'
+              : `${activeBlockedCount} active RACM(s) cannot be deleted. Please set them Inactive first.`
+          )
+        } else {
+          toast.error(`Failed to delete ${failCount} RACM(s)`)
+        }
       }
 
       // Reset delete mode and refresh forms
@@ -1392,25 +1597,40 @@ function RacmManagementDashboard() {
   const isBlockedForSetActiveSelection = (form) => {
     if (!setActiveMode) return false
 
-    const email = normalizeEmail(form.control_owner)
-    if (!email) return true
-
     const dueDate = form?.due_date
     const reminderFrequency = form?.reminder_frequency
     const hasDueDate = Boolean(dueDate)
     const hasReminderFrequency = reminderFrequency !== null && reminderFrequency !== undefined && String(reminderFrequency).trim() !== ''
+
+    if (isCoordinatorAssignedRacm(form)) {
+      return !hasDueDate || !hasReminderFrequency
+    }
+
+    const email = normalizeEmail(form.control_owner)
+    if (!email) return true
+
+    const unitId = form?.unit_id ? String(form.unit_id).trim() : ''
     if (!hasDueDate || !hasReminderFrequency) return true
 
-    const cachedCheck = userRoleChecksRef.current[email]
-    return !!(cachedCheck?.exists && normalizeRole(cachedCheck.role) !== 'user')
+    const cachedCheck = userRoleChecksRef.current[getUserRoleCheckCacheKey(email, unitId)]
+    if (!cachedCheck) return false
+    if (!cachedCheck.exists) return true
+    if (normalizeRole(cachedCheck.role) !== 'user') return true
+    if (unitId && cachedCheck.in_unit === false) return true
+    if (!cachedCheck.has_valid_mobile) return true
+    return false
   }
 
   const emptyProcessOwnerCount = setActiveMode
-    ? forms.filter((form) => !normalizeEmail(form.control_owner)).length
+    ? forms.filter((form) => !isRacmAssigned(form)).length
     : 0
-  const selectableVisibleForms = (deleteMode || replicateMode || setDueDateMode)
-    ? forms
-    : forms.filter((form) => !isBlockedForSetActiveSelection(form))
+  const selectableVisibleForms = deleteMode
+    ? forms.filter((form) => !isRacmActive(form))
+    : (replicateMode || setDueDateMode)
+      ? forms
+      : setActiveMode
+        ? forms.filter((form) => !isBlockedForSetActiveSelection(form))
+        : forms
   const allVisibleSelectableSelected = selectableVisibleForms.length > 0 &&
     selectableVisibleForms.every((form) => selectedForms.has(form.form_id))
   const someVisibleSelectableSelected = selectableVisibleForms.some((form) => selectedForms.has(form.form_id))
@@ -1486,23 +1706,6 @@ function RacmManagementDashboard() {
           gap: 1.25,
         }}
       >
-        <Button
-          onClick={() => navigate('/company_co/manual-control-creation')}
-          disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
-          variant="contained"
-          color="secondary"
-          size="small"
-          sx={{
-            ...toolbarBtnBase,
-            '&:hover': { boxShadow: 'none' },
-            '&:disabled': {
-              bgcolor: alpha(theme.palette.action.disabledBackground, 0.5),
-            },
-          }}
-        >
-          Create RACM Manually
-        </Button>
-
         <Button
           onClick={() => navigate('/company_co/racm-user-documents')}
           disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
@@ -1724,11 +1927,11 @@ function RacmManagementDashboard() {
             }}
           >
             <Typography sx={{ fontWeight: 700 }}>
-              {pendingChangeRequestCount} RACMs have pending change requests
+              {pendingChangeRequestCount} RACMs have change requests
             </Typography>
-            <Typography variant="body2">
+            {/* <Typography variant="body2">
               Click to view the RACM list.
-            </Typography>
+            </Typography> */}
           </Alert>
         ) : null}
 
@@ -2386,7 +2589,10 @@ function RacmManagementDashboard() {
                                 handleSelectForm(form.form_id)
                               }}
                               onClick={(e) => e.stopPropagation()}
-                              disabled={setActiveMode && validatingSetActiveSelection}
+                              disabled={
+                                (setActiveMode && validatingSetActiveSelection) ||
+                                (deleteMode && isRacmActive(form))
+                              }
                               size="small"
                             />
                           </Box>
@@ -3244,6 +3450,96 @@ function RacmManagementDashboard() {
                   >
                     Reminder columns missing (due date / reminder frequency): <strong>{missingReminderCount}</strong>
                   </Typography>
+                ) : null}
+
+                {notInUnitBlockedCount > 0 ? (
+                  <Box sx={{ mb: 1 }}>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: theme.palette.text.primary,
+                        fontWeight: 500,
+                        mb: 1,
+                      }}
+                    >
+                      Process Owner not assigned to RACM unit: <strong>{notInUnitBlockedCount}</strong>
+                    </Typography>
+                    {notInUnitBlockedEmails.length > 0 ? (
+                      <Box
+                        sx={{
+                          maxHeight: '220px',
+                          overflowY: 'auto',
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          p: 2,
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.05)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                        }}
+                      >
+                        {notInUnitBlockedEmails.map((email, index) => (
+                          <Typography
+                            key={email}
+                            variant="body2"
+                            sx={{
+                              color: theme.palette.text.primary,
+                              py: 0.5,
+                              borderBottom: index < notInUnitBlockedEmails.length - 1 ? '1px solid' : 'none',
+                              borderColor: 'divider',
+                            }}
+                          >
+                            {email}
+                          </Typography>
+                        ))}
+                      </Box>
+                    ) : null}
+                  </Box>
+                ) : null}
+
+                {invalidMobileBlockedCount > 0 ? (
+                  <Box sx={{ mb: 1 }}>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: theme.palette.text.primary,
+                        fontWeight: 500,
+                        mb: 1,
+                      }}
+                    >
+                      Process Owner missing valid mobile number: <strong>{invalidMobileBlockedCount}</strong>
+                    </Typography>
+                    {invalidMobileBlockedEmails.length > 0 ? (
+                      <Box
+                        sx={{
+                          maxHeight: '220px',
+                          overflowY: 'auto',
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          p: 2,
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.05)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                        }}
+                      >
+                        {invalidMobileBlockedEmails.map((email, index) => (
+                          <Typography
+                            key={email}
+                            variant="body2"
+                            sx={{
+                              color: theme.palette.text.primary,
+                              py: 0.5,
+                              borderBottom: index < invalidMobileBlockedEmails.length - 1 ? '1px solid' : 'none',
+                              borderColor: 'divider',
+                            }}
+                          >
+                            {email}
+                          </Typography>
+                        ))}
+                      </Box>
+                    ) : null}
+                  </Box>
                 ) : null}
 
                 {missingUsersCount > 0 ? (

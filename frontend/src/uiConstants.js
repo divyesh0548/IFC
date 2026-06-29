@@ -6,6 +6,35 @@ export const MAIN_CONTENT_MAX_WIDTH = 2100
 // Maximum width for form detail page (wider content area)
 export const FORM_DETAIL_MAX_WIDTH = 2100
 
+// Root wrapper for form detail pages (aligns with dashboard content width)
+export const FORM_DETAIL_ROOT_SX = {
+  width: '100%',
+  maxWidth: FORM_DETAIL_MAX_WIDTH,
+  mx: 'auto',
+  px: 0,
+  py: 0,
+}
+
+// Top action row on form detail pages (e.g. change request, edit controls)
+export const FORM_DETAIL_ACTION_BAR_SX = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  alignItems: 'center',
+  gap: 1.5,
+  flexWrap: 'wrap',
+  width: '100%',
+  minWidth: 0,
+}
+
+// Main vertical stack for form detail sections
+export const FORM_DETAIL_CONTENT_STACK_SX = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 3,
+  width: '100%',
+  minWidth: 0,
+}
+
 // Default min-width for compact dropdown filters (e.g. Status, Year)
 export const FILTER_DROPDOWN_MIN_WIDTH_SM = 180
 

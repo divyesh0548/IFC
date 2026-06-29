@@ -9,7 +9,7 @@ function buildNoticeMessage(variant, summary) {
     : ''
 
   if (variant === 'manual') {
-    return `Manual RACM creation uses the active RACM template for the selected unit${templateLabel}. The form fields below follow that template, including any custom or assertion columns. The new RACM will be linked to this template version.${
+    return `Manual RACM creation uses the active RACM template for the selected unit${templateLabel}. The form fields below follow that template, including any custom or assertion columns.${
       summary?.extraFieldCount === 0
         ? ' This template has no extra columns yet — only fixed fields are shown unless you add columns in RACM Templates.'
         : ''

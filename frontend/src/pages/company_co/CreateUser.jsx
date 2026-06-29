@@ -21,7 +21,10 @@ import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
-import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
+import {
+  getWarningHelperTextSx,
+  useOrganizationEmailWarning,
+} from '../../hooks/useOrganizationEmailWarning'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
 function CreateUser() {
@@ -39,7 +42,9 @@ function CreateUser() {
   const [unitsLoading, setUnitsLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [mobileRequiredError, setMobileRequiredError] = useState('')
   const { getEmailWarning, getEmailWarningHelperTextSx } = useOrganizationEmailWarning()
+  const mobileFormatWarning = mobile.trim() ? getMobileValidationError(mobile.trim()) : ''
   const hasMultipleUnits = unitOptions.length > 1
   const singleUnitLabel = unitOptions[0]?.unit_name || unitOptions[0]?.unit_id || ''
   const selectedUnitLabel = selectedUnitIds
@@ -108,6 +113,7 @@ function CreateUser() {
     setMobile('')
     setSelectedUnitIds(unitOptions[0]?.unit_id ? [unitOptions[0].unit_id] : [])
     setError('')
+    setMobileRequiredError('')
   }
 
   const submitCreateUser = async (confirmExistingUserUnits = false) => {
@@ -171,17 +177,18 @@ function CreateUser() {
 
     if (!mobile.trim()) {
       const errorMsg = 'Mobile number is required'
-      setError(errorMsg)
+      setMobileRequiredError(errorMsg)
       toast.error(errorMsg)
       return
     }
 
     const mobileValidationError = getMobileValidationError(mobile.trim())
     if (mobileValidationError) {
-      setError(mobileValidationError)
       toast.error(mobileValidationError)
       return
     }
+
+    setMobileRequiredError('')
 
     setLoading(true)
 
@@ -428,15 +435,26 @@ function CreateUser() {
                       type="tel"
                       variant="outlined"
                       value={mobile}
-                      onChange={(e) => setMobile(e.target.value)}
+                      onChange={(e) => {
+                        setMobile(e.target.value)
+                        if (mobileRequiredError) {
+                          setMobileRequiredError('')
+                        }
+                      }}
                       disabled={loading}
-                      required
-                      error={!mobile.trim() || !!getMobileValidationError(mobile)}
+                      error={!!mobileRequiredError}
                       helperText={
-                        (!mobile.trim() && 'Mobile number is required') ||
-                        getMobileValidationError(mobile) ||
+                        mobileRequiredError ||
+                        mobileFormatWarning ||
                         'Enter a valid 10-digit mobile number.'
                       }
+                      FormHelperTextProps={{
+                        sx: mobileRequiredError
+                          ? undefined
+                          : mobileFormatWarning
+                            ? getWarningHelperTextSx()
+                            : undefined,
+                      }}
                       fullWidth
                       inputProps={{
                         maxLength: 10,

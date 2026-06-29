@@ -3846,6 +3846,9 @@ async function deleteUsers(req, res) {
 
 async function checkUser(req, res) {
   let { email } = req.params;
+  if (!email) {
+    email = req.query.email;
+  }
 
   try {
     email = decodeURIComponent(email);
@@ -3903,6 +3906,9 @@ async function checkUser(req, res) {
 
 async function checkUserRole(req, res) {
   let { email } = req.params;
+  if (!email) {
+    email = req.query.email;
+  }
 
   try {
     email = decodeURIComponent(email);
@@ -3911,6 +3917,7 @@ async function checkUserRole(req, res) {
   }
 
   email = email.trim().toLowerCase();
+  const unitId = req.query.unit_id != null ? String(req.query.unit_id).trim() : '';
 
   if (!isValidEmail(email)) {
     return res.status(400).json({
@@ -3933,7 +3940,7 @@ async function checkUserRole(req, res) {
     }
 
     const checkUserQuery = `
-      SELECT role, unit_id
+      SELECT role, mobile
       FROM ifc_users
       WHERE LOWER(TRIM(email_id)) = $1
         AND company_identifier = $2
@@ -3948,14 +3955,45 @@ async function checkUserRole(req, res) {
         exists: false,
         role: null,
         unit_id: null,
+        unit_ids: [],
+        in_unit: unitId ? false : null,
+        has_valid_mobile: false,
+        mobile_error: 'Mobile number is required',
       });
     }
+
+    const role = existingUser.rows[0]?.role || null;
+    const mobileDigits = normalizeMobileDigits(existingUser.rows[0]?.mobile);
+    const mobileError = !mobileDigits
+      ? 'Mobile number is required'
+      : getMobileValidationError(mobileDigits);
+    const hasValidMobile = !mobileError;
+
+    const membershipResult = await pool.query(
+      `
+        SELECT unit_id
+        FROM user_unit_memberships
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(user_email_id)) = LOWER(TRIM($2))
+        ORDER BY unit_id ASC
+      `,
+      [companyIdentifier, email]
+    );
+
+    const unitIds = membershipResult.rows
+      .map((row) => String(row.unit_id || '').trim())
+      .filter(Boolean);
+    const inUnit = unitId ? unitIds.includes(unitId) : null;
 
     return res.status(200).json({
       success: true,
       exists: true,
-      role: existingUser.rows[0]?.role || null,
-      unit_id: existingUser.rows[0]?.unit_id || null,
+      role,
+      unit_id: unitIds[0] || null,
+      unit_ids: unitIds,
+      in_unit: inUnit,
+      has_valid_mobile: hasValidMobile,
+      mobile_error: mobileError || null,
     });
   } catch (error) {
     console.error('Error checking user role:', error);
@@ -3964,6 +4002,11 @@ async function checkUserRole(req, res) {
       message: 'Error checking user role',
       exists: false,
       role: null,
+      unit_id: null,
+      unit_ids: [],
+      in_unit: unitId ? false : null,
+      has_valid_mobile: false,
+      mobile_error: null,
     });
   }
 }

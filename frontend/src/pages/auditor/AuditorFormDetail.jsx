@@ -21,11 +21,14 @@ import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRound
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import * as XLSX from 'xlsx'
 import { toast } from 'react-hot-toast'
-import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
-import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
+import {
+  FORM_DETAIL_CONTENT_STACK_SX,
+  FORM_DETAIL_ROOT_SX,
+} from '../../uiConstants'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue } from '../../racmFormDetailFields'
 import { API_BASE_URL } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments } from '../../lib/racmUserDocuments'
+import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments, normalizeSampleDocuments } from '../../lib/racmUserDocuments'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 
 function formatDateTime(dateString) {
@@ -183,19 +186,7 @@ function AuditorFormDetail() {
   }
 
   const getSampleDocs = () => {
-    const docs = Array.isArray(formData?.sample_docs) ? formData.sample_docs : []
-    const normalizedDocs = docs
-      .map((doc, index) => ({
-        id: doc.id || `sample-doc-${index}`,
-        sample_doc: doc.sample_doc,
-        created_at: doc.created_at,
-      }))
-      .filter((doc) => String(doc.sample_doc || '').trim() !== '')
-
-    if (normalizedDocs.length > 0) return normalizedDocs
-
-    const legacyDoc = String(formData?.sample_doc || '').trim()
-    return legacyDoc ? [{ id: 'sample-doc-current', sample_doc: legacyDoc, created_at: null }] : []
+    return normalizeSampleDocuments(formData?.sample_docs, formData?.sample_doc)
   }
 
   const getUserDocs = () => {
@@ -295,13 +286,8 @@ function AuditorFormDetail() {
     'doc_uploaded_by_user',
   ]
   const excludedFields = ['id', 'form_id', 'company_identifier', 'created_at', 'active', 'approved_rejected', 'reason_by_approver']
-  const groupedApproverFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
-  const hasGroupedFieldValue = formData
-    ? groupedApproverFields.some((key) => {
-        const value = formData[key]
-        return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
-      })
-    : false
+  const groupedApproverFields = APPROVAL_SECTION_FIELD_KEYS
+  const hasGroupedFieldValue = hasPopulatedApprovalSectionFields(formData)
 
   const sampleDocs = getSampleDocs()
   const sampleDocCount = sampleDocs.length
@@ -350,16 +336,8 @@ function AuditorFormDetail() {
   }
 
   return (
-    <Box
-      sx={{
-        width: '100%',
-        maxWidth: FORM_DETAIL_MAX_WIDTH,
-        mx: 'auto',
-        px: 0,
-        py: 0,
-      }}
-    >
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <Box sx={FORM_DETAIL_ROOT_SX}>
+      <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
         <Box sx={{ width: '100%' }}>
           <Card
             sx={{
@@ -892,7 +870,7 @@ function AuditorFormDetail() {
                     mt: 2,
                   }}
                 >
-                  {groupedApproverFields.map((key) => {
+                  {getPopulatedApprovalSectionFields(formData).map((key) => {
                     const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                     const value = formData[key]
                     const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
@@ -948,7 +926,7 @@ function AuditorFormDetail() {
             </Card>
           )}
 
-          {(userDocCount > 0 || formData.remarks_by_user || formData.reason_by_approver) && (
+          {(userDocCount > 0 || hasRacmFieldValue(formData.remarks_by_user) || hasRacmFieldValue(formData.reason_by_approver)) && (
             <Card
               sx={{
                 borderRadius: 3,
@@ -979,7 +957,7 @@ function AuditorFormDetail() {
                   Approval
                 </Typography>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 2 }}>
-                  {(userDocCount > 0 || typeof formData.remarks_by_user !== 'undefined') && (
+                  {(userDocCount > 0 || hasRacmFieldValue(formData.remarks_by_user)) && (
                     <Box
                       sx={{
                         display: 'grid',
@@ -1039,7 +1017,7 @@ function AuditorFormDetail() {
                         </Box>
                       )}
 
-                      {typeof formData.remarks_by_user !== 'undefined' && (
+                      {hasRacmFieldValue(formData.remarks_by_user) && (
                         <Box
                           sx={{
                             p: 2.5,
@@ -1189,7 +1167,7 @@ function AuditorFormDetail() {
                       {getFileName(doc.sample_doc)}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                      {formatRacmUserDocumentSubtitle(doc, formatDateTime)}
                     </Typography>
                   </Box>
                   <Tooltip title="Download">

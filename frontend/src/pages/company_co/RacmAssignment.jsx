@@ -31,6 +31,7 @@ import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSear
 import CompanyUserSearchAutocomplete from '../../components/company_co/CompanyUserSearchAutocomplete'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
+import { isCoordinatorAssignedRacm } from '../../racmFormDetailFields'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
 function RacmAssignment() {
@@ -81,7 +82,9 @@ function RacmAssignment() {
   const assignmentPageDescription = isApproverMode
     ? 'Assign RACM-specific approvers and manage existing approver overrides.'
     : 'Assign RACM to Process Owners and manage existing RACM assignments.'
-  const isAssignmentLocked = (form) => !isApproverMode && isFormActive(form)
+  const isAssignmentLocked = (form) => (
+    !isApproverMode && (isFormActive(form) || isCoordinatorAssignedRacm(form))
+  )
   const isApproverApprovalLocked = (form) => {
     const normalizedStatus = String(form?.status || '').trim().toLowerCase()
     return normalizedStatus === 'sent for approval' || normalizedStatus === 'approved' || normalizedStatus === 'rejected'
@@ -89,12 +92,24 @@ function RacmAssignment() {
   const isCurrentAssignmentLocked = (form) => (
     isApproverMode ? isApproverApprovalLocked(form) : isAssignmentLocked(form)
   )
-  const getCurrentAssigneeEmail = (form) =>
-    isApproverMode ? String(form?.approver_email_id || '').trim() || 'N/A' : String(form?.control_owner || '').trim() || 'N/A'
-  const getCurrentAssigneeName = (form) =>
-    isApproverMode
-      ? String(form?.approver_display_name || form?.approver_name || '').trim() || '-'
-      : String(form?.control_owner_name || '').trim() || '-'
+  const getCurrentAssigneeEmail = (form) => {
+    if (isApproverMode) {
+      return String(form?.approver_email_id || '').trim() || 'N/A'
+    }
+    if (isCoordinatorAssignedRacm(form)) {
+      return 'Coordinator (Self)'
+    }
+    return String(form?.control_owner || '').trim() || 'N/A'
+  }
+  const getCurrentAssigneeName = (form) => {
+    if (isApproverMode) {
+      return String(form?.approver_display_name || form?.approver_name || '').trim() || '-'
+    }
+    if (isCoordinatorAssignedRacm(form)) {
+      return 'Coordinator (Self)'
+    }
+    return String(form?.control_owner_name || '').trim() || '-'
+  }
   const selectedApprovalLockedForms = selectedFormRows.filter((form) => isApproverApprovalLocked(form))
   const hasSelectedApproverLockedRacm = selectedApprovalLockedForms.length > 0
 

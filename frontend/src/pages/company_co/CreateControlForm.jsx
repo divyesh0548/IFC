@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTheme } from '@mui/material/styles'
-import { useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -12,11 +12,14 @@ import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
+import Link from '@mui/material/Link'
+import Stack from '@mui/material/Stack'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ChecklistRoundedIcon from '@mui/icons-material/ChecklistRounded'
+import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined'
 import { toast } from 'react-hot-toast'
 import dayjs from 'dayjs'
 import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
@@ -25,6 +28,9 @@ import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import RacmUserAssignmentSection from '../../components/company_co/RacmUserAssignmentSection'
 import ActiveRacmTemplateNotice from '../../components/company_co/ActiveRacmTemplateNotice'
+import CustomColumnDot from '../../components/racm/CustomColumnDot'
+import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
+import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX } from '../../components/AppDialog'
 import { getEffectiveSampleSizeForFrequency, validateSampleSizeForFrequency } from '../../utils/controlFrequencyValidation'
 
 function createEmptyFormData(unitId = '') {
@@ -58,8 +64,6 @@ function createEmptyFormData(unitId = '') {
   }
 }
 
-const RACM_TEMPLATE_SECTION_ORDER = ['process_and_risk', 'assertions', 'control_details', 'others']
-
 const DEFAULT_SECTION_LABELS = {
   process_and_risk: 'Process and Risk',
   assertions: 'Assertions',
@@ -89,6 +93,7 @@ function CreateControlForm() {
   const [sectionLabels, setSectionLabels] = useState(DEFAULT_SECTION_LABELS)
   const [dynamicValues, setDynamicValues] = useState({})
   const [templateLoading, setTemplateLoading] = useState(false)
+  const [templateHelpDialogOpen, setTemplateHelpDialogOpen] = useState(false)
   useSyncGlobalLoading(loading || templateLoading)
 
   // Financial year options - dynamically based on current year
@@ -316,16 +321,15 @@ function CreateControlForm() {
     return groups
   }, [extraTemplateFields])
 
-  const templateSectionsWithExtras = useMemo(
-    () => RACM_TEMPLATE_SECTION_ORDER.filter(
-      (sectionKey) =>
-        sectionKey !== 'assertions' &&
-        (groupedExtraTemplateFields[sectionKey] || []).length > 0
-    ),
-    [groupedExtraTemplateFields]
-  )
-
   const assertionTemplateFields = groupedExtraTemplateFields.assertions || []
+  const othersTemplateFields = groupedExtraTemplateFields.others || []
+
+  const handleDynamicFieldChange = useCallback((fieldKey, value) => {
+    setDynamicValues((prev) => ({
+      ...prev,
+      [fieldKey]: value,
+    }))
+  }, [])
 
   const getControlFrequencySampleSizeMeta = useCallback(
     (frequencyLabel) => getEffectiveSampleSizeForFrequency(unitSampleSizeSettings, frequencyLabel),
@@ -628,7 +632,7 @@ function CreateControlForm() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        toast.success('RACM created successfully')
+        toast.success(data.message || 'RACM created successfully')
         resetFormAfterSubmit()
       } else if (response.status === 409) {
         toast.error(data.message || 'Duplicate RACM already exists.')
@@ -699,6 +703,15 @@ function CreateControlForm() {
     'whether_fraud_risks_exist',
   ]
 
+  const selectedUnitLabel = useMemo(() => {
+    const unit = unitOptions.find((option) => option.unit_id === formData.unit_id)
+    return unit?.unit_name || formData.unit_id || 'this unit'
+  }, [unitOptions, formData.unit_id])
+
+  const racmTemplatesHref = formData.unit_id
+    ? `/company_co/racm-templates?unit_id=${encodeURIComponent(formData.unit_id)}`
+    : '/company_co/racm-templates'
+
   return (
     <Box 
       sx={{ 
@@ -748,6 +761,21 @@ function CreateControlForm() {
             >
               Create RACM
             </Typography>
+            <IconButton
+              onClick={() => setTemplateHelpDialogOpen(true)}
+              aria-label="Template column help"
+              sx={{
+                color: 'text.secondary',
+                '&:hover': {
+                  color: 'primary.main',
+                  backgroundColor: theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.08)'
+                    : 'rgba(0, 0, 0, 0.04)',
+                },
+              }}
+            >
+              <LightbulbOutlinedIcon />
+            </IconButton>
           </Box>
 
           <form onSubmit={handleSubmit}>
@@ -848,8 +876,22 @@ function CreateControlForm() {
                     }
                   : null
               }
-              sx={{ mb: 4 }}
+              sx={{ mb: extraTemplateFields.length > 0 ? 2 : 4 }}
             />
+
+            {extraTemplateFields.length > 0 ? (
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={0.75}
+                sx={{ mb: 4 }}
+              >
+                <CustomColumnDot />
+                <Typography variant="caption" color="text.secondary">
+                  Fields marked with a yellow dot are custom columns from your unit template.
+                </Typography>
+              </Stack>
+            ) : null}
 
             {/* Process and risk section */}
             <Box
@@ -950,6 +992,16 @@ function CreateControlForm() {
                     />
                   )
                 })}
+                <RacmTemplateSectionFields
+                  blendIntoParent
+                  showCustomColumnIndicator
+                  sectionKey="process_and_risk"
+                  fieldDefinitions={extraTemplateFields}
+                  values={dynamicValues}
+                  isEditMode
+                  onChange={handleDynamicFieldChange}
+                  disabled={loading || templateLoading}
+                />
               </Box>
             </Box>
 
@@ -984,20 +1036,16 @@ function CreateControlForm() {
                     gap: 3,
                   }}
                 >
-                  {assertionTemplateFields.map((field) => (
-                    <TextField
-                      key={field.field_key}
-                      name={field.field_key}
-                      label={field.label}
-                      value={dynamicValues[field.field_key] || ''}
-                      onChange={handleChange}
-                      fullWidth
-                      multiline
-                      rows={3}
-                      variant="outlined"
-                      disabled={loading || templateLoading}
-                    />
-                  ))}
+                  <RacmTemplateSectionFields
+                    blendIntoParent
+                    showCustomColumnIndicator
+                    sectionKey="assertions"
+                    fieldDefinitions={extraTemplateFields}
+                    values={dynamicValues}
+                    isEditMode
+                    onChange={handleDynamicFieldChange}
+                    disabled={loading || templateLoading}
+                  />
                 </Box>
               </Box>
             ) : null}
@@ -1172,13 +1220,23 @@ function CreateControlForm() {
                       />
                     )
                   })}
+                <RacmTemplateSectionFields
+                  blendIntoParent
+                  showCustomColumnIndicator
+                  sectionKey="control_details"
+                  fieldDefinitions={extraTemplateFields}
+                  values={dynamicValues}
+                  isEditMode
+                  onChange={handleDynamicFieldChange}
+                  disabled={loading || templateLoading}
+                />
               </Box>
             </Box>
 
-            {templateSectionsWithExtras.length > 0 ? (
+            {othersTemplateFields.length > 0 ? (
               <Box
                 sx={{
-                  borderTop: '1px solid',
+                  borderTop: '2px solid',
                   borderColor: 'divider',
                   pt: 3,
                   mb: 3,
@@ -1189,49 +1247,34 @@ function CreateControlForm() {
                   component="h2"
                   sx={{
                     fontWeight: 700,
-                    mb: 1,
+                    mb: 3,
                     color: 'text.primary',
                     fontSize: '1.125rem',
                   }}
                 >
-                  Unit Template Fields
+                  {sectionLabels.others || 'Others'}
                 </Typography>
-
-                {templateSectionsWithExtras.map((sectionKey) => (
-                  <Box key={sectionKey} sx={{ mb: 3 }}>
-                    <Typography
-                      variant="subtitle1"
-                      sx={{ fontWeight: 700, mb: 2, color: 'text.primary' }}
-                    >
-                      {sectionLabels[sectionKey] || sectionKey}
-                    </Typography>
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: {
-                          xs: '1fr',
-                          md: 'repeat(2, 1fr)',
-                        },
-                        gap: 3,
-                      }}
-                    >
-                      {(groupedExtraTemplateFields[sectionKey] || []).map((field) => (
-                        <TextField
-                          key={field.field_key}
-                          name={field.field_key}
-                          label={field.label}
-                          value={dynamicValues[field.field_key] || ''}
-                          onChange={handleChange}
-                          fullWidth
-                          multiline
-                          rows={3}
-                          variant="outlined"
-                          disabled={loading || templateLoading}
-                        />
-                      ))}
-                    </Box>
-                  </Box>
-                ))}
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: 'repeat(2, 1fr)',
+                    },
+                    gap: 3,
+                  }}
+                >
+                  <RacmTemplateSectionFields
+                    blendIntoParent
+                    showCustomColumnIndicator
+                    sectionKey="others"
+                    fieldDefinitions={extraTemplateFields}
+                    values={dynamicValues}
+                    isEditMode
+                    onChange={handleDynamicFieldChange}
+                    disabled={loading || templateLoading}
+                  />
+                </Box>
               </Box>
             ) : null}
 
@@ -1379,6 +1422,35 @@ function CreateControlForm() {
           </form>
         </Paper>
       </Box>
+
+      <AppDialog
+        open={templateHelpDialogOpen}
+        onClose={() => setTemplateHelpDialogOpen(false)}
+        title="Missing columns on this form?"
+        actions={
+          <Button
+            variant="contained"
+            onClick={() => setTemplateHelpDialogOpen(false)}
+            sx={APP_DIALOG_PRIMARY_BUTTON_SX}
+          >
+            Close
+          </Button>
+        }
+      >
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          This form follows the active RACM template for{' '}
+          <strong>{selectedUnitLabel}</strong>. If you need additional fields, edit that template
+          to add or adjust columns, then return here to create RACMs with the updated layout.
+        </Typography>
+        <Link
+          component={RouterLink}
+          to={racmTemplatesHref}
+          onClick={() => setTemplateHelpDialogOpen(false)}
+          sx={{ fontWeight: 600 }}
+        >
+          Open RACM Templates
+        </Link>
+      </AppDialog>
     </Box>
   )
 }

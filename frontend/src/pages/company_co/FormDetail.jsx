@@ -33,15 +33,19 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded';
 import DeleteRoundedIcon from '@mui/icons-material/DeleteRounded';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import CloseIcon from '@mui/icons-material/Close';
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
 import {
-  FORM_DETAIL_MAX_WIDTH,
+  FORM_DETAIL_ACTION_BAR_SX,
+  FORM_DETAIL_CONTENT_STACK_SX,
+  FORM_DETAIL_ROOT_SX,
 } from '../../uiConstants'
 import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
 import { fetchUnitUsers } from '../../components/company_co/unitUserSearch'
-import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, hasValidProcessOwnerAssignment, isCoordinatorAssignedRacm } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
@@ -60,7 +64,7 @@ import {
   DOCUMENT_UPLOAD_INVALID_TYPE_MESSAGE,
   validateDocumentUploadFiles,
 } from '../../lib/documentUploadRestrictions'
-import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments } from '../../lib/racmUserDocuments'
+import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments, normalizeSampleDocuments } from '../../lib/racmUserDocuments'
 
 function formatNameWithEmail(name, email) {
   const normalizedName = String(name || '').trim()
@@ -127,8 +131,16 @@ function FormDetail() {
   const [deletingSampleDocId, setDeletingSampleDocId] = useState(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [setActiveConfirmDialogOpen, setSetActiveConfirmDialogOpen] = useState(false)
+  const [setInactiveConfirmDialogOpen, setSetInactiveConfirmDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [moreActionsDialogOpen, setMoreActionsDialogOpen] = useState(false)
+  const [selfAssignConfirmDialogOpen, setSelfAssignConfirmDialogOpen] = useState(false)
+  const [selfAssigning, setSelfAssigning] = useState(false)
+  const [validProcessOwnerAssigned, setValidProcessOwnerAssigned] = useState(false)
+  const [remarksByUser, setRemarksByUser] = useState('')
+  const [selectedSubmissionFiles, setSelectedSubmissionFiles] = useState([])
+  const [uploadingSubmissionDocuments, setUploadingSubmissionDocuments] = useState(false)
+  const [submittingForApproval, setSubmittingForApproval] = useState(false)
   const [replicateDialogOpen, setReplicateDialogOpen] = useState(false)
   const [replicateTargetFY, setReplicateTargetFY] = useState('')
   const [replicating, setReplicating] = useState(false)
@@ -229,6 +241,7 @@ function FormDetail() {
 
       if (response.ok && data.success) {
         setFormData(data.data)
+        setRemarksByUser(data.data?.remarks_by_user || '')
         // Check if sampling document exists
         const samplingCheck = await checkSamplingExists()
         setSamplingExists(samplingCheck)
@@ -313,25 +326,106 @@ function FormDetail() {
   }
 
 
-  const checkUserRole = async (email) => {
-    if (!email || !email.trim()) return { exists: false, role: null }
+  const checkUserRole = async (email, unitId = '') => {
+    if (!email || !email.trim()) {
+      return {
+        exists: false,
+        role: null,
+        unit_id: null,
+        in_unit: null,
+        has_valid_mobile: false,
+        mobile_error: 'Mobile number is required',
+      }
+    }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/company-co/check-user-role/${encodeURIComponent(email.trim())}`, {
-        method: 'GET',
-        credentials: 'include',
-      })
+      const params = new URLSearchParams()
+      const normalizedUnitId = String(unitId || '').trim()
+      if (normalizedUnitId) {
+        params.set('unit_id', normalizedUnitId)
+      }
+      const queryString = params.toString()
+      const response = await fetch(
+        `${API_BASE_URL}/api/company-co/check-user-role/${encodeURIComponent(email.trim())}${queryString ? `?${queryString}` : ''}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      )
 
       const data = await response.json()
-      if (!response.ok || !data.success) return { exists: false, role: null }
-      return { exists: !!data.exists, role: data.role ?? null, unit_id: data.unit_id ?? null }
+      if (!response.ok || !data.success) {
+        return {
+          exists: false,
+          role: null,
+          unit_id: null,
+          in_unit: normalizedUnitId ? false : null,
+          has_valid_mobile: false,
+          mobile_error: null,
+        }
+      }
+      return {
+        exists: !!data.exists,
+        role: data.role ?? null,
+        unit_id: data.unit_id ?? null,
+        in_unit: data.in_unit ?? null,
+        has_valid_mobile: !!data.has_valid_mobile,
+        mobile_error: data.mobile_error ?? null,
+      }
     } catch (error) {
       console.error('Error checking user role:', error)
-      return { exists: false, role: null }
+      return {
+        exists: false,
+        role: null,
+        unit_id: null,
+        in_unit: null,
+        has_valid_mobile: false,
+        mobile_error: null,
+      }
     }
   }
 
   const normalizeRole = (value) => String(value || '').trim().toLowerCase()
+
+  useEffect(() => {
+    if (!formData || isCoordinatorAssignedRacm(formData)) {
+      setValidProcessOwnerAssigned(false)
+      return
+    }
+
+    if (formData.has_valid_process_owner_assignment !== undefined && formData.has_valid_process_owner_assignment !== null) {
+      setValidProcessOwnerAssigned(hasValidProcessOwnerAssignment(formData))
+      return
+    }
+
+    const email = String(formData.control_owner || '').trim()
+    if (!email) {
+      setValidProcessOwnerAssigned(false)
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
+      const racmUnitId = formData?.unit_id ? String(formData.unit_id).trim() : ''
+      const ownerCheck = await checkUserRole(email, racmUnitId)
+      if (cancelled) return
+      const isValid =
+        ownerCheck.exists
+        && normalizeRole(ownerCheck.role) === 'user'
+        && ownerCheck.in_unit !== false
+      setValidProcessOwnerAssigned(isValid)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    formData?.form_id,
+    formData?.control_owner,
+    formData?.assigned_to_coordinator,
+    formData?.has_valid_process_owner_assignment,
+    formData?.unit_id,
+  ])
 
   const handleToggleActive = async () => {
     if (!formData) return
@@ -345,53 +439,60 @@ function FormDetail() {
       return
     }
 
-    await performToggleActive(newActiveStatus)
+    setSetInactiveConfirmDialogOpen(true)
   }
 
   const validateAndToggleActive = async (newActiveStatus) => {
+    const isCoordinatorAssignedRacm = Boolean(formData?.assigned_to_coordinator)
+
     // Only validate when setting to active
     if (newActiveStatus === '1') {
-      // Check if required fields are empty
-      const dueDate = formData.due_date?.trim()
-      const reminderFrequency = formData.reminder_frequency?.trim()
-      const processOwnerEmailValue = formData.control_owner?.trim()
+      const dueDate = formData.due_date?.trim?.() ?? (formData.due_date ? String(formData.due_date).slice(0, 10) : '')
+      const reminderFrequency = formData.reminder_frequency?.trim?.() ?? String(formData.reminder_frequency || '').trim()
 
-      // 1) If process owner is missing, show assignment message regardless of other fields
-      if (!processOwnerEmailValue || processOwnerEmailValue === '') {
-        toast.error('RACM Assignment is remaining')
-        return
-      }
+      if (isCoordinatorAssignedRacm) {
+        if (!dueDate || !reminderFrequency) {
+          toast.error('Configure Reminder settings')
+          return
+        }
+      } else {
+        const processOwnerEmailValue = formData.control_owner?.trim()
 
-      // 2/3) Validate process owner existence and role before reminder fields,
-      // matching RACM Management gating precedence for Set Active.
-      if (processOwnerEmailValue) {
-        const ownerCheck = await checkUserRole(processOwnerEmailValue)
-
-        // Case 3: email not found -> prompt to create user
-        if (!ownerCheck.exists) {
-          setProcessOwnerEmail(processOwnerEmailValue)
-          setCreateUserConfirmDialogOpen(true)
+        if (!processOwnerEmailValue || processOwnerEmailValue === '') {
+          toast.error('RACM Assignment is remaining')
           return
         }
 
-        // Case 2: email exists but role is not 'user' -> block activation
-        if (normalizeRole(ownerCheck.role) !== 'user') {
-          toast.error('Process Owner must be a normal user')
-          return
+        if (processOwnerEmailValue) {
+          const racmUnitId = formData?.unit_id ? String(formData.unit_id).trim() : ''
+          const ownerCheck = await checkUserRole(processOwnerEmailValue, racmUnitId)
+
+          if (!ownerCheck.exists) {
+            setProcessOwnerEmail(processOwnerEmailValue)
+            setCreateUserConfirmDialogOpen(true)
+            return
+          }
+
+          if (normalizeRole(ownerCheck.role) !== 'user') {
+            toast.error('Process Owner must be a normal user')
+            return
+          }
+
+          if (racmUnitId && ownerCheck.in_unit === false) {
+            toast.error('Process Owner is not assigned to this RACM\'s unit')
+            return
+          }
+
+          if (!ownerCheck.has_valid_mobile) {
+            toast.error(ownerCheck.mobile_error || 'Process Owner does not have a valid mobile number')
+            return
+          }
         }
 
-        const racmUnitId = formData?.unit_id ? String(formData.unit_id).trim() : ''
-        const ownerUnitId = ownerCheck.unit_id ? String(ownerCheck.unit_id).trim() : ''
-        if (racmUnitId && ownerUnitId && racmUnitId !== ownerUnitId) {
-          toast.error('User belongs to other unit of the company, Please assign RACM to other user')
+        if (!dueDate || dueDate === '' || !reminderFrequency || reminderFrequency === '') {
+          toast.error('Configure Reminder settings')
           return
         }
-      }
-
-      // 4) If process owner is valid but reminder settings are missing, block activation
-      if (!dueDate || dueDate === '' || !reminderFrequency || reminderFrequency === '') {
-        toast.error('Configure Reminder settings')
-        return
       }
     }
 
@@ -684,6 +785,11 @@ function FormDetail() {
   }
 
   const handleOpenAssignmentDialog = () => {
+    if (Boolean(formData?.assigned_to_coordinator)) {
+      toast.error('This RACM is coordinator-assigned and cannot be assigned to a process owner')
+      return
+    }
+
     if (Boolean(formData?.active)) {
       toast.error('RACM assignment cannot be changed once RACM is Active')
       return
@@ -1218,23 +1324,7 @@ function FormDetail() {
   }
 
   const getSampleDocs = () => {
-    const docs = Array.isArray(formData?.sample_docs)
-      ? formData.sample_docs
-      : []
-    const normalizedDocs = docs
-      .map((doc, index) => ({
-        id: doc.id || `sample-doc-${index}`,
-        sample_doc: doc.sample_doc,
-        created_at: doc.created_at,
-      }))
-      .filter((doc) => String(doc.sample_doc || '').trim() !== '')
-
-    if (normalizedDocs.length > 0) return normalizedDocs
-
-    const legacyDoc = String(formData?.sample_doc || '').trim()
-    return legacyDoc
-      ? [{ id: 'sample-doc-current', sample_doc: legacyDoc, created_at: null }]
-      : []
+    return normalizeSampleDocuments(formData?.sample_docs, formData?.sample_doc)
   }
 
   const getUserDocs = () => {
@@ -1290,29 +1380,24 @@ function FormDetail() {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
 
-    // Validate file type
-    const validTypes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-      'application/vnd.ms-excel', // .xls
-    ]
+    const { validFiles, invalidTypeFiles, invalidSizeFiles } = validateDocumentUploadFiles(files)
 
-    const hasInvalidType = files.some((file) => {
-      const fileName = String(file.name || '').toLowerCase()
-      return !validTypes.includes(file.type) && !fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')
-    })
-    if (hasInvalidType) {
-      toast.error('Invalid file type. Please upload only Excel files (.xlsx, .xls)')
+    if (invalidTypeFiles.length > 0) {
+      toast.error(DOCUMENT_UPLOAD_INVALID_TYPE_MESSAGE)
+    }
+
+    if (invalidSizeFiles.length > 0) {
+      toast.error(DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE)
+    }
+
+    if (validFiles.length === 0) {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
       return
     }
 
-    // Validate file size (10MB limit)
-    const hasOversizedFile = files.some((file) => file.size > 10 * 1024 * 1024)
-    if (hasOversizedFile) {
-      toast.error('Each file must be 10MB or smaller.')
-      return
-    }
-
-    await handleSamplingUpload(files)
+    await handleSamplingUpload(validFiles)
   }
 
   const handleSamplingUpload = async (files) => {
@@ -1505,6 +1590,12 @@ function FormDetail() {
   }
 
   const handleDeleteConfirm = async () => {
+    if (Boolean(formData?.active)) {
+      toast.error('Active RACM cannot be deleted. Please set the RACM Inactive first.')
+      setDeleteDialogOpen(false)
+      return
+    }
+
     setDeleting(true)
     try {
       const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
@@ -1542,6 +1633,16 @@ function FormDetail() {
     setSetActiveConfirmDialogOpen(false)
   }
 
+  const handleSetInactiveConfirm = async () => {
+    setSetInactiveConfirmDialogOpen(false)
+    await performToggleActive('0')
+  }
+
+  const handleSetInactiveCancel = () => {
+    if (updating) return
+    setSetInactiveConfirmDialogOpen(false)
+  }
+
   // Given a Financial Year like "2025-26" or "2025-2026" or "2025",
   // return the next two FYs in "YYYY-YY" format.
   const parseNextTwoFYs = (fy) => {
@@ -1571,13 +1672,196 @@ function FormDetail() {
 
   const handleChooseDeleteFromMore = () => {
     setMoreActionsDialogOpen(false)
-    setDeleteDialogOpen(true)
+    handleDeleteClick()
   }
 
   const handleChooseReplicateFromMore = () => {
     setMoreActionsDialogOpen(false)
     setReplicateTargetFY('')
     setReplicateDialogOpen(true)
+  }
+
+  const handleChooseSelfAssignFromMore = () => {
+    if (isCoordinatorAssigned) {
+      toast.error('This RACM is already coordinator-assigned')
+      return
+    }
+    if (validProcessOwnerAssigned) {
+      toast.error('This RACM is already assigned to a process owner')
+      return
+    }
+    if (!hasReminderSettings) {
+      toast.error('Configure due date and reminder frequency before self-assignment')
+      return
+    }
+    if (isSentForApproval || isApprovedRacm) {
+      toast.error('This RACM cannot be self-assigned in its current approval status')
+      return
+    }
+
+    setMoreActionsDialogOpen(false)
+    setSelfAssignConfirmDialogOpen(true)
+  }
+
+  const handleSelfAssignCancel = () => {
+    if (selfAssigning) return
+    setSelfAssignConfirmDialogOpen(false)
+  }
+
+  const handleSelfAssignConfirm = async () => {
+    if (!form_id) return
+
+    setSelfAssigning(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/self-assign`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast.success(data.message || 'RACM self-assigned successfully')
+        setSelfAssignConfirmDialogOpen(false)
+        await fetchFormData()
+      } else {
+        toast.error(data.message || 'Failed to self-assign RACM')
+      }
+    } catch (error) {
+      console.error('Error self-assigning RACM:', error)
+      toast.error('Error self-assigning RACM')
+    } finally {
+      setSelfAssigning(false)
+    }
+  }
+
+  const handleSubmissionFileSelect = (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+
+    const { validFiles, invalidTypeFiles, invalidSizeFiles } = validateDocumentUploadFiles(files)
+
+    if (invalidTypeFiles.length > 0) {
+      toast.error(DOCUMENT_UPLOAD_INVALID_TYPE_MESSAGE)
+    }
+
+    if (invalidSizeFiles.length > 0) {
+      toast.error(DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE)
+    }
+
+    if (validFiles.length === 0) {
+      e.target.value = ''
+      return
+    }
+
+    setSelectedSubmissionFiles((currentFiles) => {
+      const existingKeys = new Set(
+        currentFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`)
+      )
+      const nextFiles = [...currentFiles]
+      validFiles.forEach((file) => {
+        const key = `${file.name}-${file.size}-${file.lastModified}`
+        if (!existingKeys.has(key)) {
+          nextFiles.push(file)
+          existingKeys.add(key)
+        }
+      })
+      return nextFiles
+    })
+
+    e.target.value = ''
+  }
+
+  const handleRemoveSubmissionFile = (indexToRemove) => {
+    setSelectedSubmissionFiles((currentFiles) =>
+      currentFiles.filter((_, index) => index !== indexToRemove)
+    )
+  }
+
+  const handleUploadSubmissionDocuments = async () => {
+    if (selectedSubmissionFiles.length === 0) {
+      toast.error('Please select at least one document to upload')
+      return
+    }
+
+    setUploadingSubmissionDocuments(true)
+    try {
+      const formDataUpload = new FormData()
+      selectedSubmissionFiles.forEach((file) => {
+        formDataUpload.append('documents', file)
+      })
+
+      const uploadResponse = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/upload-document`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formDataUpload,
+      })
+      const uploadData = await uploadResponse.json()
+
+      if (uploadResponse.ok && uploadData.success) {
+        toast.success(uploadData.message || 'Documents uploaded successfully')
+        setSelectedSubmissionFiles([])
+        await fetchFormData()
+      } else {
+        toast.error(uploadData.message || 'Failed to upload documents')
+      }
+    } catch (error) {
+      console.error('Error uploading submission documents:', error)
+      toast.error('Failed to upload documents')
+    } finally {
+      setUploadingSubmissionDocuments(false)
+    }
+  }
+
+  const handleSendForApproval = async () => {
+    if (!Boolean(formData?.active)) {
+      toast.error('Inactive RACMs cannot be sent for approval')
+      return
+    }
+
+    const existingUploadedDocs = getUserDocs()
+    if (existingUploadedDocs.length === 0) {
+      toast.error('Please upload at least one document before sending for approval')
+      return
+    }
+
+    const hasApproverInfo = Boolean(
+      String(formData?.approver_name || '').trim() ||
+      String(formData?.approver_display_name || '').trim() ||
+      String(formData?.approver_email_id || '').trim()
+    )
+    if (!hasApproverInfo) {
+      toast.error('Approval is not configured for this RACM')
+      return
+    }
+
+    setSubmittingForApproval(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          remarks_by_user: remarksByUser,
+          status: 'sent for approval',
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast.success(data.message || 'RACM sent for approval successfully')
+        await fetchFormData()
+      } else {
+        toast.error(data.message || 'Failed to send for approval')
+      }
+    } catch (error) {
+      console.error('Error sending for approval:', error)
+      toast.error('Error sending for approval')
+    } finally {
+      setSubmittingForApproval(false)
+    }
   }
 
   const handleReplicateConfirm = async () => {
@@ -1760,13 +2044,9 @@ function FormDetail() {
   const approverOnlyFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
   
   // Grouped fields that should be displayed together (only if at least one has a value)
-  const groupedApproverFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
+  const groupedApproverFields = APPROVAL_SECTION_FIELD_KEYS
   
-  // Check if at least one grouped field has a value
-  const hasGroupedFieldValue = formData ? groupedApproverFields.some(key => {
-    const value = formData[key]
-    return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
-  }) : false
+  const hasGroupedFieldValue = hasPopulatedApprovalSectionFields(formData)
   const deficiencyResponse = formData?.deficiency_response || null
   const deficiencyCurrentSubmission = deficiencyResponse?.current_submission || null
   const deficiencySubmissions = Array.isArray(deficiencyResponse?.submissions)
@@ -1842,15 +2122,23 @@ function FormDetail() {
   }
 
   const isActive = Boolean(formData?.active)
+  const isCoordinatorAssigned = isCoordinatorAssignedRacm(formData)
+  const racmStatus = String(formData?.status || '').trim().toLowerCase()
+  const isSentForApproval = racmStatus === 'sent for approval'
+  const isApprovedRacm = racmStatus === 'approved'
+  const isRejectedRacm = racmStatus === 'rejected'
+  const hasReminderSettings = Boolean(String(formData?.due_date || '').trim()) && Boolean(String(formData?.reminder_frequency || '').trim())
+  const showSelfAssignButton = !isCoordinatorAssigned && !validProcessOwnerAssigned
+  const canCoordinatorSubmit = isCoordinatorAssigned && isActive && !isSentForApproval && !isApprovedRacm
+  const assignmentDisplayValue = isCoordinatorAssigned
+    ? 'Coordinator (Self)'
+    : ((processOwnerName && processOwnerName !== '-')
+      ? processOwnerName
+      : ((formData?.control_owner || '').trim() || '-'))
   const hasActiveSuggestedChanges = String(activeChangeRequest?.status || '').trim() === 'Review Pending'
   const changeRequestsDataReady = !changeRequestHistoryLoading && !activeChangeRequestLoading
-  const hasAnyChangeRequests =
-    changeRequestHistoryCount > 0 || Boolean(activeChangeRequest?.request_id)
-  const showChangeRequestsButton = changeRequestsDataReady && hasAnyChangeRequests
-  const displayedChangeRequestCount = Math.max(
-    changeRequestHistoryCount,
-    activeChangeRequest?.request_id ? 1 : 0
-  )
+  const showSuggestedChangesButton = !isEditMode && hasActiveSuggestedChanges && changeRequestsDataReady
+  const showChangeRequestHistoryButton = changeRequestsDataReady && changeRequestHistoryCount > 0
   const areAllSuggestedChangesDecided =
     Array.isArray(activeChangeRequest?.items) &&
     activeChangeRequest.items.length > 0 &&
@@ -1881,106 +2169,91 @@ function FormDetail() {
   }
 
   return (
-    <Box
-      sx={{
-        width: '100%',
-        maxWidth: FORM_DETAIL_MAX_WIDTH,
-        mx: 'auto',
-        px: 0,
-        py: 0,
-      }}
-    >
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-        {showChangeRequestsButton ? (
-          <Button
-            onClick={handleOpenChangeRequestHistoryDialog}
-            disabled={changeRequestHistoryLoading}
-            variant="outlined"
-            sx={{
-              mr: 1.5,
-              py: 1,
-              fontWeight: 600,
-              textTransform: 'none',
-              fontSize: '0.9375rem',
-              borderRadius: 2,
-            }}
-          >
-            Change Requests ({displayedChangeRequestCount})
-          </Button>
-        ) : null}
-        {!isEditMode && hasActiveSuggestedChanges && (
-          <Button
-            onClick={handleOpenSuggestedChangesDialog}
-            disabled={activeChangeRequestLoading}
-            variant="contained"
-            color="warning"
-            sx={{
-              mr: 1.5,
-              py: 1,
-              fontWeight: 600,
-              textTransform: 'none',
-              fontSize: '0.9375rem',
-              borderRadius: 2,
-            }}
-          >
-            Suggested Changes
-          </Button>
-        )}
-        {/* When in edit mode: Cancel & Save Changes at top-right */}
-        {isEditMode && (
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1.5,
-            }}
-          >
-            <Button
-              onClick={handleCancelEdit}
-              disabled={saving}
-              variant="outlined"
-              sx={{
-                py: 1,
-                fontWeight: 600,
-                textTransform: 'none',
-                fontSize: '0.9375rem',
-                borderRadius: 2,
-                borderWidth: 1.5,
-                borderColor: theme.palette.mode === 'dark'
-                  ? 'rgba(255, 255, 255, 0.23)'
-                  : 'rgba(0, 0, 0, 0.23)',
-                '&:hover': {
-                  borderWidth: 1.5,
-                  borderColor: theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.3)'
-                    : 'rgba(0, 0, 0, 0.3)',
-                  backgroundColor: theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.05)'
-                    : 'rgba(0, 0, 0, 0.04)',
-                },
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveChanges}
-              disabled={saving}
-              variant="contained"
-              color="secondary"
-              sx={{
-                py: 1,
-                fontWeight: 600,
-                textTransform: 'none',
-                fontSize: '0.9375rem',
-                borderRadius: 2,
-              }}
-            >
-              {saving ? 'Saving...' : 'Save Changes'}
-            </Button>
+    <Box sx={FORM_DETAIL_ROOT_SX}>
+      <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
+        {showChangeRequestHistoryButton || showSuggestedChangesButton || isEditMode ? (
+          <Box sx={FORM_DETAIL_ACTION_BAR_SX}>
+            {showChangeRequestHistoryButton ? (
+              <Button
+                onClick={handleOpenChangeRequestHistoryDialog}
+                disabled={changeRequestHistoryLoading}
+                variant="outlined"
+                sx={{
+                  py: 1,
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  fontSize: '0.9375rem',
+                  borderRadius: 2,
+                }}
+              >
+                Change Requests ({changeRequestHistoryCount})
+              </Button>
+            ) : null}
+            {showSuggestedChangesButton ? (
+              <Button
+                onClick={handleOpenSuggestedChangesDialog}
+                disabled={activeChangeRequestLoading}
+                variant="contained"
+                color="warning"
+                sx={{
+                  py: 1,
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  fontSize: '0.9375rem',
+                  borderRadius: 2,
+                }}
+              >
+                Suggested Changes
+              </Button>
+            ) : null}
+            {isEditMode ? (
+              <>
+                <Button
+                  onClick={handleCancelEdit}
+                  disabled={saving}
+                  variant="outlined"
+                  sx={{
+                    py: 1,
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    fontSize: '0.9375rem',
+                    borderRadius: 2,
+                    borderWidth: 1.5,
+                    borderColor: theme.palette.mode === 'dark'
+                      ? 'rgba(255, 255, 255, 0.23)'
+                      : 'rgba(0, 0, 0, 0.23)',
+                    '&:hover': {
+                      borderWidth: 1.5,
+                      borderColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.3)'
+                        : 'rgba(0, 0, 0, 0.3)',
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.05)'
+                        : 'rgba(0, 0, 0, 0.04)',
+                    },
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveChanges}
+                  disabled={saving}
+                  variant="contained"
+                  color="secondary"
+                  sx={{
+                    py: 1,
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    fontSize: '0.9375rem',
+                    borderRadius: 2,
+                  }}
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </>
+            ) : null}
           </Box>
-        )}
-      </Box>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        ) : null}
         {/* Top Sidebar (now full width) */}
         <Box sx={{ width: '100%' }}>
           <Card 
@@ -2353,14 +2626,14 @@ function FormDetail() {
                   >
                     <Box
                       onClick={() => {
-                        if (!isEditMode && !updating && !isActive) {
+                        if (!isEditMode && !updating && !isActive && !isCoordinatorAssigned) {
                           handleOpenAssignmentDialog()
                         }
                       }}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
-                        if ((e.key === 'Enter' || e.key === ' ') && !isEditMode && !updating && !isActive) {
+                        if ((e.key === 'Enter' || e.key === ' ') && !isEditMode && !updating && !isActive && !isCoordinatorAssigned) {
                           e.preventDefault()
                           handleOpenAssignmentDialog()
                         }
@@ -2376,11 +2649,11 @@ function FormDetail() {
                         alignItems: 'flex-start',
                         justifyContent: 'center',
                         gap: 1,
-                        cursor: isEditMode || updating || isActive ? 'not-allowed' : 'pointer',
-                        opacity: isEditMode || updating || isActive ? 0.65 : 1,
+                        cursor: isEditMode || updating || isActive || isCoordinatorAssigned ? 'not-allowed' : 'pointer',
+                        opacity: isEditMode || updating || isActive || isCoordinatorAssigned ? 0.65 : 1,
                         transition: 'all 0.2s ease',
                         minHeight: '100%',
-                        '&:hover': isEditMode || updating || isActive ? {} : {
+                        '&:hover': isEditMode || updating || isActive || isCoordinatorAssigned ? {} : {
                           backgroundColor: theme.palette.mode === 'dark'
                             ? 'rgba(255, 255, 255, 0.03)'
                             : 'rgba(0, 0, 0, 0.02)',
@@ -2399,11 +2672,7 @@ function FormDetail() {
                         RACM Assignment
                       </Typography>
                       <Tooltip
-                        title={
-                          (processOwnerName && processOwnerName !== '-')
-                            ? processOwnerName
-                            : ((formData?.control_owner || '').trim() || '-')
-                        }
+                        title={assignmentDisplayValue}
                         arrow
                       >
                         <Typography
@@ -2418,9 +2687,7 @@ function FormDetail() {
                             lineHeight: 1.6,
                           }}
                         >
-                          {(processOwnerName && processOwnerName !== '-')
-                            ? processOwnerName
-                            : ((formData?.control_owner || '').trim() || '-')}
+                          {assignmentDisplayValue}
                         </Typography>
                       </Tooltip>
                     </Box>
@@ -2540,7 +2807,7 @@ function FormDetail() {
                       ref={fileInputRef}
                       type="file"
                       multiple
-                      accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                      accept={DOCUMENT_UPLOAD_ACCEPT}
                       onChange={handleSamplingFileChange}
                       style={{ display: 'none' }}
                       disabled={uploadingSampling}
@@ -3183,12 +3450,15 @@ function FormDetail() {
                   borderColor: 'divider',
                 }}
               >
-                Documents
+                Submission
               </Typography>
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: 'repeat(2, 1fr)',
+                  },
                   gap: 3,
                   mt: 2,
                 }}
@@ -3204,7 +3474,6 @@ function FormDetail() {
                     borderColor: theme.palette.mode === 'dark'
                       ? 'rgba(255, 255, 255, 0.08)'
                       : 'rgba(0, 0, 0, 0.06)',
-                    width: '100%',
                   }}
                 >
                   <Typography
@@ -3250,12 +3519,11 @@ function FormDetail() {
                     >
                       <Typography
                         variant="body2"
-                        component="dd"
                         sx={{
                           color: 'text.primary',
-                          lineHeight: 1.6,
-                          fontSize: theme.typography.customSizes.medium,
                           fontWeight: 600,
+                          lineHeight: 1.5,
+                          fontSize: theme.typography.customSizes.medium,
                         }}
                       >
                         Sample Documents ({sampleDocCount})
@@ -3273,7 +3541,6 @@ function FormDetail() {
                   ) : (
                     <Typography
                       variant="body2"
-                      component="dd"
                       sx={{
                         color: 'text.disabled',
                         lineHeight: 1.6,
@@ -3285,11 +3552,246 @@ function FormDetail() {
                   )}
                 </Box>
 
-                {userDocCount > 0 ? (
+                <Box
+                  sx={{
+                    p: 2.5,
+                    borderRadius: 2,
+                    backgroundColor: theme.palette.mode === 'dark'
+                      ? 'rgba(255, 255, 255, 0.03)'
+                      : 'rgba(0, 0, 0, 0.02)',
+                    border: '1px solid',
+                    borderColor: theme.palette.mode === 'dark'
+                      ? 'rgba(255, 255, 255, 0.08)'
+                      : 'rgba(0, 0, 0, 0.06)',
+                  }}
+                >
+                  <Typography
+                    variant="caption"
+                    component="dt"
+                    sx={{
+                      display: 'block',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      mb: 1.5,
+                      color: 'text.primary',
+                      fontSize: theme.typography.customSizes.small,
+                    }}
+                  >
+                    {fieldLabels.doc_uploaded_by_user}
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {userDocCount > 0 ? (
+                      <Box
+                        component="button"
+                        type="button"
+                        onClick={handleOpenUserDocsDialog}
+                        sx={{
+                          p: 1.5,
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          width: '100%',
+                          textAlign: 'left',
+                          backgroundColor: 'transparent',
+                          cursor: 'pointer',
+                          font: 'inherit',
+                          transition: 'all 0.2s ease-in-out',
+                          '&:hover': {
+                            borderColor: 'primary.main',
+                            backgroundColor: 'action.hover',
+                          },
+                          '&:focus-visible': {
+                            outline: `2px solid ${theme.palette.primary.main}`,
+                            outlineOffset: 2,
+                          },
+                        }}
+                      >
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.primary',
+                            fontWeight: 600,
+                            lineHeight: 1.5,
+                            fontSize: theme.typography.customSizes.medium,
+                          }}
+                        >
+                          Uploaded Documents ({userDocCount})
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: 'text.secondary',
+                            fontSize: theme.typography.customSizes.small,
+                          }}
+                        >
+                          Click to view and download
+                        </Typography>
+                      </Box>
+                    ) : null}
+                    {canCoordinatorSubmit ? selectedSubmissionFiles.map((file, index) => (
+                      <Box
+                        key={`${file.name}-${file.size}-${file.lastModified}`}
+                        sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                      >
+                        <AttachFileIcon fontSize="small" sx={{ color: 'primary.main', flexShrink: 0 }} />
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.primary',
+                            flex: 1,
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            fontSize: theme.typography.customSizes.medium,
+                            fontWeight: 500,
+                          }}
+                        >
+                          {file.name}
+                        </Typography>
+                        <Tooltip title="Remove selected document">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleRemoveSubmissionFile(index)}
+                            sx={{ color: 'error.main' }}
+                          >
+                            <CloseIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    )) : null}
+                    {userDocCount === 0 && (!canCoordinatorSubmit || selectedSubmissionFiles.length === 0) && (
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: 'text.disabled',
+                          lineHeight: 1.6,
+                          fontSize: theme.typography.customSizes.medium,
+                        }}
+                      >
+                        No document selected
+                      </Typography>
+                    )}
+                    {canCoordinatorSubmit && selectedSubmissionFiles.length > 0 && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: 'text.secondary',
+                          fontSize: theme.typography.customSizes.small,
+                        }}
+                      >
+                        Upload selected documents first, then send the RACM for approval.
+                      </Typography>
+                    )}
+                    {canCoordinatorSubmit && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap', mt: 0.5 }}>
+                        <label>
+                          <input
+                            type="file"
+                            multiple
+                            accept={DOCUMENT_UPLOAD_ACCEPT}
+                            style={{ display: 'none' }}
+                            onChange={handleSubmissionFileSelect}
+                            disabled={uploadingSubmissionDocuments}
+                          />
+                          <IconButton
+                            component="span"
+                            disabled={uploadingSubmissionDocuments}
+                            sx={{
+                              border: '1px solid',
+                              borderColor: 'divider',
+                              color:
+                                theme.palette.mode === 'dark'
+                                  ? theme.palette.primary.light
+                                  : theme.palette.primary.main,
+                              '&:hover': {
+                                backgroundColor: 'action.hover',
+                              },
+                              '&.Mui-disabled': {
+                                color: 'action.disabled',
+                                borderColor: 'action.disabledBackground',
+                              },
+                            }}
+                          >
+                            <AttachFileIcon />
+                          </IconButton>
+                        </label>
+                        <Button
+                          onClick={handleUploadSubmissionDocuments}
+                          disabled={uploadingSubmissionDocuments || selectedSubmissionFiles.length === 0}
+                          variant="outlined"
+                          size="small"
+                          sx={{ textTransform: 'none' }}
+                        >
+                          {uploadingSubmissionDocuments ? 'Uploading...' : 'Upload Documents'}
+                        </Button>
+                      </Box>
+                    )}
+                  </Box>
+                </Box>
+              </Box>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 4, pt: 1 }}>
+                {hasGroupedFieldValue ? (
+                  <Box>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {getPopulatedApprovalSectionFields(formData).map((key) => {
+                        const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                        const value = formData[key]
+                        const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
+                        const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+
+                        return (
+                          <Box
+                            key={key}
+                            sx={{
+                              p: 2.5,
+                              borderRadius: 2,
+                              backgroundColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.03)'
+                                : 'rgba(0, 0, 0, 0.02)',
+                              border: '1px solid',
+                              borderColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.08)'
+                                : 'rgba(0, 0, 0, 0.06)',
+                            }}
+                          >
+                            <Typography
+                              variant="caption"
+                              component="dt"
+                              sx={{
+                                display: 'block',
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                mb: 1.5,
+                                color: 'text.primary',
+                                fontSize: theme.typography.customSizes.small,
+                              }}
+                            >
+                              {label}
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              component="dd"
+                              sx={{
+                                color: isEmpty ? 'text.disabled' : 'text.secondary',
+                                wordBreak: 'break-word',
+                                lineHeight: 1.6,
+                                fontSize: theme.typography.customSizes.medium,
+                                whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                              }}
+                            >
+                              {isEmpty ? '-' : String(value)}
+                            </Typography>
+                          </Box>
+                        )
+                      })}
+                    </Box>
+                  </Box>
+                ) : null}
+
+                {String(formData?.reason_by_approver || '').trim() !== '' ? (
                   <Box
-                    component="button"
-                    type="button"
-                    onClick={handleOpenUserDocsDialog}
                     sx={{
                       p: 2.5,
                       borderRadius: 2,
@@ -3300,21 +3802,6 @@ function FormDetail() {
                       borderColor: theme.palette.mode === 'dark'
                         ? 'rgba(255, 255, 255, 0.08)'
                         : 'rgba(0, 0, 0, 0.06)',
-                      width: '100%',
-                      minWidth: 0,
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      font: 'inherit',
-                      transition: 'all 0.2s ease-in-out',
-                      '&:hover': {
-                        backgroundColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.05)'
-                          : 'rgba(0, 0, 0, 0.04)',
-                      },
-                      '&:focus-visible': {
-                        outline: `2px solid ${theme.palette.primary.main}`,
-                        outlineOffset: 2,
-                      },
                     }}
                   >
                     <Typography
@@ -3330,22 +3817,25 @@ function FormDetail() {
                         fontSize: theme.typography.customSizes.small,
                       }}
                     >
-                      {fieldLabels.doc_uploaded_by_user}
+                      Reason by Approver
                     </Typography>
                     <Typography
                       variant="body2"
                       component="dd"
                       sx={{
-                        color: 'text.primary',
+                        color: 'text.secondary',
+                        wordBreak: 'break-word',
                         lineHeight: 1.6,
                         fontSize: theme.typography.customSizes.medium,
-                        fontWeight: 600,
+                        whiteSpace: 'pre-wrap',
                       }}
                     >
-                      User Uploaded Documents ({userDocCount})
+                      {String(formData.reason_by_approver)}
                     </Typography>
                   </Box>
-                ) : (
+                ) : null}
+
+                {(canCoordinatorSubmit || hasRacmFieldValue(formData?.remarks_by_user)) && (
                   <Box
                     sx={{
                       p: 2.5,
@@ -3359,231 +3849,79 @@ function FormDetail() {
                         : 'rgba(0, 0, 0, 0.06)',
                     }}
                   >
-                    <Typography
-                      variant="caption"
-                      component="dt"
-                      sx={{
-                        display: 'block',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        mb: 1.5,
-                        color: 'text.primary',
-                        fontSize: theme.typography.customSizes.small,
-                      }}
-                    >
-                      {fieldLabels.doc_uploaded_by_user}
-                    </Typography>
-                    <Typography variant="body2" component="dd" sx={{ color: 'text.disabled' }}>
-                      No user document uploaded
-                    </Typography>
+                    {canCoordinatorSubmit ? (
+                      <TextField
+                        label={fieldLabels.remarks_by_user}
+                        variant="outlined"
+                        value={remarksByUser}
+                        onChange={(e) => setRemarksByUser(e.target.value)}
+                        fullWidth
+                        multiline
+                        rows={4}
+                      />
+                    ) : (
+                      <>
+                        <Typography
+                          variant="caption"
+                          component="dt"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            mb: 1.5,
+                            color: 'text.primary',
+                            fontSize: theme.typography.customSizes.small,
+                          }}
+                        >
+                          {fieldLabels.remarks_by_user}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          component="dd"
+                          sx={{
+                            color: (formData?.remarks_by_user || '').trim() === '' ? 'text.disabled' : 'text.secondary',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            fontSize: theme.typography.customSizes.medium,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {(formData?.remarks_by_user || '').trim() === '' ? '-' : formData.remarks_by_user}
+                        </Typography>
+                      </>
+                    )}
                   </Box>
                 )}
+
+                {canCoordinatorSubmit ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+                    <Button
+                      onClick={handleSendForApproval}
+                      disabled={submittingForApproval || uploadingSubmissionDocuments}
+                      variant="contained"
+                      color="secondary"
+                      sx={{
+                        py: 1.75,
+                        px: 4,
+                        minWidth: 260,
+                        maxWidth: 400,
+                        width: 'auto',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        fontSize: '0.9375rem',
+                        borderRadius: 2,
+                      }}
+                    >
+                      {submittingForApproval
+                        ? (isRejectedRacm ? 'Resubmitting...' : 'Sending...')
+                        : (isRejectedRacm ? 'Resubmit for Approval' : 'Send for Approval')}
+                    </Button>
+                  </Box>
+                ) : null}
               </Box>
             </CardContent>
           </Card>
-
-          {(hasGroupedFieldValue || String(formData?.remarks_by_user || '').trim() !== '' || formData.reason_by_approver) && (
-            <Card
-              sx={{
-                borderRadius: 3,
-                boxShadow: theme.palette.mode === 'dark'
-                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
-                border: '1px solid',
-                borderColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.12)' 
-                  : 'rgba(0, 0, 0, 0.08)',
-                overflow: 'hidden',
-              }}
-            >
-              <CardContent sx={{ p: 4 }}>
-                <Typography
-                  variant="h6"
-                  component="h3"
-                  sx={{
-                    fontWeight: 700,
-                    mb: 3,
-                    color: 'text.primary',
-                    fontSize: '1.25rem',
-                    pb: 2,
-                    borderBottom: '2px solid',
-                    borderColor: 'divider',
-                  }}
-                >
-                  Approval
-                </Typography>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3,
-                    mt: 2,
-                  }}
-                >
-                  {hasGroupedFieldValue ? (
-                    <Box>
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 3,
-                        }}
-                      >
-                        {groupedApproverFields.map((key) => {
-                          const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-                          const value = formData[key]
-                          const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
-                          const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
-
-                          return (
-                            <Box
-                              key={key}
-                              sx={{
-                                p: 2.5,
-                                borderRadius: 2,
-                                backgroundColor: theme.palette.mode === 'dark'
-                                  ? 'rgba(255, 255, 255, 0.03)'
-                                  : 'rgba(0, 0, 0, 0.02)',
-                                border: '1px solid',
-                                borderColor: theme.palette.mode === 'dark'
-                                  ? 'rgba(255, 255, 255, 0.08)'
-                                  : 'rgba(0, 0, 0, 0.06)',
-                              }}
-                            >
-                              <Typography
-                                variant="caption"
-                                component="dt"
-                                sx={{
-                                  display: 'block',
-                                  fontWeight: 700,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.5px',
-                                  mb: 1.5,
-                                  color: 'text.primary',
-                                  fontSize: theme.typography.customSizes.small,
-                                }}
-                              >
-                                {label}
-                              </Typography>
-                              <Typography
-                                variant="body2"
-                                component="dd"
-                                sx={{
-                                  color: isEmpty ? 'text.disabled' : 'text.secondary',
-                                  wordBreak: 'break-word',
-                                  lineHeight: 1.6,
-                                  fontSize: theme.typography.customSizes.medium,
-                                  whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
-                                }}
-                              >
-                                {isEmpty ? '-' : String(value)}
-                              </Typography>
-                            </Box>
-                          )
-                        })}
-                      </Box>
-                    </Box>
-                  ) : null}
-
-                  {String(formData?.remarks_by_user || '').trim() !== '' && (
-                    <Box
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 2,
-                        backgroundColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.03)'
-                          : 'rgba(0, 0, 0, 0.02)',
-                        border: '1px solid',
-                        borderColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.08)'
-                          : 'rgba(0, 0, 0, 0.06)',
-                      }}
-                    >
-                      <Typography
-                        variant="caption"
-                        component="dt"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          mb: 1.5,
-                          color: 'text.primary',
-                          fontSize: theme.typography.customSizes.small,
-                        }}
-                      >
-                        Remarks By User
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        component="dd"
-                        sx={{
-                          color: 'text.secondary',
-                          wordBreak: 'break-word',
-                          lineHeight: 1.6,
-                          fontSize: theme.typography.customSizes.medium,
-                        }}
-                      >
-                        {String(formData.remarks_by_user)}
-                      </Typography>
-                    </Box>
-                  )}
-
-                  {(() => {
-                    const reason = formData?.reason_by_approver
-                    const hasReason = typeof reason === 'string' && reason.trim() !== ''
-                    if (!hasReason) return null
-
-                    return (
-                      <Box
-                        sx={{
-                          p: 2.5,
-                          borderRadius: 2,
-                          backgroundColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.03)'
-                            : 'rgba(0, 0, 0, 0.02)',
-                          border: '1px solid',
-                          borderColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.08)'
-                            : 'rgba(0, 0, 0, 0.06)',
-                        }}
-                      >
-                          <Typography
-                            variant="caption"
-                            component="dt"
-                            sx={{
-                              display: 'block',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.5px',
-                              mb: 1.5,
-                              color: 'text.primary',
-                              fontSize: theme.typography.customSizes.small,
-                            }}
-                          >
-                            Reason by Approver
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            component="dd"
-                            sx={{
-                              color: 'text.primary',
-                              fontWeight: 500,
-                              fontSize: '0.875rem',
-                              lineHeight: 1.6,
-                              wordBreak: 'break-word',
-                            }}
-                          >
-                            {reason}
-                          </Typography>
-                        </Box>
-                    )
-                  })()}
-                </Box>
-              </CardContent>
-            </Card>
-          )}
 
           {deficiencyHistorySubmissions.length > 0 ? (
             <Card
@@ -4129,7 +4467,7 @@ function FormDetail() {
                       {getFileName(doc.sample_doc)}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                      {formatRacmUserDocumentSubtitle(doc, formatDateTime)}
                     </Typography>
                   </Box>
                   <Tooltip title="Download">
@@ -4548,6 +4886,16 @@ function FormDetail() {
             Choose an action for this RACM.
           </DialogContentText>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {showSelfAssignButton ? (
+              <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                  Self Assign
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Assign this RACM to yourself for document upload and submission. Due date and reminder frequency must be configured first. Process owner assignment will be disabled after self-assignment.
+                </Typography>
+              </Box>
+            ) : null}
             <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
                 Delete
@@ -4566,15 +4914,53 @@ function FormDetail() {
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3, pt: 2.5, gap: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 2.5, gap: 1.5, borderTop: '1px solid', borderColor: 'divider', flexWrap: 'wrap' }}>
           <Button onClick={handleMoreActionsClose} variant="outlined">
             Cancel
           </Button>
+          {showSelfAssignButton ? (
+            <Button onClick={handleChooseSelfAssignFromMore} variant="contained" color="primary">
+              Self Assign
+            </Button>
+          ) : null}
           <Button onClick={handleChooseDeleteFromMore} variant="outlined" color="error">
             Delete
           </Button>
           <Button onClick={handleChooseReplicateFromMore} variant="contained" color="secondary">
             Replicate
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={selfAssignConfirmDialogOpen}
+        onClose={handleSelfAssignCancel}
+        aria-labelledby="self-assign-dialog-title"
+        aria-describedby="self-assign-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '460px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle id="self-assign-dialog-title" sx={{ py: 2, px: 2.5, fontWeight: 600, fontSize: '1.25rem' }}>
+          Self Assign RACM
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 1, pb: 3 }}>
+          <DialogContentText id="self-assign-dialog-description" sx={{ color: 'text.secondary', fontSize: '0.9375rem', lineHeight: 1.5, mt: 2 }}>
+            Assign this RACM to yourself for document upload and submission. Process owner assignment will be disabled after self-assignment. Due date and reminder frequency must already be configured.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, gap: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button onClick={handleSelfAssignCancel} disabled={selfAssigning} variant="outlined">
+            Cancel
+          </Button>
+          <Button onClick={handleSelfAssignConfirm} disabled={selfAssigning} variant="contained" color="primary">
+            {selfAssigning ? 'Assigning...' : 'Self Assign'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -4609,7 +4995,7 @@ function FormDetail() {
         <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
           <DialogContentText
             id="replicate-dialog-description"
-            sx={{ color: theme.palette.text.secondary, fontSize: '0.9375rem', lineHeight: 1.5, m: 0, mb: 2 }}
+            sx={{ color: theme.palette.text.secondary, fontSize: '0.9375rem', lineHeight: 1.5, my:2 }}
           >
             Select the target Financial Year for the replicated RACM.
           </DialogContentText>
@@ -4762,15 +5148,14 @@ function FormDetail() {
         <DialogTitle
           id="set-active-dialog-title"
           sx={{
-            pb: 2.5,
-            pt: 3,
-            px: 3,
+            py:2,
+            px:2.5,
             fontWeight: 600,
             fontSize: '1.25rem',
             color: theme.palette.text.primary,
           }}
         >
-          Confirm Set Active
+          Control Activation
         </DialogTitle>
         <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
           <DialogContentText
@@ -4779,7 +5164,7 @@ function FormDetail() {
               color: theme.palette.text.secondary,
               fontSize: '0.9375rem',
               lineHeight: 1.5,
-              m: 0,
+              mt:2.5,
             }}
           >
             Are you sure you want to set this RACM Active?
@@ -4789,7 +5174,6 @@ function FormDetail() {
           sx={{
             px: 3,
             pb: 3,
-            pt: 0,
             gap: 1.5,
             borderTop: '1px solid',
             borderColor: 'divider',
@@ -4800,6 +5184,64 @@ function FormDetail() {
           </Button>
           <Button onClick={handleSetActiveConfirm} disabled={updating} variant="contained" color="secondary" sx={{ textTransform: 'none', px: 3, py: 1, fontWeight: 600 }}>
             {updating ? 'Setting...' : 'Set Active'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={setInactiveConfirmDialogOpen}
+        onClose={handleSetInactiveCancel}
+        aria-labelledby="set-inactive-dialog-title"
+        aria-describedby="set-inactive-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '400px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="set-inactive-dialog-title"
+          sx={{
+            py:2,
+            px:2.5,
+            fontWeight: 600,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          Control Deactivation
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContentText
+            id="set-inactive-dialog-description"
+            sx={{
+              color: theme.palette.text.secondary,
+              fontSize: '0.9375rem',
+              lineHeight: 1.5,
+              mt:2.5,
+            }}
+          >
+            Are you sure you want to set this RACM Inactive? Inactive RACMs are hidden from approvers and cannot be reviewed.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            gap: 1.5,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Button onClick={handleSetInactiveCancel} disabled={updating} variant="outlined" sx={{ textTransform: 'none', px: 3, py: 1 }}>
+            Cancel
+          </Button>
+          <Button onClick={handleSetInactiveConfirm} disabled={updating} variant="contained" color="warning" sx={{ textTransform: 'none', px: 3, py: 1, fontWeight: 600 }}>
+            {updating ? 'Setting...' : 'Set Inactive'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -4840,8 +5282,7 @@ function FormDetail() {
               color: theme.palette.text.secondary,
               fontSize: '0.9375rem',
               lineHeight: 1.5,
-              m: 0,
-              mb: 2,
+              mt: 2,
             }}
           >
             Are you sure you want to delete this RACM? This action cannot be undone. The form, all sample documents, all user-uploaded documents, deficiency response attachments, and their database rows will be removed permanently.

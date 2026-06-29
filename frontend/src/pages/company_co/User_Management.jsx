@@ -1687,7 +1687,7 @@ function UserManagement() {
         open={approverDetailsDialog.open}
         onClose={() => setApproverDetailsDialog((prev) => ({ ...prev, open: false }))}
         title={approverDetailsDialog.approver ? (
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.1, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.1, flexWrap: 'wrap', py: 1.5 }}>
             <Typography component="span" sx={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.25 }}>
               Approver Assignments
             </Typography>
@@ -1717,7 +1717,7 @@ function UserManagement() {
         ) : currentApproverAssignments.length === 0 ? (
           <Typography color="text.secondary">No assignments found for this approver.</Typography>
         ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1,  mt:1.5 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1,  mt:1.5, py: 1.5 }}>
             {currentApproverAssignments.map((assignment) => (
               <Box
                 key={assignment.id}

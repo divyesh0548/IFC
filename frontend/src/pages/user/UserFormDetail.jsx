@@ -31,17 +31,21 @@ import EditNoteIcon from '@mui/icons-material/EditNote'
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
-import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
+import {
+  FORM_DETAIL_ACTION_BAR_SX,
+  FORM_DETAIL_CONTENT_STACK_SX,
+  FORM_DETAIL_ROOT_SX,
+} from '../../uiConstants'
 import {
   DOCUMENT_UPLOAD_ACCEPT,
   DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE,
   DOCUMENT_UPLOAD_INVALID_TYPE_MESSAGE,
   validateDocumentUploadFiles,
 } from '../../lib/documentUploadRestrictions'
-import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments } from '../../lib/racmUserDocuments'
+import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments, normalizeSampleDocuments } from '../../lib/racmUserDocuments'
 import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistoryList'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
-import { RACM_FIELD_LABELS, orderControlDetailKeys } from '../../racmFormDetailFields'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatIndianDateTime } from '../../lib/dateTime'
 import { apiUrl, API_BASE_URL } from '../../config/api'
@@ -141,6 +145,16 @@ function normalizeRequestChangeValue(fieldKey, value) {
 
 function isRequestChangeFieldEditable(fieldKey) {
   return REQUEST_CHANGE_FIELD_SET.has(fieldKey)
+}
+
+function getExtraRequestChangeFields(fieldDefinitions) {
+  return (Array.isArray(fieldDefinitions) ? fieldDefinitions : [])
+    .filter((field) => !field.is_fixed)
+    .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
+}
+
+function buildExtraRequestChangeFieldKeySet(fieldDefinitions) {
+  return new Set(getExtraRequestChangeFields(fieldDefinitions).map((field) => field.field_key))
 }
 
 function UserFormDetail() {
@@ -457,6 +471,9 @@ function UserFormDetail() {
   }
 
   const handleUploadUserDocuments = async () => {
+    if (isRequestChangeMode) {
+      return
+    }
     if (selectedFiles.length === 0) {
       toast.error('Please select at least one document to upload')
       return
@@ -492,6 +509,9 @@ function UserFormDetail() {
   }
 
   const handleSendForApproval = async () => {
+    if (isRequestChangeMode) {
+      return
+    }
     if (Boolean(formData?.pending_changes)) {
       toast.error('This RACM has a pending change request and cannot be sent for approval until it is resolved.')
       return
@@ -585,19 +605,40 @@ function UserFormDetail() {
     if (Object.prototype.hasOwnProperty.call(requestChangeValues, fieldKey)) {
       return requestChangeValues[fieldKey]
     }
+    const extraFieldKeySet = buildExtraRequestChangeFieldKeySet(formData?.field_definitions)
+    if (extraFieldKeySet.has(fieldKey)) {
+      return normalizeRequestChangeValue(fieldKey, formData?.dynamic_values?.[fieldKey])
+    }
     return normalizeRequestChangeValue(fieldKey, formData?.[fieldKey])
   }
 
   const hasRequestChangeFieldChanged = (fieldKey) => {
-    const originalValue = normalizeRequestChangeValue(fieldKey, formData?.[fieldKey])
+    const extraFieldKeySet = buildExtraRequestChangeFieldKeySet(formData?.field_definitions)
+    const originalValue = extraFieldKeySet.has(fieldKey)
+      ? normalizeRequestChangeValue(fieldKey, formData?.dynamic_values?.[fieldKey])
+      : normalizeRequestChangeValue(fieldKey, formData?.[fieldKey])
     const currentValue = getRequestChangeValue(fieldKey)
     return originalValue !== currentValue
+  }
+
+  const getRequestChangeDynamicValues = () => {
+    const values = {}
+    getExtraRequestChangeFields(formData?.field_definitions).forEach((field) => {
+      values[field.field_key] = getRequestChangeValue(field.field_key)
+    })
+    return values
   }
 
   const handleStartRequestChange = () => {
     const nextRequestValues = {}
     REQUEST_CHANGE_FIELD_KEYS.forEach((fieldKey) => {
       nextRequestValues[fieldKey] = normalizeRequestChangeValue(fieldKey, formData?.[fieldKey])
+    })
+    getExtraRequestChangeFields(formData?.field_definitions).forEach((field) => {
+      nextRequestValues[field.field_key] = normalizeRequestChangeValue(
+        field.field_key,
+        formData?.dynamic_values?.[field.field_key]
+      )
     })
     setRequestChangeValues(nextRequestValues)
     setRequestReason('')
@@ -608,6 +649,12 @@ function UserFormDetail() {
     const nextRequestValues = {}
     REQUEST_CHANGE_FIELD_KEYS.forEach((fieldKey) => {
       nextRequestValues[fieldKey] = normalizeRequestChangeValue(fieldKey, formData?.[fieldKey])
+    })
+    getExtraRequestChangeFields(formData?.field_definitions).forEach((field) => {
+      nextRequestValues[field.field_key] = normalizeRequestChangeValue(
+        field.field_key,
+        formData?.dynamic_values?.[field.field_key]
+      )
     })
     setRequestChangeValues(nextRequestValues)
     setIsRequestChangeMode(false)
@@ -622,7 +669,8 @@ function UserFormDetail() {
   }
 
   const handleSubmitRequestChange = async () => {
-    const changes = REQUEST_CHANGE_FIELD_KEYS
+    const extraFields = getExtraRequestChangeFields(formData?.field_definitions)
+    const fixedChanges = REQUEST_CHANGE_FIELD_KEYS
       .map((fieldKey, index) => {
         const originalValue = normalizeRequestChangeValue(fieldKey, formData?.[fieldKey])
         const updatedValue = getRequestChangeValue(fieldKey)
@@ -638,6 +686,25 @@ function UserFormDetail() {
         }
       })
       .filter(Boolean)
+
+    const dynamicChanges = extraFields
+      .map((field, index) => {
+        const originalValue = normalizeRequestChangeValue(
+          field.field_key,
+          formData?.dynamic_values?.[field.field_key]
+        )
+        const updatedValue = getRequestChangeValue(field.field_key)
+        if (originalValue === updatedValue) return null
+        return {
+          field_db_name: field.field_key,
+          field_label: field.label || field.field_key,
+          new_value_text: String(updatedValue ?? ''),
+          display_order: REQUEST_CHANGE_FIELD_KEYS.length + index,
+        }
+      })
+      .filter(Boolean)
+
+    const changes = [...fixedChanges, ...dynamicChanges]
 
     if (changes.length === 0) {
       toast.error('Change at least one field before submitting the request')
@@ -866,23 +933,7 @@ function UserFormDetail() {
   }
 
   const getSampleDocs = () => {
-    const docs = Array.isArray(formData?.sample_docs)
-      ? formData.sample_docs
-      : []
-    const normalizedDocs = docs
-      .map((doc, index) => ({
-        id: doc.id || `sample-doc-${index}`,
-        sample_doc: doc.sample_doc,
-        created_at: doc.created_at,
-      }))
-      .filter((doc) => String(doc.sample_doc || '').trim() !== '')
-
-    if (normalizedDocs.length > 0) return normalizedDocs
-
-    const legacyDoc = String(formData?.sample_doc || '').trim()
-    return legacyDoc
-      ? [{ id: 'sample-doc-current', sample_doc: legacyDoc, created_at: null }]
-      : []
+    return normalizeSampleDocuments(formData?.sample_docs, formData?.sample_doc)
   }
 
   const handleOpenSampleDocsDialog = () => {
@@ -1063,8 +1114,15 @@ function UserFormDetail() {
   // Form is editable if status is not 'sent for approval' or 'Approved'
   // If status is 'Rejected', user can edit and resubmit
   const isEditable = !isSentForApproval && !isApproved
-  const canRequestChange = isEditable && !hasPendingChanges
-  const hasAnyRequestChange = REQUEST_CHANGE_FIELD_KEYS.some((fieldKey) => hasRequestChangeFieldChanged(fieldKey))
+  const canModifySubmissionDetails = isEditable && !isRequestChangeMode
+  const canRequestChange = isEditable && !hasPendingChanges && !isRequestChangeMode
+  const extraRequestChangeFields = getExtraRequestChangeFields(formData?.field_definitions)
+  const hasAnyRequestChange =
+    REQUEST_CHANGE_FIELD_KEYS.some((fieldKey) => hasRequestChangeFieldChanged(fieldKey)) ||
+    extraRequestChangeFields.some((field) => hasRequestChangeFieldChanged(field.field_key))
+  const requestChangeDynamicValues = isRequestChangeMode
+    ? getRequestChangeDynamicValues()
+    : (formData?.dynamic_values || {})
 
   // Fields to hide when status is empty/null or 'sent for approval'
   // Only show them when status is 'Approved' or 'Rejected'
@@ -1075,14 +1133,9 @@ function UserFormDetail() {
   const shouldHideConditionalFields = !formData?.status || formData.status === '' || formData.status === 'sent for approval'
   
   // Design & Implementation fields should render only when they have a value.
-  const groupedApproverFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
+  const groupedApproverFields = APPROVAL_SECTION_FIELD_KEYS
 
-  const hasGroupedFieldValue = formData
-    ? groupedApproverFields.some((key) => {
-        const value = formData[key]
-        return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
-      })
-    : false
+  const hasGroupedFieldValue = hasPopulatedApprovalSectionFields(formData)
 
   if (loading) {
     return (
@@ -1283,25 +1336,9 @@ function UserFormDetail() {
   }
 
   return (
-    <Box
-      sx={{
-        width: '100%',
-        maxWidth: FORM_DETAIL_MAX_WIDTH,
-        mx: 'auto',
-        px: 0,
-        py: 0,
-      }}
-    >
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              gap: 1.5,
-              flexWrap: 'wrap',
-            }}
-          >
+    <Box sx={FORM_DETAIL_ROOT_SX}>
+      <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
+          <Box sx={FORM_DETAIL_ACTION_BAR_SX}>
             {changeRequestHistoryCount > 0 ? (
               <Button
                 variant="outlined"
@@ -1809,7 +1846,12 @@ function UserFormDetail() {
                     blendIntoParent
                     sectionKey="process_and_risk"
                     fieldDefinitions={formData.field_definitions}
-                    values={formData.dynamic_values || {}}
+                    values={requestChangeDynamicValues}
+                    isEditMode={isRequestChangeMode}
+                    onChange={handleRequestChangeFieldUpdate}
+                    showCustomColumnIndicator
+                    requestChangeMode={isRequestChangeMode}
+                    isFieldChanged={hasRequestChangeFieldChanged}
                   />
                 </Box>
               </CardContent>
@@ -1819,7 +1861,12 @@ function UserFormDetail() {
               sectionKey="assertions"
               title="Assertions"
               fieldDefinitions={formData.field_definitions}
-              values={formData.dynamic_values || {}}
+              values={requestChangeDynamicValues}
+              isEditMode={isRequestChangeMode}
+              onChange={handleRequestChangeFieldUpdate}
+              showCustomColumnIndicator
+              requestChangeMode={isRequestChangeMode}
+              isFieldChanged={hasRequestChangeFieldChanged}
             />
 
             {/* Control Details section */}
@@ -1947,7 +1994,12 @@ function UserFormDetail() {
                     blendIntoParent
                     sectionKey="control_details"
                     fieldDefinitions={formData.field_definitions}
-                    values={formData.dynamic_values || {}}
+                    values={requestChangeDynamicValues}
+                    isEditMode={isRequestChangeMode}
+                    onChange={handleRequestChangeFieldUpdate}
+                    showCustomColumnIndicator
+                    requestChangeMode={isRequestChangeMode}
+                    isFieldChanged={hasRequestChangeFieldChanged}
                   />
                 </Box>
               </CardContent>
@@ -1957,7 +2009,12 @@ function UserFormDetail() {
               sectionKey="others"
               title="Others"
               fieldDefinitions={formData.field_definitions}
-              values={formData.dynamic_values || {}}
+              values={requestChangeDynamicValues}
+              isEditMode={isRequestChangeMode}
+              onChange={handleRequestChangeFieldUpdate}
+              showCustomColumnIndicator
+              requestChangeMode={isRequestChangeMode}
+              isFieldChanged={hasRequestChangeFieldChanged}
             />
 
             <Card
@@ -2189,7 +2246,7 @@ function UserFormDetail() {
                             <IconButton
                               size="small"
                               onClick={() => handleRemoveFile(index)}
-                              disabled={!isEditable}
+                              disabled={!canModifySubmissionDetails}
                               sx={{ color: 'error.main' }}
                             >
                               <CloseIcon fontSize="small" />
@@ -2220,7 +2277,7 @@ function UserFormDetail() {
                           Upload selected documents first, then send the RACM for approval.
                         </Typography>
                       )}
-                      {isEditable && (
+                      {canModifySubmissionDetails && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap', mt: 0.5 }}>
                           <label>
                             <input
@@ -2229,11 +2286,11 @@ function UserFormDetail() {
                               accept={DOCUMENT_UPLOAD_ACCEPT}
                               style={{ display: 'none' }}
                               onChange={handleFileSelect}
-                              disabled={!isEditable || uploadingUserDocuments}
+                              disabled={!canModifySubmissionDetails || uploadingUserDocuments}
                             />
                             <IconButton
                               component="span"
-                              disabled={!isEditable || uploadingUserDocuments}
+                              disabled={!canModifySubmissionDetails || uploadingUserDocuments}
                               sx={{
                                 border: '1px solid',
                                 borderColor: 'divider',
@@ -2255,7 +2312,7 @@ function UserFormDetail() {
                           </label>
                           <Button
                             onClick={handleUploadUserDocuments}
-                            disabled={!isEditable || uploadingUserDocuments || selectedFiles.length === 0}
+                            disabled={!canModifySubmissionDetails || uploadingUserDocuments || selectedFiles.length === 0}
                             variant="outlined"
                             size="small"
                             sx={{ textTransform: 'none' }}
@@ -2272,12 +2329,7 @@ function UserFormDetail() {
                   {hasGroupedFieldValue ? (
                     <Box>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        {groupedApproverFields
-                          .filter((key) => {
-                            const value = formData[key]
-                            return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''
-                          })
-                          .map((key) => {
+                        {getPopulatedApprovalSectionFields(formData).map((key) => {
                           const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                           const value = formData[key]
                           const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
@@ -2382,7 +2434,7 @@ function UserFormDetail() {
                     </Box>
                   ) : null}
 
-                  {/* Remarks By User */}
+                  {(canModifySubmissionDetails || hasRacmFieldValue(formData?.remarks_by_user)) && (
                   <Box
                     sx={{
                       p: 2.5,
@@ -2396,7 +2448,7 @@ function UserFormDetail() {
                         : 'rgba(0, 0, 0, 0.06)',
                     }}
                   >
-                    {isEditable ? (
+                    {canModifySubmissionDetails ? (
                       <TextField
                         label={fieldLabels.remarks_by_user}
                         variant="outlined"
@@ -2405,7 +2457,6 @@ function UserFormDetail() {
                         fullWidth
                         multiline
                         rows={4}
-                        disabled={!isEditable}
                       />
                     ) : (
                       <>
@@ -2440,14 +2491,15 @@ function UserFormDetail() {
                       </>
                     )}
                   </Box>
+                  )}
 
-                  {isEditable &&
+                  {canModifySubmissionDetails &&
                     (() => {
                       return (
                         <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
                           <Button
                             onClick={handleSendForApproval}
-                            disabled={saving || uploadingUserDocuments || hasPendingChanges}
+                            disabled={saving || uploadingUserDocuments || hasPendingChanges || isRequestChangeMode}
                             variant="contained"
                             color="secondary"
                             sx={{
@@ -2967,7 +3019,7 @@ function UserFormDetail() {
                       </IconButton>
                     </span>
                   </Tooltip>
-                  {isRejected && (
+                  {isRejected && canModifySubmissionDetails && (
                     <Button
                       size="small"
                       color="error"
@@ -3152,7 +3204,7 @@ function UserFormDetail() {
                       {getFileName(doc.sample_doc)}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {doc.created_at ? formatDateTime(doc.created_at) : 'Uploaded document'}
+                      {formatRacmUserDocumentSubtitle(doc, formatDateTime)}
                     </Typography>
                   </Box>
                   <Tooltip title="Download">

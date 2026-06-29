@@ -169,6 +169,9 @@ model ControlForm {
   deficiencyActionStatus     Boolean?  @default(false) @map("deficiency_action_status")
   deficiencyResponseStatus   String?   @map("deficiency_response_status") @db.VarChar(50)
   deficiencyCaseId           String?   @map("deficiency_case_id") @db.VarChar(30)
+  assignedToCoordinator      Boolean?  @default(false) @map("assigned_to_coordinator")
+  coordinatorAssignedBy      String?   @map("coordinator_assigned_by") @db.VarChar(255)
+  coordinatorAssignedAt      DateTime? @map("coordinator_assigned_at") @db.Timestamp(6)
   templateId                 Int?      @map("template_id")
   auditLogsRacm              AuditLogsRacm[]
   changeRequests             ChangeRequest[]
@@ -366,10 +369,12 @@ model SampleDoc {
   id        Int       @id @default(autoincrement())
   formId    String?   @map("form_id") @db.VarChar(255)
   sampleDoc String?   @map("sample_doc") @db.VarChar(255)
-  createdAt DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @map("created_at") @db.Timestamp(6)
+  userId    String?   @map("user_id") @db.VarChar(255)
+  createdAt DateTime? @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)")) @map("created_at") @db.Timestamp(6)
 
   controlForm ControlForm? @relation(fields: [formId], references: [formId], onDelete: SetNull, onUpdate: Cascade)
 
+  @@index([userId], map: "sample_docs_user_id_idx")
   @@map("sample_docs")
 }
 
@@ -378,7 +383,7 @@ model RacmDoc {
   formId            String?   @map("form_id") @db.VarChar(255)
   docUploadedByUser String?   @map("doc_uploaded_by_user") @db.VarChar(255)
   userId            String?   @map("user_id") @db.VarChar(255)
-  createdAt         DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @map("created_at") @db.Timestamp(6)
+  createdAt         DateTime? @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)")) @map("created_at") @db.Timestamp(6)
 
   controlForm ControlForm? @relation(fields: [formId], references: [formId], onDelete: SetNull, onUpdate: Cascade)
 

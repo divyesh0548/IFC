@@ -1,7 +1,10 @@
-Analyze RACMs and make a list of fixed columns and discuss it with Mayank sir.
-
-Ask if coordinator can upload documents then most likely they must submit it too. Will there be any case, where coordinator and porcess owner both need to upload documents.
-
 Ask for sample email formats.
 
 Provide a way to change the email body. First fetch default email then user will change it to requirement.
+
+
+IFC User Mannual via Claude
+IFC Reports to be developed = Reports for Effective/Ineffective RACMs, Number of RACMs submitted/pending, Users, Response timing.
+Mail Communication Template to be finalised 
+User Communication for in case of different format = Dynamic RACM template
+ELC to be Developed = Mayank sir will provide info on this later.

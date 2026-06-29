@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Box,
@@ -73,6 +74,7 @@ function CustomColumnEditorDialog({
   sectionKey,
   fromCatalog,
   canEditSection,
+  canEditLabel = true,
   canDelete,
   onClose,
   onEdit,
@@ -97,6 +99,12 @@ function CustomColumnEditorDialog({
               onChange={(e) => onLabelChange(e.target.value)}
               fullWidth
               autoFocus
+              disabled={!canEditLabel}
+              helperText={
+                !canEditLabel
+                  ? 'Renaming is blocked while RACMs are linked. Create a new template version instead.'
+                  : undefined
+              }
             />
             {showSectionPicker ? (
               <FormControl fullWidth>
@@ -137,9 +145,11 @@ function CustomColumnEditorDialog({
                 Delete
               </Button>
             ) : null}
-            <Button variant="contained" onClick={onEdit}>
-              Edit
-            </Button>
+            {canEditLabel || canEditSection ? (
+              <Button variant="contained" onClick={onEdit}>
+                Edit
+              </Button>
+            ) : null}
           </Stack>
         )}
       </DialogActions>
@@ -335,6 +345,7 @@ function buildNormalizedExtraFields(fields) {
 
 function RacmTemplates() {
   const theme = useTheme()
+  const [searchParams] = useSearchParams()
   const [units, setUnits] = useState([])
   const [selectedUnitId, setSelectedUnitId] = useState('')
   const [versions, setVersions] = useState([])
@@ -405,7 +416,13 @@ function RacmTemplates() {
       }
       const list = Array.isArray(data.units) ? data.units : []
       setUnits(list)
-      if (!selectedUnitId && list.length > 0) {
+      const urlUnitId = String(searchParams.get('unit_id') || '').trim()
+      const matchedUnitId = urlUnitId && list.some((unit) => String(unit.unit_id) === urlUnitId)
+        ? urlUnitId
+        : ''
+      if (matchedUnitId) {
+        setSelectedUnitId(matchedUnitId)
+      } else if (!selectedUnitId && list.length > 0) {
         setSelectedUnitId(String(list[0].unit_id || ''))
       }
     } catch (error) {
@@ -595,7 +612,7 @@ function RacmTemplates() {
     if (assertionWarningShownRef.current === selectedTemplateId) return
     assertionWarningShownRef.current = selectedTemplateId
     toast(
-      'This template has no assertion columns. Add standard assertion columns or your own custom columns in the Assertions section.',
+      'This template has no assertion columns. Add standard or custom columns as per requirements',
       { icon: '⚠️' }
     )
   }, [canEditExtras, templateDetails, selectedTemplateId, hasAssertionColumns])
@@ -609,6 +626,7 @@ function RacmTemplates() {
   const structuralChangeKind = useMemo(() => {
     const original = Array.isArray(templateDetails?.extra_fields) ? templateDetails.extra_fields : []
     const originalKeys = new Set(original.map((field) => field.field_key))
+    const originalByKey = new Map(original.map((field) => [field.field_key, field]))
     const currentSavedKeys = new Set(
       editableExtraFields
         .filter((field) => !field.isNew && !field.isDraft && String(field.label || '').trim())
@@ -618,8 +636,14 @@ function RacmTemplates() {
       (field) => (field.isNew || field.isDraft) && String(field.label || '').trim()
     ) || [...currentSavedKeys].some((key) => !originalKeys.has(key))
     const hasRemovals = [...originalKeys].some((key) => !currentSavedKeys.has(key))
-    const isRenameOnly = hasStructuralChanges && !hasRemovals && !hasAdditions
-    return { hasRemovals, hasAdditions, isRenameOnly }
+    const hasLabelChanges = editableExtraFields.some((field) => {
+      if (field.isNew || field.isDraft) return false
+      const existing = originalByKey.get(field.field_key)
+      if (!existing) return false
+      return String(existing.label || '').trim() !== String(field.label || '').trim()
+    })
+    const isRenameOnly = hasStructuralChanges && !hasRemovals && !hasAdditions && hasLabelChanges
+    return { hasRemovals, hasAdditions, hasLabelChanges, isRenameOnly }
   }, [editableExtraFields, templateDetails, hasStructuralChanges])
 
   const handleOpenColumnEditor = (clientId) => {
@@ -669,9 +693,19 @@ function RacmTemplates() {
   }
 
   const handleColumnEditorSave = () => {
+    const field = editableExtraFields.find((item) => item.clientId === columnEditor.clientId)
     const label = String(columnEditor.label || '').trim()
     if (!label) {
       toast.error('Column label is required')
+      return
+    }
+    if (
+      requiresVersionedSave &&
+      field &&
+      !field.isNew &&
+      String(field.label || '').trim() !== label
+    ) {
+      toast.error('Cannot rename custom columns while RACMs are linked to this template.')
       return
     }
     if (!assertUniqueColumnLabel(label, { excludeClientId: columnEditor.clientId })) {
@@ -849,8 +883,8 @@ function RacmTemplates() {
       toast.error('Cannot remove custom columns while RACMs are linked to this template.')
       return
     }
-    if (requiresVersionedSave && structuralChangeKind.isRenameOnly) {
-      handleSaveStructure('update_in_place')
+    if (structuralChangeKind.hasLabelChanges && requiresVersionedSave) {
+      toast.error('Cannot rename custom columns while RACMs are linked to this template.')
       return
     }
     setSaveMode(requiresVersionedSave ? 'update_version' : 'update_in_place')
@@ -909,7 +943,7 @@ function RacmTemplates() {
       toast.error('Please enter new template name')
       return
     }
-    if (requiresVersionedSave && effectiveSaveMode === 'update_in_place' && !structuralChangeKind.isRenameOnly) {
+    if (requiresVersionedSave && effectiveSaveMode === 'update_in_place') {
       toast.error('Linked RACMs require saving as a new version for this change')
       return
     }
@@ -1157,7 +1191,7 @@ function RacmTemplates() {
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                     {isSelectedActiveTemplate
                       ? requiresVersionedSave
-                        ? 'Active template — you can rename custom columns in place. Adding or removing columns requires a new version.'
+                        ? 'Active template — renaming, adding, or removing custom columns requires a new version.'
                         : 'Active template — no RACMs are linked yet. You may update in place or create a new version.'
                       : 'Archived template — read-only view.'}
                   </Typography>
@@ -1168,7 +1202,7 @@ function RacmTemplates() {
                         onClose={() => setVersionedSaveNoticeOpen(false)}
                         sx={{ mt: 1, alignItems: 'flex-start' }}
                       >
-                        RACMs use this template version. Renaming custom columns is safe; removals are blocked.
+                        RACMs use this template version. Renaming, adding, or removing custom columns requires a new version.
                       </Alert>
                     </Collapse>
                   ) : null}
@@ -1261,9 +1295,7 @@ function RacmTemplates() {
             >
               {!requiresVersionedSave ? (
                 <MenuItem value="update_in_place">Update Current Template (Recommended)</MenuItem>
-              ) : (
-                <MenuItem value="update_in_place">Rename Custom Columns In Place</MenuItem>
-              )}
+              ) : null}
               <MenuItem value="update_version">
                 {requiresVersionedSave ? 'Update Version (Recommended)' : 'Create New Version'}
               </MenuItem>
@@ -1294,6 +1326,7 @@ function RacmTemplates() {
         sectionKey={columnEditor.sectionKey}
         fromCatalog={columnEditor.fromCatalog}
         canEditSection={columnEditor.canEditSection}
+        canEditLabel={!requiresVersionedSave || columnEditor.isNew}
         canDelete={
           columnEditor.isNew ||
           (!requiresVersionedSave &&

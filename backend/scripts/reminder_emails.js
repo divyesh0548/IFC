@@ -19,6 +19,7 @@ const {
   formatDueDateForEmail,
 } = require('../utils/controls_reminder');
 const { buildRacmDetailsSection } = require('../utils/racm_email_details');
+const { isCoordinatorAssignedRacm, buildCoordinatorFormDetailUrl } = require('../utils/racm_coordinator_assignment');
 
 const IST_CURRENT_DATE_SQL = `((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date)`;
 
@@ -66,7 +67,10 @@ async function fetchFormsDueForReminder(client) {
     SELECT
       cf.form_id,
       cf.control_owner,
+      cf.assigned_to_coordinator,
+      cf.coordinator_assigned_by,
       owner_u.emp_name AS control_owner_emp_name,
+      coordinator_u.emp_name AS coordinator_emp_name,
       cf.standard_control_description,
       cf.business_process,
       cf.due_date,
@@ -79,6 +83,9 @@ async function fetchFormsDueForReminder(client) {
     LEFT JOIN ifc_users owner_u
       ON owner_u.company_identifier = cf.company_identifier
      AND LOWER(TRIM(COALESCE(owner_u.email_id, ''))) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
+    LEFT JOIN ifc_users coordinator_u
+      ON coordinator_u.company_identifier = cf.company_identifier
+     AND LOWER(TRIM(COALESCE(coordinator_u.email_id, ''))) = LOWER(TRIM(COALESCE(cf.coordinator_assigned_by, '')))
     LEFT JOIN companies c
       ON c.company_identifier = cf.company_identifier
     WHERE active = TRUE
@@ -103,11 +110,15 @@ async function fetchFormsDueForReminder(client) {
 function buildReminderEmailBody(form) {
   const dueStr = formatDueDateForEmail(form.due_date);
   const companyName = String(form.company_name || '').trim() || 'IFC';
-  const ownerSalutation =
-    String(form.control_owner_emp_name || '').trim() || 'Process Owner';
-  const formUrl = process.env.FRONTEND_URL
-    ? `${process.env.FRONTEND_URL}/user/form/${form.form_id}`
-    : null;
+  const isCoordinatorAssigned = isCoordinatorAssignedRacm(form);
+  const ownerSalutation = isCoordinatorAssigned
+    ? (String(form.coordinator_emp_name || '').trim() || 'Coordinator')
+    : (String(form.control_owner_emp_name || '').trim() || 'Process Owner');
+  const formUrl = isCoordinatorAssigned
+    ? buildCoordinatorFormDetailUrl(form.form_id)
+    : (process.env.FRONTEND_URL
+      ? `${process.env.FRONTEND_URL}/user/form/${form.form_id}`
+      : null);
   return `Dear ${ownerSalutation},
 
 This is a reminder that your RACM (Risk and Control Matrix) is pending.
@@ -117,6 +128,7 @@ ${buildRacmDetailsSection(form, [
 ])}
 
 ${process.env.FRONTEND_URL ? `Portal: ${process.env.FRONTEND_URL}` : ''}
+${formUrl ? `Form: ${formUrl}` : ''}
 
 Please complete and submit your evidence at your earliest convenience.
 
@@ -135,7 +147,10 @@ async function runReminderEmails() {
     if (forms.length === 0) return;
 
     for (const form of forms) {
-      const to = (form.control_owner || '').trim();
+      const isCoordinatorAssigned = isCoordinatorAssignedRacm(form);
+      const to = isCoordinatorAssigned
+        ? String(form.coordinator_assigned_by || '').trim()
+        : String(form.control_owner || '').trim();
 
       // Validate email before attempting to send. If invalid/missing, skip send but still update reminder_datetime.
       if (!isValidEmail(to)) {

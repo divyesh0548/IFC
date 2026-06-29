@@ -18,6 +18,8 @@ function buildRacmS3BaseFolderPath({ companyName, unitName, businessProcess, for
   return `${companySegment}/${unitSegment}/${processSegment}/${formSegment}`;
 }
 
+const SAMPLE_DOCUMENTS_S3_SUBFOLDER = 'Sample Docs';
+
 function buildRacmDocumentSubfolderPath(baseFolderPath, subfolderName) {
   const normalizedBaseFolder = String(baseFolderPath || '').trim().replace(/[\/\\]+$/g, '');
   const sanitizedSubfolder = sanitizeS3PathSegment(subfolderName, 'documents');
@@ -29,7 +31,7 @@ function buildUserDocumentS3FolderPath(context) {
 }
 
 function buildSampleDocumentS3FolderPath(context) {
-  return buildRacmDocumentSubfolderPath(buildRacmS3BaseFolderPath(context), 'Sample Documents');
+  return buildRacmDocumentSubfolderPath(buildRacmS3BaseFolderPath(context), SAMPLE_DOCUMENTS_S3_SUBFOLDER);
 }
 
 function formatDeficiencyResponseFolderName(responseType) {
@@ -91,7 +93,7 @@ async function getControlFormDocumentRows(db, formIds) {
 
   const sampleResult = await db.query(
     `
-      SELECT id, form_id, sample_doc, created_at
+      SELECT id, form_id, sample_doc, user_id, created_at
       FROM sample_docs
       WHERE form_id = ANY($1::text[])
       ORDER BY id ASC
@@ -177,7 +179,7 @@ async function insertUserDocument(db, formId, docUrl, userId = null) {
   const result = await db.query(
     `
       INSERT INTO racm_docs (form_id, doc_uploaded_by_user, user_id, created_at)
-      VALUES ($1, $2, $3, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
       RETURNING id, form_id, doc_uploaded_by_user, user_id, created_at
     `,
     [formId, value, normalizedUserId]
@@ -186,17 +188,18 @@ async function insertUserDocument(db, formId, docUrl, userId = null) {
   return result.rows[0] || null;
 }
 
-async function insertSampleDocument(db, formId, docUrl) {
+async function insertSampleDocument(db, formId, docUrl, userId = null) {
   const value = docUrl == null ? '' : String(docUrl).trim();
   if (!value) return null;
+  const uploaderEmail = userId == null ? null : String(userId).trim() || null;
 
   const result = await db.query(
     `
-      INSERT INTO sample_docs (form_id, sample_doc, created_at)
-      VALUES ($1, $2, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
-      RETURNING id, form_id, sample_doc, created_at
+      INSERT INTO sample_docs (form_id, sample_doc, user_id, created_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+      RETURNING id, form_id, sample_doc, user_id, created_at
     `,
-    [formId, value]
+    [formId, value, uploaderEmail]
   );
 
   return result.rows[0] || null;

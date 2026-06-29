@@ -32,12 +32,14 @@ const {
   buildSampleSizeForFrequency,
 } = require('../utils/sample_size_resolver');
 const { validateRacmUnitUserAssignment } = require('../utils/unit_user_validation');
+const { shouldAutoActivateRacmOnCreate } = require('../utils/racm_activation');
 const {
   ensureActiveTemplateForUnit,
   getActiveTemplateWithFields,
   getTemplateWithFieldsById,
   validateDynamicValuesAgainstTemplate,
   saveDynamicFieldValues,
+  applyApprovedDynamicFieldChanges,
   incrementTemplateLinkedRacmCount,
   decrementTemplateLinkedRacmCount,
   loadDynamicFieldValuesForForm,
@@ -66,6 +68,10 @@ const {
   formatBulkImportSuccessMessage,
 } = require('../utils/racm_duplicate_key');
 const {
+  getActiveRacmDeleteError,
+  getInactiveRacmApproverAccessError,
+} = require('../utils/racm_delete');
+const {
   getMissingRacmRequiredFields,
   formatMissingRacmRequiredFields,
 } = require('../utils/racm_required_fields');
@@ -81,6 +87,17 @@ const {
   resolveApproverForRacm,
   getControlFormApproverDetails: resolveControlFormApproverDetails,
 } = require('../utils/approver_assignment_resolver');
+const {
+  VALID_RACM_ASSIGNMENT_EXISTS_SQL,
+  RACM_ASSIGNMENT_COMPUTED_SELECT_SQL,
+  isCoordinatorAssignedRacm,
+  hasCoordinatorScheduleConfigured,
+  getControlFormCoordinatorContext,
+  assertCoordinatorAssignedRacmAccess,
+  getCoordinatorSubmissionBlockMessage,
+  coordinatorHasUnitAccess,
+  hasValidProcessOwnerAssignment,
+} = require('../utils/racm_coordinator_assignment');
 
 console.log('✅ control_forms.js module loaded successfully');
 
@@ -182,20 +199,6 @@ function parseActiveFilter(value) {
   return undefined;
 }
 
-const VALID_RACM_ASSIGNMENT_EXISTS_SQL = `
-  EXISTS (
-    SELECT 1
-    FROM ifc_users valid_owner
-    INNER JOIN user_unit_memberships valid_membership
-      ON valid_membership.company_identifier = valid_owner.company_identifier
-     AND LOWER(TRIM(valid_membership.user_email_id)) = LOWER(TRIM(valid_owner.email_id))
-     AND valid_membership.unit_id = cf.unit_id
-    WHERE LOWER(TRIM(valid_owner.email_id)) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
-      AND valid_owner.company_identifier = cf.company_identifier
-      AND valid_owner.role = 'user'
-  )
-`;
-
 const VALID_RACM_APPROVER_ASSIGNMENT_EXISTS_SQL = `
   EXISTS (
     SELECT 1
@@ -264,7 +267,8 @@ const CONTROL_FORMS_LIST_SELECT = `
     NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
     NULLIF(TRIM(approver_map.approver_email_id), '') AS approver_email_id,
     NULLIF(TRIM(approver_user.emp_name), '') AS approver_name,
-    NULLIF(TRIM(approver_user.emp_name), '') AS approver_display_name
+    NULLIF(TRIM(approver_user.emp_name), '') AS approver_display_name,
+    ${RACM_ASSIGNMENT_COMPUTED_SELECT_SQL}
 `;
 
 function appendControlFormsListFilters(req, options, queryParts) {
@@ -777,28 +781,14 @@ router.get('/control-frequency-options', verifyAuth, async (req, res) => {
   }
 });
 
-// Configure multer for Excel file uploads (memory storage for S3 upload)
-const storage = multer.memoryStorage();
-
-const upload = multer({ 
-  storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-  fileFilter: (req, file, cb) => {
-    const allowedMimes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-      'application/vnd.ms-excel', // .xls
-      'text/csv' // .csv
-    ];
-    if (allowedMimes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only Excel files (.xlsx, .xls) and CSV files are allowed.'));
-    }
-  }
-});
-
 // Multer for user document uploads (memory storage for S3 upload)
 const uploadUserDoc = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES },
+  fileFilter: documentUploadFileFilter,
+});
+
+const uploadSampleDoc = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: DOCUMENT_UPLOAD_MAX_FILE_SIZE_BYTES },
   fileFilter: documentUploadFileFilter,
@@ -838,6 +828,38 @@ function handleUserDocumentUpload(req, res, next) {
     return res.status(400).json({
       success: false,
       message: error.message || 'Failed to upload documents',
+    });
+  });
+}
+
+function handleSampleDocumentUpload(req, res, next) {
+  uploadSampleDoc.fields([
+    { name: 'excelFiles', maxCount: 20 },
+    { name: 'excelFile', maxCount: 1 },
+  ])(req, res, (error) => {
+    if (!error) {
+      next();
+      return;
+    }
+
+    if (error instanceof multer.MulterError) {
+      if (error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          success: false,
+          message: DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE,
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Failed to upload sample documents',
+      });
+    }
+
+    console.error('Sample document upload middleware error:', error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to upload sample documents',
     });
   });
 }
@@ -964,6 +986,33 @@ function getRequestChangeFieldLabel(fieldName, providedLabel) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+async function loadRequestChangeExtraFieldContext(client, templateId, formId) {
+  if (!templateId) {
+    return { extraFieldByKey: new Map(), dynamicValues: {} };
+  }
+
+  const templatePayload = await getTemplateWithFieldsById(client, templateId);
+  if (!templatePayload.ok) {
+    return { extraFieldByKey: new Map(), dynamicValues: {} };
+  }
+
+  const extraFieldByKey = new Map(
+    (templatePayload.extra_fields || []).map((field) => [field.field_key, field])
+  );
+  const dynamicPayload = await loadDynamicFieldValuesForForm(client, formId);
+
+  return {
+    extraFieldByKey,
+    dynamicValues: dynamicPayload.dynamic_values || {},
+  };
+}
+
+function resolveRequestChangeFieldKind(fieldDbName, extraFieldByKey) {
+  if (extraFieldByKey.has(fieldDbName)) return 'dynamic';
+  if (REQUEST_CHANGE_ALLOWED_FIELDS.has(fieldDbName)) return 'fixed';
+  return null;
 }
 
 function quoteIdentifier(identifier) {
@@ -1614,7 +1663,8 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
         approver_map.approver_email_id AS approver_email_id,
         NULLIF(TRIM(approver.emp_name), '') AS approver_name,
         approver.temp_login AS approver_temp_login,
-        NULLIF(TRIM(approver.emp_name), '') AS approver_display_name
+        NULLIF(TRIM(approver.emp_name), '') AS approver_display_name,
+        ${RACM_ASSIGNMENT_COMPUTED_SELECT_SQL}
       FROM control_forms cf
       ${CONTROLS_REMINDER_JOIN_SQL}
       LEFT JOIN company_unit_master cum
@@ -1671,6 +1721,16 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
         return res.status(403).json({
           success: false,
           message: 'Access denied. You are not authorized to view this form.'
+        });
+      }
+    }
+
+    if (loggedInUserRole === 'approver') {
+      const inactiveMessage = getInactiveRacmApproverAccessError(formData.active);
+      if (inactiveMessage) {
+        return res.status(403).json({
+          success: false,
+          message: inactiveMessage,
         });
       }
     }
@@ -1736,6 +1796,8 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     return res.status(404).json({ success: false, message: 'RACM not found' });
   }
 
+  const isCoordinatorAssigned = Boolean(currentForm.assignedToCoordinator);
+
   const currentActiveStatus = Boolean(currentForm.active);
   const hasChangesArray = Array.isArray(modifiedChanges) && modifiedChanges.length > 0;
   const hasFieldsArray = Array.isArray(modifiedFields) && modifiedFields.length > 0;
@@ -1751,6 +1813,20 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
   const isControlOwnerChanged = control_owner !== undefined && nextAssignmentEmail !== '' && nextAssignmentEmail !== currentAssignmentEmail;
   const isAssignmentUpdate = Boolean((assignmentInChangesArray || assignmentInFieldsArray || control_owner !== undefined) && isControlOwnerChanged);
   const isRacmAssignmentOperation = Boolean(isAssignmentUpdate && assignmentEmail);
+
+  if (isRacmAssignmentOperation && isCoordinatorAssigned) {
+    return res.status(400).json({
+      success: false,
+      message: 'Cannot assign a process owner to a coordinator-assigned RACM.',
+    });
+  }
+
+  if (control_owner !== undefined && isCoordinatorAssigned && nextAssignmentEmail !== currentAssignmentEmail) {
+    return res.status(400).json({
+      success: false,
+      message: 'Process owner cannot be changed on a coordinator-assigned RACM.',
+    });
+  }
 
   const normalizeDateOnly = (value) => {
     if (value == null) return '';
@@ -1839,6 +1915,12 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
   const hasUserDocumentUpload = uploadedUserDocumentUrls.length > 0;
 
   const isApprover = !!req.cookies.approverAuthToken;
+  if (isApprover || req.user?.role === 'approver') {
+    const inactiveMessage = getInactiveRacmApproverAccessError(currentForm.active);
+    if (inactiveMessage) {
+      return res.status(403).json({ success: false, message: inactiveMessage });
+    }
+  }
   const approverOnlyFields = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc'];
   if (!isApprover) {
     const attemptedApproverFields = approverOnlyFields.filter((field) => {
@@ -1961,6 +2043,54 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       message: 'This RACM has a pending change request and cannot be sent for approval until it is resolved.',
     });
   }
+
+  if (isNowSentForApprovalRequest && !currentActiveStatus) {
+    return res.status(400).json({
+      success: false,
+      message: 'Inactive RACMs cannot be sent for approval.',
+    });
+  }
+
+  if (isNowSentForApprovalRequest && req.user?.role === 'company_co') {
+    if (!isCoordinatorAssigned) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only coordinator-assigned RACMs can be submitted from the coordinator form.',
+      });
+    }
+
+    const coordinatorAccess = await assertCoordinatorAssignedRacmAccess({
+      assigned_to_coordinator: currentForm.assignedToCoordinator,
+      company_identifier: currentForm.companyIdentifier,
+      unit_id: currentForm.unitId,
+    }, req.user);
+    if (!coordinatorAccess.ok) {
+      return res.status(coordinatorAccess.status).json({
+        success: false,
+        message: coordinatorAccess.message,
+      });
+    }
+    const coordinatorBlockMessage = getCoordinatorSubmissionBlockMessage({ status: currentForm.status });
+    if (coordinatorBlockMessage) {
+      return res.status(400).json({ success: false, message: coordinatorBlockMessage });
+    }
+    if (!hasUserDocumentUpload) {
+      const existingDocCount = await prisma.racmDoc.count({ where: { formId: normalizedFormId } });
+      if (existingDocCount === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please upload at least one document before sending for approval',
+        });
+      }
+    }
+    const approverBlockMessage = getApproverSubmissionBlockMessage(
+      await getControlFormApproverDetails(pool, normalizedFormId)
+    );
+    if (approverBlockMessage) {
+      return res.status(400).json({ success: false, message: approverBlockMessage });
+    }
+  }
+
   if (isNowSentForApprovalRequest && !wasSentForApproval) {
     data.sentForApprovalTimestamp = new Date();
   }
@@ -2174,19 +2304,28 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       control_type_ma: form.controlTypeMa,
       due_date: form.dueDate,
       reminder_frequency: form.reminderFrequency,
+      assigned_to_coordinator: form.assignedToCoordinator,
+      coordinator_assigned_by: form.coordinatorAssignedBy,
+      coordinator_assigned_at: form.coordinatorAssignedAt,
       template_id: form.templateId,
       ...reminderFields,
       sent_for_approval_timestamp: form.sentForApprovalTimestamp,
       approval_status_change_timestamp: form.approvalStatusChangeTs,
       user_mail_sent: form.userMailSent,
-      sample_docs: sampleDocs.map((d) => ({ id: d.id, form_id: d.formId, sample_doc: d.sampleDoc, created_at: d.createdAt })),
+      sample_docs: sampleDocs.map((d) => ({
+        id: d.id,
+        form_id: d.formId,
+        sample_doc: d.sampleDoc,
+        user_id: d.userId,
+        created_at: d.createdAt,
+      })),
       doc_uploaded_by_user_docs: userDocs.map((d) => ({ id: d.id, form_id: d.formId, doc_uploaded_by_user: d.docUploadedByUser, user_id: d.userId, created_at: d.createdAt })),
       sample_doc: sampleDocs.length > 0 ? sampleDocs[sampleDocs.length - 1].sampleDoc : null,
       doc_uploaded_by_user: userDocs.length > 0 ? userDocs[userDocs.length - 1].docUploadedByUser : null,
     };
 
     const isNowSentForApproval = String(updatedRow?.status || '').trim().toLowerCase() === 'sent for approval';
-    if (isNowSentForApproval && !wasSentForApproval && req.user?.role === 'user') {
+    if (isNowSentForApproval && !wasSentForApproval && (req.user?.role === 'user' || (req.user?.role === 'company_co' && isCoordinatorAssigned))) {
       try {
         const resolvedApprover = await resolveApproverForRacm(pool, {
           companyIdentifier: updatedRow.company_identifier,
@@ -2597,6 +2736,15 @@ router.post('/:form_id/request-change', verifyAuth, async (req, res) => {
     }
 
     const currentForm = formResult.rows[0];
+
+    if (isCoordinatorAssignedRacm(currentForm)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Change requests are not available for coordinator-assigned RACMs.',
+      });
+    }
+
     const processOwnerEmail = String(currentForm.control_owner || '').trim().toLowerCase();
     if (processOwnerEmail !== requesterEmail.toLowerCase()) {
       await client.query('ROLLBACK');
@@ -2625,10 +2773,17 @@ router.post('/:form_id/request-change', verifyAuth, async (req, res) => {
 
     const sanitizedItems = [];
     const seenFields = new Set();
+    const templateId = currentForm.template_id;
+    const templateSchemaReady = await isRacmTemplateSchemaReady(client);
+    const { extraFieldByKey, dynamicValues } = templateSchemaReady && templateId
+      ? await loadRequestChangeExtraFieldContext(client, templateId, normalizedFormId)
+      : { extraFieldByKey: new Map(), dynamicValues: {} };
+
     for (let index = 0; index < submittedChanges.length; index++) {
       const rawItem = submittedChanges[index] || {};
       const fieldDbName = String(rawItem.field_db_name || '').trim();
-      if (!REQUEST_CHANGE_ALLOWED_FIELDS.has(fieldDbName)) {
+      const fieldKind = resolveRequestChangeFieldKind(fieldDbName, extraFieldByKey);
+      if (!fieldKind) {
         continue;
       }
       if (seenFields.has(fieldDbName)) {
@@ -2636,15 +2791,28 @@ router.post('/:form_id/request-change', verifyAuth, async (req, res) => {
       }
       seenFields.add(fieldDbName);
 
-      const oldValueText = normalizeChangeRequestTextValue(fieldDbName, currentForm[fieldDbName]);
-      const newValueText = normalizeChangeRequestTextValue(fieldDbName, rawItem.new_value_text);
+      let oldValueText;
+      let newValueText;
+      let fieldLabel;
+
+      if (fieldKind === 'dynamic') {
+        const extraField = extraFieldByKey.get(fieldDbName);
+        oldValueText = normalizeChangeRequestTextValue(fieldDbName, dynamicValues[fieldDbName]);
+        newValueText = normalizeChangeRequestTextValue(fieldDbName, rawItem.new_value_text);
+        fieldLabel = getRequestChangeFieldLabel(fieldDbName, rawItem.field_label || extraField?.label);
+      } else {
+        oldValueText = normalizeChangeRequestTextValue(fieldDbName, currentForm[fieldDbName]);
+        newValueText = normalizeChangeRequestTextValue(fieldDbName, rawItem.new_value_text);
+        fieldLabel = getRequestChangeFieldLabel(fieldDbName, rawItem.field_label);
+      }
+
       if (oldValueText === newValueText) {
         continue;
       }
 
       sanitizedItems.push({
         fieldDbName,
-        fieldLabel: getRequestChangeFieldLabel(fieldDbName, rawItem.field_label),
+        fieldLabel,
         oldValueText,
         newValueText,
         displayOrder: Number.isInteger(rawItem.display_order) ? rawItem.display_order : index,
@@ -3167,12 +3335,32 @@ router.post('/:form_id/change-request/:request_id/review', verifyAuth, async (re
     }
 
     if (approvedItems.length > 0) {
+      const formTemplateResult = await client.query(
+        `
+          SELECT template_id
+          FROM control_forms
+          WHERE form_id = $1
+          LIMIT 1
+        `,
+        [normalizedFormId]
+      );
+      const templateId = formTemplateResult.rows[0]?.template_id;
+      const templateSchemaReady = await isRacmTemplateSchemaReady(client);
+      const { extraFieldByKey } = templateSchemaReady && templateId
+        ? await loadRequestChangeExtraFieldContext(client, templateId, normalizedFormId)
+        : { extraFieldByKey: new Map() };
+
       const updateAssignments = [];
       const updateValues = [normalizedFormId];
+      const dynamicApprovedChanges = {};
       let paramIndex = 2;
 
       for (const approvedItem of approvedItems) {
         const fieldName = String(approvedItem.field_db_name || '').trim();
+        if (extraFieldByKey.has(fieldName)) {
+          dynamicApprovedChanges[fieldName] = approvedItem.new_value_text;
+          continue;
+        }
         if (!REQUEST_CHANGE_ALLOWED_FIELDS.has(fieldName)) {
           continue;
         }
@@ -3243,6 +3431,22 @@ router.post('/:form_id/change-request/:request_id/review', verifyAuth, async (re
           `,
           [normalizedFormId]
         );
+      }
+
+      if (Object.keys(dynamicApprovedChanges).length > 0 && templateId) {
+        const applyDynamicResult = await applyApprovedDynamicFieldChanges(
+          client,
+          normalizedFormId,
+          templateId,
+          dynamicApprovedChanges
+        );
+        if (!applyDynamicResult.ok) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: applyDynamicResult.message || 'Failed to apply approved custom field changes',
+          });
+        }
       }
     } else {
       await client.query(
@@ -3632,6 +3836,13 @@ router.post('/', verifyAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: ownerValidation.message });
     }
 
+    const shouldActivateOnCreate = shouldAutoActivateRacmOnCreate({
+      controlOwner: control_owner,
+      dueDate: hasDueDate ? dueDateRaw : '',
+      reminderFrequency: hasReminderFrequency ? reminderFrequencyRaw : '',
+      ownerValidationResult: ownerValidation,
+    });
+
     const performerValidation = await validateRacmUnitUserAssignment(client, {
       companyIdentifier: userCompanyIdentifier,
       unitId,
@@ -3735,9 +3946,10 @@ router.post('/', verifyAuth, async (req, res) => {
         form_id, company_identifier, business_process, financial_year, unit_id, sample_required,
         due_date, reminder_frequency,
         template_id,
+        active,
         created_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, NOW() AT TIME ZONE 'UTC')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, NOW() AT TIME ZONE 'UTC')
       RETURNING *;
     `;
 
@@ -3752,7 +3964,8 @@ router.post('/', verifyAuth, async (req, res) => {
       formId, userCompanyIdentifier, business_process, financial_year || null, unitId, sampleRequired,
       hasDueDate ? dueDateRaw : null,
       hasReminderFrequency ? reminderFrequencyRaw : null,
-      activeTemplateId
+      activeTemplateId,
+      shouldActivateOnCreate,
     ]);
 
     console.log('[control_forms POST] Inserted RACM - sample_required in DB:', result.rows[0]?.sample_required);
@@ -3777,10 +3990,15 @@ router.post('/', verifyAuth, async (req, res) => {
     await client.query('COMMIT');
 
     await logAuditEvent('RACM created', req.user.email_id, formId);
+    if (shouldActivateOnCreate) {
+      await logAuditEvent('Set RACM Active', req.user.email_id, formId);
+    }
 
     res.status(201).json({
       success: true,
-      message: 'RACM created successfully',
+      message: shouldActivateOnCreate
+        ? 'RACM created and set to Active successfully'
+        : 'RACM created successfully',
       data: result.rows[0]
     });
 
@@ -3874,6 +4092,9 @@ router.post('/replicate', verifyAuth, async (req, res) => {
       'control_design_procs',
       'control_design_conclusion',
       'design_deficiency_desc',
+      'assigned_to_coordinator',
+      'coordinator_assigned_by',
+      'coordinator_assigned_at',
       // created_at handled by DB default (current timestamp)
       'created_at',
     ]);
@@ -4057,10 +4278,11 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       });
     }
 
-    if (form.active === true) {
+    const activeDeleteError = getActiveRacmDeleteError(form.active);
+    if (activeDeleteError) {
       return res.status(400).json({
         success: false,
-        message: 'Active RACM cannot be deleted. Please set the RACM Inactive first.',
+        message: activeDeleteError,
       });
     }
 
@@ -4172,8 +4394,107 @@ router.get('/:form_id/approver-status', verifyUserAuth, async (req, res) => {
 
 // Upload user document for a specific form and persist it immediately.
 router.post(
+  '/:form_id/self-assign',
+  verifyAuth,
+  async (req, res) => {
+    const { form_id } = req.params;
+
+    if (req.user?.role !== 'company_co') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only company coordinators can self-assign RACMs.',
+      });
+    }
+
+    try {
+      const form = await getControlFormCoordinatorContext(pool, form_id);
+      if (!form) {
+        return res.status(404).json({ success: false, message: 'RACM not found' });
+      }
+
+      if (isCoordinatorAssignedRacm(form)) {
+        return res.status(400).json({
+          success: false,
+          message: 'This RACM is already assigned to a coordinator.',
+        });
+      }
+
+      const hasValidOwner = await hasValidProcessOwnerAssignment(pool, form_id);
+      if (hasValidOwner) {
+        return res.status(400).json({
+          success: false,
+          message: 'This RACM is already assigned to a process owner.',
+        });
+      }
+
+      if (!hasCoordinatorScheduleConfigured(form)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Due date and reminder frequency must be configured before self-assignment.',
+        });
+      }
+
+      const status = String(form.status || '').trim().toLowerCase();
+      if (status === 'sent for approval' || status === 'approved') {
+        return res.status(400).json({
+          success: false,
+          message: 'This RACM cannot be self-assigned in its current approval status.',
+        });
+      }
+
+      const coordinatorEmail = String(req.user.email_id || '').trim().toLowerCase();
+      const hasUnitAccess = await coordinatorHasUnitAccess(pool, {
+        companyIdentifier: form.company_identifier,
+        unitId: form.unit_id,
+        coordinatorEmail,
+      });
+      if (!hasUnitAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You are not assigned to this RACM unit.',
+        });
+      }
+
+      const updated = await prisma.controlForm.update({
+        where: { formId: String(form_id).trim() },
+        data: {
+          assignedToCoordinator: true,
+          coordinatorAssignedBy: req.user.email_id,
+          coordinatorAssignedAt: new Date(),
+          controlOwner: null,
+          active: true,
+          inactiveMailPending: false,
+        },
+      });
+
+      await logAuditEvent('Coordinator Self-Assignment', req.user.email_id, form_id);
+
+      return res.status(200).json({
+        success: true,
+        message: 'RACM self-assigned successfully',
+        data: {
+          form_id: updated.formId,
+          assigned_to_coordinator: updated.assignedToCoordinator,
+          coordinator_assigned_by: updated.coordinatorAssignedBy,
+          coordinator_assigned_at: updated.coordinatorAssignedAt,
+          control_owner: updated.controlOwner,
+          active: updated.active,
+        },
+      });
+    } catch (error) {
+      console.error('Coordinator self-assign error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error self-assigning RACM',
+      });
+    }
+  }
+);
+
+// Upload user document for a specific form and persist it immediately.
+router.post(
   '/:form_id/upload-document',
-  verifyUserAuth,
+  verifyAuth,
   handleUserDocumentUpload,
   async (req, res) => {
   const { form_id } = req.params;
@@ -4190,31 +4511,59 @@ router.post(
   }
 
   try {
-    const approverDetails = await getControlFormApproverDetails(pool, form_id);
+    const coordinatorForm = await getControlFormCoordinatorContext(pool, form_id);
+    const isCoordinatorAssigned = isCoordinatorAssignedRacm(coordinatorForm);
 
-    if (!approverDetails) {
-      return res.status(404).json({
-        success: false,
-        message: 'RACM not found',
-      });
-    }
+    if (isCoordinatorAssigned) {
+      const coordinatorAccess = await assertCoordinatorAssignedRacmAccess(coordinatorForm, req.user);
+      if (!coordinatorAccess.ok) {
+        return res.status(coordinatorAccess.status).json({
+          success: false,
+          message: coordinatorAccess.message,
+        });
+      }
 
-    const processOwnerEmail = String(approverDetails.control_owner || '').trim().toLowerCase();
-    const userEmail = String(req.user?.email_id || '').trim().toLowerCase();
+      const coordinatorBlockMessage = getCoordinatorSubmissionBlockMessage(coordinatorForm);
+      if (coordinatorBlockMessage) {
+        return res.status(400).json({
+          success: false,
+          message: coordinatorBlockMessage,
+        });
+      }
+    } else {
+      if (req.user?.role !== 'user') {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You are not authorized to update this form.',
+        });
+      }
 
-    if (processOwnerEmail !== userEmail) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. You are not authorized to update this form.',
-      });
-    }
+      const approverDetails = await getControlFormApproverDetails(pool, form_id);
 
-    const approverBlockMessage = getApproverSubmissionBlockMessage(approverDetails);
-    if (approverBlockMessage) {
-      return res.status(400).json({
-        success: false,
-        message: approverBlockMessage,
-      });
+      if (!approverDetails) {
+        return res.status(404).json({
+          success: false,
+          message: 'RACM not found',
+        });
+      }
+
+      const processOwnerEmail = String(approverDetails.control_owner || '').trim().toLowerCase();
+      const userEmail = String(req.user?.email_id || '').trim().toLowerCase();
+
+      if (processOwnerEmail !== userEmail) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You are not authorized to update this form.',
+        });
+      }
+
+      const approverBlockMessage = getApproverSubmissionBlockMessage(approverDetails);
+      if (approverBlockMessage) {
+        return res.status(400).json({
+          success: false,
+          message: approverBlockMessage,
+        });
+      }
     }
 
     const docContext = await getControlFormUserDocumentContext(pool, form_id);
@@ -4403,14 +4752,11 @@ router.delete('/:form_id/sample-docs/:sample_doc_id', verifyAuth, async (req, re
   }
 });
 
-// Upload one or more sampling Excel files for a specific form
+// Upload one or more sample documents for a specific form
 router.post(
   '/:form_id/upload-sampling-excel',
   verifyAuth,
-  upload.fields([
-    { name: 'excelFiles', maxCount: 20 },
-    { name: 'excelFile', maxCount: 1 },
-  ]),
+  handleSampleDocumentUpload,
   async (req, res) => {
   const { form_id } = req.params;
   const files = [
@@ -4453,6 +4799,8 @@ router.post(
       formId: docContext.form_id,
     });
 
+    const uploaderEmailId = req.user?.email_id ? String(req.user.email_id).trim() : null;
+
     const uploadedS3Keys = [];
     const sampleDocs = [];
     try {
@@ -4468,24 +4816,17 @@ router.post(
         console.log(`Sampling Excel file uploaded to S3 with key: ${s3Key}`);
         uploadedS3Keys.push(s3Key);
 
-        const sampleDoc = await prisma.sampleDoc.create({
-          data: {
-            formId: form_id,
-            sampleDoc: s3Key,
-          },
-          select: {
-            id: true,
-            formId: true,
-            sampleDoc: true,
-            createdAt: true,
-          },
-        });
+        const insertedDoc = await insertSampleDocument(pool, form_id, s3Key, uploaderEmailId);
+        if (!insertedDoc) {
+          throw new Error('Failed to save sample document record');
+        }
 
         sampleDocs.push({
-          id: sampleDoc.id,
-          form_id: sampleDoc.formId,
-          sample_doc: sampleDoc.sampleDoc,
-          created_at: sampleDoc.createdAt,
+          id: insertedDoc.id,
+          form_id: insertedDoc.form_id,
+          sample_doc: insertedDoc.sample_doc,
+          user_id: insertedDoc.user_id,
+          created_at: insertedDoc.created_at,
         });
       }
     } catch (innerError) {

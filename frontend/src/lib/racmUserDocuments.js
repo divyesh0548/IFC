@@ -38,3 +38,27 @@ export function formatRacmUserDocumentSubtitle(doc, formatDateTime) {
   if (parts.length > 0) return parts.join(' · ')
   return 'Uploaded document'
 }
+
+export function normalizeSampleDocument(doc, index = 0) {
+  return {
+    id: doc?.id || `sample-doc-${index}`,
+    sample_doc: doc?.sample_doc,
+    user_id: doc?.user_id ?? null,
+    created_at: doc?.created_at ?? null,
+  }
+}
+
+export function normalizeSampleDocuments(docs, legacyDocUrl = null) {
+  const normalizedDocs = (Array.isArray(docs) ? docs : [])
+    .map((doc, index) => normalizeSampleDocument(doc, index))
+    .filter((doc) => String(doc.sample_doc || '').trim() !== '')
+
+  if (normalizedDocs.length > 0) return normalizedDocs
+
+  const legacyDoc = String(legacyDocUrl || '').trim()
+  return legacyDoc
+    ? [{ id: 'sample-doc-current', sample_doc: legacyDoc, user_id: null, created_at: null }]
+    : []
+}
+
+export const formatRacmSampleDocumentSubtitle = formatRacmUserDocumentSubtitle

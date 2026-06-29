@@ -16,11 +16,24 @@ const {
 } = require('../../utils/controls_reminder');
 const { buildRacmDetailsSection } = require('../../utils/racm_email_details');
 const { buildScopedApproverJoinSql } = require('../../utils/approver_assignment_resolver');
+const { getInactiveRacmApproverAccessError } = require('../../utils/racm_delete');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
 
 const APPROVAL_DECISION_CHANGE_WINDOW_MS = 15 * 24 * 60 * 60 * 1000;
+
+function denyApproverIfRacmInactive(res, active) {
+  const message = getInactiveRacmApproverAccessError(active);
+  if (!message) {
+    return false;
+  }
+  res.status(403).json({
+    success: false,
+    message,
+  });
+  return true;
+}
 
 async function getApproverMappedUnits(approverEmail) {
   const result = await pool.query(
@@ -476,7 +489,7 @@ async function approveForm(req, res) {
 
       const lockedFormResult = await client.query(
         `
-          SELECT cf.form_id
+          SELECT cf.form_id, cf.active
           FROM control_forms cf
           ${scopedApproverRacmJoin('cf')}
           WHERE cf.form_id = $2
@@ -492,6 +505,11 @@ async function approveForm(req, res) {
           success: false,
           message: 'RACM not found or not assigned to this approver',
         });
+      }
+
+      if (denyApproverIfRacmInactive(res, lockedFormResult.rows[0].active)) {
+        await client.query('ROLLBACK');
+        return;
       }
 
       const updateQuery = `
@@ -583,6 +601,10 @@ async function changeApprovalDecision(req, res) {
     }
 
     const row = currentResult.rows[0];
+    if (denyApproverIfRacmInactive(res, row.active)) {
+      return;
+    }
+
     const curStatus = row.status;
 
     if (curStatus !== 'Approved' && curStatus !== 'Rejected') {
@@ -656,7 +678,7 @@ async function changeApprovalDecision(req, res) {
 
       const updateResult = await client.query(
         `
-          SELECT cf.form_id
+          SELECT cf.form_id, cf.active
           FROM control_forms cf
           ${scopedApproverRacmJoin('cf')}
           WHERE cf.form_id = $2
@@ -669,6 +691,11 @@ async function changeApprovalDecision(req, res) {
       if (updateResult.rows.length === 0) {
         await client.query('ROLLBACK');
         return res.status(404).json({ success: false, message: 'RACM not found or not assigned to this approver' });
+      }
+
+      if (denyApproverIfRacmInactive(res, updateResult.rows[0].active)) {
+        await client.query('ROLLBACK');
+        return;
       }
 
       const updatedResult = await client.query(
@@ -825,6 +852,10 @@ async function getControlFormById(req, res) {
       });
     }
 
+    if (denyApproverIfRacmInactive(res, result.rows[0].active)) {
+      return;
+    }
+
     await attachControlFormDocuments(pool, [result.rows[0]]);
     result.rows[0].deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
 
@@ -871,6 +902,7 @@ async function checkControlFormAccess(req, res) {
       `
         SELECT
           cf.form_id,
+          cf.active,
           cf.unit_id AS racm_unit_id,
           cf.unit_id AS approver_unit_id,
           NULLIF(TRIM(cum.unit_name), '') AS approver_unit_name
@@ -896,6 +928,17 @@ async function checkControlFormAccess(req, res) {
     }
 
     const row = result.rows[0];
+    const inactiveMessage = getInactiveRacmApproverAccessError(row.active);
+    if (inactiveMessage) {
+      return res.status(403).json({
+        success: false,
+        message: inactiveMessage,
+        data: {
+          allowed: false,
+        },
+      });
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Approver access verified',
@@ -923,7 +966,7 @@ async function getControlFormHistory(req, res) {
 
     const exists = await pool.query(
       `
-        SELECT 1
+        SELECT cf.active
         FROM control_forms cf
         ${scopedApproverRacmJoin('cf')}
         WHERE cf.form_id = $2
@@ -936,6 +979,10 @@ async function getControlFormHistory(req, res) {
         success: false,
         message: 'RACM not found or not assigned to this approver',
       });
+    }
+
+    if (denyApproverIfRacmInactive(res, exists.rows[0].active)) {
+      return;
     }
 
     const result = await pool.query(
@@ -1006,6 +1053,11 @@ async function reviewDeficiencyResponse(req, res) {
           success: false,
           message: 'RACM not found or not assigned to this approver',
         });
+      }
+
+      if (denyApproverIfRacmInactive(res, scopedFormResult.rows[0].active)) {
+        await client.query('ROLLBACK');
+        return;
       }
 
       const currentDeficiencyResponse = await getDeficiencyResponseByFormId(client, form_id);
@@ -1173,7 +1225,7 @@ async function getRacmAuditLogs(req, res) {
     const approverEmail = req.approver.email_id;
     const exists = await pool.query(
       `
-        SELECT 1
+        SELECT cf.active
         FROM control_forms cf
         ${scopedApproverRacmJoin('cf')}
         WHERE cf.form_id = $2
@@ -1186,6 +1238,10 @@ async function getRacmAuditLogs(req, res) {
         success: false,
         message: 'RACM not found or not assigned to this approver',
       });
+    }
+
+    if (denyApproverIfRacmInactive(res, exists.rows[0].active)) {
+      return;
     }
 
     const query = `
