@@ -1181,7 +1181,7 @@ function ExcelUpload() {
           id="racm-mapping-dialog-title"
           sx={{
             pb: 2,
-            pt: 3,
+            pt: 2.5,
             px: 3,
             fontWeight: 600,
             fontSize: '1.25rem',
@@ -1199,6 +1199,7 @@ function ExcelUpload() {
               lineHeight: 1.6,
               m: 0,
               mb: 2,
+              mt: 1.5,
             }}
           >
             Do you want to review and map Excel column headers to RACM fields? Use this when your sheet

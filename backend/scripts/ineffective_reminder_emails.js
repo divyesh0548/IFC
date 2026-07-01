@@ -21,6 +21,7 @@ const {
   formatReminderTimestampForLog,
 } = require('../utils/controls_reminder');
 const { buildRacmDetailsSection } = require('../utils/racm_email_details');
+const { buildUserFormDetailUrl } = require('../utils/racm_status_user_email');
 
 function isValidEmail(value) {
   const email = String(value || '').trim();
@@ -41,6 +42,7 @@ async function fetchFormsDueForIneffectiveReminder(client) {
       cf.business_process,
       cf.financial_year,
       cf.sub_process,
+      cf.due_date,
       cf.design_deficiency_desc,
       cr.ineffective_reminder_datetime,
       c.company_name
@@ -65,20 +67,19 @@ function buildIneffectiveReminderEmailBody(form) {
   const companyName = String(form.company_name || '').trim() || 'IFC';
   const ownerSalutation =
     String(form.control_owner_emp_name || '').trim() || 'Process Owner';
-  const portalUrl = process.env.VITE_FRONTEND_URL || process.env.FRONTEND_URL || '';
-  const formUrl = portalUrl ? `${portalUrl}/user/form/${form.form_id}` : null;
+  const formUrl = buildUserFormDetailUrl(form.form_id);
 
   return `Dear ${ownerSalutation},
 
 This is a reminder that your RACM has been marked as Not Effective and requires a Deficiency Response.
 
 ${buildRacmDetailsSection(form, [
-  ['Sub-Process', form.sub_process],
   ['Deficiency Description', form.design_deficiency_desc],
+  ['Due Date', formatDueDateForEmail(form.due_date)],
 ])}
 
 Please submit a Deficiency Response by providing either a Mitigation Plan or a Compensatory RACM.
-${formUrl ? `\nPortal: ${formUrl}` : portalUrl ? `\nPortal: ${portalUrl}` : ''}
+${formUrl ? `\nRACM: ${formUrl}` : ''}
 
 Regards,
 ${companyName}

@@ -11,6 +11,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Switch from '@mui/material/Switch'
 import Badge from '@mui/material/Badge'
 import Button from '@mui/material/Button'
+import TextField from '@mui/material/TextField'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -36,6 +37,7 @@ import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { formatIndianDateTime } from '../../lib/dateTime'
 import { formatRacmUserDocumentSubtitle } from '../../lib/racmUserDocuments'
+import { getRacmProcessOwnerDisplayValue } from '../../racmFormDetailFields'
 
 const DEFAULT_ROWS_PER_PAGE = 10
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50]
@@ -69,6 +71,8 @@ function RacmUserDocuments() {
   const [coordinatorUnits, setCoordinatorUnits] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
+  const [controlNumberInput, setControlNumberInput] = useState('')
+  const [controlNumberFilter, setControlNumberFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [docsDialogOpen, setDocsDialogOpen] = useState(false)
   const [selectedForm, setSelectedForm] = useState(null)
@@ -96,11 +100,23 @@ function RacmUserDocuments() {
     return mappedUnit?.unit_name || unitId || 'N/A'
   }
 
-  const formatProcessOwner = (form) => {
-    const name = String(form?.control_owner_name || '').trim()
-    const email = String(form?.control_owner || '').trim()
-    if (name && email) return `${name} (${email})`
-    return name || email || 'N/A'
+  const formatProcessOwner = (form) => getRacmProcessOwnerDisplayValue(form)
+
+  const handleControlNumberSearchSubmit = (event) => {
+    event.preventDefault()
+    setControlNumberFilter(controlNumberInput.trim())
+    setPage(0)
+  }
+
+  const handleControlNumberSearchClear = () => {
+    setControlNumberInput('')
+    setControlNumberFilter('')
+    setPage(0)
+  }
+
+  const handleFormClick = (formId) => {
+    if (!formId) return
+    window.open(`/company_co/form/${encodeURIComponent(formId)}`, '_blank', 'noopener,noreferrer')
   }
 
   const filterFormControlSx = {
@@ -196,6 +212,10 @@ function RacmUserDocuments() {
 
     if (filterConclusion !== 'all') {
       params.set('conclusion', filterConclusion)
+    }
+
+    if (controlNumberFilter) {
+      params.set('control_number', controlNumberFilter)
     }
 
     return `${API_BASE_URL}/api/control-forms?${params.toString()}`
@@ -394,6 +414,7 @@ function RacmUserDocuments() {
     filterFinancialYear,
     filterUnit,
     filterConclusion,
+    controlNumberFilter,
     page,
     rowsPerPage,
   ])
@@ -440,7 +461,9 @@ function RacmUserDocuments() {
               fontSize: '0.875rem',
             }}
           >
-            No active or valid-assignment RACMs found.
+            {controlNumberFilter
+              ? 'No RACMs match the control number search.'
+              : 'No active or valid-assignment RACMs found.'}
           </Box>
         </Box>
       )
@@ -452,7 +475,9 @@ function RacmUserDocuments() {
         <Box
           component="tr"
           key={form.form_id || form.id}
+          onClick={() => handleFormClick(form.form_id)}
           sx={{
+            cursor: 'pointer',
             transition: 'background-color 0.2s',
             '&:hover': {
               backgroundColor: TABLE_ROW_HOVER_BG,
@@ -560,7 +585,10 @@ function RacmUserDocuments() {
                   <IconButton
                     size="small"
                     color={userDocCount > 0 ? 'secondary' : 'default'}
-                    onClick={() => handleOpenDocsDialog(form)}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      handleOpenDocsDialog(form)
+                    }}
                     aria-label={`View ${userDocCount} user document(s)`}
                     disabled={userDocCount === 0}
                   >
@@ -743,11 +771,48 @@ function RacmUserDocuments() {
           <Box
             sx={{
               display: 'flex',
-              justifyContent: 'flex-end',
+              justifyContent: 'space-between',
               alignItems: 'center',
               mb: 1.5,
+              flexWrap: 'wrap',
+              gap: 1,
             }}
           >
+            <Box
+              component="form"
+              onSubmit={handleControlNumberSearchSubmit}
+              sx={{
+                display: 'flex',
+                flexDirection: { xs: 'column', sm: 'row' },
+                gap: 1,
+                alignItems: { xs: 'stretch', sm: 'center' },
+              }}
+            >
+              <TextField
+                label="Control Number"
+                value={controlNumberInput}
+                onChange={(e) => setControlNumberInput(e.target.value)}
+                disabled={loading}
+                size="small"
+                sx={{
+                  minWidth: { xs: '100%', sm: 260 },
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: 'transparent',
+                  },
+                }}
+              />
+              <Button type="submit" variant="contained" disabled={loading}>
+                Search
+              </Button>
+              <Button
+                type="button"
+                variant="outlined"
+                onClick={handleControlNumberSearchClear}
+                disabled={loading || (!controlNumberInput && !controlNumberFilter)}
+              >
+                Clear
+              </Button>
+            </Box>
             <FormControlLabel
               control={
                 <Switch
@@ -932,6 +997,9 @@ function RacmUserDocuments() {
         <DialogContent dividers>
           {selectedForm ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Control Number:</strong> {selectedForm.control_number || selectedForm.form_id || 'N/A'}
+              </Typography>
               <Typography variant="body2" color="text.secondary">
                 <strong>Business Process:</strong> {selectedForm.business_process || 'N/A'}
               </Typography>

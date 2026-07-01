@@ -145,6 +145,22 @@ function getQuarterInfoByQuarter(quarter) {
   }
 }
 
+const SUPPORTED_CONTROL_FREQUENCY_CATEGORIES = [
+  { key: 'yearly', value: 'Yearly', sampleSize: 1, maxSampleSize: 3 },
+  { key: 'half_yearly', value: 'Half Yearly', sampleSize: 2, maxSampleSize: 6 },
+  { key: 'quarterly', value: 'Quarterly', sampleSize: 2, maxSampleSize: 12 },
+  { key: 'monthly', value: 'Monthly', sampleSize: 3, maxSampleSize: 24 },
+  { key: 'weekly', value: 'Weekly', sampleSize: 8, maxSampleSize: 53 },
+  { key: 'fortnightly', value: 'Fortnightly', sampleSize: 4, maxSampleSize: 26 },
+  { key: 'as_when_needed', value: 'As & When Needed', sampleSize: 5, maxSampleSize: 50 },
+  { key: 'daily', value: 'Daily', sampleSize: 25, maxSampleSize: 100 },
+  { key: 'recurring', value: 'Recurring & Periodic', sampleSize: 40, maxSampleSize: 120 },
+];
+
+function hasFrequencyWords(normalizedFreq, ...words) {
+  return words.every((word) => normalizedFreq.includes(word));
+}
+
 function normalizeControlFrequencyValue(controlFrequency) {
   if (!controlFrequency) {
     return '';
@@ -163,26 +179,6 @@ function normalizeControlFrequencyValue(controlFrequency) {
   }
 
   return normalized;
-}
-
-const SUPPORTED_CONTROL_FREQUENCY_CATEGORIES = [
-  { key: 'yearly', value: 'Yearly', sampleSize: 1 },
-  { key: 'half_yearly', value: 'Half Yearly', sampleSize: 2 },
-  { key: 'quarterly', value: 'Quarterly', sampleSize: 2 },
-  { key: 'monthly', value: 'Monthly', sampleSize: 3 },
-  { key: 'weekly', value: 'Weekly', sampleSize: 8 },
-  { key: 'fortnightly', value: 'Fortnightly', sampleSize: 4 },
-  { key: 'as_when_needed', value: 'As & When Needed', sampleSize: 5 },
-  { key: 'daily', value: 'Daily', sampleSize: 25 },
-  { key: 'recurring', value: 'Recurring & Periodic', sampleSize: 40 },
-];
-
-function getSupportedControlFrequencyCategories() {
-  return SUPPORTED_CONTROL_FREQUENCY_CATEGORIES.map(({ value, sampleSize }) => ({ value, sampleSize }));
-}
-
-function hasFrequencyWords(normalizedFreq, ...words) {
-  return words.every((word) => normalizedFreq.includes(word));
 }
 
 function resolveControlFrequencyCategory(controlFrequency) {
@@ -224,7 +220,8 @@ function resolveControlFrequencyCategory(controlFrequency) {
     hasFrequencyWords(normalizedFreq, 'as', 'when') ||
     normalizedFreq === 'on event' ||
     normalizedFreq === 'on going' ||
-    normalizedFreq === 'ongoing'
+    normalizedFreq === 'ongoing' ||
+    hasFrequencyWords(normalizedFreq, 'on', 'going')
   ) {
     return byKey('as_when_needed');
   }
@@ -234,10 +231,9 @@ function resolveControlFrequencyCategory(controlFrequency) {
   }
 
   if (
-    normalizedFreq === 'recurring' ||
     normalizedFreq === 'recurring and periodic' ||
-    normalizedFreq.includes('recurring') ||
-    normalizedFreq.includes('periodic')
+    normalizedFreq === 'recurring' ||
+    (normalizedFreq.includes('recurring') && normalizedFreq.includes('periodic'))
   ) {
     return byKey('recurring');
   }
@@ -248,6 +244,23 @@ function resolveControlFrequencyCategory(controlFrequency) {
 function getSampleSizeByFrequency(controlFrequency) {
   const category = resolveControlFrequencyCategory(controlFrequency);
   return category ? category.sampleSize : null;
+}
+
+function getMaximumSampleSizeByFrequency(controlFrequency) {
+  const category = resolveControlFrequencyCategory(controlFrequency);
+  return category?.maxSampleSize ?? null;
+}
+
+function getSupportedControlFrequencyCategories() {
+  return SUPPORTED_CONTROL_FREQUENCY_CATEGORIES.map(({ value, sampleSize, maxSampleSize }) => ({
+    value,
+    sampleSize,
+    maxSampleSize: maxSampleSize ?? null,
+  }));
+}
+
+function isSupportedControlFrequency(controlFrequency) {
+  return resolveControlFrequencyCategory(controlFrequency) !== null;
 }
 
 function parseSampleSize(value) {
@@ -272,23 +285,36 @@ function resolveSampleSize(category, sampleSizeOverride) {
   return category?.sampleSize ?? null;
 }
 
-function getRandomWeekdaySampleDates(startDate, endDate, sampleSize) {
-  const weekdays = getWeekdaysInRange(startDate, endDate);
+function getThreeYearsAgoDate(fromDate) {
+  const minDate = new Date(fromDate);
+  minDate.setFullYear(minDate.getFullYear() - 3);
+  return minDate;
+}
 
-  if (weekdays.length < sampleSize) {
-    console.warn(`[sample_required] Not enough weekdays found (${weekdays.length} < ${sampleSize})`);
+function isOnOrAfter(date, minDate) {
+  return date.getTime() >= minDate.getTime();
+}
+
+function getSequentialWeekdaySampleDates(endDate, sampleSize, minDate) {
+  const selected = [];
+  const cursor = new Date(endDate);
+
+  while (selected.length < sampleSize) {
+    if (!isOnOrAfter(cursor, minDate)) {
+      break;
+    }
+    if (isWeekday(cursor)) {
+      selected.unshift(new Date(cursor));
+    }
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  if (selected.length < sampleSize) {
+    console.warn(`[sample_required] Not enough weekdays within 3 years (${selected.length} < ${sampleSize})`);
     return null;
   }
 
-  const shuffledDates = [...weekdays].sort(() => Math.random() - 0.5);
-  const selectedDates = shuffledDates.slice(0, sampleSize);
-  selectedDates.sort((a, b) => a - b);
-
-  return selectedDates;
-}
-
-function isSupportedControlFrequency(controlFrequency) {
-  return resolveControlFrequencyCategory(controlFrequency) !== null;
+  return selected;
 }
 
 /**
@@ -335,9 +361,17 @@ function calculateSampleRequired(controlFrequency, createdAt, sampleSizeOverride
 
   console.log('[sample_required] Processing frequency category:', category.key, 'sampleSize:', sampleSize, 'for date:', createdDate);
 
+  const threeYearsAgo = getThreeYearsAgoDate(createdDate);
+
   switch (category.key) {
-    case 'yearly':
-      return String(createdDate.getFullYear() - 1);
+    case 'yearly': {
+      const createdYear = createdDate.getFullYear();
+      const years = [];
+      for (let i = sampleSize; i >= 1; i -= 1) {
+        years.push(String(createdYear - i));
+      }
+      return years.join(', ');
+    }
 
     case 'quarterly': {
       console.log('[sample_required] Processing quarterly frequency');
@@ -360,12 +394,20 @@ function calculateSampleRequired(controlFrequency, createdAt, sampleSizeOverride
 
       console.log('[sample_required] Selected completed quarters:', selectedQuarters);
 
-      const intervals = selectedQuarters.map(({ year, quarter }) => {
-        const quarterInfo = getQuarterInfoByQuarter(quarter);
-        const startDate = getFirstWeekdayOfMonth(year, quarterInfo.startMonth);
-        const endDate = getLastWeekdayOfMonth(year, quarterInfo.endMonth);
-        return `${formatDateDDMMYYYY(startDate)} to ${formatDateDDMMYYYY(endDate)}`;
-      });
+      const intervals = selectedQuarters
+        .map(({ year, quarter }) => {
+          const quarterInfo = getQuarterInfoByQuarter(quarter);
+          const startDate = getFirstWeekdayOfMonth(year, quarterInfo.startMonth);
+          const endDate = getLastWeekdayOfMonth(year, quarterInfo.endMonth);
+          return { startDate, endDate };
+        })
+        .filter(({ startDate }) => isOnOrAfter(startDate, threeYearsAgo))
+        .map(({ startDate, endDate }) => `${formatDateDDMMYYYY(startDate)} to ${formatDateDDMMYYYY(endDate)}`);
+
+      if (intervals.length < sampleSize) {
+        console.warn('[sample_required] Not enough quarterly intervals within 3 years');
+        return null;
+      }
 
       const result = intervals.join(', ');
       console.log('[sample_required] Final quarterly result:', result);
@@ -395,11 +437,19 @@ function calculateSampleRequired(controlFrequency, createdAt, sampleSizeOverride
 
       selectedHalves.reverse();
 
-      const intervals = selectedHalves.map(({ year: halfYear, startMonth, endMonth }) => {
-        const startDate = getFirstWeekdayOfMonth(halfYear, startMonth);
-        const endDate = getLastWeekdayOfMonth(halfYear, endMonth);
-        return `${formatDateDDMMYYYY(startDate)} to ${formatDateDDMMYYYY(endDate)}`;
-      });
+      const intervals = selectedHalves
+        .map(({ year: halfYear, startMonth, endMonth }) => {
+          const startDate = getFirstWeekdayOfMonth(halfYear, startMonth);
+          const endDate = getLastWeekdayOfMonth(halfYear, endMonth);
+          return { startDate, endDate };
+        })
+        .filter(({ startDate }) => isOnOrAfter(startDate, threeYearsAgo))
+        .map(({ startDate, endDate }) => `${formatDateDDMMYYYY(startDate)} to ${formatDateDDMMYYYY(endDate)}`);
+
+      if (intervals.length < sampleSize) {
+        console.warn('[sample_required] Not enough half-yearly intervals within 3 years');
+        return null;
+      }
 
       const result = intervals.join(', ');
       console.log('[sample_required] Final half yearly result:', result);
@@ -410,34 +460,34 @@ function calculateSampleRequired(controlFrequency, createdAt, sampleSizeOverride
       console.log('[sample_required] Processing monthly frequency');
       const createdYear = createdDate.getFullYear();
       const createdMonth = createdDate.getMonth();
-      const availableMonths = [];
+      const selectedMonths = [];
 
-      for (let i = 1; i <= 12; i++) {
+      for (let i = 1; i <= sampleSize; i += 1) {
         const monthDate = new Date(createdYear, createdMonth - i, 1);
-        availableMonths.push({
+        selectedMonths.push({
           year: monthDate.getFullYear(),
-          month: monthDate.getMonth()
+          month: monthDate.getMonth(),
         });
       }
-
-      if (availableMonths.length < sampleSize) {
-        console.warn(`[sample_required] Not enough months found (${availableMonths.length} < ${sampleSize})`);
-        return null;
-      }
-
-      const shuffledMonths = [...availableMonths].sort(() => Math.random() - 0.5);
-      const selectedMonths = shuffledMonths.slice(0, sampleSize);
 
       selectedMonths.sort((a, b) => {
         if (a.year !== b.year) return a.year - b.year;
         return a.month - b.month;
       });
 
-      const intervals = selectedMonths.map((monthInfo) => {
-        const startDate = getFirstWeekdayOfMonth(monthInfo.year, monthInfo.month);
-        const endDate = getLastWeekdayOfMonth(monthInfo.year, monthInfo.month);
-        return `${formatDateDDMMYYYY(startDate)} to ${formatDateDDMMYYYY(endDate)}`;
-      });
+      const intervals = selectedMonths
+        .map((monthInfo) => {
+          const startDate = getFirstWeekdayOfMonth(monthInfo.year, monthInfo.month);
+          const endDate = getLastWeekdayOfMonth(monthInfo.year, monthInfo.month);
+          return { startDate, endDate };
+        })
+        .filter(({ startDate }) => isOnOrAfter(startDate, threeYearsAgo))
+        .map(({ startDate, endDate }) => `${formatDateDDMMYYYY(startDate)} to ${formatDateDDMMYYYY(endDate)}`);
+
+      if (intervals.length < sampleSize) {
+        console.warn('[sample_required] Not enough monthly intervals within 3 years');
+        return null;
+      }
 
       const result = intervals.join(', ');
       console.log('[sample_required] Final monthly result:', result);
@@ -446,40 +496,32 @@ function calculateSampleRequired(controlFrequency, createdAt, sampleSizeOverride
 
     case 'weekly': {
       console.log('[sample_required] Processing weekly frequency');
-      const createdYear = createdDate.getFullYear();
-      const createdMonth = createdDate.getMonth();
-      const endDate = new Date(createdYear, createdMonth, 0);
-      const startDate = new Date(createdYear, createdMonth - 12, 1);
-      const allWeeks = [];
-      const currentWeekStart = new Date(startDate);
-
-      while (currentWeekStart.getDay() !== 1) {
-        currentWeekStart.setDate(currentWeekStart.getDate() + 1);
+      const endDate = new Date(createdDate);
+      endDate.setDate(endDate.getDate() - 1);
+      let weekStart = new Date(endDate);
+      while (weekStart.getDay() !== 1) {
+        weekStart.setDate(weekStart.getDate() - 1);
       }
+      weekStart.setDate(weekStart.getDate() - 7);
 
-      while (currentWeekStart <= endDate) {
-        const weekStart = new Date(currentWeekStart);
-        const weekEnd = new Date(currentWeekStart);
-        weekEnd.setDate(weekEnd.getDate() + 4);
-
-        if (weekEnd <= endDate) {
-          allWeeks.push({
-            start: new Date(weekStart),
-            end: new Date(weekEnd)
-          });
+      const selectedWeeks = [];
+      for (let i = 0; i < sampleSize; i += 1) {
+        if (!isOnOrAfter(weekStart, threeYearsAgo)) {
+          break;
         }
-
-        currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 4);
+        selectedWeeks.unshift({
+          start: new Date(weekStart),
+          end: new Date(weekEnd),
+        });
+        weekStart.setDate(weekStart.getDate() - 7);
       }
 
-      if (allWeeks.length < sampleSize) {
-        console.warn(`[sample_required] Not enough weeks found (${allWeeks.length} < ${sampleSize})`);
+      if (selectedWeeks.length < sampleSize) {
+        console.warn('[sample_required] Not enough weekly intervals within 3 years');
         return null;
       }
-
-      const shuffledWeeks = [...allWeeks].sort(() => Math.random() - 0.5);
-      const selectedWeeks = shuffledWeeks.slice(0, sampleSize);
-      selectedWeeks.sort((a, b) => a.start - b.start);
 
       const intervals = selectedWeeks.map((week) => `${formatDateDDMMYYYY(week.start)} to ${formatDateDDMMYYYY(week.end)}`);
       const result = intervals.join(', ');
@@ -491,10 +533,8 @@ function calculateSampleRequired(controlFrequency, createdAt, sampleSizeOverride
       console.log('[sample_required] Processing as & when needed frequency');
       const endDate = new Date(createdDate);
       endDate.setDate(endDate.getDate() - 1);
-      const startDate = new Date(createdDate);
-      startDate.setMonth(startDate.getMonth() - 6);
 
-      const selectedDates = getRandomWeekdaySampleDates(startDate, endDate, sampleSize);
+      const selectedDates = getSequentialWeekdaySampleDates(endDate, sampleSize, threeYearsAgo);
       if (!selectedDates) {
         return null;
       }
@@ -508,10 +548,8 @@ function calculateSampleRequired(controlFrequency, createdAt, sampleSizeOverride
       console.log('[sample_required] Processing daily frequency');
       const endDate = new Date(createdDate);
       endDate.setDate(endDate.getDate() - 1);
-      const startDate = new Date(createdDate);
-      startDate.setMonth(startDate.getMonth() - 12);
 
-      const selectedDates = getRandomWeekdaySampleDates(startDate, endDate, sampleSize);
+      const selectedDates = getSequentialWeekdaySampleDates(endDate, sampleSize, threeYearsAgo);
       if (!selectedDates) {
         return null;
       }
@@ -525,10 +563,8 @@ function calculateSampleRequired(controlFrequency, createdAt, sampleSizeOverride
       console.log('[sample_required] Processing recurring frequency');
       const endDate = new Date(createdDate);
       endDate.setDate(endDate.getDate() - 1);
-      const startDate = new Date(createdDate);
-      startDate.setMonth(startDate.getMonth() - 12);
 
-      const selectedDates = getRandomWeekdaySampleDates(startDate, endDate, sampleSize);
+      const selectedDates = getSequentialWeekdaySampleDates(endDate, sampleSize, threeYearsAgo);
       if (!selectedDates) {
         return null;
       }
@@ -541,38 +577,30 @@ function calculateSampleRequired(controlFrequency, createdAt, sampleSizeOverride
     case 'fortnightly': {
       console.log('[sample_required] Processing fortnightly frequency');
       const endDate = new Date(createdDate.getFullYear(), createdDate.getMonth(), 0);
-      const startDate = new Date(createdDate);
-      startDate.setMonth(startDate.getMonth() - 12);
-      startDate.setDate(1);
-      const allMondays = [];
-      const currentDate = new Date(startDate);
-
-      while (currentDate.getDay() !== 1) {
-        currentDate.setDate(currentDate.getDate() + 1);
+      let intervalStart = new Date(endDate);
+      while (intervalStart.getDay() !== 1) {
+        intervalStart.setDate(intervalStart.getDate() - 1);
       }
+      intervalStart.setDate(intervalStart.getDate() - 14);
 
-      while (currentDate <= endDate) {
-        const intervalEnd = new Date(currentDate);
-        intervalEnd.setDate(intervalEnd.getDate() + 13);
-
-        if (intervalEnd <= endDate) {
-          allMondays.push({
-            start: new Date(currentDate),
-            end: new Date(intervalEnd)
-          });
+      const selectedIntervals = [];
+      for (let i = 0; i < sampleSize; i += 1) {
+        if (!isOnOrAfter(intervalStart, threeYearsAgo)) {
+          break;
         }
-
-        currentDate.setDate(currentDate.getDate() + 7);
+        const intervalEnd = new Date(intervalStart);
+        intervalEnd.setDate(intervalEnd.getDate() + 13);
+        selectedIntervals.unshift({
+          start: new Date(intervalStart),
+          end: new Date(intervalEnd),
+        });
+        intervalStart.setDate(intervalStart.getDate() - 14);
       }
 
-      if (allMondays.length < sampleSize) {
-        console.warn(`[sample_required] Not enough fortnightly intervals found (${allMondays.length} < ${sampleSize})`);
+      if (selectedIntervals.length < sampleSize) {
+        console.warn('[sample_required] Not enough fortnightly intervals within 3 years');
         return null;
       }
-
-      const shuffledIntervals = [...allMondays].sort(() => Math.random() - 0.5);
-      const selectedIntervals = shuffledIntervals.slice(0, sampleSize);
-      selectedIntervals.sort((a, b) => a.start - b.start);
 
       const intervals = selectedIntervals.map((interval) => `${formatDateDDMMYYYY(interval.start)} to ${formatDateDDMMYYYY(interval.end)}`);
       const result = intervals.join(', ');
@@ -598,5 +626,6 @@ module.exports = {
   resolveControlFrequencyCategory,
   isSupportedControlFrequency,
   getSupportedControlFrequencyCategories,
+  getMaximumSampleSizeByFrequency,
   SUPPORTED_CONTROL_FREQUENCY_CATEGORIES,
 };

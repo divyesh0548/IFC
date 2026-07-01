@@ -1,28 +1,23 @@
 
 
-
-
-
-
-
-
-
 =============================== RACM submission email (to approver) ===================================
 
-Subject : RACM sent for approval - Order to Cash
+Subject : RACM sent for approval - Environment, Health and Safety
 
-Dear {approver},
+Dear Approver,
 
 A RACM has been sent for approval.
 
-Submitted by: user1.sharp@gmail.com
-Business Process: Financial Statement Closure Process
-Standard Control Description: Prepaid working data is prepared by the Manchar Team and Palamaner Team at their respective ends and shared for review.
-Financial Year: 2025-26
+RACM Details:
+- Business Process: Environment, Health and Safety
+- Standard Control Description: The annual report of biomedical waste generated and disposed is declared annually in Annual Return Form - 4. The form also includes details regarding the treatment, transportation, and disposal facilities for biomedical waste
+- Financial Year: 2025-26
+- Due Date: 4th July, 2026
+- Submitted By: user1.sharp@gmail.com
 
 Please review the uploaded documents and Approve/Reject based on your judgement.
 
-Portal: http://localhost:5173
+RACM: http://localhost:5173/approver/form/QM4GTTROLFNMF84
 
 Regards,
 Sharp and Tannan Associates
@@ -46,22 +41,24 @@ Sharp and Tannan Associates
 
 ============================== Reminder Email for RACM submission (to process_owners) ==================================
 
-Subject : Reminder: RACM pending – Capital Expenditure
+Subject : Reminder: RACM pending – Environment, Health and Safety
 
 Body : 
 
-Dear user,
+Dear Process Owner,
 
 This is a reminder that your RACM (Risk and Control Matrix) is pending.
 
-Business Process: Capital Expenditure
-Standard Control Description: Upon approval of CAPEX by the Management, The Project Department will enter all data related to CAPEX in SAP System through IMA11 & further detailed cost is entered in WBS elements.
-Subsequently, and  concerned authorized person shall approve the AR (Appropriation Request) in SAP System itself. Here, SAP System will generate Project ID with AR.
-Financial Year: 2025-26
-Due date: 2026-06-13
-
+RACM Details:
+- Business Process: Environment, Health and Safety
+- Standard Control Description: Vaccination of Hepatitis B will be given to the OHC Team as per the guidelines.
+Vaccination for Tetanus will be given to the respective person as and when required and as per guidelines.
+- Financial Year: N/A
+- Due Date: 2026-06-29
 
 Please complete and submit your evidence at your earliest convenience.
+
+RACM: http://localhost:5173/user/form/XP8DTOA5W9G3E8H
 
 Regards,
 Sharp and Tannan Associates
@@ -81,9 +78,9 @@ Sharp and Tannan Associates
 
 
 
-==================================== Reminder email for RACM Review by approver ========================================
+==================================== Reminder email for RACM Review ========================================
 
-Subject : RACM pending approval – Order to Cash
+Subject : RACM pending approval – Environment, Health and Safety
 
 Body : 
 
@@ -91,15 +88,16 @@ Dear Approver,
 
 This is a reminder that a RACM is pending your approval.
 
-Submitted by: user1.sharp@gmail.com
-Business Process: Order to Cash
-Standard Control Description: Prepaid working data is prepared by the Manchar Team and Palamaner Team at their respective ends and shared for review.
-Financial Year: 2025-26
-Due date: 2026-06-09
+RACM Details:
+- Business Process: Environment, Health and Safety
+- Standard Control Description: The annual report of biomedical waste generated and disposed is declared annually in Annual Return Form - 4. The form also includes details regarding the treatment, transportation, and disposal facilities for biomedical waste
+- Financial Year: 2025-26
+- Due Date: 2026-07-04
+- Submitted By: user1.sharp@gmail.com
 
 Please review the uploaded documents and Approve/Reject based on your judgement.
 
-Portal: http://localhost:5173
+RACM: http://localhost:5173/approver/form/QM4GTTROLFNMF84
 
 Regards,
 Sharp and Tannan Associates
@@ -116,28 +114,25 @@ Sharp and Tannan Associates
 
 
 
+====================================== RACM Approval result email (rejected) ======================================
 
+Subject : Internal Financial Controls - RACM Rejected
 
+Body: 
+Dear Process Owner,
 
+Your RACM has been rejected.
 
+RACM Details:
+- Business Process: Environment, Health and Safety
+- Standard Control Description: Vaccination of Hepatitis B will be given to the OHC Team as per the guidelines.
+Vaccination for Tetanus will be given to the respective person as and when required and as per guidelines.
+- Financial Year: 2025-26
+- Reason/Comments from Approver: Testing, so please bear it.
 
+You can review the feedback above, upload the necessary documents for it, and resubmit the RACM for approval.
 
-
-====================================== RACM Approval Email (to user) ======================================
-
-Subject : Internal Financial Controls - RACM Approved
-
-Dear Control Owner,
-
-Your RACM has been approved.
-
-Reason/Comments from Approver:
-Accepting under deviation.
-
-Form Details:
-Business Process: Financial Statement Closure Process
-Standard Control Description: Prepaid working data is prepared by the Manchar Team and Palamaner Team at their respective ends and shared for review.
-Financial Year: 2025-26
+RACM: http://localhost:5173/user/form/XP8DTOA5W9G3E8H
 
 Thank you for using the IFC system.
 
@@ -153,23 +148,59 @@ Sharp and Tannan Associates
 
 
 
-====================================== RACM Rejection Email (to user) ======================================
+
+====================================== RACM Approval result email (Approved - ineffective) ======================================
 
 Subject : Internal Financial Controls - RACM Approved
 
-Dear user2,
+Dear Process Owner,
 
-Your RACM has been rejected.
+Your RACM has been approved.
 
-Reason/Comments from Approver:
-Need more documents.
+RACM Details:
+- Business Process: Environment, Health and Safety
+- Standard Control Description: Vaccination of Hepatitis B will be given to the OHC Team as per the guidelines.
+Vaccination for Tetanus will be given to the respective person as and when required and as per guidelines.
+- Financial Year: 2025-26
 
-Form Details:
-Business Process: Financial Statement Closure Process
-Standard Control Description: Prepaid working data is prepared by the Manchar Team and Palamaner Team at their respective ends and shared for review.
-Financial Year: 2025-26
+Your RACM has been deemed ineffective by the approver.
 
-You can review the feedback above, upload the necessary documents for it, and resubmit the RACM for approval.
+Action required: the Process Owner or Company Coordinator must submit a Deficiency Response for this RACM by providing either a Mitigation Plan or a Compensatory RACM.
+
+RACM: http://localhost:5173/user/form/XP8DTOA5W9G3E8H
+
+Thank you for using the IFC system.
+
+Best regards,
+Sharp and Tannan Associates
+
+
+
+
+
+
+
+
+
+
+
+====================================== RACM Approval result email (Approved - Effective) ======================================
+
+Subject : Internal Financial Controls - RACM Approved
+
+Body : 
+Dear Process Owner,
+
+Your RACM has been approved.
+
+RACM Details:
+- Business Process: Environment, Health and Safety
+- Standard Control Description: The annual report of biomedical waste generated and disposed is declared annually in Annual Return Form - 4. The form also includes details regarding the treatment, transportation, and disposal facilities for biomedical waste
+- Financial Year: 2025-26
+
+No further action is required from the Process Owner or Company Coordinator for this RACM.
+
+RACM: http://localhost:5173/user/form/QM4GTTROLFNMF84
 
 Thank you for using the IFC system.
 
@@ -202,18 +233,21 @@ Subject : Reminder: Deficiency response required – Order to Cash
 
 Body : 
 
-Dear user,
+Dear Process Owner,
 
 This is a reminder that your RACM has been marked as Not Effective and requires a Deficiency Response.
 
-Business Process: Financial Statement Closure Process
-Standard Control Description: Prepaid working data is prepared by the Manchar Team and Palamaner Team at their respective ends and shared for review.
-Financial Year: 2025-26
-Deficiency Description: Marking as not effective because need proactive measure in asset acquicition.
+RACM Details:
+- Business Process: Environment, Health and Safety
+- Standard Control Description: Vaccination of Hepatitis B will be given to the OHC Team as per the guidelines.
+Vaccination for Tetanus will be given to the respective person as and when required and as per guidelines.
+- Financial Year: 2025-26
+- Sub-Process: Environment (Protection) Act, 1986 and Bio-Medical Waste Management Rules, 2016
+- Deficiency Description: Not up to the standards.
 
 Please submit a Deficiency Response by providing either a Mitigation Plan or a Compensatory RACM.
 
-Portal: http://localhost:5173/user/form/GJESDTVSFEAWR3Q
+RACM: http://localhost:5173/user/form/XP8DTOA5W9G3E8H
 
 Regards,
 Sharp and Tannan Associates
@@ -232,7 +266,9 @@ Sharp and Tannan Associates
 
 
 
-=============================== Deficiency Response Submission from Porcess Owner ============================
+
+
+=============================== Deficiency Response Submission ============================
 
 Subject : Internal Financial Controls - Deficiency Response Submitted
 
@@ -241,13 +277,52 @@ Dear Approver,
 A deficiency response has been submitted for your review.
 
 Response Details:
-- Submitted By: divyesh.parmar@sharpandtannan.com
-- Response Type: Compensatory RACM
-- Business Process: Human Resources and Payroll
-- Financial Year: 2025-26
-- Unit Name: Vadodara Unit
+- Submitted By: user1.sharp@gmail.com
+- Response Type: Mitigation Plan
+- Concerned Person: Mukesh bhuriya
+- Due Date: 10 July 2026
 
 Please review the deficiency response in the IFC system.
+
+RACM: http://localhost:5173/approver/form/XP8DTOA5W9G3E8H
+
+Best regards,
+IFC System
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+=============================== Deficiency Response Review Reminder (to approver) ============================
+
+Subject : Internal Financial Controls - Deficiency Response Submitted
+
+Body : 
+
+Dear Approver,
+
+This is a reminder that a deficiency response is pending your review.
+
+Response Details:
+- Submitted By: user1.sharp@gmail.com
+- Response Type: Mitigation Plan
+- Concerned Person: Divyesh Parmar
+- Due Date: 2026-07-09
+
+Please review the deficiency response in the IFC system.
+
+RACM: http://localhost:5173/approver/form/Z4USUW7T1ALX8SF
 
 Best regards,
 IFC System
@@ -272,17 +347,15 @@ Dear User,
 Your deficiency response has been approved.
 
 Response Details:
-- Submitted By: divyesh.parmar@sharpandtannan.com
 - Response Type: Compensatory RACM
-- Review Decision: Effective
-- Business Process: Human Resources and Payroll
-- Financial Year: 2025-26
-- Unit Name: Vadodara Unit
+- Review Decision: Accepted under deviation
 
 Approver Comment:
 Good.
 
 No further action is required on this deficiency response.
+
+RACM: http://localhost:5173/user/form/4X1IEVRFU2ZG3EL
 
 Best regards,
 IFC System
@@ -304,38 +377,22 @@ IFC System
 
 Subject = Internal Financial Controls - Deficiency Response Rejected
 
+Body : 
+
 Dear User,
 
 Your deficiency response has been rejected.
 
 Response Details:
-- Submitted By: divyesh.parmar@sharpandtannan.com
-- Response Type: Mitigation Plan
-- Review Decision: rejected
-- Business Process: Human Resources and Payroll
-- Financial Year: 2025-26
-- Unit Name: Vadodara Unit
+- Response Type: Compensatory RACM
+- Review Decision: Rejected
 
 Approver Comment:
-Provide compensatory RACM, because this explaination is irrelevent.
+Need more proof.
 
 Please review the approver feedback and resubmit the deficiency response in the IFC system.
 
+RACM: http://localhost:5173/user/form/Z4USUW7T1ALX8SF
+
 Best regards,
 IFC System
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

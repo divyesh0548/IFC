@@ -9,6 +9,8 @@ const {
   createFreshTemplate,
   updateActiveTemplateKeywords,
   copyTemplateFromUnit,
+  listCompanyTemplatesForImport,
+  importTemplateToUnit,
   listTemplateVersions,
   deleteTemplateVersion,
   activateTemplateVersion,
@@ -363,6 +365,143 @@ async function patchRacmTemplateKeywords(req, res) {
   }
 }
 
+async function listRacmTemplatesImportCatalog(req, res) {
+  const client = await pool.connect();
+  try {
+    const companyIdentifier = req.user.company_identifier;
+
+    if (!companyIdentifier) {
+      return res.status(400).json({ success: false, message: 'Company identifier is required' });
+    }
+
+    if (!(await isRacmTemplateSchemaReady(client))) {
+      return res.status(503).json({
+        success: false,
+        message: 'RACM template tables are not installed yet. Run backend/sql/racm_templates_manual.sql',
+      });
+    }
+
+    const units = await listCompanyTemplatesForImport(client, companyIdentifier);
+    return res.status(200).json({
+      success: true,
+      data: { units },
+    });
+  } catch (error) {
+    console.error('listRacmTemplatesImportCatalog error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load import catalog' });
+  } finally {
+    client.release();
+  }
+}
+
+async function getRacmTemplateImportPreview(req, res) {
+  const client = await pool.connect();
+  try {
+    const companyIdentifier = req.user.company_identifier;
+    const templateId = Number.parseInt(String(req.params.template_id || ''), 10);
+
+    if (!companyIdentifier || !Number.isFinite(templateId)) {
+      return res.status(400).json({ success: false, message: 'template_id is required' });
+    }
+
+    if (!(await isRacmTemplateSchemaReady(client))) {
+      return res.status(503).json({
+        success: false,
+        message: 'RACM template tables are not installed yet. Run backend/sql/racm_templates_manual.sql',
+      });
+    }
+
+    const templatePayload = await getTemplateWithFieldsById(client, templateId);
+    if (!templatePayload.ok || templatePayload.template.company_identifier !== companyIdentifier) {
+      return res.status(404).json({ success: false, message: 'Template not found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        template: templatePayload.template,
+        fields: templatePayload.fields,
+        fixed_fields: templatePayload.fixed_fields,
+        extra_fields: templatePayload.extra_fields,
+        section_labels: RACM_SECTION_LABELS,
+        assertion_catalog: RACM_ASSERTION_CATALOG,
+      },
+    });
+  } catch (error) {
+    console.error('getRacmTemplateImportPreview error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load template preview' });
+  } finally {
+    client.release();
+  }
+}
+
+async function importRacmTemplate(req, res) {
+  const client = await pool.connect();
+  try {
+    const companyIdentifier = req.user.company_identifier;
+    const targetUnitId = String(req.body?.target_unit_id || '').trim();
+    const sourceTemplateId = Number.parseInt(String(req.body?.source_template_id || ''), 10);
+    const templateName = String(req.body?.template_name || '').trim();
+
+    if (!companyIdentifier || !targetUnitId) {
+      return res.status(400).json({ success: false, message: 'target_unit_id is required' });
+    }
+    if (!Number.isFinite(sourceTemplateId)) {
+      return res.status(400).json({ success: false, message: 'source_template_id is required' });
+    }
+    if (!templateName) {
+      return res.status(400).json({ success: false, message: 'template_name is required' });
+    }
+
+    if (!(await isRacmTemplateSchemaReady(client))) {
+      return res.status(503).json({
+        success: false,
+        message: 'RACM template tables are not installed yet. Run backend/sql/racm_templates_manual.sql',
+      });
+    }
+
+    const hasAccess = await verifyCoordinatorUnitAccess(
+      client,
+      companyIdentifier,
+      targetUnitId,
+      req.user.email_id
+    );
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, message: 'You do not have access to the target unit' });
+    }
+
+    await client.query('BEGIN');
+    const result = await importTemplateToUnit(client, {
+      companyIdentifier,
+      sourceTemplateId,
+      targetUnitId,
+      templateName,
+      createdBy: req.user.email_id,
+    });
+
+    if (!result.ok) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: result.message });
+    }
+
+    await client.query('COMMIT');
+    return res.status(201).json({
+      success: true,
+      message: 'Template imported successfully and set as active for this unit.',
+      data: {
+        template: result.template,
+        fields: result.fields,
+      },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('importRacmTemplate error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to import template' });
+  } finally {
+    client.release();
+  }
+}
+
 async function copyRacmTemplate(req, res) {
   const client = await pool.connect();
   try {
@@ -556,6 +695,9 @@ module.exports = {
   createFreshRacmTemplate,
   patchRacmTemplateKeywords,
   copyRacmTemplate,
+  listRacmTemplatesImportCatalog,
+  getRacmTemplateImportPreview,
+  importRacmTemplate,
   activateRacmTemplateVersion,
   removeRacmTemplateVersion,
   ensureActiveTemplateForUnit,

@@ -45,7 +45,7 @@ import {
 import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments, normalizeSampleDocuments } from '../../lib/racmUserDocuments'
 import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistoryList'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue } from '../../racmFormDetailFields'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatIndianDateTime } from '../../lib/dateTime'
 import { apiUrl, API_BASE_URL } from '../../config/api'
@@ -169,6 +169,7 @@ function UserFormDetail() {
   const [requestChangeSaving, setRequestChangeSaving] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState([])
   const [remarksByUser, setRemarksByUser] = useState('')
+  const [remarksDraftDirty, setRemarksDraftDirty] = useState(false)
   const [isRequestChangeMode, setIsRequestChangeMode] = useState(false)
   const [requestChangeValues, setRequestChangeValues] = useState({})
   const [requestReason, setRequestReason] = useState('')
@@ -237,6 +238,10 @@ function UserFormDetail() {
     checkAuthAndFetch()
   }, [form_id, navigate])
 
+  useEffect(() => {
+    setRemarksDraftDirty(false)
+  }, [form_id])
+
   const fetchFormData = async () => {
     setLoading(true)
     setError(null)
@@ -250,8 +255,9 @@ function UserFormDetail() {
 
       if (response.ok && data.success) {
         setFormData(data.data)
-        // Initialize remarks by user (only editable field for users)
-        setRemarksByUser(data.data.remarks_by_user || '')
+        if (!remarksDraftDirty) {
+          setRemarksByUser(data.data.remarks_by_user || '')
+        }
         const nextRequestValues = {}
         REQUEST_CHANGE_FIELD_KEYS.forEach((fieldKey) => {
           nextRequestValues[fieldKey] = normalizeRequestChangeValue(fieldKey, data.data[fieldKey])
@@ -535,6 +541,23 @@ function UserFormDetail() {
       return
     }
 
+    if (formData?.status === 'Rejected') {
+      const resubmitEligibility = getRejectedResubmitEligibility({
+        formData,
+        remarksByUser,
+        uploadedDocs: existingUploadedDocs,
+        pendingUploadCount: selectedFiles.length,
+      })
+      if (!resubmitEligibility.ok) {
+        if (resubmitEligibility.hasPendingUploads) {
+          toast.error('Please upload your new documents before resubmitting for approval')
+        } else {
+          toast.error(REJECTED_RESUBMIT_MESSAGE)
+        }
+        return
+      }
+    }
+
     setSaving(true)
 
     try {
@@ -571,6 +594,7 @@ function UserFormDetail() {
         toast.success(successMessage)
         setSelectedFiles([])
         setRemovedUploadedDocPaths([])
+        setRemarksDraftDirty(false)
         // Update local state immediately with new status
         if (data.data) {
           setFormData({
@@ -851,7 +875,7 @@ function UserFormDetail() {
     const dueDate = String(deficiencyResponseForm.due_date || '').trim()
 
     if (!explaination) {
-      toast.error('Explaination is required')
+      toast.error('Explanation is required')
       return
     }
 
@@ -862,6 +886,10 @@ function UserFormDetail() {
       }
       if (!dueDate) {
         toast.error('Due date is required for mitigation plan')
+        return
+      }
+      if (dayjs(dueDate).isValid() && dayjs(dueDate).isBefore(dayjs(), 'day')) {
+        toast.error('Due date must be today or a future date')
         return
       }
     }
@@ -2453,7 +2481,10 @@ function UserFormDetail() {
                         label={fieldLabels.remarks_by_user}
                         variant="outlined"
                         value={remarksByUser}
-                        onChange={(e) => setRemarksByUser(e.target.value)}
+                        onChange={(e) => {
+                          setRemarksByUser(e.target.value)
+                          setRemarksDraftDirty(true)
+                        }}
                         fullWidth
                         multiline
                         rows={4}
@@ -2608,7 +2639,7 @@ function UserFormDetail() {
                             <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                               <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
                                 <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
-                                  Explaination
+                                  Explanation
                                 </Typography>
                                 <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
                                   {String(submission.explaination || '').trim() || '-'}
@@ -2783,7 +2814,7 @@ function UserFormDetail() {
                       </Box>
                       <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
                         <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
-                          Explaination
+                          Explanation
                         </Typography>
                         <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
                           {String(deficiencyCurrentSubmission?.explaination || deficiencyResponse.explaination || '').trim() || '-'}
@@ -2873,7 +2904,7 @@ function UserFormDetail() {
                         <MenuItem value="compensatory_racm">Compensatory RACM</MenuItem>
                       </TextField>
                       <TextField
-                        label="Explaination"
+                        label="Explanation"
                         value={deficiencyResponseForm.explaination}
                         onChange={(e) => handleDeficiencyResponseFieldChange('explaination', e.target.value)}
                         fullWidth
@@ -2897,6 +2928,8 @@ function UserFormDetail() {
                                 newValue && newValue.isValid() ? newValue.format('YYYY-MM-DD') : ''
                               )
                             }}
+                            minDate={dayjs().startOf('day')}
+                            disablePast
                             slotProps={{
                               textField: {
                                 fullWidth: true,

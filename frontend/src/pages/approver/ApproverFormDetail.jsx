@@ -38,7 +38,7 @@ import {
   FORM_DETAIL_CONTENT_STACK_SX,
   FORM_DETAIL_ROOT_SX,
 } from '../../uiConstants';
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields } from '../../racmFormDetailFields';
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, getRacmProcessOwnerDisplayValue } from '../../racmFormDetailFields';
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext';
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields';
@@ -1060,7 +1060,7 @@ function ApproverFormDetail() {
                     </Typography>
                   </Box>
 
-                  {/* Process Owner */}
+                  {/* Control Owner */}
                   <Box
                     sx={{
                       p: 2,
@@ -1082,7 +1082,7 @@ function ApproverFormDetail() {
                         letterSpacing: '0.5px',
                       }}
                     >
-                      Process Owner
+                      Control Owner
                     </Typography>
                     <Typography
                       variant="body2"
@@ -1091,9 +1091,10 @@ function ApproverFormDetail() {
                         fontWeight: 500,
                         fontSize: '0.9375rem',
                         lineHeight: 1.5,
+                        wordBreak: 'break-word',
                       }}
                     >
-                      {formData?.control_owner_name || formData?.control_owner || '-'}
+                      {getRacmProcessOwnerDisplayValue(formData)}
                     </Typography>
                   </Box>
 
@@ -1487,6 +1488,19 @@ function ApproverFormDetail() {
                                 <DownloadIcon />
                               </IconButton>
                             </Box>
+                          ) : key === 'control_owner' ? (
+                            <Typography
+                              variant="body2"
+                              component="dd"
+                              sx={{
+                                color: 'text.secondary',
+                                wordBreak: 'break-word',
+                                lineHeight: 1.6,
+                                fontSize: theme.typography.customSizes.medium,
+                              }}
+                            >
+                              {getRacmProcessOwnerDisplayValue(formData)}
+                            </Typography>
                           ) : key === 'sample_required' ? (
                             renderSampleRequiredDownload()
                           ) : (
@@ -2194,7 +2208,7 @@ function ApproverFormDetail() {
                             <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                               <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
                                 <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
-                                  Explaination
+                                  Explanation
                                 </Typography>
                                 <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
                                   {String(submission.explaination || '').trim() || '-'}
@@ -2352,7 +2366,7 @@ function ApproverFormDetail() {
 
                       <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
                         <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
-                          Explaination
+                          Explanation
                         </Typography>
                         <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
                           {String(deficiencyCurrentSubmission?.explaination || deficiencyResponse.explaination || '').trim() || '-'}

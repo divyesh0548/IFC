@@ -18,6 +18,8 @@ const {
   formatReminderTimestampForLog,
   formatDueDateForEmail,
 } = require('../utils/controls_reminder');
+const { buildPendingApprovalRacmDetailsSection } = require('../utils/racm_email_details');
+const { buildApproverFormDetailUrl } = require('../utils/racm_status_user_email');
 
 function isValidEmail(value) {
   const email = String(value || '').trim();
@@ -34,13 +36,28 @@ async function fetchFormsDueForApproverReminder(client) {
       cf.business_process,
       cf.financial_year,
       cf.due_date,
+      cf.assigned_to_coordinator,
+      cf.control_owner,
+      cf.coordinator_assigned_by,
       cr.reminder_to_approver_datetime,
       approver_map.approver_email_id AS approver_email_id,
       NULLIF(TRIM(approver.emp_name), '') AS approver_name,
-      c.company_name
+      c.company_name,
+      CASE
+        WHEN COALESCE(cf.assigned_to_coordinator, FALSE) = TRUE THEN
+          COALESCE(NULLIF(TRIM(coord_u.emp_name), ''), NULLIF(TRIM(cf.coordinator_assigned_by), ''))
+        ELSE
+          COALESCE(NULLIF(TRIM(owner_u.emp_name), ''), NULLIF(TRIM(cf.control_owner), ''))
+      END AS submitted_by_name
     FROM control_forms cf
     LEFT JOIN controls_reminder cr
       ON cr.form_id = cf.form_id
+    LEFT JOIN ifc_users owner_u
+      ON owner_u.company_identifier = cf.company_identifier
+     AND LOWER(TRIM(owner_u.email_id)) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
+    LEFT JOIN ifc_users coord_u
+      ON coord_u.company_identifier = cf.company_identifier
+     AND LOWER(TRIM(coord_u.email_id)) = LOWER(TRIM(COALESCE(cf.coordinator_assigned_by, '')))
     LEFT JOIN LATERAL (
       SELECT aa.approver_email_id
       FROM approver_assignments aa
@@ -79,20 +96,21 @@ function buildApproverReminderEmailBody(form) {
   const companyName = String(form.company_name || '').trim() || 'IFC';
   const approverSalutation = String(form.approver_name || '').trim() || 'Approver';
   const dueStr = formatDueDateForEmail(form.due_date);
-  const portalUrl = process.env.VITE_FRONTEND_URL || process.env.FRONTEND_URL || '';
+  const submittedBy = String(form.submitted_by_name || '').trim() || 'N/A';
+  const racmUrl = buildApproverFormDetailUrl(form.form_id);
+  const detailsBlock = buildPendingApprovalRacmDetailsSection(form, {
+    dueDate: dueStr,
+    submittedBy,
+  });
 
   return `Dear ${approverSalutation},
 
 This is a reminder that a RACM is pending your approval.
 
-Control: ${form.standard_control_description || 'N/A'}
-Business Process: ${form.business_process || 'N/A'}
-Financial Year: ${form.financial_year || 'N/A'}
-
-Due date: ${dueStr}
+${detailsBlock}
 
 Please review the uploaded documents and Approve/Reject based on your judgement.
-${portalUrl ? `\nPortal: ${portalUrl}` : ''}
+${racmUrl ? `\nRACM: ${racmUrl}` : ''}
 
 Regards,
 ${companyName}

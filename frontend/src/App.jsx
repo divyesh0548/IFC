@@ -110,7 +110,7 @@ function GlobalLoadingStrip() {
     right: 0,
     top: topOffset,
     height: 4,
-    zIndex: 2000,
+    zIndex: theme.zIndex.drawer + 1,
     borderRadius: 0,
   }
   return (

@@ -29,6 +29,7 @@ async function runPendingRacmActiveUserEmails() {
       coordinatorName: row.coordinator_name || '',
       coordinatorCompanyName: row.company_name || '',
       dueDate: row.due_date,
+      formId: row.form_id,
     });
     if (!payload.shouldSend) continue;
 

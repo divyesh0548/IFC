@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Card from '@mui/material/Card';
@@ -45,7 +45,7 @@ import {
 } from '../../uiConstants'
 import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
 import { fetchUnitUsers } from '../../components/company_co/unitUserSearch'
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, hasValidProcessOwnerAssignment, isCoordinatorAssignedRacm } from '../../racmFormDetailFields'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, hasValidProcessOwnerAssignment, isCoordinatorAssignedRacm, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
@@ -55,8 +55,10 @@ import { apiUrl, API_BASE_URL } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
 import {
   getEffectiveSampleSizeForFrequency,
+  getSampleSizeInputFeedback,
   validateSampleSizeForFrequency,
 } from '../../utils/controlFrequencyValidation'
+import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 import {
   DOCUMENT_UPLOAD_ACCEPT,
@@ -123,6 +125,7 @@ function FormDetail() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [editableFields, setEditableFields] = useState({})
   const [unitSampleSizeSettings, setUnitSampleSizeSettings] = useState([])
+  const { controlFrequencyOptions } = useControlFrequencyOptions()
   const [saving, setSaving] = useState(false)
   const [uploadingSampling, setUploadingSampling] = useState(false)
   const [samplingExists, setSamplingExists] = useState(false)
@@ -138,6 +141,7 @@ function FormDetail() {
   const [selfAssigning, setSelfAssigning] = useState(false)
   const [validProcessOwnerAssigned, setValidProcessOwnerAssigned] = useState(false)
   const [remarksByUser, setRemarksByUser] = useState('')
+  const [remarksDraftDirty, setRemarksDraftDirty] = useState(false)
   const [selectedSubmissionFiles, setSelectedSubmissionFiles] = useState([])
   const [uploadingSubmissionDocuments, setUploadingSubmissionDocuments] = useState(false)
   const [submittingForApproval, setSubmittingForApproval] = useState(false)
@@ -197,7 +201,10 @@ function FormDetail() {
     reviewSaving ||
     changeRequestHistoryLoading ||
     auditLogLoading ||
-    deficiencyResponseSubmitting
+    deficiencyResponseSubmitting ||
+    selfAssigning ||
+    uploadingSubmissionDocuments ||
+    submittingForApproval
   )
 
   useEffect(() => {
@@ -212,6 +219,10 @@ function FormDetail() {
 
   useEffect(() => {
     fetchFormData()
+  }, [form_id])
+
+  useEffect(() => {
+    setRemarksDraftDirty(false)
   }, [form_id])
 
   useEffect(() => {
@@ -241,7 +252,9 @@ function FormDetail() {
 
       if (response.ok && data.success) {
         setFormData(data.data)
-        setRemarksByUser(data.data?.remarks_by_user || '')
+        if (!remarksDraftDirty) {
+          setRemarksByUser(data.data?.remarks_by_user || '')
+        }
         // Check if sampling document exists
         const samplingCheck = await checkSamplingExists()
         setSamplingExists(samplingCheck)
@@ -981,7 +994,11 @@ function FormDetail() {
 
     const frequency = String(editableFields.control_frequency || formData?.control_frequency || '').trim()
     const sampleSizeValue = String(editableFields.sample_size ?? formData?.sample_size ?? '').trim()
-    if (frequency && sampleSizeValue) {
+    if (frequency) {
+      if (!sampleSizeValue) {
+        toast.error('Please enter sample size')
+        return
+      }
       const sampleValidation = validateSampleSizeForFrequency(
         unitSampleSizeSettings,
         frequency,
@@ -1242,7 +1259,7 @@ function FormDetail() {
     const dueDate = String(deficiencyResponseForm.due_date || '').trim()
 
     if (!explaination) {
-      toast.error('Explaination is required')
+      toast.error('Explanation is required')
       return
     }
 
@@ -1253,6 +1270,10 @@ function FormDetail() {
       }
       if (!dueDate) {
         toast.error('Due date is required for mitigation plan')
+        return
+      }
+      if (dayjs(dueDate).isValid() && dayjs(dueDate).isBefore(dayjs(), 'day')) {
+        toast.error('Due date must be today or a future date')
         return
       }
     }
@@ -1610,7 +1631,7 @@ function FormDetail() {
         setDeleteDialogOpen(false)
         // Redirect to dashboard after a short delay
         setTimeout(() => {
-          navigate('/company_co/dashboard')
+          navigate('/company_co/racm-management')
         }, 500)
       } else {
         toast.error(data.message || 'Failed to delete RACM')
@@ -1834,6 +1855,23 @@ function FormDetail() {
       return
     }
 
+    if (formData?.status === 'Rejected') {
+      const resubmitEligibility = getRejectedResubmitEligibility({
+        formData,
+        remarksByUser,
+        uploadedDocs: existingUploadedDocs,
+        pendingUploadCount: selectedSubmissionFiles.length,
+      })
+      if (!resubmitEligibility.ok) {
+        if (resubmitEligibility.hasPendingUploads) {
+          toast.error('Please upload your new documents before resubmitting for approval')
+        } else {
+          toast.error(REJECTED_RESUBMIT_MESSAGE)
+        }
+        return
+      }
+    }
+
     setSubmittingForApproval(true)
     try {
       const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
@@ -1852,6 +1890,7 @@ function FormDetail() {
 
       if (response.ok && data.success) {
         toast.success(data.message || 'RACM sent for approval successfully')
+        setRemarksDraftDirty(false)
         await fetchFormData()
       } else {
         toast.error(data.message || 'Failed to send for approval')
@@ -2014,6 +2053,32 @@ function FormDetail() {
     'design_deficiency_desc',
     'doc_uploaded_by_user'
   ]
+  const controlFrequencyDropdownOptions = useMemo(() => {
+    const options = controlFrequencyOptions.map((row) => row.value)
+    const current = String(editableFields.control_frequency || formData?.control_frequency || '').trim()
+    if (current && !options.includes(current)) {
+      return [current, ...options]
+    }
+    return options
+  }, [controlFrequencyOptions, editableFields.control_frequency, formData?.control_frequency])
+
+  const editModeSampleSizeFeedback = useMemo(
+    () => getSampleSizeInputFeedback(
+      unitSampleSizeSettings,
+      editableFields.control_frequency || formData?.control_frequency,
+      editableFields.sample_size ?? formData?.sample_size ?? ''
+    ),
+    [
+      unitSampleSizeSettings,
+      editableFields.control_frequency,
+      editableFields.sample_size,
+      formData?.control_frequency,
+      formData?.sample_size,
+    ]
+  )
+
+  const editModeSampleSizeInvalid = Boolean(editModeSampleSizeFeedback.warning)
+
   const editableDropdownOptions = {
     risk_heat: ['High', 'Low', 'Medium'],
     control_type_fo: ['Financial', 'Operational'],
@@ -2021,18 +2086,7 @@ function FormDetail() {
     nature_of_control: ['Preventive', 'Detective'],
     key_control: ['Yes', 'No'],
     control_relies_on_ipe: ['Yes', 'No'],
-    control_frequency: [
-      'Yearly',
-      'Quarterly',
-      'Half Yearly',
-      'Monthly',
-      'Weekly',
-      'Fortnightly',
-      'As and When Needed',
-      'Recurring and Periodic',
-      'Recurring and Daily',
-      'Daily',
-    ],
+    control_frequency: controlFrequencyDropdownOptions,
     whether_fraud_risks_exist: ['Yes', 'No', 'Other'],
   }
 
@@ -2237,7 +2291,7 @@ function FormDetail() {
                 </Button>
                 <Button
                   onClick={handleSaveChanges}
-                  disabled={saving}
+                  disabled={saving || editModeSampleSizeInvalid}
                   variant="contained"
                   color="secondary"
                   sx={{
@@ -3254,9 +3308,15 @@ function FormDetail() {
                                 })()
                               : key === 'sample_size' ? (
                               (() => {
+                                const frequency = editableFields.control_frequency || formData?.control_frequency
                                 const frequencyMeta = getEffectiveSampleSizeForFrequency(
                                   unitSampleSizeSettings,
-                                  editableFields.control_frequency || formData?.control_frequency
+                                  frequency
+                                )
+                                const sampleSizeFeedback = getSampleSizeInputFeedback(
+                                  unitSampleSizeSettings,
+                                  frequency,
+                                  editableFields.sample_size || ''
                                 )
                                 return (
                                   <TextField
@@ -3267,13 +3327,16 @@ function FormDetail() {
                                     onChange={(e) => handleFieldChange('sample_size', e.target.value)}
                                     fullWidth
                                     disabled={saving}
+                                    error={Boolean(sampleSizeFeedback.warning)}
                                     inputProps={{
                                       min: frequencyMeta.minimum ?? 1,
+                                      max: frequencyMeta.maximum ?? undefined,
                                       step: 1,
                                     }}
-                                    helperText={
-                                      frequencyMeta.minimum != null
-                                        ? `Minimum sample size: ${frequencyMeta.minimum}`
+                                    helperText={sampleSizeFeedback.warning || sampleSizeFeedback.limits || undefined}
+                                    FormHelperTextProps={
+                                      sampleSizeFeedback.warning
+                                        ? { sx: { color: 'warning.main' } }
                                         : undefined
                                     }
                                   />
@@ -3854,7 +3917,10 @@ function FormDetail() {
                         label={fieldLabels.remarks_by_user}
                         variant="outlined"
                         value={remarksByUser}
-                        onChange={(e) => setRemarksByUser(e.target.value)}
+                        onChange={(e) => {
+                          setRemarksByUser(e.target.value)
+                          setRemarksDraftDirty(true)
+                        }}
                         fullWidth
                         multiline
                         rows={4}
@@ -4008,7 +4074,7 @@ function FormDetail() {
                           <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                             <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
                               <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
-                                Explaination
+                                Explanation
                               </Typography>
                               <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
                                 {String(submission.explaination || '').trim() || '-'}
@@ -4175,7 +4241,7 @@ function FormDetail() {
                       </Typography>
                     </Box>
                     <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-                      <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>Explaination</Typography>
+                      <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>Explanation</Typography>
                       <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
                         {String(deficiencyCurrentSubmission?.explaination || deficiencyResponse.explaination || '').trim() || '-'}
                       </Typography>
@@ -4236,7 +4302,7 @@ function FormDetail() {
                       <MenuItem value="mitigation_plan">Mitigation Plan</MenuItem>
                       <MenuItem value="compensatory_racm">Compensatory RACM</MenuItem>
                     </TextField>
-                    <TextField label="Explaination" value={deficiencyResponseForm.explaination} onChange={(e) => handleDeficiencyResponseFieldChange('explaination', e.target.value)} fullWidth multiline rows={4} />
+                    <TextField label="Explanation" value={deficiencyResponseForm.explaination} onChange={(e) => handleDeficiencyResponseFieldChange('explaination', e.target.value)} fullWidth multiline rows={4} />
                     {deficiencyResponseForm.response_type === 'mitigation_plan' ? (
                       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 2 }}>
                         <TextField label="Concerned Person (email or name)" value={deficiencyResponseForm.concerned_person} onChange={(e) => handleDeficiencyResponseFieldChange('concerned_person', e.target.value)} fullWidth />
@@ -4249,6 +4315,8 @@ function FormDetail() {
                               newValue && newValue.isValid() ? newValue.format('YYYY-MM-DD') : ''
                             )
                           }}
+                          minDate={dayjs().startOf('day')}
+                          disablePast
                           slotProps={{
                             textField: {
                               fullWidth: true,
@@ -4892,7 +4960,7 @@ function FormDetail() {
                   Self Assign
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Assign this RACM to yourself for document upload and submission. Due date and reminder frequency must be configured first. Process owner assignment will be disabled after self-assignment.
+                  Assign this RACM to yourself for document upload and submission. Process owner assignment will be disabled after self-assignment. Due date and reminder frequency must already be configured.
                 </Typography>
               </Box>
             ) : null}
@@ -4952,7 +5020,7 @@ function FormDetail() {
         </DialogTitle>
         <DialogContent sx={{ px: 3, pt: 1, pb: 3 }}>
           <DialogContentText id="self-assign-dialog-description" sx={{ color: 'text.secondary', fontSize: '0.9375rem', lineHeight: 1.5, mt: 2 }}>
-            Assign this RACM to yourself for document upload and submission. Process owner assignment will be disabled after self-assignment. Due date and reminder frequency must already be configured.
+            Assign this RACM to yourself for document upload and submission. Process owner assignment will be disabled after self-assignment. 
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3, gap: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>

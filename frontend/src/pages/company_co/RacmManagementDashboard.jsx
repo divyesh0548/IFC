@@ -62,6 +62,15 @@ function sortSetActiveSingleNoticeLines(lines) {
   return [...lines].sort((a, b) => rank(a) - rank(b))
 }
 
+function getTomorrowDateString() {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const y = tomorrow.getFullYear()
+  const mm = String(tomorrow.getMonth() + 1).padStart(2, '0')
+  const dd = String(tomorrow.getDate()).padStart(2, '0')
+  return `${y}-${mm}-${dd}`
+}
+
 function RacmManagementDashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -520,6 +529,10 @@ function RacmManagementDashboard() {
     const freq = String(setDueReminderFrequency || '').trim()
     if (!due || !freq) {
       toast.error('Please select both Due Date and Reminder Frequency')
+      return
+    }
+    if (due < getTomorrowDateString()) {
+      toast.error('Due date must be tomorrow or a future date')
       return
     }
 
@@ -1900,9 +1913,9 @@ function RacmManagementDashboard() {
             <Typography sx={{ fontWeight: 700 }}>
               {actionRequiredCount} RACMs are found ineffective
             </Typography>
-            <Typography variant="body2">
+            {/* <Typography variant="body2">
               Click to view the RACM list.
-            </Typography>
+            </Typography> */}
           </Alert>
         ) : null}
 
@@ -2860,10 +2873,14 @@ function RacmManagementDashboard() {
                   onChange={(newValue) => {
                     setSetDueDateValue(newValue && newValue.isValid() ? newValue.format('YYYY-MM-DD') : '')
                   }}
+                  minDate={dayjs(getTomorrowDateString())}
                   disabled={setDueDateSubmitting}
                   slotProps={{
                     textField: {
                       fullWidth: true,
+                    },
+                    popper: {
+                      sx: { zIndex: (t) => t.zIndex.modal + 2 },
                     },
                   }}
                 />

@@ -157,3 +157,46 @@ export function isRacmAssigned(form) {
   }
   return isCoordinatorAssignedRacm(form) || hasValidProcessOwnerAssignment(form)
 }
+
+/** Process owner / RACM assignment label for display (coordinator self-assign, name+email, or fallback). */
+export function getRacmProcessOwnerDisplayValue(form) {
+  if (!form) return '-'
+  if (isCoordinatorAssignedRacm(form)) {
+    const coordinatorEmail = String(
+      form.coordinator_assigned_by ?? form.coordinatorAssignedBy ?? ''
+    ).trim()
+    return coordinatorEmail ? `Coordinator (${coordinatorEmail})` : 'Coordinator (Self)'
+  }
+  const name = String(form.control_owner_name ?? form.controlOwnerName ?? '').trim()
+  const email = String(form.control_owner ?? form.controlOwner ?? '').trim()
+  if (name && email && name.toLowerCase() !== email.toLowerCase()) {
+    return `${name} (${email})`
+  }
+  return name || email || '-'
+}
+
+export const REJECTED_RESUBMIT_MESSAGE =
+  'Rejected RACMs require updated remarks and newly uploaded documents before resubmitting for approval.'
+
+export function getRejectedResubmitEligibility({
+  formData,
+  remarksByUser,
+  uploadedDocs = [],
+  pendingUploadCount = 0,
+}) {
+  const remarksChanged = String(remarksByUser ?? '').trim() !== String(formData?.remarks_by_user ?? '').trim()
+  const rejectionTs = formData?.last_rejected_at || formData?.approval_status_change_timestamp
+  const rejectionTime = rejectionTs ? new Date(rejectionTs).getTime() : NaN
+  const hasNewDocSinceRejection = uploadedDocs.some((doc) => {
+    if (!doc?.created_at || Number.isNaN(rejectionTime)) return false
+    return new Date(doc.created_at).getTime() > rejectionTime
+  })
+
+  return {
+    ok: remarksChanged && hasNewDocSinceRejection,
+    remarksChanged,
+    hasNewDocSinceRejection,
+    hasPendingUploads: pendingUploadCount > 0,
+    message: REJECTED_RESUBMIT_MESSAGE,
+  }
+}

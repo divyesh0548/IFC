@@ -163,6 +163,7 @@ model ControlForm {
   reminderFrequency          String?   @map("reminder_frequency") @db.VarChar(50)
   sentForApprovalTimestamp   DateTime? @map("sent_for_approval_timestamp") @db.Timestamp(6)
   approvalStatusChangeTs     DateTime? @map("approval_status_change_timestamp") @db.Timestamp(6)
+  lastRejectedAt             DateTime? @map("last_rejected_at") @db.Timestamp(6)
   pendingChanges             Boolean?  @default(false) @map("pending_changes")
   userMailSent               Boolean?  @default(false) @map("user_mail_sent")
   inactiveMailPending        Boolean?  @default(false) @map("inactive_mail_pending")

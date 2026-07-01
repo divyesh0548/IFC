@@ -13,10 +13,18 @@ const {
 const {
   seedIneffectiveReminderDatetime,
   isNotEffectiveConclusion,
+  resetDeficiencyReviewReminderDatetime,
 } = require('../../utils/controls_reminder');
 const { buildRacmDetailsSection } = require('../../utils/racm_email_details');
 const { buildScopedApproverJoinSql } = require('../../utils/approver_assignment_resolver');
 const { getInactiveRacmApproverAccessError } = require('../../utils/racm_delete');
+const { isCoordinatorAssignedRacm, buildCoordinatorFormDetailUrl } = require('../../utils/racm_coordinator_assignment');
+const { buildUserFormDetailUrl } = require('../../utils/racm_status_user_email');
+const {
+  getTemplateWithFieldsById,
+  loadDynamicFieldValuesForForm,
+  isRacmTemplateSchemaReady,
+} = require('../../utils/racm_templates');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -86,6 +94,21 @@ function normalizeConclusion(conclusion) {
     .replace(/[\s_-]+/g, ' ');
 }
 
+function buildRacmApprovedAuditAction(designConclusion) {
+  const normalized = normalizeConclusion(designConclusion);
+  if (normalized === 'effective') {
+    return 'RACM Approved - Effective';
+  }
+  if (normalized === 'not effective') {
+    return 'RACM Approved - Not Effective';
+  }
+  if (normalized === 'accepted under deviation') {
+    return 'RACM Approved - Accepted Under Deviation';
+  }
+  const label = String(designConclusion || '').trim();
+  return label ? `RACM Approved - ${label}` : 'RACM Approved';
+}
+
 function scopedApproverRacmJoin(alias = 'cf', emailParam = '$1') {
   return buildScopedApproverJoinSql(alias, emailParam, 'resolved_approver');
 }
@@ -93,15 +116,29 @@ function scopedApproverRacmJoin(alias = 'cf', emailParam = '$1') {
 /**
  * Notify process owner of RACM Approved/Rejected (same content as initial approve/reject flow).
  */
+function resolveRacmDecisionRecipientEmail(processOwnerEmail, updatedForm) {
+  const ownerEmail = String(processOwnerEmail ?? updatedForm?.control_owner ?? '').trim();
+  if (ownerEmail) return ownerEmail;
+
+  if (!isCoordinatorAssignedRacm(updatedForm)) return '';
+
+  return String(
+    updatedForm?.coordinator_assigned_by ?? updatedForm?.coordinatorAssignedBy ?? ''
+  ).trim();
+}
+
 async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status, reason_by_approver, updatedForm) {
-  if (!processOwnerEmail || !String(processOwnerEmail).trim()) {
-    console.warn(`⚠️  No process owner email found for form ${form_id}, email not sent`);
+  const ownerTrim = resolveRacmDecisionRecipientEmail(processOwnerEmail, updatedForm);
+  if (!ownerTrim) {
+    console.warn(`⚠️  No process owner or coordinator recipient found for form ${form_id}, email not sent`);
     return;
   }
 
-  const ownerTrim = String(processOwnerEmail).trim();
   const statusText = status === 'Approved' ? 'approved' : 'rejected';
   const emailSubject = `Internal Financial Controls - RACM ${status}`;
+  const racmUrl = isCoordinatorAssignedRacm(updatedForm)
+    ? buildCoordinatorFormDetailUrl(form_id)
+    : buildUserFormDetailUrl(form_id);
 
   let processOwnerName = 'Process Owner';
   try {
@@ -164,6 +201,9 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
     emailBody += 'You can review the feedback above, upload the necessary documents for it, and resubmit the RACM for approval.\n\n';
   }
 
+  if (racmUrl) {
+    emailBody += `RACM: ${racmUrl}\n\n`;
+  }
   emailBody += 'Thank you for using the IFC system.\n\n';
   emailBody += `Best regards,\n${companyName}`;
 
@@ -481,6 +521,10 @@ async function approveForm(req, res) {
         'updated_at = CURRENT_TIMESTAMP'
       );
 
+      if (status === 'Rejected') {
+        updateFields.push('last_rejected_at = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\')');
+      }
+
       if (status === 'Approved' && isNotEffectiveConclusion(designConclusion)) {
         await seedIneffectiveReminderDatetime(client, form_id);
       }
@@ -557,7 +601,9 @@ async function approveForm(req, res) {
       updatedForm
     );
 
-    const action = status === 'Approved' ? 'RACM Approved' : 'RACM Rejected';
+    const action = status === 'Approved'
+      ? buildRacmApprovedAuditAction(designConclusion)
+      : 'RACM Rejected';
     await logAuditEvent(action, approver.email_id, form_id);
 
     res.status(200).json({
@@ -703,6 +749,10 @@ async function changeApprovalDecision(req, res) {
          SET status = $1,
              reason_by_approver = $2,
              approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+             last_rejected_at = CASE
+               WHEN $1 = 'Rejected' THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+               ELSE last_rejected_at
+             END,
              updated_at = CURRENT_TIMESTAMP
          WHERE form_id = $3
          RETURNING *`,
@@ -737,7 +787,9 @@ async function changeApprovalDecision(req, res) {
       updatedForm
     );
 
-    const action = status === 'Approved' ? 'RACM Approved' : 'RACM Rejected';
+    const action = status === 'Approved'
+      ? buildRacmApprovedAuditAction(updatedForm.control_design_conclusion)
+      : 'RACM Rejected';
     await logAuditEvent(action, approver.email_id, form_id, DECISION_CHANGE_AUDIT_REF);
 
     res.status(200).json({
@@ -761,7 +813,12 @@ async function getControlForms(req, res) {
       SELECT 
         cf.*,
         c.company_name,
-        NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
+        CASE
+          WHEN COALESCE(cf.assigned_to_coordinator, FALSE) = TRUE THEN
+            COALESCE(NULLIF(TRIM(coord_u.emp_name), ''), NULLIF(TRIM(cf.coordinator_assigned_by), ''))
+          ELSE
+            COALESCE(NULLIF(TRIM(u.emp_name), ''), NULLIF(TRIM(cf.control_owner), ''))
+        END AS control_owner_name,
         NULLIF(TRIM(cum.unit_name), '') AS unit_name
       FROM control_forms cf
       ${scopedApproverRacmJoin('cf')}
@@ -770,6 +827,9 @@ async function getControlForms(req, res) {
         ON cum.company_identifier = cf.company_identifier
        AND cum.unit_id = cf.unit_id
       LEFT JOIN ifc_users u ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(cf.control_owner))
+      LEFT JOIN ifc_users coord_u
+        ON coord_u.company_identifier = cf.company_identifier
+       AND LOWER(TRIM(coord_u.email_id)) = LOWER(TRIM(COALESCE(cf.coordinator_assigned_by, '')))
       WHERE 1=1
     `;
     const queryParams = [approverEmail];
@@ -857,12 +917,27 @@ async function getControlFormById(req, res) {
     }
 
     await attachControlFormDocuments(pool, [result.rows[0]]);
-    result.rows[0].deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
+    const dataForClient = result.rows[0];
+    dataForClient.deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
+
+    if (await isRacmTemplateSchemaReady(pool)) {
+      const templateId = dataForClient.template_id;
+      if (templateId) {
+        const templatePayload = await getTemplateWithFieldsById(pool, templateId);
+        if (templatePayload.ok) {
+          dataForClient.template = templatePayload.template;
+          dataForClient.field_definitions = templatePayload.fields;
+        }
+      }
+      const dynamicPayload = await loadDynamicFieldValuesForForm(pool, form_id);
+      dataForClient.dynamic_values = dynamicPayload.dynamic_values;
+      dataForClient.dynamic_value_rows = dynamicPayload.dynamic_value_rows;
+    }
 
     res.status(200).json({
       success: true,
       message: 'RACM retrieved successfully',
-      data: result.rows[0],
+      data: dataForClient,
     });
   } catch (error) {
     console.error('Get RACM error:', error);
@@ -1146,6 +1221,8 @@ async function reviewDeficiencyResponse(req, res) {
           [form_id]
         );
       }
+
+      await resetDeficiencyReviewReminderDatetime(client, form_id);
 
       await client.query('COMMIT');
     } catch (dbError) {

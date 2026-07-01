@@ -22,8 +22,28 @@ function formatDueDateDisplay(dueDate) {
   return `${getOrdinal(day)} ${monthName}, ${year}`;
 }
 
-function getPortalUrl() {
-  return process.env.VITE_FRONTEND_URL || process.env.FRONTEND_URL || '';
+function getPortalBaseUrl() {
+  return String(process.env.VITE_FRONTEND_URL || process.env.FRONTEND_URL || '').trim().replace(/\/$/, '');
+}
+
+function buildUserFormDetailUrl(formId) {
+  const base = getPortalBaseUrl();
+  const normalizedFormId = String(formId || '').trim();
+  if (!base || !normalizedFormId) return '';
+  return `${base}/user/form/${encodeURIComponent(normalizedFormId)}`;
+}
+
+function buildApproverFormDetailUrl(formId) {
+  const base = getPortalBaseUrl();
+  const normalizedFormId = String(formId || '').trim();
+  if (!base || !normalizedFormId) return '';
+  return `${base}/approver/form/${encodeURIComponent(normalizedFormId)}`;
+}
+
+function resolveCoordinatorDisplayName(coordinatorName) {
+  const name = String(coordinatorName || '').trim();
+  if (name && !name.includes('@')) return name;
+  return 'Company Coordinator';
 }
 
 function buildRacmActiveUserEmail({
@@ -32,12 +52,14 @@ function buildRacmActiveUserEmail({
   coordinatorName,
   coordinatorCompanyName,
   dueDate,
+  formId,
 }) {
   const recipientName = processOwnerName || 'Process Owner';
-  const coordinatorDisplayName = coordinatorName || 'Company Coordinator';
+  const coordinatorDisplayName = resolveCoordinatorDisplayName(coordinatorName);
   const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
   const formattedDueDate = formatDueDateDisplay(dueDate);
-  const portalUrl = getPortalUrl();
+  const formUrl = buildUserFormDetailUrl(formId);
+  const portalUrl = getPortalBaseUrl();
 
   return {
     shouldSend: true,
@@ -59,9 +81,9 @@ What happens next?
 Once you submit your evidence, our tester will review it to check if the control is operating effectively. They'll either pass or fail the control based on what they see. So the clearer your evidence, the smoother that review goes!
 
 Deadline: ${formattedDueDate}
-${portalUrl ? `\nPortal: ${portalUrl}` : ''}
 
 Just shout if you hit any snags or have questions or you have any feedback on the performance of the controls or have noted any significant breaches; I'm happy to help.
+${formUrl ? `\nRACM: ${formUrl}` : (portalUrl ? `\nRACM: ${portalUrl}` : '')}
 
 Thanks for cooperating.
 
@@ -77,11 +99,13 @@ function buildRacmInactiveUserEmail({
   processOwnerName,
   coordinatorName,
   coordinatorCompanyName,
+  formId,
 }) {
   const recipientName = processOwnerName || 'Process Owner';
-  const coordinatorDisplayName = coordinatorName || 'Company Coordinator';
+  const coordinatorDisplayName = resolveCoordinatorDisplayName(coordinatorName);
   const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
-  const portalUrl = getPortalUrl();
+  const formUrl = buildUserFormDetailUrl(formId);
+  const portalUrl = getPortalBaseUrl();
   const processLabel = businessProcess || 'your business process';
 
   return {
@@ -94,7 +118,7 @@ Your Internal Financial Controls assignment for ${processLabel} has been set to 
 This RACM will no longer appear on your dashboard until it is set to Active again by your company coordinator.
 
 If you have any questions, please contact your coordinator.
-${portalUrl ? `\nPortal: ${portalUrl}` : ''}
+${formUrl ? `\nRACM: ${formUrl}` : (portalUrl ? `\nRACM: ${portalUrl}` : '')}
 
 Regards,
 ${coordinatorDisplayName}
@@ -111,8 +135,10 @@ const RACM_STATUS_EMAIL_SELECT = `
     cf.company_identifier,
     cf.unit_id,
     cf.active,
+    cf.assigned_to_coordinator,
     LOWER(TRIM(cf.control_owner)) AS control_owner_email,
     NULLIF(TRIM(owner.emp_name), '') AS control_owner_name,
+    NULLIF(TRIM(coordinator_map.coordinator_email_id), '') AS coordinator_email_id,
     NULLIF(TRIM(coordinator.emp_name), '') AS coordinator_name,
     NULLIF(TRIM(c.company_name), '') AS company_name
   FROM control_forms cf
@@ -134,7 +160,6 @@ const RACM_STATUS_EMAIL_SELECT = `
   ) coordinator_map ON TRUE
   LEFT JOIN ifc_users coordinator
     ON LOWER(TRIM(coordinator.email_id)) = LOWER(TRIM(COALESCE(coordinator_map.coordinator_email_id, '')))
-   AND coordinator.company_identifier = cf.company_identifier
   LEFT JOIN companies c
     ON c.company_identifier = cf.company_identifier
 `;
@@ -155,6 +180,7 @@ async function sendInactiveRacmUserEmailForFormId(formId) {
 
   const row = result.rows[0];
   if (row.active === true) return false;
+  if (row.assigned_to_coordinator === true) return false;
 
   const processOwnerEmail = String(row.control_owner_email || '').trim().toLowerCase();
   if (!processOwnerEmail) return false;
@@ -164,6 +190,7 @@ async function sendInactiveRacmUserEmailForFormId(formId) {
     processOwnerName: row.control_owner_name || '',
     coordinatorName: row.coordinator_name || '',
     coordinatorCompanyName: row.company_name || '',
+    formId: row.form_id,
   });
   if (!payload.shouldSend) return false;
 
@@ -186,6 +213,9 @@ async function sendInactiveRacmUserEmailForFormId(formId) {
 
 module.exports = {
   formatDueDateDisplay,
+  buildUserFormDetailUrl,
+  buildApproverFormDetailUrl,
+  resolveCoordinatorDisplayName,
   buildRacmActiveUserEmail,
   buildRacmInactiveUserEmail,
   sendInactiveRacmUserEmailForFormId,

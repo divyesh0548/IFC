@@ -108,9 +108,14 @@ function UnitSampleSizeSettingsDialog({ open, onClose, unitOptions = [], initial
 
     for (const row of settings) {
       const minimum = Number(row.minimum_sample_size)
+      const maximum = row.maximum_sample_size != null ? Number(row.maximum_sample_size) : null
       const nextValue = Number.parseInt(String(row.effective_sample_size ?? '').trim(), 10)
       if (!Number.isFinite(nextValue) || nextValue < minimum) {
         toast.error(`${row.frequency_label}: sample size must be at least ${minimum}`)
+        return
+      }
+      if (maximum != null && nextValue > maximum) {
+        toast.error(`${row.frequency_label}: sample size cannot exceed ${maximum}`)
         return
       }
     }
@@ -156,7 +161,7 @@ function UnitSampleSizeSettingsDialog({ open, onClose, unitOptions = [], initial
       <DialogTitle sx={{ fontWeight: 700 }}>Sample Size Settings</DialogTitle>
       <DialogContent dividers>
         <Alert severity="info" sx={{ mb: 2.5 }}>
-          Review the sample size for each control frequency before creating RACMs. Minimum values are fixed by the program; you can only increase them per unit.
+          Review the sample size for each control frequency before creating RACMs. Minimum and maximum values are fixed by the program; you can only adjust within that range per unit.
         </Alert>
 
         <FormControl fullWidth sx={{ mb: 2.5 }}>
@@ -186,6 +191,7 @@ function UnitSampleSizeSettingsDialog({ open, onClose, unitOptions = [], initial
               <TableRow>
                 <TableCell sx={{ fontWeight: 700 }}>Control Frequency</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Minimum</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Maximum</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Unit Sample Size</TableCell>
               </TableRow>
             </TableHead>
@@ -194,13 +200,18 @@ function UnitSampleSizeSettingsDialog({ open, onClose, unitOptions = [], initial
                 <TableRow key={row.frequency_key}>
                   <TableCell>{row.frequency_label}</TableCell>
                   <TableCell>{row.minimum_sample_size}</TableCell>
+                  <TableCell>{row.maximum_sample_size ?? '—'}</TableCell>
                   <TableCell>
                     <TextField
                       type="number"
                       size="small"
                       value={row.effective_sample_size ?? ''}
                       onChange={(event) => handleSettingChange(row.frequency_key, event.target.value)}
-                      inputProps={{ min: row.minimum_sample_size, step: 1 }}
+                      inputProps={{
+                        min: row.minimum_sample_size,
+                        max: row.maximum_sample_size ?? undefined,
+                        step: 1,
+                      }}
                       disabled={saving}
                       sx={{ maxWidth: 140 }}
                     />

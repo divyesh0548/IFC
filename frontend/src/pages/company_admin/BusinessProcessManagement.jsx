@@ -123,11 +123,11 @@ function BusinessProcessManagement() {
           }}
         >
           <Box sx={{ display: 'grid', gap: 1 }}>
-            <Typography sx={{ fontSize: { xs: '1.7rem', md: '2.1rem' }, fontWeight: 900, lineHeight: 1.1 }}>
+            <Typography sx={{ fontSize: { xs: '1.3rem', md: '1.6rem' }, fontWeight: 900, lineHeight: 1.1 }}>
               Business Process Management
             </Typography>
             <Typography sx={{ color: theme.palette.text.secondary, maxWidth: 760 }}>
-              Manage the shared business-process list for this company and add company specific process names and codes.
+              Aadd company specific business process name with code.
             </Typography>
           </Box>
 

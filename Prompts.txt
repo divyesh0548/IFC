@@ -1,3 +1,3 @@
-There are some bugs and improvements.
-1. Set RACM to active once assignment is performed even if its "Self Assign".
-2. After self assignment the coordinator can submit RACM for approval even if it is Inactive. RACM can'r be sent for approval if Inactive. Apply this check in API level.
+There is a bug in re-submission. I first changed the user remarks, then uploaded documents. On document upload, whole form reloaded and the user remakrs changed to default, which prevented the RACM submission. 
+
+From user's persepecitve this is not good UX. Please fix this.

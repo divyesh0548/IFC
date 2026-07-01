@@ -27,10 +27,10 @@ from openpyxl.cell.cell import MergedCell
 # CONFIGURATION — CHANGE ONLY THESE VALUES
 # ============================================================
 
-INPUT_FILE = r"C:\Users\Divyesh Parmar\Downloads\IFC_RACM_Consolidated 2025-26.xlsx"
-SHEET_NAME = "IFC Testing Report"
-COLUMN_NAME = "Area"
-OUTPUT_FOLDER = r"C:\Divyesh\IFC\IFC_Prisma\Risk Categorization\Torrecid"
+INPUT_FILE = r"C:\Divyesh\IFC\IFC_Prisma\Risk Categorization\Base IFCs\TIL\TIL_FY-2025-26_IFC Review.xlsx"
+SHEET_NAME = "IFC"
+COLUMN_NAME = "Process"
+OUTPUT_FOLDER = r"C:\Divyesh\IFC\IFC_Prisma\Risk Categorization\TIL"
 
 # Set True to create Blank.xlsx for rows where the selected column is blank.
 INCLUDE_BLANK_VALUES = False

@@ -11,8 +11,12 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   FormControl,
   InputLabel,
+  List,
+  ListItemButton,
+  ListItemText,
   MenuItem,
   Select,
   Stack,
@@ -23,6 +27,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined'
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined'
 import { toast } from 'react-hot-toast'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
@@ -67,6 +72,29 @@ function getSectionLabel(sectionKey) {
   return SECTION_OPTIONS.find((option) => option.key === sectionKey)?.label || 'Others'
 }
 
+function buildGroupedFieldsFromDetails(details, extras = null) {
+  const sectionLabels = details?.section_labels || {}
+  const fixed = Array.isArray(details?.fixed_fields) ? details.fixed_fields : []
+  const extraSource = extras ?? (Array.isArray(details?.extra_fields) ? details.extra_fields : [])
+  return SECTION_OPTIONS.map((section) => ({
+    key: section.key,
+    label: sectionLabels[section.key] || section.label,
+    fixed: fixed
+      .filter((field) => field.section_key === section.key)
+      .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0)),
+    extras: extraSource
+      .filter((field) => field.section_key === section.key)
+      .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
+      .map((field) => ({
+        clientId: field.field_key,
+        field_key: field.field_key,
+        label: field.label,
+        section_key: field.section_key,
+        display_order: field.display_order,
+      })),
+  }))
+}
+
 function CustomColumnEditorDialog({
   open,
   mode,
@@ -75,6 +103,7 @@ function CustomColumnEditorDialog({
   fromCatalog,
   canEditSection,
   canEditLabel = true,
+  saveRequiresNewVersion = false,
   canDelete,
   onClose,
   onEdit,
@@ -89,10 +118,12 @@ function CustomColumnEditorDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{isEditing ? 'Edit custom column' : 'Custom column'}</DialogTitle>
-      <DialogContent>
+      <DialogTitle sx={{ px: 3, pt: 2.5, pb: 1, fontWeight: 700 }}>
+        {isEditing ? 'Edit custom column' : 'Custom column'}
+      </DialogTitle>
+      <DialogContent sx={{ px: 3, pt: 1, pb: 1 }}>
         {isEditing ? (
-          <Stack spacing={2} sx={{ pt: 2.5 }}>
+          <Stack spacing={2}>
             <TextField
               label="Column label"
               value={label}
@@ -101,8 +132,8 @@ function CustomColumnEditorDialog({
               autoFocus
               disabled={!canEditLabel}
               helperText={
-                !canEditLabel
-                  ? 'Renaming is blocked while RACMs are linked. Create a new template version instead.'
+                saveRequiresNewVersion
+                  ? 'You can edit here; saving template changes will require a new version or new template.'
                   : undefined
               }
             />
@@ -120,7 +151,7 @@ function CustomColumnEditorDialog({
             ) : null}
           </Stack>
         ) : (
-          <Stack spacing={1} sx={{ pt: 0.5 }}>
+          <Stack spacing={1}>
             <Typography variant="body1" sx={{ fontWeight: 600 }}>
               {String(label || '').trim() || 'New column'}
             </Typography>
@@ -130,7 +161,7 @@ function CustomColumnEditorDialog({
           </Stack>
         )}
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
+      <DialogActions sx={{ px: 3, pt: 1, pb: 2.5 }}>
         {isEditing ? (
           <Stack direction="row" spacing={1} sx={{ width: '100%', justifyContent: 'flex-end' }}>
             <Button onClick={onCancelEdit}>Cancel</Button>
@@ -212,17 +243,24 @@ function TemplateColumnListing({
                         py: 1.5,
                       }}
                     >
-                      <Stack direction="row" alignItems="center" spacing={1}>
+                      <Stack direction="row" alignItems="center" spacing={0.75}>
                         <CustomColumnDot />
-                        <TextField
-                          size="small"
-                          label="Column label"
-                          value={field.label || ''}
-                          onChange={(e) => onExtraFieldChange(clientId, 'label', e.target.value)}
-                          fullWidth
-                          autoFocus
-                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ fontWeight: 600, letterSpacing: '0.02em' }}
+                        >
+                          New custom column
+                        </Typography>
                       </Stack>
+                      <TextField
+                        size="small"
+                        label="Column label"
+                        value={field.label || ''}
+                        onChange={(e) => onExtraFieldChange(clientId, 'label', e.target.value)}
+                        fullWidth
+                        autoFocus
+                      />
                       {isDraft && !field.fromCatalog && field.section_key !== 'assertions' ? (
                         <FormControl size="small" fullWidth>
                           <InputLabel>Section</InputLabel>
@@ -360,6 +398,12 @@ function RacmTemplates() {
   const [deleteTemplateConfirmOpen, setDeleteTemplateConfirmOpen] = useState(false)
   const [createTemplateDialogOpen, setCreateTemplateDialogOpen] = useState(false)
   const [freshTemplateName, setFreshTemplateName] = useState('')
+  const [importListDialogOpen, setImportListDialogOpen] = useState(false)
+  const [importCatalogUnits, setImportCatalogUnits] = useState([])
+  const [importPreviewDialogOpen, setImportPreviewDialogOpen] = useState(false)
+  const [importSourceMeta, setImportSourceMeta] = useState(null)
+  const [importPreviewDetails, setImportPreviewDetails] = useState(null)
+  const [importTemplateName, setImportTemplateName] = useState('')
   const [versionedSaveNoticeOpen, setVersionedSaveNoticeOpen] = useState(true)
   const [assertionInfoDialogOpen, setAssertionInfoDialogOpen] = useState(false)
   const [columnEditor, setColumnEditor] = useState({
@@ -538,21 +582,24 @@ function RacmTemplates() {
   }, [selectedTemplateId, selectedUnitId])
 
   const groupedFields = useMemo(() => {
-    const sectionLabels = templateDetails?.section_labels || {}
-    const fixed = Array.isArray(templateDetails?.fixed_fields) ? templateDetails.fixed_fields : []
-    const extras = editableExtraFields
-    const result = SECTION_OPTIONS.map((section) => ({
-      key: section.key,
-      label: sectionLabels[section.key] || section.label,
-      fixed: fixed
-        .filter((field) => field.section_key === section.key)
-        .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0)),
-      extras: extras
-        .filter((field) => field.section_key === section.key)
-        .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0)),
-    }))
-    return result
+    return buildGroupedFieldsFromDetails(templateDetails, editableExtraFields)
   }, [templateDetails, editableExtraFields])
+
+  const importPreviewGroupedFields = useMemo(
+    () => buildGroupedFieldsFromDetails(importPreviewDetails),
+    [importPreviewDetails]
+  )
+
+  const importableCatalogUnits = useMemo(() => {
+    const currentUnitId = String(selectedUnitId || '').trim()
+    return importCatalogUnits
+      .filter((unit) => String(unit.unit_id) !== currentUnitId)
+      .map((unit) => ({
+        ...unit,
+        templates: Array.isArray(unit.templates) ? unit.templates : [],
+      }))
+      .filter((unit) => unit.templates.length > 0)
+  }, [importCatalogUnits, selectedUnitId])
 
   const hasStructuralChanges = useMemo(() => {
     const original = (Array.isArray(templateDetails?.extra_fields) ? templateDetails.extra_fields : [])
@@ -623,29 +670,6 @@ function RacmTemplates() {
     }
   }, [selectedTemplateId, requiresVersionedSave])
 
-  const structuralChangeKind = useMemo(() => {
-    const original = Array.isArray(templateDetails?.extra_fields) ? templateDetails.extra_fields : []
-    const originalKeys = new Set(original.map((field) => field.field_key))
-    const originalByKey = new Map(original.map((field) => [field.field_key, field]))
-    const currentSavedKeys = new Set(
-      editableExtraFields
-        .filter((field) => !field.isNew && !field.isDraft && String(field.label || '').trim())
-        .map((field) => field.field_key)
-    )
-    const hasAdditions = editableExtraFields.some(
-      (field) => (field.isNew || field.isDraft) && String(field.label || '').trim()
-    ) || [...currentSavedKeys].some((key) => !originalKeys.has(key))
-    const hasRemovals = [...originalKeys].some((key) => !currentSavedKeys.has(key))
-    const hasLabelChanges = editableExtraFields.some((field) => {
-      if (field.isNew || field.isDraft) return false
-      const existing = originalByKey.get(field.field_key)
-      if (!existing) return false
-      return String(existing.label || '').trim() !== String(field.label || '').trim()
-    })
-    const isRenameOnly = hasStructuralChanges && !hasRemovals && !hasAdditions && hasLabelChanges
-    return { hasRemovals, hasAdditions, hasLabelChanges, isRenameOnly }
-  }, [editableExtraFields, templateDetails, hasStructuralChanges])
-
   const handleOpenColumnEditor = (clientId) => {
     const field = editableExtraFields.find((item) => item.clientId === clientId)
     if (!field || field.isDraft) return
@@ -693,19 +717,9 @@ function RacmTemplates() {
   }
 
   const handleColumnEditorSave = () => {
-    const field = editableExtraFields.find((item) => item.clientId === columnEditor.clientId)
     const label = String(columnEditor.label || '').trim()
     if (!label) {
       toast.error('Column label is required')
-      return
-    }
-    if (
-      requiresVersionedSave &&
-      field &&
-      !field.isNew &&
-      String(field.label || '').trim() !== label
-    ) {
-      toast.error('Cannot rename custom columns while RACMs are linked to this template.')
       return
     }
     if (!assertUniqueColumnLabel(label, { excludeClientId: columnEditor.clientId })) {
@@ -844,11 +858,6 @@ function RacmTemplates() {
   }
 
   const handleRequestRemoveExtraField = (clientId, label) => {
-    const field = editableExtraFields.find((item) => item.clientId === clientId)
-    if (requiresVersionedSave && field && !field.isNew) {
-      toast.error('Cannot remove custom columns while RACMs are linked to this template.')
-      return
-    }
     setRemoveConfirm({
       open: true,
       clientId,
@@ -879,17 +888,119 @@ function RacmTemplates() {
       toast.error('No structural changes to save')
       return
     }
-    if (structuralChangeKind.hasRemovals && requiresVersionedSave) {
-      toast.error('Cannot remove custom columns while RACMs are linked to this template.')
-      return
-    }
-    if (structuralChangeKind.hasLabelChanges && requiresVersionedSave) {
-      toast.error('Cannot rename custom columns while RACMs are linked to this template.')
-      return
-    }
     setSaveMode(requiresVersionedSave ? 'update_version' : 'update_in_place')
     setNewTemplateName('')
     setSaveDialogOpen(true)
+  }
+
+  const handleOpenImportListDialog = async () => {
+    if (!selectedUnitId) {
+      toast.error('Select a unit first')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const response = await fetch(apiUrl('/api/company-co/racm-templates/import-catalog'), {
+        credentials: 'include',
+      })
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to load templates for import')
+      }
+      setImportCatalogUnits(Array.isArray(data.data?.units) ? data.data.units : [])
+      setImportListDialogOpen(true)
+    } catch (error) {
+      console.error('Failed to load import catalog:', error)
+      toast.error(error.message || 'Failed to load templates for import')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCloseImportListDialog = () => {
+    setImportListDialogOpen(false)
+  }
+
+  const handleCloseImportPreviewDialog = () => {
+    setImportPreviewDialogOpen(false)
+    setImportSourceMeta(null)
+    setImportPreviewDetails(null)
+    setImportTemplateName('')
+  }
+
+  const handleOpenImportPreview = async (unitMeta, templateMeta) => {
+    setLoading(true)
+    try {
+      const response = await fetch(
+        apiUrl(`/api/company-co/racm-templates/import-catalog/${encodeURIComponent(templateMeta.id)}`),
+        { credentials: 'include' }
+      )
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to load template preview')
+      }
+      setImportSourceMeta({
+        unit_id: unitMeta.unit_id,
+        unit_name: unitMeta.unit_name,
+        template_id: templateMeta.id,
+        template_name: templateMeta.template_name,
+        version: templateMeta.version,
+        status: templateMeta.status,
+      })
+      setImportPreviewDetails(data.data)
+      setImportTemplateName('')
+      setImportListDialogOpen(false)
+      setImportPreviewDialogOpen(true)
+    } catch (error) {
+      console.error('Failed to load import preview:', error)
+      toast.error(error.message || 'Failed to load template preview')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleImportTemplate = async () => {
+    const name = String(importTemplateName || '').trim()
+    if (!name) {
+      toast.error('Template name is required')
+      return
+    }
+    if (!selectedUnitId || !importSourceMeta?.template_id) {
+      toast.error('Select a template to import')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const response = await fetch(apiUrl('/api/company-co/racm-templates/import'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          target_unit_id: selectedUnitId,
+          source_template_id: importSourceMeta.template_id,
+          template_name: name,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to import template')
+      }
+      toast.success(data.message || 'Template imported successfully')
+      handleCloseImportPreviewDialog()
+      await fetchVersions(selectedUnitId)
+      const importedId = data.data?.template?.id
+      if (importedId) {
+        setSelectedTemplateId(importedId)
+        await fetchTemplateById(importedId, selectedUnitId)
+      }
+    } catch (error) {
+      console.error('Failed to import template:', error)
+      toast.error(error.message || 'Failed to import template')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleActivateTemplate = async () => {
@@ -968,7 +1079,11 @@ function RacmTemplates() {
       toast.success(data.message || 'Template changes saved.')
       setSaveDialogOpen(false)
       await fetchVersions(selectedUnitId)
-      if (selectedTemplateId) {
+      const savedTemplateId = data.data?.template?.id
+      if (savedTemplateId && !data.data?.updated_in_place) {
+        setSelectedTemplateId(savedTemplateId)
+        await fetchTemplateById(savedTemplateId, selectedUnitId)
+      } else if (selectedTemplateId) {
         await fetchTemplateById(selectedTemplateId, selectedUnitId)
       }
     } catch (error) {
@@ -1069,15 +1184,24 @@ function RacmTemplates() {
                 Select a unit, review template versions, and define extra text columns by section.
               </Typography>
             </Box>
-            <Button
-              startIcon={<AddRoundedIcon />}
-              variant="contained"
-              onClick={() => setCreateTemplateDialogOpen(true)}
-              disabled={!selectedUnitId}
-              sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'flex-start' } }}
-            >
-              Create new template
-            </Button>
+            <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'flex-start' } }}>
+              <Button
+                startIcon={<FileDownloadOutlinedIcon />}
+                variant="outlined"
+                onClick={handleOpenImportListDialog}
+                disabled={!selectedUnitId}
+              >
+                Import
+              </Button>
+              <Button
+                startIcon={<AddRoundedIcon />}
+                variant="contained"
+                onClick={() => setCreateTemplateDialogOpen(true)}
+                disabled={!selectedUnitId}
+              >
+                Create new template
+              </Button>
+            </Stack>
           </Stack>
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 3 }}>
@@ -1191,7 +1315,7 @@ function RacmTemplates() {
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                     {isSelectedActiveTemplate
                       ? requiresVersionedSave
-                        ? 'Active template — renaming, adding, or removing custom columns requires a new version.'
+                        ? 'Active template — you can edit labels and remove columns here; saving requires a new version or new template.'
                         : 'Active template — no RACMs are linked yet. You may update in place or create a new version.'
                       : 'Archived template — read-only view.'}
                   </Typography>
@@ -1202,7 +1326,7 @@ function RacmTemplates() {
                         onClose={() => setVersionedSaveNoticeOpen(false)}
                         sx={{ mt: 1, alignItems: 'flex-start' }}
                       >
-                        RACMs use this template version. Renaming, adding, or removing custom columns requires a new version.
+                        RACMs use this template version. You can edit labels and remove columns, but saving changes requires a new version or new template.
                       </Alert>
                     </Collapse>
                   ) : null}
@@ -1326,11 +1450,11 @@ function RacmTemplates() {
         sectionKey={columnEditor.sectionKey}
         fromCatalog={columnEditor.fromCatalog}
         canEditSection={columnEditor.canEditSection}
-        canEditLabel={!requiresVersionedSave || columnEditor.isNew}
+        canEditLabel
+        saveRequiresNewVersion={requiresVersionedSave}
         canDelete={
           columnEditor.isNew ||
-          (!requiresVersionedSave &&
-            editableExtraFields.some((field) => field.clientId === columnEditor.clientId && !field.isNew))
+          editableExtraFields.some((field) => field.clientId === columnEditor.clientId && !field.isDraft)
         }
         onClose={handleCloseColumnEditor}
         onEdit={handleEnterColumnEditMode}
@@ -1340,6 +1464,132 @@ function RacmTemplates() {
         onLabelChange={(value) => setColumnEditor((prev) => ({ ...prev, label: value }))}
         onSectionChange={(value) => setColumnEditor((prev) => ({ ...prev, sectionKey: value }))}
       />
+
+      <Dialog
+        open={importListDialogOpen}
+        onClose={handleCloseImportListDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ px: 3, py:2, fontWeight: 700 }}>
+          Import template from another unit
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 2.5, pb: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>
+            Select a template from any unit in your company. It will be copied with all custom columns into{' '}
+            {units.find((unit) => String(unit.unit_id) === String(selectedUnitId))?.unit_name || 'the selected unit'}.
+          </Typography>
+          {importableCatalogUnits.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No templates are available to import from other units.
+            </Typography>
+          ) : (
+            <List disablePadding>
+              {importableCatalogUnits.map((unit, unitIndex) => (
+                <Box key={unit.unit_id}>
+                  {unitIndex > 0 ? <Divider sx={{ my: 1 }} /> : null}
+                  <Typography
+                    variant="subtitle2"
+                    sx={{
+                      px: 1,
+                      py: 1,
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      color: 'text.secondary',
+                    }}
+                  >
+                    {unit.unit_name || unit.unit_id}
+                  </Typography>
+                  {unit.templates.map((template) => (
+                    <ListItemButton
+                      key={template.id}
+                      onClick={() => handleOpenImportPreview(unit, template)}
+                      sx={{ borderRadius: 1.5, mb: 0.5 }}
+                    >
+                      <ListItemText
+                        primary={`${template.template_name} (v${template.version})`}
+                        secondary={[
+                          template.status,
+                          template.linked_racm_count ? `${template.linked_racm_count} RACM(s)` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      />
+                    </ListItemButton>
+                  ))}
+                </Box>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pt: 1, pb: 2.5 }}>
+          <Button onClick={handleCloseImportListDialog}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={importPreviewDialogOpen}
+        onClose={handleCloseImportPreviewDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ px: 3, pt: 2.5, pb: 1, fontWeight: 700 }}>
+          Import template preview
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 1, pb: 1 }}>
+          {importPreviewDetails ? (
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  {importSourceMeta?.template_name} (v{importSourceMeta?.version})
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Source unit: {importSourceMeta?.unit_name || importSourceMeta?.unit_id}
+                  {importSourceMeta?.status ? ` · ${importSourceMeta.status}` : ''}
+                </Typography>
+              </Box>
+              <Box
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  p: { xs: 2, sm: 2.5 },
+                }}
+              >
+                <TemplateColumnListing
+                  groupedFields={importPreviewGroupedFields}
+                  canEditExtras={false}
+                  onColumnClick={() => {}}
+                  onExtraFieldChange={() => {}}
+                  onSaveInline={() => {}}
+                  onCancelInline={() => {}}
+                />
+              </Box>
+              <TextField
+                label="New template name"
+                fullWidth
+                autoFocus
+                value={importTemplateName}
+                onChange={(e) => setImportTemplateName(e.target.value)}
+                helperText="This name will be used for the imported template in the current unit."
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleImportTemplate()
+                  }
+                }}
+              />
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pt: 1, pb: 2.5 }}>
+          <Button onClick={handleCloseImportPreviewDialog}>Cancel</Button>
+          <Button variant="contained" onClick={handleImportTemplate} disabled={!importPreviewDetails}>
+            Import
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={createTemplateDialogOpen}

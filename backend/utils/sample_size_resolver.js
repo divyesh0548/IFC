@@ -74,10 +74,20 @@ function validateSampleSizeValue(controlFrequencyOrKey, sampleSize) {
     };
   }
 
+  if (category.maxSampleSize != null && parsed > category.maxSampleSize) {
+    return {
+      ok: false,
+      message: `Sample size cannot exceed ${category.maxSampleSize} for ${category.value}`,
+      maximum: category.maxSampleSize,
+      minimum: category.sampleSize,
+    };
+  }
+
   return {
     ok: true,
     sampleSize: parsed,
     minimum: category.sampleSize,
+    maximum: category.maxSampleSize ?? null,
     category,
   };
 }
@@ -139,12 +149,13 @@ async function resolveEffectiveSampleSizeForUnit(clientOrPool, {
 }
 
 function buildUnitSampleSizeConfigResponse(unitConfigMap) {
-  return SUPPORTED_CONTROL_FREQUENCY_CATEGORIES.map(({ key, value, sampleSize }) => {
+  return SUPPORTED_CONTROL_FREQUENCY_CATEGORIES.map(({ key, value, sampleSize, maxSampleSize }) => {
     const configured = unitConfigMap.get(key);
     return {
       frequency_key: key,
       frequency_label: value,
       minimum_sample_size: sampleSize,
+      maximum_sample_size: maxSampleSize ?? null,
       configured_sample_size: configured ?? null,
       effective_sample_size: configured ?? sampleSize,
     };

@@ -20,6 +20,7 @@ const {
 } = require('../utils/controls_reminder');
 const { buildRacmDetailsSection } = require('../utils/racm_email_details');
 const { isCoordinatorAssignedRacm, buildCoordinatorFormDetailUrl } = require('../utils/racm_coordinator_assignment');
+const { buildUserFormDetailUrl } = require('../utils/racm_status_user_email');
 
 const IST_CURRENT_DATE_SQL = `((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date)`;
 
@@ -116,9 +117,7 @@ function buildReminderEmailBody(form) {
     : (String(form.control_owner_emp_name || '').trim() || 'Process Owner');
   const formUrl = isCoordinatorAssigned
     ? buildCoordinatorFormDetailUrl(form.form_id)
-    : (process.env.FRONTEND_URL
-      ? `${process.env.FRONTEND_URL}/user/form/${form.form_id}`
-      : null);
+    : buildUserFormDetailUrl(form.form_id);
   return `Dear ${ownerSalutation},
 
 This is a reminder that your RACM (Risk and Control Matrix) is pending.
@@ -127,10 +126,8 @@ ${buildRacmDetailsSection(form, [
   ['Due Date', dueStr],
 ])}
 
-${process.env.FRONTEND_URL ? `Portal: ${process.env.FRONTEND_URL}` : ''}
-${formUrl ? `Form: ${formUrl}` : ''}
-
 Please complete and submit your evidence at your earliest convenience.
+${formUrl ? `\nRACM: ${formUrl}` : ''}
 
 Regards,
 ${companyName}

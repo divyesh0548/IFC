@@ -19,6 +19,24 @@ function normalizeDateOnly(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : null;
 }
 
+function isPastDateOnly(value) {
+  const datePart = normalizeDateOnly(value);
+  if (!datePart) return false;
+  const todayPart = new Date().toISOString().slice(0, 10);
+  return datePart < todayPart;
+}
+
+function validateMitigationPlanDueDate(dueDate) {
+  const normalizedDueDate = normalizeDateOnly(dueDate);
+  if (!normalizedDueDate) {
+    return { ok: false, message: 'Due date is required for mitigation plan' };
+  }
+  if (isPastDateOnly(normalizedDueDate)) {
+    return { ok: false, message: 'Due date must be today or a future date' };
+  }
+  return { ok: true, normalizedDueDate };
+}
+
 async function getDeficiencyResponseByFormId(clientOrPool, formId) {
   const parentResult = await clientOrPool.query(
     `
@@ -312,4 +330,6 @@ module.exports = {
   getDeficiencyResponseByFormId,
   normalizeDateOnly,
   normalizeNullableText,
+  isPastDateOnly,
+  validateMitigationPlanDueDate,
 };

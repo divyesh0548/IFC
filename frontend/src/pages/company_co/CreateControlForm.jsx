@@ -31,7 +31,8 @@ import ActiveRacmTemplateNotice from '../../components/company_co/ActiveRacmTemp
 import CustomColumnDot from '../../components/racm/CustomColumnDot'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX } from '../../components/AppDialog'
-import { getEffectiveSampleSizeForFrequency, validateSampleSizeForFrequency } from '../../utils/controlFrequencyValidation'
+import { getEffectiveSampleSizeForFrequency, getSampleSizeInputFeedback, validateSampleSizeForFrequency } from '../../utils/controlFrequencyValidation'
+import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
 
 function createEmptyFormData(unitId = '') {
   return {
@@ -86,6 +87,7 @@ function CreateControlForm() {
   const [unitOptions, setUnitOptions] = useState([])
   const controlNumberDebounceRef = useRef(null)
   const { businessProcessOptions, loading: businessProcessesLoading } = useBusinessProcesses()
+  const { controlFrequencyOptions } = useControlFrequencyOptions()
   const [controlNumberMeta, setControlNumberMeta] = useState(EMPTY_CONTROL_NUMBER_META)
   const [assignmentSectionKey, setAssignmentSectionKey] = useState(0)
   const [racmTemplate, setRacmTemplate] = useState(null)
@@ -109,25 +111,16 @@ function CreateControlForm() {
   // Form state - all fields that coordinators can create
   const [formData, setFormData] = useState(() => createEmptyFormData())
 
-  const dropdownOptions = {
-  risk_heat: ['High', 'Low', 'Medium'],
-  control_type_fo: ['Financial', 'Operational'],
-  control_type_ma: ['Manual', 'Automated'],
-  nature_of_control: ['Preventive', 'Detective'],
-  key_control: ['Yes', 'No'],
-  control_relies_on_ipe: ['Yes', 'No'],
-    control_frequency: [
-      'Yearly',
-      'Quarterly',
-      'Half Yearly',
-      'Monthly',
-      'Weekly',
-      'Fortnightly',
-      'As and When Needed',
-      'Recurring and Daily',
-    ],
-    whether_fraud_risks_exist: ['Yes', 'No']
-  }
+  const dropdownOptions = useMemo(() => ({
+    risk_heat: ['High', 'Low', 'Medium'],
+    control_type_fo: ['Financial', 'Operational'],
+    control_type_ma: ['Manual', 'Automated'],
+    nature_of_control: ['Preventive', 'Detective'],
+    key_control: ['Yes', 'No'],
+    control_relies_on_ipe: ['Yes', 'No'],
+    control_frequency: controlFrequencyOptions.map((row) => row.value),
+    whether_fraud_risks_exist: ['Yes', 'No'],
+  }), [controlFrequencyOptions])
 
   const [dropdownSelections, setDropdownSelections] = useState({})
   const [otherValues, setOtherValues] = useState({})
@@ -135,6 +128,17 @@ function CreateControlForm() {
   const hasReminderValues =
     String(formData.due_date || '').trim() !== '' ||
     String(formData.reminder_frequency || '').trim() !== ''
+
+  const sampleSizeInputFeedback = useMemo(
+    () => getSampleSizeInputFeedback(
+      unitSampleSizeSettings,
+      formData.control_frequency,
+      formData.sample_size
+    ),
+    [unitSampleSizeSettings, formData.control_frequency, formData.sample_size]
+  )
+
+  const sampleSizeIsInvalid = Boolean(sampleSizeInputFeedback.warning)
 
   const getTomorrowDateString = () => {
     const d = new Date()
@@ -1138,6 +1142,11 @@ function CreateControlForm() {
                     }
 
                     if (field === 'sample_size') {
+                      const sampleSizeFeedback = getSampleSizeInputFeedback(
+                        unitSampleSizeSettings,
+                        formData.control_frequency,
+                        formData.sample_size
+                      )
                       return (
                         <TextField
                           key={field}
@@ -1150,16 +1159,21 @@ function CreateControlForm() {
                           variant="outlined"
                           disabled={loading || !String(formData.control_frequency || '').trim()}
                           required
+                          error={Boolean(sampleSizeFeedback.warning)}
                           inputProps={{
                             min: sampleSizeFrequencyMeta?.minimum ?? 1,
+                            max: sampleSizeFrequencyMeta?.maximum ?? undefined,
                             step: 1,
                           }}
                           helperText={
                             !String(formData.control_frequency || '').trim()
                               ? 'Select frequency of control first'
-                              : (sampleSizeFrequencyMeta?.minimum != null
-                                ? `Minimum sample size: ${sampleSizeFrequencyMeta.minimum}`
-                                : undefined)
+                              : (sampleSizeFeedback.warning || sampleSizeFeedback.limits || undefined)
+                          }
+                          FormHelperTextProps={
+                            sampleSizeFeedback.warning
+                              ? { sx: { color: 'warning.main' } }
+                              : undefined
                           }
                         />
                       )
@@ -1403,7 +1417,8 @@ function CreateControlForm() {
                   !formData.financial_year ||
                   !formData.unit_id ||
                   !String(formData.control_frequency || '').trim() ||
-                  !String(formData.sample_size || '').trim()
+                  !String(formData.sample_size || '').trim() ||
+                  sampleSizeIsInvalid
                 }
                 variant="contained"
                 color="secondary"

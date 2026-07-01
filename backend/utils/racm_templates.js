@@ -757,31 +757,11 @@ async function structuralSaveTemplate(client, {
   const mode = String(saveMode || 'update_version').trim();
 
   if (mode === 'update_in_place') {
-    const changeKind = classifyExtraFieldChanges(currentExtras, mergedExtraFields);
     if (linkedRacmCount > 0) {
-      if (changeKind.hasRemovals) {
-        return {
-          ok: false,
-          message: 'Cannot remove custom columns while RACMs are linked to this template.',
-        };
-      }
-      if (changeKind.hasAdditions) {
-        return {
-          ok: false,
-          message: 'Cannot add custom columns in place while RACMs are linked. Create a new version instead.',
-        };
-      }
-      if (changeKind.hasLabelChanges) {
-        return {
-          ok: false,
-          message: 'Cannot rename custom columns while RACMs are linked to this template. Create a new version instead.',
-        };
-      }
-      return updateActiveTemplateExtrasInPlace(client, active, mergedExtraFields, {
-        allowRemove: false,
-        allowAdd: false,
-        allowLabelChange: false,
-      });
+      return {
+        ok: false,
+        message: 'Linked RACMs require saving as a new version or new template. Update in place is not allowed.',
+      };
     }
     return updateActiveTemplateExtrasInPlace(client, active, mergedExtraFields);
   }
@@ -918,6 +898,160 @@ async function updateActiveTemplateKeywords(client, {
     ok: true,
     updated_field_keys: updatedKeys,
     fields: await getTemplateFields(client, active.id),
+  };
+}
+
+async function listCompanyTemplatesForImport(client, companyIdentifier) {
+  const result = await client.query(
+    `
+      SELECT
+        cum.unit_id,
+        TRIM(cum.unit_name) AS unit_name,
+        rt.id AS template_id,
+        rt.template_name,
+        rt.version,
+        rt.status,
+        COALESCE(cf_counts.linked_racm_count, 0) AS linked_racm_count
+      FROM company_unit_master cum
+      LEFT JOIN racm_templates rt
+        ON rt.company_identifier = cum.company_identifier
+       AND rt.unit_id = cum.unit_id
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS linked_racm_count
+        FROM control_forms cf
+        WHERE cf.template_id = rt.id
+      ) cf_counts ON TRUE
+      WHERE cum.company_identifier = $1
+      ORDER BY LOWER(TRIM(cum.unit_name)), LOWER(TRIM(rt.template_name)), rt.version DESC, rt.id DESC
+    `,
+    [companyIdentifier]
+  );
+
+  const unitsMap = new Map();
+  for (const row of result.rows) {
+    const unitId = String(row.unit_id || '').trim();
+    if (!unitId) continue;
+
+    if (!unitsMap.has(unitId)) {
+      unitsMap.set(unitId, {
+        unit_id: unitId,
+        unit_name: String(row.unit_name || unitId).trim() || unitId,
+        templates: [],
+      });
+    }
+
+    if (row.template_id) {
+      unitsMap.get(unitId).templates.push({
+        id: row.template_id,
+        template_name: row.template_name,
+        version: row.version,
+        status: row.status,
+        linked_racm_count: Number(row.linked_racm_count || 0),
+      });
+    }
+  }
+
+  return [...unitsMap.values()];
+}
+
+async function importTemplateToUnit(client, {
+  companyIdentifier,
+  sourceTemplateId,
+  targetUnitId,
+  templateName,
+  createdBy,
+}) {
+  const normalizedName = String(templateName || '').trim();
+  const normalizedTargetUnitId = String(targetUnitId || '').trim();
+  const parsedSourceTemplateId = Number.parseInt(String(sourceTemplateId || ''), 10);
+
+  if (!normalizedName) {
+    return { ok: false, message: 'Template name is required' };
+  }
+  if (!normalizedTargetUnitId) {
+    return { ok: false, message: 'target_unit_id is required' };
+  }
+  if (!Number.isFinite(parsedSourceTemplateId)) {
+    return { ok: false, message: 'source_template_id is required' };
+  }
+
+  const sourcePayload = await getTemplateWithFieldsById(client, parsedSourceTemplateId);
+  if (!sourcePayload.ok) {
+    return sourcePayload;
+  }
+  if (sourcePayload.template.company_identifier !== companyIdentifier) {
+    return { ok: false, message: 'Template not found' };
+  }
+
+  if (String(sourcePayload.template.unit_id) === normalizedTargetUnitId) {
+    return { ok: false, message: 'Import a template from a different unit' };
+  }
+
+  const targetUnitResult = await client.query(
+    `
+      SELECT unit_id
+      FROM company_unit_master
+      WHERE company_identifier = $1
+        AND unit_id = $2
+      LIMIT 1
+    `,
+    [companyIdentifier, normalizedTargetUnitId]
+  );
+  if (targetUnitResult.rows.length === 0) {
+    return { ok: false, message: 'Target unit not found' };
+  }
+
+  const existingNameResult = await client.query(
+    `
+      SELECT 1
+      FROM racm_templates
+      WHERE company_identifier = $1
+        AND unit_id = $2
+        AND LOWER(TRIM(template_name)) = LOWER(TRIM($3))
+      LIMIT 1
+    `,
+    [companyIdentifier, normalizedTargetUnitId, normalizedName]
+  );
+  if (existingNameResult.rows.length > 0) {
+    return { ok: false, message: 'A template with this name already exists for this unit' };
+  }
+
+  const extraFields = sourcePayload.extra_fields.map((field) => ({
+    field_key: field.field_key,
+    label: field.label,
+    section_key: field.section_key,
+    display_order: field.display_order,
+    excel_keywords: field.excel_keywords,
+  }));
+
+  await ensureActiveTemplateForUnit(client, {
+    companyIdentifier,
+    unitId: normalizedTargetUnitId,
+    createdBy,
+  });
+
+  await archiveActiveTemplatesForUnit(client, companyIdentifier, normalizedTargetUnitId);
+
+  const newTemplate = await createTemplateVersion(client, {
+    companyIdentifier,
+    unitId: normalizedTargetUnitId,
+    templateName: normalizedName,
+    version: 1,
+    status: 'active',
+    isDefault: false,
+    copiedFromTemplateId: parsedSourceTemplateId,
+    createdBy,
+    extraFields,
+    sourceTemplateId: parsedSourceTemplateId,
+  });
+
+  return {
+    ok: true,
+    template: await enrichTemplateRowWithLinkedCount(
+      client,
+      (await client.query(`SELECT * FROM racm_templates WHERE id = $1 LIMIT 1`, [newTemplate.id])).rows[0]
+    ),
+    fields: await getTemplateFields(client, newTemplate.id),
   };
 }
 
@@ -1323,6 +1457,8 @@ module.exports = {
   createFreshTemplate,
   updateActiveTemplateKeywords,
   copyTemplateFromUnit,
+  listCompanyTemplatesForImport,
+  importTemplateToUnit,
   listTemplateVersions,
   deleteTemplateVersion,
   validateExtraFieldKey,

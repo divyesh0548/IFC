@@ -14,6 +14,7 @@ const CONTROLS_REMINDER_SELECT_SQL = `
 
 const APPROVER_REMINDER_INTERVAL = '2 days';
 const INEFFECTIVE_REMINDER_INTERVAL = '2 days';
+const DEFICIENCY_REVIEW_REMINDER_INTERVAL = '2 days';
 
 /** UTC wall-clock "now" for reminder timestamp storage and comparisons. */
 const UTC_NOW_SQL = `(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`;
@@ -21,6 +22,7 @@ const UTC_NOW_SQL = `(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`;
 const REMINDER_DATETIME_DUE_SQL = `${UTC_NOW_SQL} >= cr.reminder_datetime::timestamp`;
 const REMINDER_TO_APPROVER_DATETIME_DUE_SQL = `${UTC_NOW_SQL} >= cr.reminder_to_approver_datetime::timestamp`;
 const INEFFECTIVE_REMINDER_DATETIME_DUE_SQL = `${UTC_NOW_SQL} >= cr.ineffective_reminder_datetime::timestamp`;
+const DEFICIENCY_REVIEW_REMINDER_DATETIME_DUE_SQL = `${UTC_NOW_SQL} >= cr.deficiency_review_reminder_datetime::timestamp`;
 
 const NOT_EFFECTIVE_CONCLUSION_WHERE_SQL = `
   LOWER(TRIM(COALESCE(cf.control_design_conclusion, ''))) = 'not effective'
@@ -185,6 +187,44 @@ async function seedIneffectiveReminderDatetime(client, formId) {
   return updateIneffectiveReminderDatetime(client, formId);
 }
 
+const UPSERT_DEFICIENCY_REVIEW_REMINDER_DATETIME_SQL = `
+  INSERT INTO controls_reminder (form_id, deficiency_review_reminder_datetime)
+  VALUES (
+    $1,
+    ${UTC_NOW_SQL} + ($2::interval)
+  )
+  ON CONFLICT (form_id) DO UPDATE
+  SET deficiency_review_reminder_datetime = EXCLUDED.deficiency_review_reminder_datetime
+  RETURNING deficiency_review_reminder_datetime
+`;
+
+async function updateDeficiencyReviewReminderDatetime(client, formId) {
+  const result = await client.query(UPSERT_DEFICIENCY_REVIEW_REMINDER_DATETIME_SQL, [
+    formId,
+    DEFICIENCY_REVIEW_REMINDER_INTERVAL,
+  ]);
+  return result.rows?.[0]?.deficiency_review_reminder_datetime || null;
+}
+
+async function seedDeficiencyReviewReminderDatetime(client, formId) {
+  return updateDeficiencyReviewReminderDatetime(client, formId);
+}
+
+async function resetDeficiencyReviewReminderDatetime(client, formId) {
+  const normalizedFormId = String(formId || '').trim();
+  if (!normalizedFormId) return;
+
+  await client.query(
+    `
+      INSERT INTO controls_reminder (form_id, deficiency_review_reminder_datetime)
+      VALUES ($1, NULL)
+      ON CONFLICT (form_id) DO UPDATE
+      SET deficiency_review_reminder_datetime = NULL
+    `,
+    [normalizedFormId]
+  );
+}
+
 /**
  * Reset reminder_to_approver_datetime for one or more forms.
  */
@@ -235,9 +275,11 @@ module.exports = {
   CONTROLS_REMINDER_SELECT_SQL,
   APPROVER_REMINDER_INTERVAL,
   INEFFECTIVE_REMINDER_INTERVAL,
+  DEFICIENCY_REVIEW_REMINDER_INTERVAL,
   REMINDER_DATETIME_DUE_SQL,
   REMINDER_TO_APPROVER_DATETIME_DUE_SQL,
   INEFFECTIVE_REMINDER_DATETIME_DUE_SQL,
+  DEFICIENCY_REVIEW_REMINDER_DATETIME_DUE_SQL,
   NOT_EFFECTIVE_CONCLUSION_WHERE_SQL,
   normalizeDesignConclusion,
   isNotEffectiveConclusion,
@@ -249,8 +291,11 @@ module.exports = {
   updateReminderDatetime,
   updateReminderToApproverDatetime,
   updateIneffectiveReminderDatetime,
+  updateDeficiencyReviewReminderDatetime,
   seedReminderToApproverDatetime,
   seedIneffectiveReminderDatetime,
+  seedDeficiencyReviewReminderDatetime,
+  resetDeficiencyReviewReminderDatetime,
   mapControlsReminderToApi,
   getControlsReminderByFormId,
 };

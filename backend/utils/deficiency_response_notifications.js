@@ -1,6 +1,12 @@
 const { pool } = require('./db');
 const { sendEmail } = require('./send_email');
 const { getCcEmailsForRacm } = require('./racm_cc_recipients');
+const {
+  buildDeficiencyResponseDetailsSection,
+  resolveDeficiencyResponseEmailFields,
+} = require('./racm_email_details');
+const { buildApproverFormDetailUrl, buildUserFormDetailUrl } = require('./racm_status_user_email');
+const { buildCoordinatorFormDetailUrl } = require('./racm_coordinator_assignment');
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -108,10 +114,17 @@ async function getCommunicationMatrixCcEmails(form, excludeEmails = []) {
   return ccEmails.filter((email) => !excludeSet.has(normalizeEmail(email)));
 }
 
-function formatResponseTypeLabel(responseType) {
-  return String(responseType || '').trim() === 'compensatory_racm'
-    ? 'Compensatory RACM'
-    : 'Mitigation Plan';
+function resolveSubmitterRacmUrl(form, submittedByEmail, coordinatorEmail) {
+  const ownerEmail = normalizeEmail(form?.control_owner);
+  const submitter = normalizeEmail(submittedByEmail);
+  const coordinator = normalizeEmail(coordinatorEmail);
+  if (submitter && submitter === coordinator) {
+    return buildCoordinatorFormDetailUrl(form?.form_id);
+  }
+  if (!submitter || submitter === ownerEmail) {
+    return buildUserFormDetailUrl(form?.form_id);
+  }
+  return buildUserFormDetailUrl(form?.form_id);
 }
 
 async function notifyDeficiencyResponseSubmitted({
@@ -130,32 +143,20 @@ async function notifyDeficiencyResponseSubmitted({
     || ''
   ).trim();
   const coordinatorEmail = await getCoordinatorEmailForUnit(form?.company_identifier, form?.unit_id);
-
-  const responseTypeLabel = formatResponseTypeLabel(
-    deficiencyResponse?.current_submission?.submission_type || deficiencyResponse?.response_type
-  );
+  const racmUrl = buildApproverFormDetailUrl(form?.form_id);
+  const responseFields = resolveDeficiencyResponseEmailFields(deficiencyResponse);
+  const responseDetailsBlock = buildDeficiencyResponseDetailsSection({
+    ...responseFields,
+    dueDate: formatDueDateDisplay(responseFields.dueDate),
+  });
 
   let emailBody = 'Dear Approver,\n\n';
   emailBody += 'A deficiency response has been submitted for your review.\n\n';
-  emailBody += 'Response Details:\n';
-  emailBody += `- Submitted By: ${submittedByEmail || '-'}\n`;
-  emailBody += `- Response Type: ${responseTypeLabel}\n`;
-  if (form?.business_process) {
-    emailBody += `- Business Process: ${form.business_process}\n`;
+  emailBody += `${responseDetailsBlock}\n\n`;
+  emailBody += 'Please review the deficiency response in the IFC system.\n\n';
+  if (racmUrl) {
+    emailBody += `RACM: ${racmUrl}\n\n`;
   }
-  if (form?.financial_year) {
-    emailBody += `- Financial Year: ${form.financial_year}\n`;
-  }
-  if (form?.unit_name) {
-    emailBody += `- Unit Name: ${form.unit_name}\n`;
-  }
-  if (String(deficiencyResponse?.current_submission?.concerned_person || deficiencyResponse?.concerned_person || '').trim()) {
-    emailBody += `- Concerned Person: ${String(deficiencyResponse.current_submission?.concerned_person || deficiencyResponse.concerned_person).trim()}\n`;
-  }
-  if (deficiencyResponse?.current_submission?.due_date || deficiencyResponse?.due_date) {
-    emailBody += `- Due Date: ${formatDueDateDisplay(deficiencyResponse.current_submission?.due_date || deficiencyResponse.due_date)}\n`;
-  }
-  emailBody += '\nPlease review the deficiency response in the IFC system.\n\n';
   emailBody += 'Best regards,\nIFC System';
 
   const communicationMatrixCcEmails = await getCommunicationMatrixCcEmails(form, [approverEmail]);
@@ -202,38 +203,32 @@ async function notifyDeficiencyResponseReviewed({
 
   const normalizedDecision = String(reviewDecision || '').trim().toLowerCase();
   const isRejected = normalizedDecision === 'rejected' || normalizedDecision === 'reject';
-  const responseTypeLabel = formatResponseTypeLabel(
-    deficiencyResponse?.current_submission?.submission_type || deficiencyResponse?.response_type
-  );
   const subject = `Internal Financial Controls - Deficiency Response ${isRejected ? 'Rejected' : 'Approved'}`;
+  const racmUrl = resolveSubmitterRacmUrl(form, submittedByEmail, coordinatorEmail);
+  const responseFields = resolveDeficiencyResponseEmailFields(deficiencyResponse);
+  const responseDetailsBlock = buildDeficiencyResponseDetailsSection({
+    ...responseFields,
+    dueDate: formatDueDateDisplay(responseFields.dueDate),
+    reviewDecision: String(reviewDecision || '').trim() || '-',
+  });
 
   let emailBody = 'Dear User,\n\n';
   emailBody += `Your deficiency response has been ${isRejected ? 'rejected' : 'approved'}.\n\n`;
-  emailBody += 'Response Details:\n';
-  emailBody += `- Submitted By: ${submittedByEmail}\n`;
-  emailBody += `- Response Type: ${responseTypeLabel}\n`;
-  emailBody += `- Review Decision: ${String(reviewDecision || '').trim() || '-'}\n`;
-  if (form?.business_process) {
-    emailBody += `- Business Process: ${form.business_process}\n`;
-  }
-  if (form?.financial_year) {
-    emailBody += `- Financial Year: ${form.financial_year}\n`;
-  }
-  if (form?.unit_name) {
-    emailBody += `- Unit Name: ${form.unit_name}\n`;
-  }
-  emailBody += '\n';
+  emailBody += `${responseDetailsBlock}\n`;
 
   if (String(reviewComment || '').trim()) {
-    emailBody += `Approver Comment:\n${String(reviewComment).trim()}\n\n`;
+    emailBody += `\nApprover Comment:\n${String(reviewComment).trim()}\n`;
   }
 
   if (isRejected) {
-    emailBody += 'Please review the approver feedback and resubmit the deficiency response in the IFC system.\n\n';
+    emailBody += '\nPlease review the approver feedback and resubmit the deficiency response in the IFC system.\n\n';
   } else {
-    emailBody += 'No further action is required on this deficiency response.\n\n';
+    emailBody += '\nNo further action is required on this deficiency response.\n\n';
   }
 
+  if (racmUrl) {
+    emailBody += `RACM: ${racmUrl}\n\n`;
+  }
   emailBody += 'Best regards,\nIFC System';
 
   const communicationMatrixCcEmails = await getCommunicationMatrixCcEmails(form, [submittedByEmail]);

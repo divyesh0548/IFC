@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react'
-import { useTheme } from '@mui/material/styles'
+import { alpha, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Tooltip from '@mui/material/Tooltip'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Alert from '@mui/material/Alert'
@@ -24,6 +28,7 @@ import {
   TABLE_ROW_HOVER_BG,
   getConclusionBadgeSolidColors,
   getStatusBadgeSolidColors,
+  isMuiAlertCloseActionClick,
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
@@ -46,6 +51,7 @@ function User_dashboard() {
   const [unitOptions, setUnitOptions] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
   const [actionRequiredAlertDismissed, setActionRequiredAlertDismissed] = useState(false)
+  const [actionRequiredDialogOpen, setActionRequiredDialogOpen] = useState(false)
   const { businessProcessOptions } = useBusinessProcesses()
 
   useSyncGlobalLoading(loading)
@@ -192,6 +198,7 @@ function User_dashboard() {
   })
 
   const actionRequiredCount = (forms || []).filter((form) => Boolean(form?.deficiency_action_status)).length
+  const actionRequiredForms = (forms || []).filter((form) => Boolean(form?.deficiency_action_status))
 
   useEffect(() => {
     if (actionRequiredCount > 0) {
@@ -286,9 +293,29 @@ function User_dashboard() {
           borderRadius: 2,
         }}
       >
-        {actionRequiredCount > 0 && !actionRequiredAlertDismissed ? (
-          <Alert severity="warning" onClose={() => setActionRequiredAlertDismissed(true)} sx={{ mb: 3, alignItems: 'center' }}>
-            Action Required - {actionRequiredCount} RACMs are found ineffective
+        {!loading && actionRequiredCount > 0 && !actionRequiredAlertDismissed ? (
+          <Alert
+            severity="warning"
+            onClose={(event) => {
+              event?.stopPropagation?.()
+              setActionRequiredAlertDismissed(true)
+            }}
+            onClick={(event) => {
+              if (isMuiAlertCloseActionClick(event)) return
+              setActionRequiredDialogOpen(true)
+            }}
+            sx={{
+              mb: 3,
+              alignItems: 'center',
+              cursor: 'pointer',
+              '& .MuiAlert-message': {
+                width: '100%',
+              },
+            }}
+          >
+            <Typography sx={{ fontWeight: 700 }}>
+              Action Required - {actionRequiredCount} RACMs are found ineffective
+            </Typography>
           </Alert>
         ) : null}
 
@@ -596,6 +623,105 @@ function User_dashboard() {
           </Box>
         )}
       </Paper>
+
+      <Dialog
+        open={actionRequiredDialogOpen}
+        onClose={() => setActionRequiredDialogOpen(false)}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '560px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 600,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          Ineffective RACMs
+        </DialogTitle>
+        <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
+          <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mb: 2 }}>
+            Click any RACM below to open its details in a new page.
+          </Typography>
+          {actionRequiredForms.length === 0 ? (
+            <Typography color="text.secondary">No ineffective RACMs found.</Typography>
+          ) : null}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+            {actionRequiredForms.map((form) => (
+              <Box
+                key={`action-required-dialog-${form.form_id}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleFormClick(form.form_id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    handleFormClick(form.form_id)
+                  }
+                }}
+                sx={{
+                  p: 1.75,
+                  borderRadius: 1.5,
+                  border: `1px solid ${theme.palette.divider}`,
+                  backgroundColor: theme.palette.background.paper,
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s, border-color 0.2s',
+                  '&:hover, &:focus-visible': {
+                    backgroundColor: TABLE_ROW_HOVER_BG,
+                    borderColor: alpha(theme.palette.warning.main, 0.45),
+                    outline: 'none',
+                  },
+                }}
+              >
+                <Typography sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+                  {form.control_number || form.form_id}
+                </Typography>
+                <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.25 }}>
+                  {[form.business_process, form.sub_process, form.financial_year].filter(Boolean).join(' | ') || form.form_id}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            pt: 2.5,
+            gap: 1.5,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Button
+            onClick={() => setActionRequiredDialogOpen(false)}
+            variant="outlined"
+            sx={{
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              minWidth: '100px',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.23)'
+                : 'rgba(0, 0, 0, 0.23)',
+            }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

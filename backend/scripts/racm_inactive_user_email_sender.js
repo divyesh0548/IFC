@@ -11,6 +11,7 @@ async function runPendingRacmInactiveUserEmails() {
     `
       ${RACM_STATUS_EMAIL_SELECT}
       WHERE COALESCE(TRIM(cf.control_owner), '') <> ''
+        AND COALESCE(cf.assigned_to_coordinator, FALSE) = FALSE
         AND COALESCE(cf.inactive_mail_pending, FALSE) = TRUE
         AND COALESCE(cf.active, FALSE) = FALSE
       ORDER BY cf.updated_at ASC NULLS LAST, cf.id ASC
@@ -28,6 +29,7 @@ async function runPendingRacmInactiveUserEmails() {
       processOwnerName: row.control_owner_name || '',
       coordinatorName: row.coordinator_name || '',
       coordinatorCompanyName: row.company_name || '',
+      formId: row.form_id,
     });
     if (!payload.shouldSend) continue;
 

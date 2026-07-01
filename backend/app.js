@@ -9,6 +9,7 @@ dotenv.config();
 const { runReminderEmails } = require('./scripts/reminder_emails');
 const { runApproverReminderEmails } = require('./scripts/approver_reminder_emails');
 const { runIneffectiveReminderEmails } = require('./scripts/ineffective_reminder_emails');
+const { runDeficiencyReviewReminderEmails } = require('./scripts/deficiency_review_reminder_emails');
 const { runPendingLoginEmails } = require('./scripts/login_email_sender');
 const { runPendingRacmActiveUserEmails } = require('./scripts/racm_active_user_email_sender');
 const { runPendingRacmInactiveUserEmails } = require('./scripts/racm_inactive_user_email_sender');
@@ -139,6 +140,16 @@ setInterval(async () => {
     await runIneffectiveReminderEmails();
   } catch (error) {
     console.error('Error in ineffective reminder emails job:', error);
+  }
+}, 60 * 1000);
+
+// Reminder emails for approvers on deficiency responses pending review (runs every 1 minute)
+console.log('Starting deficiency review reminder emails scheduler (runs every 1 minute)...');
+setInterval(async () => {
+  try {
+    await runDeficiencyReviewReminderEmails();
+  } catch (error) {
+    console.error('Error in deficiency review reminder emails job:', error);
   }
 }, 60 * 1000);
 

@@ -474,9 +474,9 @@ function ApproverDashboard() {
             <Typography sx={{ fontWeight: 700 }}>
               Action Required - {approverActionRequiredCount} RACMs are awaiting deficiency response review
             </Typography>
-            <Typography variant="body2">
+            {/* <Typography variant="body2">
               Click to view control numbers.
-            </Typography>
+            </Typography> */}
           </Alert>
         ) : null}
         <Box

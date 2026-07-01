@@ -5,6 +5,7 @@ function normalizeFrequencyOption(row) {
   return {
     value: String(row?.value || '').trim(),
     sampleSize: row?.sampleSize ?? null,
+    maxSampleSize: row?.maxSampleSize ?? null,
   }
 }
 

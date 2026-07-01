@@ -158,7 +158,7 @@ function getCoordinatorSubmissionBlockMessage(form) {
 }
 
 function buildCoordinatorFormDetailUrl(formId) {
-  const base = String(process.env.FRONTEND_URL || '').trim().replace(/\/$/, '');
+  const base = String(process.env.VITE_FRONTEND_URL || process.env.FRONTEND_URL || '').trim().replace(/\/$/, '');
   if (!base || !formId) return null;
   return `${base}/company_co/form/${encodeURIComponent(String(formId).trim())}`;
 }

@@ -7,7 +7,8 @@ const { prisma } = require('../lib/prisma');
 const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
 const { sendEmail } = require('../utils/send_email');
 const { getCcEmailsForRacm } = require('../utils/racm_cc_recipients');
-const { buildRacmInactiveUserEmail } = require('../utils/racm_status_user_email');
+const { buildRacmInactiveUserEmail, buildApproverFormDetailUrl, buildUserFormDetailUrl } = require('../utils/racm_status_user_email');
+const { validateRejectedRacmResubmit } = require('../utils/racm_rejected_resubmit');
 const { decryptToken } = require('../utils/auth_utility');
 const { verifyUserAuth } = require('../modules/auth/auth.middleware');
 const { clearAuthCookies } = require('../modules/auth/auth.cookies');
@@ -15,13 +16,14 @@ const { logAuditEvent, EXCEL_BULK_RACM_UPLOAD_ACTION } = require('../utils/audit
 const {
   createOrResubmitDeficiencyResponse,
   getDeficiencyResponseByFormId,
+  validateMitigationPlanDueDate,
 } = require('../utils/deficiency_response');
 const { getBusinessProcessCodeForCompany } = require('../utils/business_process_master');
 const {
   notifyDeficiencyResponseSubmitted,
   getCoordinatorEmailForUnit,
 } = require('../utils/deficiency_response_notifications');
-const { buildRacmDetailsSection } = require('../utils/racm_email_details');
+const { buildRacmDetailsSection, buildPendingApprovalRacmDetailsSection } = require('../utils/racm_email_details');
 const {
   calculateSampleRequired,
   getSampleSizeByFrequency,
@@ -80,6 +82,7 @@ const {
   CONTROLS_REMINDER_SELECT_SQL,
   resetReminderDatetimeForForms,
   seedReminderToApproverDatetime,
+  seedDeficiencyReviewReminderDatetime,
   mapControlsReminderToApi,
 } = require('../utils/controls_reminder');
 const { UNIT_RESPONSIBILITY_TYPES } = require('../utils/unit_responsibilities');
@@ -184,6 +187,23 @@ function formatDueDateDisplay(dueDateRaw) {
   };
 
   return `${getOrdinal(day)} ${monthName}, ${year}`;
+}
+
+function getTomorrowDateOnlyString() {
+  const tomorrow = new Date();
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  return tomorrow.toISOString().slice(0, 10);
+}
+
+function validateRacmScheduleDueDate(dueDate) {
+  const normalized = String(dueDate || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return { ok: false, message: 'Invalid due_date format. Expected YYYY-MM-DD' };
+  }
+  if (normalized < getTomorrowDateOnlyString()) {
+    return { ok: false, message: 'Due date must be tomorrow or a future date' };
+  }
+  return { ok: true, dueDate: normalized };
 }
 
 function normalizeActiveInput(value) {
@@ -533,7 +553,7 @@ function buildControlFormStatusEmail(status, businessProcess, processOwnerName, 
   const coordinatorDisplayName = coordinatorName || 'Company Coordinator';
   const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
   const formattedDueDate = formatDueDateDisplay(dueDate);
-  const formUrl = formId ? `${process.env.FRONTEND_URL}/user/form/${formId}` : null;
+  const formUrl = buildUserFormDetailUrl(formId);
   switch (status) {
     case 'Active':
       return {
@@ -557,9 +577,8 @@ Once you submit your evidence, our tester will review it to check if the control
 
 Deadline: ${formattedDueDate}
 
-Portal: ${process.env.VITE_FRONTEND_URL}
-
 Just shout if you hit any snags or have questions or you have any feedback on the performance of the controls or have noted any significant breaches; I'm happy to help.
+${formUrl ? `\nRACM: ${formUrl}` : ''}
 
 Thanks for cooperating.
 
@@ -574,6 +593,7 @@ ${coordinatorCompanyDisplayName}
         processOwnerName: recipientName,
         coordinatorName: coordinatorDisplayName,
         coordinatorCompanyName: coordinatorCompanyDisplayName,
+        formId,
       });
     default:
       return {
@@ -589,7 +609,6 @@ function buildSentForApprovalEmail({
   businessProcess,
   financialYear,
   standardControlDescription,
-  subProcess,
   dueDate,
   companyName,
 }) {
@@ -598,18 +617,17 @@ function buildSentForApprovalEmail({
   const companyDisplayName = String(companyName || '').trim() || 'Sharp and Tannan Associates';
   const bp = String(businessProcess || '').trim();
   const dueDateText = dueDate ? formatDueDateDisplay(dueDate) : '';
-  const portalUrl = process.env.VITE_FRONTEND_URL || process.env.FRONTEND_URL || '';
-  const detailsBlock = buildRacmDetailsSection(
+  const racmUrl = buildApproverFormDetailUrl(formId);
+  const detailsBlock = buildPendingApprovalRacmDetailsSection(
     {
       businessProcess,
       financialYear,
       standardControlDescription,
     },
-    [
-      ['Submitted By', submittedBy],
-      ['Sub-Process', subProcess],
-      ['Due Date', dueDateText],
-    ]
+    {
+      dueDate: dueDateText,
+      submittedBy,
+    }
   );
   const subjectSuffix = bp || String(formId || '').trim() || 'RACM';
 
@@ -622,7 +640,7 @@ A RACM has been sent for approval.
 ${detailsBlock}
 
 Please review the uploaded documents and Approve/Reject based on your judgement.
-${portalUrl ? `\nPortal: ${portalUrl}` : ''}
+${racmUrl ? `\nRACM: ${racmUrl}` : ''}
 
 Regards,
 ${companyDisplayName}`,
@@ -2023,7 +2041,12 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     if (normalizedActive !== currentActiveStatus) {
       data.userMailSent = false;
       if (currentActiveStatus === true && normalizedActive === false) {
-        if (String(currentForm.controlOwner || '').trim()) {
+        const shouldQueueInactiveMail = String(currentForm.controlOwner || '').trim()
+          && !isCoordinatorAssignedRacm({
+            assigned_to_coordinator: currentForm.assignedToCoordinator,
+            assignedToCoordinator: currentForm.assignedToCoordinator,
+          });
+        if (shouldQueueInactiveMail) {
           data.inactiveMailPending = true;
         }
       } else if (normalizedActive === true) {
@@ -2049,6 +2072,18 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       success: false,
       message: 'Inactive RACMs cannot be sent for approval.',
     });
+  }
+
+  if (isNowSentForApprovalRequest && String(currentForm.status || '').trim().toLowerCase() === 'rejected') {
+    const rejectedResubmit = await validateRejectedRacmResubmit({
+      formId: normalizedFormId,
+      currentForm,
+      remarks_by_user,
+      hasUserDocumentUpload,
+    });
+    if (!rejectedResubmit.ok) {
+      return res.status(400).json({ success: false, message: rejectedResubmit.message });
+    }
   }
 
   if (isNowSentForApprovalRequest && req.user?.role === 'company_co') {
@@ -2138,7 +2173,12 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
           if (normalizedActive !== currentActiveStatus) {
             const assignmentActiveData = { active: normalizedActive, userMailSent: false };
             if (currentActiveStatus === true && normalizedActive === false) {
-              if (String(currentForm.controlOwner || assignmentEmail || '').trim()) {
+              const shouldQueueInactiveMail = String(currentForm.controlOwner || assignmentEmail || '').trim()
+                && !isCoordinatorAssignedRacm({
+                  assigned_to_coordinator: currentForm.assignedToCoordinator,
+                  assignedToCoordinator: currentForm.assignedToCoordinator,
+                });
+              if (shouldQueueInactiveMail) {
                 assignmentActiveData.inactiveMailPending = true;
               }
             } else if (normalizedActive === true) {
@@ -2311,6 +2351,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       ...reminderFields,
       sent_for_approval_timestamp: form.sentForApprovalTimestamp,
       approval_status_change_timestamp: form.approvalStatusChangeTs,
+      last_rejected_at: form.lastRejectedAt,
       user_mail_sent: form.userMailSent,
       sample_docs: sampleDocs.map((d) => ({
         id: d.id,
@@ -2429,15 +2470,16 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
   }
 
   if (!String(explaination || '').trim()) {
-    return res.status(400).json({ success: false, message: 'Explaination is required' });
+    return res.status(400).json({ success: false, message: 'Explanation is required' });
   }
 
   if (responseType === 'mitigation_plan') {
     if (!String(concernedPerson || '').trim()) {
       return res.status(400).json({ success: false, message: 'Concerned Person is required for mitigation plan' });
     }
-    if (!String(dueDate || '').trim()) {
-      return res.status(400).json({ success: false, message: 'Due date is required for mitigation plan' });
+    const dueDateValidation = validateMitigationPlanDueDate(dueDate);
+    if (!dueDateValidation.ok) {
+      return res.status(400).json({ success: false, message: dueDateValidation.message });
     }
   }
 
@@ -2504,6 +2546,8 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
       `,
       [normalizedFormId, saved.response_id]
     );
+
+    await seedDeficiencyReviewReminderDatetime(client, normalizedFormId);
 
     await client.query('COMMIT');
 
@@ -3666,11 +3710,9 @@ router.post('/bulk-set-due-date', verifyAuth, async (req, res) => {
       });
     }
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid due_date format. Expected YYYY-MM-DD',
-      });
+    const dueDateValidation = validateRacmScheduleDueDate(dueDate);
+    if (!dueDateValidation.ok) {
+      return res.status(400).json({ success: false, message: dueDateValidation.message });
     }
 
     const allowed = new Set(['Daily', 'Weekly', 'Monthly']);
@@ -3686,7 +3728,7 @@ router.post('/bulk-set-due-date', verifyAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'form_ids is required' });
     }
 
-    const dueDateValue = new Date(`${dueDate}T00:00:00.000Z`);
+    const dueDateValue = new Date(`${dueDateValidation.dueDate}T00:00:00.000Z`);
 
     // Only update RACMs that belong to the coordinator's company.
     const eligible = await prisma.controlForm.findMany({
@@ -4086,6 +4128,7 @@ router.post('/replicate', verifyAuth, async (req, res) => {
       'due_date',
       'form_id',
       'approval_status_change_timestamp',
+      'last_rejected_at',
       'sent_for_approval_timestamp',
       'updated_at',
       // Design / conclusion fields should not be carried over on replication
