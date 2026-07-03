@@ -102,12 +102,23 @@ export const orderControlDetailKeys = (keys, fallbackOrder = []) => {
   })
 }
 
-/** Approver-filled fields shown in the Approval section on form detail pages. */
+/** Approver-filled design / implementation fields (read-only section on form detail pages). */
 export const APPROVAL_SECTION_FIELD_KEYS = [
   'control_design_procs',
   'control_design_conclusion',
   'design_deficiency_desc',
 ]
+
+export const DESIGN_IMPLEMENTATION_SECTION_TITLE = 'Design and Implementation'
+export const DOCUMENTS_APPROVAL_SECTION_TITLE = 'Documents & Approval'
+
+/** Full-width row in Documents & Approval grid — two remark fields side by side (50% each on md+). */
+export const DOCUMENTS_APPROVAL_REMARKS_ROW_SX = {
+  gridColumn: { xs: '1', md: '1 / -1' },
+  display: 'grid',
+  gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
+  gap: 3,
+}
 
 export function hasRacmFieldValue(value) {
   return value !== null && value !== undefined && value !== '' && String(value).trim() !== ''

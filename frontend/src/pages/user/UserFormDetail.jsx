@@ -45,7 +45,7 @@ import {
 import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments, normalizeSampleDocuments } from '../../lib/racmUserDocuments'
 import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistoryList'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE } from '../../racmFormDetailFields'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatIndianDateTime } from '../../lib/dateTime'
 import { apiUrl, API_BASE_URL } from '../../config/api'
@@ -2045,6 +2045,96 @@ function UserFormDetail() {
               isFieldChanged={hasRequestChangeFieldChanged}
             />
 
+            {hasGroupedFieldValue ? (
+              <Card
+                sx={{
+                  borderRadius: 3,
+                  boxShadow: theme.palette.mode === 'dark'
+                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                    : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid',
+                  borderColor: theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.12)'
+                    : 'rgba(0, 0, 0, 0.08)',
+                  overflow: 'hidden',
+                }}
+              >
+                <CardContent sx={{ p: 4 }}>
+                  <Typography
+                    variant="h6"
+                    component="h3"
+                    sx={{
+                      fontWeight: 700,
+                      mb: 3,
+                      color: 'text.primary',
+                      fontSize: '1.25rem',
+                      pb: 2,
+                      borderBottom: '2px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    {DESIGN_IMPLEMENTATION_SECTION_TITLE}
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 2 }}>
+                    {getPopulatedApprovalSectionFields(formData).map((key) => {
+                      const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                      const value = formData[key]
+                      const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+                      return (
+                        <Box
+                          key={key}
+                          sx={{
+                            p: 2.5,
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: theme.palette.mode === 'dark'
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.06)',
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            component="dt"
+                            sx={{
+                              display: 'block',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              mb: 1.5,
+                              color: 'text.primary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            {label}
+                          </Typography>
+                          {isRequestChangeMode && isRequestChangeFieldEditable(key) ? (
+                            renderRequestChangeInput(key, label)
+                          ) : (
+                            <Typography
+                              variant="body2"
+                              component="dd"
+                              sx={{
+                                color: 'text.secondary',
+                                wordBreak: 'break-word',
+                                lineHeight: 1.6,
+                                fontSize: theme.typography.customSizes.medium,
+                                whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                              }}
+                            >
+                              {String(value)}
+                            </Typography>
+                          )}
+                        </Box>
+                      )
+                    })}
+                  </Box>
+                </CardContent>
+              </Card>
+            ) : null}
+
             <Card
               sx={{
                 borderRadius: 3,
@@ -2072,7 +2162,7 @@ function UserFormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  Submission
+                  {DOCUMENTS_APPROVAL_SECTION_TITLE}
                 </Typography>
                 <Box
                   sx={{
@@ -2354,70 +2444,66 @@ function UserFormDetail() {
                 </Box>
 
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 4, pt: 1 }}>
-                  {hasGroupedFieldValue ? (
-                    <Box>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        {getPopulatedApprovalSectionFields(formData).map((key) => {
-                          const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-                          const value = formData[key]
-                          const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
-                          const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
-
-                          return (
-                            <Box
-                              key={key}
-                              sx={{
-                                p: 2.5,
-                                borderRadius: 2,
-                                backgroundColor: theme.palette.mode === 'dark'
-                                  ? 'rgba(255, 255, 255, 0.03)'
-                                  : 'rgba(0, 0, 0, 0.02)',
-                                border: '1px solid',
-                                borderColor: theme.palette.mode === 'dark'
-                                  ? 'rgba(255, 255, 255, 0.08)'
-                                  : 'rgba(0, 0, 0, 0.06)',
-                              }}
-                            >
-                              <Typography
-                                variant="caption"
-                                component="dt"
-                                sx={{
-                                  display: 'block',
-                                  fontWeight: 700,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.5px',
-                                  mb: 1.5,
-                                  color: 'text.primary',
-                                  fontSize: theme.typography.customSizes.small,
-                                }}
-                              >
-                                {label}
-                              </Typography>
-                              {isRequestChangeMode && isRequestChangeFieldEditable(key) ? (
-                                renderRequestChangeInput(key, label)
-                              ) : (
-                                <Typography
-                                  variant="body2"
-                                  component="dd"
-                                  sx={{
-                                    color: isEmpty ? 'text.disabled' : 'text.secondary',
-                                    wordBreak: 'break-word',
-                                    lineHeight: 1.6,
-                                    fontSize: theme.typography.customSizes.medium,
-                                    whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
-                                  }}
-                                >
-                                  {isEmpty ? '-' : String(value)}
-                                </Typography>
-                              )}
-                            </Box>
-                          )
-                        })}
-                      </Box>
+                  <Box sx={DOCUMENTS_APPROVAL_REMARKS_ROW_SX}>
+                    <Box
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.03)'
+                          : 'rgba(0, 0, 0, 0.02)',
+                        border: '1px solid',
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
+                      }}
+                    >
+                      {canModifySubmissionDetails ? (
+                        <TextField
+                          label={fieldLabels.remarks_by_user}
+                          variant="outlined"
+                          value={remarksByUser}
+                          onChange={(e) => {
+                            setRemarksByUser(e.target.value)
+                            setRemarksDraftDirty(true)
+                          }}
+                          fullWidth
+                          multiline
+                          rows={4}
+                        />
+                      ) : (
+                        <>
+                          <Typography
+                            variant="caption"
+                            component="dt"
+                            sx={{
+                              display: 'block',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              mb: 1.5,
+                              color: 'text.primary',
+                              fontSize: theme.typography.customSizes.small,
+                            }}
+                          >
+                            {fieldLabels.remarks_by_user}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            component="dd"
+                            sx={{
+                              color: (formData?.remarks_by_user || '').trim() === '' ? 'text.disabled' : 'text.secondary',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.6,
+                              fontSize: theme.typography.customSizes.medium,
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
+                            {(formData?.remarks_by_user || '').trim() === '' ? '-' : formData.remarks_by_user}
+                          </Typography>
+                        </>
+                      )}
                     </Box>
-                  ) : null}
-            
-                  {String(formData?.reason_by_approver || '').trim() !== '' ? (
                     <Box
                       sx={{
                         p: 2.5,
@@ -2444,85 +2530,23 @@ function UserFormDetail() {
                           fontSize: theme.typography.customSizes.small,
                         }}
                       >
-                        Reason by Approver
+                        {fieldLabels.reason_by_approver}
                       </Typography>
                       <Typography
                         variant="body2"
                         component="dd"
                         sx={{
-                          color: 'text.secondary',
+                          color: hasRacmFieldValue(formData?.reason_by_approver) ? 'text.secondary' : 'text.disabled',
                           wordBreak: 'break-word',
                           lineHeight: 1.6,
                           fontSize: theme.typography.customSizes.medium,
                           whiteSpace: 'pre-wrap',
                         }}
                       >
-                        {String(formData.reason_by_approver)}
+                        {hasRacmFieldValue(formData?.reason_by_approver) ? String(formData.reason_by_approver) : '-'}
                       </Typography>
                     </Box>
-                  ) : null}
-
-                  {(canModifySubmissionDetails || hasRacmFieldValue(formData?.remarks_by_user)) && (
-                  <Box
-                    sx={{
-                      p: 2.5,
-                      borderRadius: 2,
-                      backgroundColor: theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.03)'
-                        : 'rgba(0, 0, 0, 0.02)',
-                      border: '1px solid',
-                      borderColor: theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(0, 0, 0, 0.06)',
-                    }}
-                  >
-                    {canModifySubmissionDetails ? (
-                      <TextField
-                        label={fieldLabels.remarks_by_user}
-                        variant="outlined"
-                        value={remarksByUser}
-                        onChange={(e) => {
-                          setRemarksByUser(e.target.value)
-                          setRemarksDraftDirty(true)
-                        }}
-                        fullWidth
-                        multiline
-                        rows={4}
-                      />
-                    ) : (
-                      <>
-                        <Typography
-                          variant="caption"
-                          component="dt"
-                          sx={{
-                            display: 'block',
-                            fontWeight: 700,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            mb: 1.5,
-                            color: 'text.primary',
-                            fontSize: theme.typography.customSizes.small,
-                          }}
-                        >
-                          {fieldLabels.remarks_by_user}
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          component="dd"
-                          sx={{
-                            color: (formData?.remarks_by_user || '').trim() === '' ? 'text.disabled' : 'text.secondary',
-                            wordBreak: 'break-word',
-                            lineHeight: 1.6,
-                            fontSize: theme.typography.customSizes.medium,
-                            whiteSpace: 'pre-wrap',
-                          }}
-                        >
-                          {(formData?.remarks_by_user || '').trim() === '' ? '-' : formData.remarks_by_user}
-                        </Typography>
-                      </>
-                    )}
                   </Box>
-                  )}
 
                   {canModifySubmissionDetails &&
                     (() => {

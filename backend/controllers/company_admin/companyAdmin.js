@@ -213,7 +213,7 @@ async function getUnitManagement(req, res) {
             aa.assignment_scope,
             COALESCE(aa.unit_id, cf.unit_id) AS unit_id,
             COALESCE(unit_direct.unit_name, unit_cf.unit_name) AS unit_name,
-            aa.business_process,
+            COALESCE(aa.business_process, cf.business_process) AS business_process,
             aa.form_id,
             aa.created_at
           FROM approver_assignments aa
@@ -969,6 +969,106 @@ async function getDashboardRacms(req, res) {
   }
 }
 
+async function getRacmAuditLogs(req, res) {
+  try {
+    const { form_id } = req.params;
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    if (!companyIdentifier) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company not associated with user',
+      });
+    }
+
+    const own = await pool.query(
+      'SELECT 1 FROM control_forms WHERE form_id = $1 AND company_identifier = $2 LIMIT 1',
+      [form_id, companyIdentifier]
+    );
+    if (own.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found',
+      });
+    }
+
+    const result = await pool.query(
+      `
+        SELECT
+          id,
+          timestamp,
+          TO_CHAR(
+            timezone('Asia/Kolkata', timestamp AT TIME ZONE 'UTC'),
+            'DD/MM/YYYY HH24:MI:SS'
+          ) AS timestamp_ist,
+          action,
+          user_email_id,
+          form_id,
+          ref_data
+        FROM audit_logs_racm
+        WHERE form_id = $1
+        ORDER BY timestamp ASC NULLS LAST, id ASC
+      `,
+      [form_id]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Get RACM audit logs (company_admin) error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+}
+
+async function getControlFormHistory(req, res) {
+  try {
+    const { form_id } = req.params;
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    if (!companyIdentifier) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company not associated with user',
+      });
+    }
+
+    const own = await pool.query(
+      'SELECT 1 FROM control_forms WHERE form_id = $1 AND company_identifier = $2 LIMIT 1',
+      [form_id, companyIdentifier]
+    );
+    if (own.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found',
+      });
+    }
+
+    const result = await pool.query(
+      `
+        SELECT id, reason_by_approver, rejection_timestamp
+        FROM control_form_history
+        WHERE form_id = $1
+        ORDER BY rejection_timestamp ASC NULLS LAST, id ASC
+      `,
+      [form_id]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Get control_form_history (company_admin) error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+}
+
 async function createCompanyBusinessProcess(req, res) {
   try {
     const companyIdentifier = String(req.user?.company_identifier || '').trim();
@@ -1374,5 +1474,7 @@ module.exports = {
   assignApprover,
   getDashboardFilters,
   getDashboardRacms,
+  getRacmAuditLogs,
+  getControlFormHistory,
   createCompanyBusinessProcess,
 };

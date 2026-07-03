@@ -19,17 +19,25 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
+import ListAltRoundedIcon from '@mui/icons-material/ListAltRounded'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableContainer from '@mui/material/TableContainer'
+import TableHead from '@mui/material/TableHead'
+import TableRow from '@mui/material/TableRow'
 import * as XLSX from 'xlsx'
 import { toast } from 'react-hot-toast'
 import {
   FORM_DETAIL_CONTENT_STACK_SX,
   FORM_DETAIL_ROOT_SX,
 } from '../../uiConstants'
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue } from '../../racmFormDetailFields'
-import { API_BASE_URL } from '../../config/api'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, getRacmProcessOwnerDisplayValue, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
+import { API_BASE_URL, apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments, normalizeSampleDocuments } from '../../lib/racmUserDocuments'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
+import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
 
 function formatDateTime(dateString) {
   if (!dateString) return 'N/A'
@@ -94,8 +102,14 @@ function AuditorFormDetail() {
   const [sampleDocsDialogOpen, setSampleDocsDialogOpen] = useState(false)
   const [userDocsDialogOpen, setUserDocsDialogOpen] = useState(false)
   const [showScrollTop, setShowScrollTop] = useState(false)
+  const [auditLogOpen, setAuditLogOpen] = useState(false)
+  const [auditLogLoading, setAuditLogLoading] = useState(false)
+  const [auditLogError, setAuditLogError] = useState(null)
+  const [auditLogRows, setAuditLogRows] = useState([])
+  const [rejectionHistoryRows, setRejectionHistoryRows] = useState([])
+  const [rejectionHistoryOpen, setRejectionHistoryOpen] = useState(false)
 
-  useSyncGlobalLoading(loading)
+  useSyncGlobalLoading(loading || auditLogLoading)
 
   useEffect(() => {
     const onScroll = () => {
@@ -145,6 +159,64 @@ function AuditorFormDetail() {
       cancelled = true
     }
   }, [form_id])
+
+  useEffect(() => {
+    if (!isCompanyAdminView || !form_id) {
+      setRejectionHistoryRows([])
+      return undefined
+    }
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const response = await fetch(
+          apiUrl(`/api/company-admin/control-form-history/${encodeURIComponent(form_id)}`),
+          { method: 'GET', credentials: 'include' }
+        )
+        const data = await response.json()
+        if (cancelled) return
+        if (response.ok && data.success && Array.isArray(data.data)) {
+          setRejectionHistoryRows(data.data)
+        } else {
+          setRejectionHistoryRows([])
+        }
+      } catch (historyError) {
+        console.error('Control form history fetch error:', historyError)
+        if (!cancelled) setRejectionHistoryRows([])
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [form_id, isCompanyAdminView])
+
+  const handleOpenAuditLogs = async () => {
+    if (!isCompanyAdminView) return
+    setAuditLogOpen(true)
+    setAuditLogLoading(true)
+    setAuditLogError(null)
+    setAuditLogRows([])
+    try {
+      const response = await fetch(
+        apiUrl(`/api/company-admin/racm-audit-logs/${encodeURIComponent(form_id)}`),
+        { method: 'GET', credentials: 'include' }
+      )
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        setAuditLogError(data.message || 'Failed to load audit logs')
+        return
+      }
+      setAuditLogRows(Array.isArray(data.data) ? data.data : [])
+    } catch (auditError) {
+      console.error('Audit logs fetch error:', auditError)
+      setAuditLogError('Failed to load audit logs')
+    } finally {
+      setAuditLogLoading(false)
+    }
+  }
+
+  const hasRejectionHistory = rejectionHistoryRows.length > 0
 
   const handleDownloadDocument = async (filePath, successMessage) => {
     if (!filePath) return
@@ -294,18 +366,25 @@ function AuditorFormDetail() {
   const userDocs = getUserDocs()
   const userDocCount = userDocs.length
   const isActive = getIsActive(formData?.active)
-  const topSummaryCardSx = {
-    p: 2,
-    borderRadius: 2,
-    border: '1px solid',
-    borderColor: 'divider',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'flex-start',
-    gap: 1,
-    height: '100%',
-    minHeight: { xs: 'auto', md: 108 },
-  }
+  const topSummaryCardSx = isCompanyAdminView
+    ? {
+        p: 2,
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: 'divider',
+      }
+    : {
+        p: 2,
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: 'divider',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-start',
+        gap: 1,
+        height: '100%',
+        minHeight: { xs: 'auto', md: 108 },
+      }
 
   if (loading) {
     return (
@@ -378,30 +457,79 @@ function AuditorFormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    size="medium"
-                    startIcon={<HistoryRoundedIcon sx={{ fontSize: '1.2rem !important' }} />}
-                    onClick={() => navigate(backPath)}
-                    disableElevation
-                    sx={{
-                      alignSelf: { xs: 'flex-start', sm: 'center' },
-                      textTransform: 'none',
-                      fontWeight: 700,
-                      letterSpacing: '0.02em',
-                      borderRadius: 2,
-                      px: 1.5,
-                      py: 0.875,
-                      minHeight: 40,
-                      boxShadow: 'none',
-                      '&:hover': {
-                        boxShadow: 'none',
-                      },
-                    }}
-                  >
-                    Back to RACMs
-                  </Button>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+                    {!isCompanyAdminView ? (
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        size="medium"
+                        startIcon={<HistoryRoundedIcon sx={{ fontSize: '1.2rem !important' }} />}
+                        onClick={() => navigate(backPath)}
+                        disableElevation
+                        sx={{
+                          textTransform: 'none',
+                          fontWeight: 700,
+                          letterSpacing: '0.02em',
+                          borderRadius: 2,
+                          px: 1.5,
+                          py: 0.875,
+                          minHeight: 40,
+                          boxShadow: 'none',
+                          '&:hover': { boxShadow: 'none' },
+                        }}
+                      >
+                        Back to RACMs
+                      </Button>
+                    ) : null}
+                    {isCompanyAdminView ? (
+                      <>
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          size="medium"
+                          startIcon={<HistoryRoundedIcon sx={{ fontSize: '1.2rem !important' }} />}
+                          onClick={handleOpenAuditLogs}
+                          disableElevation
+                          sx={{
+                            textTransform: 'none',
+                            fontWeight: 700,
+                            letterSpacing: '0.02em',
+                            borderRadius: 2,
+                            px: 1.5,
+                            py: 0.875,
+                            minHeight: 40,
+                            boxShadow: 'none',
+                            '&:hover': { boxShadow: 'none' },
+                          }}
+                        >
+                          Audit logs
+                        </Button>
+                        {hasRejectionHistory ? (
+                          <Button
+                            variant="contained"
+                            color="secondary"
+                            size="medium"
+                            startIcon={<ListAltRoundedIcon sx={{ fontSize: '1.2rem !important' }} />}
+                            onClick={() => setRejectionHistoryOpen(true)}
+                            disableElevation
+                            sx={{
+                              textTransform: 'none',
+                              fontWeight: 700,
+                              letterSpacing: '0.02em',
+                              borderRadius: 2,
+                              px: 1.5,
+                              py: 0.875,
+                              minHeight: 40,
+                              boxShadow: 'none',
+                              '&:hover': { boxShadow: 'none' },
+                            }}
+                          >
+                            RACM History
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </Box>
                   <Box
                     sx={{
                       textAlign: { xs: 'left', sm: 'right' },
@@ -446,7 +574,7 @@ function AuditorFormDetail() {
                   }}
                 >
                   {[
-                    { label: 'Form Status', value: isActive ? 'Active' : 'Inactive', color: isActive ? '#10b981' : '#ef4444' },
+                    { label: 'Control Status', value: isActive ? 'Active' : 'Inactive', color: isActive ? '#10b981' : '#ef4444' },
                     { label: 'Business Process', value: formData?.business_process || '-' },
                     { label: 'Financial Year', value: formData?.financial_year || '-' },
                     { label: 'Approval Status', value: formatStatus(formData?.status), color: formData?.status === 'Approved' ? '#10b981' : formData?.status === 'Rejected' ? '#ef4444' : undefined },
@@ -493,24 +621,57 @@ function AuditorFormDetail() {
                     alignItems: 'stretch',
                   }}
                 >
-                  <Box sx={topSummaryCardSx}>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Reminder Settings
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500, lineHeight: 1.6 }}>
-                      Due: {formatDate(formData?.due_date)}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500, lineHeight: 1.6 }}>
-                      Frequency: {(formData?.reminder_frequency || '').toString().trim() || '-'}
-                    </Typography>
-                  </Box>
+                  {isCompanyAdminView ? (
+                    <Box sx={topSummaryCardSx}>
+                      <Typography
+                        variant="caption"
+                        component="label"
+                        sx={{
+                          display: 'block',
+                          fontWeight: 600,
+                          mb: 1,
+                          color: 'text.secondary',
+                          fontSize: '0.75rem',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                        }}
+                      >
+                        Due Date
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: 'text.primary',
+                          fontWeight: 500,
+                          fontSize: '0.9375rem',
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {formatDate(formData?.due_date)}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <Box sx={topSummaryCardSx}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Reminder Settings
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500, lineHeight: 1.6 }}>
+                        Due: {formatDate(formData?.due_date)}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500, lineHeight: 1.6 }}>
+                        Frequency: {(formData?.reminder_frequency || '').toString().trim() || '-'}
+                      </Typography>
+                    </Box>
+                  )}
 
                   <Box sx={topSummaryCardSx}>
                     <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       RACM Assignment
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500, lineHeight: 1.6 }}>
-                      {(formData?.control_owner_name || formData?.control_owner || '').toString().trim() || '-'}
+                      {isCompanyAdminView
+                        ? getRacmProcessOwnerDisplayValue(formData)
+                        : ((formData?.control_owner_name || formData?.control_owner || '').toString().trim() || '-')}
                     </Typography>
                   </Box>
 
@@ -533,65 +694,67 @@ function AuditorFormDetail() {
                   </Box>
                 </Box>
 
-                <Box
-                  sx={{
-                    mt: 2,
-                    pt: 3,
-                    borderTop: '2px solid',
-                    borderColor: 'divider',
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
-                    gap: 2,
-                  }}
-                >
-                  <Button
-                    onClick={() => setSampleDocsDialogOpen(true)}
-                    fullWidth
-                    variant="outlined"
-                    startIcon={<DownloadRoundedIcon />}
+                {!isCompanyAdminView ? (
+                  <Box
                     sx={{
-                      py: 1.5,
-                      fontWeight: 600,
-                      textTransform: 'none',
-                      fontSize: '0.9375rem',
-                      borderRadius: 2,
+                      mt: 2,
+                      pt: 3,
+                      borderTop: '2px solid',
+                      borderColor: 'divider',
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+                      gap: 2,
                     }}
                   >
-                    Sample Documents ({sampleDocCount})
-                  </Button>
+                    <Button
+                      onClick={() => setSampleDocsDialogOpen(true)}
+                      fullWidth
+                      variant="outlined"
+                      startIcon={<DownloadRoundedIcon />}
+                      sx={{
+                        py: 1.5,
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        fontSize: '0.9375rem',
+                        borderRadius: 2,
+                      }}
+                    >
+                      Sample Documents ({sampleDocCount})
+                    </Button>
 
-                  <Button
-                    onClick={() => setUserDocsDialogOpen(true)}
-                    fullWidth
-                    variant="outlined"
-                    startIcon={<DownloadRoundedIcon />}
-                    sx={{
-                      py: 1.5,
-                      fontWeight: 600,
-                      textTransform: 'none',
-                      fontSize: '0.9375rem',
-                      borderRadius: 2,
-                    }}
-                  >
-                    User Documents ({userDocCount})
-                  </Button>
+                    <Button
+                      onClick={() => setUserDocsDialogOpen(true)}
+                      fullWidth
+                      variant="outlined"
+                      startIcon={<DownloadRoundedIcon />}
+                      sx={{
+                        py: 1.5,
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        fontSize: '0.9375rem',
+                        borderRadius: 2,
+                      }}
+                    >
+                      User Documents ({userDocCount})
+                    </Button>
 
-                  <Button
-                    onClick={() => navigate(backPath)}
-                    fullWidth
-                    variant="contained"
-                    color="secondary"
-                    sx={{
-                      py: 1.5,
-                      fontWeight: 600,
-                      textTransform: 'none',
-                      fontSize: '0.9375rem',
-                      borderRadius: 2,
-                    }}
-                  >
-                    Back
-                  </Button>
-                </Box>
+                    <Button
+                      onClick={() => navigate(backPath)}
+                      fullWidth
+                      variant="contained"
+                      color="secondary"
+                      sx={{
+                        py: 1.5,
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        fontSize: '0.9375rem',
+                        borderRadius: 2,
+                      }}
+                    >
+                      Back
+                    </Button>
+                  </Box>
+                ) : null}
               </Box>
             </CardContent>
           </Card>
@@ -860,7 +1023,7 @@ function AuditorFormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  Design and Implementation
+                  {DESIGN_IMPLEMENTATION_SECTION_TITLE}
                 </Typography>
                 <Box
                   sx={{
@@ -926,194 +1089,144 @@ function AuditorFormDetail() {
             </Card>
           )}
 
-          {(userDocCount > 0 || hasRacmFieldValue(formData.remarks_by_user) || hasRacmFieldValue(formData.reason_by_approver)) && (
-            <Card
-              sx={{
-                borderRadius: 3,
-                boxShadow: theme.palette.mode === 'dark'
-                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
-                border: '1px solid',
-                borderColor: theme.palette.mode === 'dark'
-                  ? 'rgba(255, 255, 255, 0.12)'
-                  : 'rgba(0, 0, 0, 0.08)',
-                overflow: 'hidden',
-              }}
-            >
-              <CardContent sx={{ p: 4 }}>
-                <Typography
-                  variant="h6"
-                  component="h3"
+          <Card
+            sx={{
+              borderRadius: 3,
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                : '0 2px 12px rgba(0, 0, 0, 0.08)',
+              border: '1px solid',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.12)'
+                : 'rgba(0, 0, 0, 0.08)',
+              overflow: 'hidden',
+            }}
+          >
+            <CardContent sx={{ p: 4 }}>
+              <Typography
+                variant="h6"
+                component="h3"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: 'text.primary',
+                  fontSize: '1.25rem',
+                  pb: 2,
+                  borderBottom: '2px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                {DOCUMENTS_APPROVAL_SECTION_TITLE}
+              </Typography>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
+                  gap: 3,
+                  mt: 2,
+                }}
+              >
+                <Box
+                  component={sampleDocCount > 0 ? 'button' : 'div'}
+                  type={sampleDocCount > 0 ? 'button' : undefined}
+                  onClick={sampleDocCount > 0 ? () => setSampleDocsDialogOpen(true) : undefined}
                   sx={{
-                    fontWeight: 700,
-                    mb: 3,
-                    color: 'text.primary',
-                    fontSize: '1.25rem',
-                    pb: 2,
-                    borderBottom: '2px solid',
-                    borderColor: 'divider',
+                    p: 2.5,
+                    borderRadius: 2,
+                    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                    border: '1px solid',
+                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                    width: '100%',
+                    textAlign: 'left',
+                    backgroundImage: 'none',
+                    cursor: sampleDocCount > 0 ? 'pointer' : 'default',
+                    font: 'inherit',
                   }}
                 >
-                  Approval
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 2 }}>
-                  {(userDocCount > 0 || hasRacmFieldValue(formData.remarks_by_user)) && (
-                    <Box
+                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', mb: 1.5 }}>
+                    Sample Documents
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: sampleDocCount > 0 ? 'text.primary' : 'text.disabled' }}>
+                    {sampleDocCount > 0 ? `${sampleDocCount} file(s)` : 'No sample documents'}
+                  </Typography>
+                </Box>
+                <Box
+                  component={userDocCount > 0 ? 'button' : 'div'}
+                  type={userDocCount > 0 ? 'button' : undefined}
+                  onClick={userDocCount > 0 ? () => setUserDocsDialogOpen(true) : undefined}
+                  sx={{
+                    p: 2.5,
+                    borderRadius: 2,
+                    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                    border: '1px solid',
+                    borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                    width: '100%',
+                    textAlign: 'left',
+                    backgroundImage: 'none',
+                    cursor: userDocCount > 0 ? 'pointer' : 'default',
+                    font: 'inherit',
+                  }}
+                >
+                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', mb: 1.5 }}>
+                    User Documents
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: userDocCount > 0 ? 'text.primary' : 'text.disabled' }}>
+                    {userDocCount > 0 ? `${userDocCount} file(s)` : 'No user documents'}
+                  </Typography>
+                </Box>
+                <Box sx={DOCUMENTS_APPROVAL_REMARKS_ROW_SX}>
+                  <Box
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                      border: '1px solid',
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', mb: 1.5 }}>
+                      {fieldLabels.remarks_by_user}
+                    </Typography>
+                    <Typography
+                      variant="body2"
                       sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
-                        gap: 3,
+                        color: hasRacmFieldValue(formData.remarks_by_user) ? 'text.secondary' : 'text.disabled',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.6,
+                        whiteSpace: 'pre-wrap',
                       }}
                     >
-                      {userDocCount > 0 && (
-                        <Box
-                          component="button"
-                          type="button"
-                          onClick={() => setUserDocsDialogOpen(true)}
-                          sx={{
-                            p: 2.5,
-                            borderRadius: 2,
-                            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
-                            border: '1px solid',
-                            borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
-                            width: '100%',
-                            minWidth: 0,
-                            textAlign: 'left',
-                            cursor: 'pointer',
-                            font: 'inherit',
-                            transition: 'all 0.2s ease-in-out',
-                            '&:hover': {
-                              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                            },
-                          }}
-                        >
-                          <Typography
-                            variant="caption"
-                            component="dt"
-                            sx={{
-                              display: 'block',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.5px',
-                              mb: 1.5,
-                              color: 'text.primary',
-                              fontSize: theme.typography.customSizes.small,
-                            }}
-                          >
-                            {fieldLabels.doc_uploaded_by_user}
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            component="dd"
-                            sx={{
-                              color: 'text.primary',
-                              lineHeight: 1.6,
-                              fontSize: theme.typography.customSizes.medium,
-                              fontWeight: 600,
-                            }}
-                          >
-                            User Uploaded Documents ({userDocCount})
-                          </Typography>
-                        </Box>
-                      )}
-
-                      {hasRacmFieldValue(formData.remarks_by_user) && (
-                        <Box
-                          sx={{
-                            p: 2.5,
-                            borderRadius: 2,
-                            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
-                            border: '1px solid',
-                            borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
-                            minWidth: 0,
-                            transition: 'all 0.2s ease-in-out',
-                            '&:hover': {
-                              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                            },
-                          }}
-                        >
-                          <Typography
-                            variant="caption"
-                            component="dt"
-                            sx={{
-                              display: 'block',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.5px',
-                              mb: 1.5,
-                              color: 'text.primary',
-                              fontSize: theme.typography.customSizes.small,
-                            }}
-                          >
-                            Remarks By User
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            component="dd"
-                            sx={{
-                              color: !formData.remarks_by_user || String(formData.remarks_by_user).trim() === '' ? 'text.disabled' : 'text.secondary',
-                              wordBreak: 'break-word',
-                              lineHeight: 1.6,
-                              fontSize: theme.typography.customSizes.medium,
-                            }}
-                          >
-                            {!formData.remarks_by_user || String(formData.remarks_by_user).trim() === '' ? '-' : String(formData.remarks_by_user)}
-                          </Typography>
-                        </Box>
-                      )}
-                    </Box>
-                  )}
-
-                  {(() => {
-                    const reason = formData?.reason_by_approver
-                    const hasReason = typeof reason === 'string' && reason.trim() !== ''
-                    if (!hasReason) return null
-
-                    return (
-                      <Box
-                        sx={{
-                          p: 2.5,
-                          borderRadius: 2,
-                          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
-                          border: '1px solid',
-                          borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
-                          component="dt"
-                          sx={{
-                            display: 'block',
-                            fontWeight: 700,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            mb: 1.5,
-                            color: 'text.primary',
-                            fontSize: theme.typography.customSizes.small,
-                          }}
-                        >
-                          Reason by Approver
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          component="dd"
-                          sx={{
-                            color: 'text.primary',
-                            fontWeight: 500,
-                            fontSize: '0.875rem',
-                            lineHeight: 1.6,
-                            wordBreak: 'break-word',
-                          }}
-                        >
-                          {reason}
-                        </Typography>
-                      </Box>
-                    )
-                  })()}
+                      {hasRacmFieldValue(formData.remarks_by_user) ? String(formData.remarks_by_user) : '-'}
+                    </Typography>
+                  </Box>
+                  <Box
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                      border: '1px solid',
+                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', mb: 1.5 }}>
+                      {fieldLabels.reason_by_approver}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: hasRacmFieldValue(formData.reason_by_approver) ? 'text.secondary' : 'text.disabled',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.6,
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {hasRacmFieldValue(formData.reason_by_approver) ? String(formData.reason_by_approver) : '-'}
+                    </Typography>
+                  </Box>
                 </Box>
-              </CardContent>
-            </Card>
-          )}
+              </Box>
+            </CardContent>
+          </Card>
         </Box>
       </Box>
 
@@ -1276,6 +1389,72 @@ function AuditorFormDetail() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {isCompanyAdminView ? (
+        <>
+          <RacmAuditLogsDialog
+            open={auditLogOpen}
+            onClose={() => setAuditLogOpen(false)}
+            loading={auditLogLoading}
+            error={auditLogError}
+            rows={auditLogRows}
+          />
+          <Dialog
+            open={rejectionHistoryOpen}
+            onClose={() => setRejectionHistoryOpen(false)}
+            fullWidth
+            maxWidth="md"
+            aria-labelledby="company-admin-rejection-history-dialog-title"
+            PaperProps={{ sx: { borderRadius: 2, maxHeight: '90vh' } }}
+          >
+            <DialogTitle
+              id="company-admin-rejection-history-dialog-title"
+              sx={{ pb: 1, pt: 2.5, px: 3, fontWeight: 600, fontSize: '1.1rem' }}
+            >
+              RACM History
+            </DialogTitle>
+            <DialogContent sx={{ px: 3, mt: 2.5, pb: 2, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <TableContainer
+                sx={{
+                  maxHeight: 'min(420px, 58vh)',
+                  overflow: 'auto',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                }}
+              >
+                <Table size="small" stickyHeader sx={{ tableLayout: 'fixed', width: '100%' }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600, width: '34%' }}>Rejected On</TableCell>
+                      <TableCell sx={{ fontWeight: 600, width: '66%' }}>Reason by Approver</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {rejectionHistoryRows.map((row) => (
+                      <TableRow key={row.id} hover>
+                        <TableCell sx={{ verticalAlign: 'top', wordBreak: 'break-word' }}>
+                          {row.rejection_timestamp != null && String(row.rejection_timestamp).trim() !== ''
+                            ? formatDateTime(row.rejection_timestamp)
+                            : '—'}
+                        </TableCell>
+                        <TableCell sx={{ verticalAlign: 'top', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                          {row.reason_by_approver != null && String(row.reason_by_approver).trim() !== ''
+                            ? String(row.reason_by_approver)
+                            : '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, py: 2 }}>
+              <Button onClick={() => setRejectionHistoryOpen(false)}>Close</Button>
+            </DialogActions>
+          </Dialog>
+        </>
+      ) : null}
 
       {showScrollTop && (
         <Fab

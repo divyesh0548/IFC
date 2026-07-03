@@ -72,6 +72,7 @@ const {
 const {
   getActiveRacmDeleteError,
   getInactiveRacmApproverAccessError,
+  deleteApproverAssignmentsForRacms,
 } = require('../utils/racm_delete');
 const {
   getMissingRacmRequiredFields,
@@ -269,6 +270,15 @@ const CONTROL_FORMS_LIST_FROM = `
       aa.created_at DESC
     LIMIT 1
   ) approver_map ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT aa.approver_email_id
+    FROM approver_assignments aa
+    WHERE aa.company_identifier = cf.company_identifier
+      AND aa.assignment_scope = 'RACM'
+      AND aa.form_id = cf.form_id
+    ORDER BY aa.created_at DESC, aa.id DESC
+    LIMIT 1
+  ) racm_specific_approver_map ON TRUE
   LEFT JOIN ifc_users approver_user
     ON LOWER(TRIM(approver_user.email_id)) = LOWER(TRIM(COALESCE(approver_map.approver_email_id, '')))
    AND approver_user.company_identifier = cf.company_identifier
@@ -288,6 +298,7 @@ const CONTROL_FORMS_LIST_SELECT = `
     NULLIF(TRIM(approver_map.approver_email_id), '') AS approver_email_id,
     NULLIF(TRIM(approver_user.emp_name), '') AS approver_name,
     NULLIF(TRIM(approver_user.emp_name), '') AS approver_display_name,
+    NULLIF(TRIM(racm_specific_approver_map.approver_email_id), '') AS racm_specific_approver_email_id,
     ${RACM_ASSIGNMENT_COMPUTED_SELECT_SQL}
 `;
 
@@ -332,6 +343,13 @@ function appendControlFormsListFilters(req, options, queryParts) {
     `;
     queryParams.push(req.user.email_id);
     paramIndex += 1;
+  } else if (req.user.role === 'company_admin') {
+    const adminCompanyIdentifier = String(req.user.company_identifier || '').trim();
+    if (adminCompanyIdentifier) {
+      whereClause += ` AND cf.company_identifier = $${paramIndex}`;
+      queryParams.push(adminCompanyIdentifier);
+      paramIndex += 1;
+    }
   } else if (company_identifier) {
     whereClause += ` AND cf.company_identifier = $${paramIndex}`;
     queryParams.push(company_identifier);
@@ -376,9 +394,9 @@ function appendControlFormsListFilters(req, options, queryParts) {
     if (normalizedStatus === 'pending') {
       whereClause += ` AND (
         cf.status IS NULL
-        OR cf.status = ''
-        OR cf.status = 'null'
-        OR LOWER(TRIM(cf.status)) = 'sent for approval'
+        OR TRIM(cf.status) = ''
+        OR LOWER(TRIM(cf.status)) = 'null'
+        OR LOWER(TRIM(cf.status)) = 'pending'
       )`;
     } else if (normalizedStatus === 'sent for approval') {
       whereClause += ` AND cf.status = $${paramIndex}`;
@@ -4346,6 +4364,10 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
     }
 
     const deleteResult = await prisma.$transaction(async (tx) => {
+      const deletedApproverAssignments = await deleteApproverAssignmentsForRacms(tx, {
+        formIds: form_id,
+        companyIdentifier: coordinatorCompany,
+      });
       const deletedUserDocsResult = await tx.racmDoc.deleteMany({
         where: { formId: form_id },
       });
@@ -4358,6 +4380,7 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       return {
         user_uploaded_rows: deletedUserDocsResult.count,
         sample_doc_rows: deletedSampleDocsResult.count,
+        approver_assignment_rows: deletedApproverAssignments,
       };
     });
 

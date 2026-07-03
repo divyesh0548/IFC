@@ -75,11 +75,11 @@ export const DASHBOARD_PAPER_SX = {
   boxSizing: 'border-box',
 }
 
-// Horizontal scroll container for wide dashboard tables
+// Table container — columns use percentage widths so dashboards stay within the viewport
 export const DASHBOARD_TABLE_WRAP_SX = {
   width: '100%',
   minWidth: 0,
-  overflowX: 'auto',
+  overflowX: 'hidden',
 }
 // Example: “Analyze and monitor RACM for your company.”
 export const PAGE_SUBHEADER_TEXT_SX = {
@@ -116,6 +116,20 @@ export const STATUS_BADGE_PILL_SX = {
   width: 'fit-content',
   maxWidth: '100%',
   boxSizing: 'border-box',
+}
+
+/** Conclusion badges — longer labels (e.g. Accepted Under Deviation) wrap inside the pill */
+export const CONCLUSION_BADGE_PILL_SX = {
+  ...STATUS_BADGE_PILL_SX,
+  display: 'inline-block',
+  whiteSpace: 'normal',
+  wordBreak: 'break-word',
+  overflowWrap: 'break-word',
+  lineHeight: 1.35,
+  px: 1.25,
+  py: 0.625,
+  width: 'auto',
+  minWidth: 'min-content',
 }
 
 /** Same colors, slightly larger type for form summary cards */

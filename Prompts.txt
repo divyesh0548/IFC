@@ -1,3 +1,1 @@
-There is a bug in re-submission. I first changed the user remarks, then uploaded documents. On document upload, whole form reloaded and the user remakrs changed to default, which prevented the RACM submission. 
-
-From user's persepecitve this is not good UX. Please fix this.
+In every dashbaoard where RACMs are listed, add a new column on the left most side which will be "Control Number". Adjust other columns and do not make dashbaoard scrollable in X-axis.

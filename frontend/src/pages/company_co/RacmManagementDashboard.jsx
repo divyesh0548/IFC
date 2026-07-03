@@ -35,6 +35,7 @@ import {
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   STATUS_BADGE_PILL_SX,
+  CONCLUSION_BADGE_PILL_SX,
   getApprovalStatusBadgeSolidColors,
   getConclusionBadgeSolidColors,
   isMuiAlertCloseActionClick,
@@ -1667,6 +1668,44 @@ function RacmManagementDashboard() {
   }, [pendingChangeRequestCount])
 
   const showUnitColumn = coordinatorUnits.length > 1
+  const mgmtSelectionMode = deleteMode || setActiveMode || setDueDateMode || replicateMode
+  const MGMT_TABLE_COL_PX = {
+    checkbox: 44,
+    controlNumber: 100,
+    businessProcess: 130,
+    subProcess: 140,
+    description: 190,
+    financialYear: 85,
+    unit: 110,
+    activity: 85,
+    approval: 85,
+    conclusion: 140,
+    dueDate: 95,
+  }
+  const mgmtTableColWidthsOrdered = [
+    ...(mgmtSelectionMode ? [MGMT_TABLE_COL_PX.checkbox] : []),
+    MGMT_TABLE_COL_PX.controlNumber,
+    MGMT_TABLE_COL_PX.businessProcess,
+    MGMT_TABLE_COL_PX.subProcess,
+    MGMT_TABLE_COL_PX.description,
+    MGMT_TABLE_COL_PX.financialYear,
+    ...(showUnitColumn ? [MGMT_TABLE_COL_PX.unit] : []),
+    MGMT_TABLE_COL_PX.activity,
+    MGMT_TABLE_COL_PX.approval,
+    MGMT_TABLE_COL_PX.conclusion,
+    MGMT_TABLE_COL_PX.dueDate,
+  ]
+  const mgmtTableTotalWidthPx = mgmtTableColWidthsOrdered.reduce((a, b) => a + b, 0)
+  const pctColSx = (px) => {
+    const pct = (100 * px) / mgmtTableTotalWidthPx
+    const s = `${pct}%`
+    return {
+      width: s,
+      minWidth: s,
+      maxWidth: s,
+      boxSizing: 'border-box',
+    }
+  }
   const showUnitFilter = coordinatorUnits.length > 1
 
   // Add click outside handler
@@ -2339,7 +2378,6 @@ function RacmManagementDashboard() {
                 component="table"
                 sx={{
                   width: '100%',
-                  minWidth: 1560,
                   tableLayout: 'fixed',
                   borderCollapse: 'collapse',
                   '& th, & td': {
@@ -2347,6 +2385,11 @@ function RacmManagementDashboard() {
                   },
                 }}
               >
+                <Box component="colgroup">
+                  {mgmtTableColWidthsOrdered.map((w, i) => (
+                    <Box key={i} component="col" sx={pctColSx(w)} />
+                  ))}
+                </Box>
                 <Box
                   component="thead"
                   sx={{
@@ -2354,7 +2397,7 @@ function RacmManagementDashboard() {
                   }}
                 >
                   <Box component="tr">
-                    {(deleteMode || setActiveMode || setDueDateMode || replicateMode) && (
+                    {mgmtSelectionMode && (
                       <Box
                         component="th"
                         sx={{
@@ -2366,9 +2409,7 @@ function RacmManagementDashboard() {
                           textTransform: 'uppercase',
                           letterSpacing: '0.05em',
                           color: theme.palette.text.secondary,
-                          width: '60px',
-                          minWidth: '60px',
-                          maxWidth: '60px',
+                          ...pctColSx(MGMT_TABLE_COL_PX.checkbox),
                         }}
                       >
                         <Checkbox
@@ -2395,9 +2436,23 @@ function RacmManagementDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '200px',
-                        minWidth: '180px',
-                        maxWidth: '220px',
+                        ...pctColSx(MGMT_TABLE_COL_PX.controlNumber),
+                      }}
+                    >
+                      Control Number
+                    </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 2.5,
+                        py: 1.5,
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                        ...pctColSx(MGMT_TABLE_COL_PX.businessProcess),
                       }}
                     >
                       Business Process
@@ -2413,9 +2468,7 @@ function RacmManagementDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '220px',
-                        minWidth: '200px',
-                        maxWidth: '260px',
+                        ...pctColSx(MGMT_TABLE_COL_PX.subProcess),
                       }}
                     >
                       Sub Process
@@ -2431,9 +2484,7 @@ function RacmManagementDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '260px',
-                        minWidth: '220px',
-                        maxWidth: '320px',
+                        ...pctColSx(MGMT_TABLE_COL_PX.description),
                       }}
                     >
                       Standard Control Description
@@ -2449,9 +2500,7 @@ function RacmManagementDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '120px',
-                        minWidth: '120px',
-                        maxWidth: '120px',
+                        ...pctColSx(MGMT_TABLE_COL_PX.financialYear),
                       }}
                     >
                       Financial Year
@@ -2468,9 +2517,7 @@ function RacmManagementDashboard() {
                           textTransform: 'uppercase',
                           letterSpacing: '0.05em',
                           color: theme.palette.text.secondary,
-                          width: '180px',
-                          minWidth: '160px',
-                          maxWidth: '220px',
+                          ...pctColSx(MGMT_TABLE_COL_PX.unit),
                         }}
                       >
                         Unit
@@ -2487,9 +2534,7 @@ function RacmManagementDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '120px',
-                        minWidth: '120px',
-                        maxWidth: '120px',
+                        ...pctColSx(MGMT_TABLE_COL_PX.activity),
                       }}
                     >
                       Activity Status
@@ -2505,9 +2550,7 @@ function RacmManagementDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '120px',
-                        minWidth: '120px',
-                        maxWidth: '120px',
+                        ...pctColSx(MGMT_TABLE_COL_PX.approval),
                       }}
                     >
                       Approval Status
@@ -2523,9 +2566,7 @@ function RacmManagementDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '200px',
-                        minWidth: '180px',
-                        maxWidth: '220px',
+                        ...pctColSx(MGMT_TABLE_COL_PX.conclusion),
                       }}
                     >
                       Conclusion
@@ -2541,9 +2582,7 @@ function RacmManagementDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '140px',
-                        minWidth: '140px',
-                        maxWidth: '140px',
+                        ...pctColSx(MGMT_TABLE_COL_PX.dueDate),
                       }}
                     >
                       Due Date
@@ -2582,16 +2621,14 @@ function RacmManagementDashboard() {
                           },
                         }}
                       >
-                        {(deleteMode || setActiveMode || setDueDateMode || replicateMode) && (
+                        {mgmtSelectionMode && (
                           <Box
                             component="td"
                             sx={{
                               px: 2,
                               py: 2,
                               textAlign: 'center',
-                              width: '60px',
-                              minWidth: '60px',
-                              maxWidth: '60px',
+                              ...pctColSx(MGMT_TABLE_COL_PX.checkbox),
                             }}
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -2615,11 +2652,24 @@ function RacmManagementDashboard() {
                           sx={dataCellSx({
                             px: 2.5,
                             py: 2,
-                            width: '200px',
-                            minWidth: '180px',
-                            maxWidth: '220px',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                            color: theme.palette.text.primary,
+                            ...pctColSx(MGMT_TABLE_COL_PX.controlNumber),
+                          })}
+                        >
+                          <Box component="span" sx={dataCellTextSx}>
+                            {form.control_number || form.form_id || 'N/A'}
+                          </Box>
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={dataCellSx({
+                            px: 2.5,
+                            py: 2,
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
+                            ...pctColSx(MGMT_TABLE_COL_PX.businessProcess),
                           })}
                         >
                           <Box component="span" sx={dataCellTextSx}>
@@ -2631,11 +2681,9 @@ function RacmManagementDashboard() {
                           sx={dataCellSx({
                             px: 2.5,
                             py: 2,
-                            width: '220px',
-                            minWidth: '200px',
-                            maxWidth: '260px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
+                            ...pctColSx(MGMT_TABLE_COL_PX.subProcess),
                           })}
                         >
                           <Tooltip title={form.sub_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
@@ -2649,11 +2697,9 @@ function RacmManagementDashboard() {
                           sx={dataCellSx({
                             px: 2.5,
                             py: 2,
-                            width: '260px',
-                            minWidth: '220px',
-                            maxWidth: '320px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
+                            ...pctColSx(MGMT_TABLE_COL_PX.description),
                           })}
                         >
                           <Tooltip
@@ -2674,11 +2720,9 @@ function RacmManagementDashboard() {
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            width: '120px',
-                            minWidth: '120px',
-                            maxWidth: '120px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
+                            ...pctColSx(MGMT_TABLE_COL_PX.financialYear),
                           }}
                         >
                           <Box component="span" sx={truncatedTextSx}>
@@ -2691,11 +2735,9 @@ function RacmManagementDashboard() {
                             sx={dataCellSx({
                               px: 2.5,
                               py: 2,
-                              width: '180px',
-                              minWidth: '160px',
-                              maxWidth: '220px',
                               fontSize: '0.875rem',
                               color: theme.palette.text.primary,
+                              ...pctColSx(MGMT_TABLE_COL_PX.unit),
                             })}
                           >
                             <Tooltip title={form.unit_name || form.unit_id || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
@@ -2711,9 +2753,7 @@ function RacmManagementDashboard() {
                             px: 3,
                             py: 2,
                             whiteSpace: 'nowrap',
-                            width: '120px',
-                            minWidth: '120px',
-                            maxWidth: '120px',
+                            ...pctColSx(MGMT_TABLE_COL_PX.activity),
                           }}
                         >
                           <Box component="span" sx={{ fontSize: '0.875rem', fontWeight: 600, color: theme.palette.text.primary }}>
@@ -2726,9 +2766,7 @@ function RacmManagementDashboard() {
                             px: 3,
                             py: 2,
                             whiteSpace: 'nowrap',
-                            width: '120px',
-                            minWidth: '120px',
-                            maxWidth: '120px',
+                            ...pctColSx(MGMT_TABLE_COL_PX.approval),
                           }}
                         >
                           <Box
@@ -2746,17 +2784,15 @@ function RacmManagementDashboard() {
                           sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            width: '200px',
-                            minWidth: '180px',
-                            maxWidth: '220px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
+                            ...pctColSx(MGMT_TABLE_COL_PX.conclusion),
                           })}
                         >
                           <Box
                             component="span"
                             sx={{
-                              ...STATUS_BADGE_PILL_SX,
+                              ...CONCLUSION_BADGE_PILL_SX,
                               ...getConclusionBadgeSolidColors(form.control_design_conclusion),
                             }}
                           >
@@ -2768,11 +2804,9 @@ function RacmManagementDashboard() {
                           sx={dataCellSx({
                             px: 3,
                             py: 2,
-                            width: '140px',
-                            minWidth: '140px',
-                            maxWidth: '140px',
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
+                            ...pctColSx(MGMT_TABLE_COL_PX.dueDate),
                           })}
                         >
                           <Box component="span" sx={dataCellTextSx}>

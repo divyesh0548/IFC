@@ -5,6 +5,7 @@ const { hashPassword, getPasswordPepper } = require('../../utils/password');
 const { encryptTempPassword, sendUserCreationEmail } = require('../../utils/login_email');
 const { deleteFileFromS3 } = require('../../utils/s3Upload');
 const { collectRacmS3DocumentKeys } = require('../../utils/racm_documents');
+const { deleteApproverAssignmentsForRacms } = require('../../utils/racm_delete');
 const { createBusinessProcessMasterEntry } = require('../../utils/business_process_master');
 const { sendEmail } = require('../../utils/send_email');
 const {
@@ -725,6 +726,10 @@ async function deleteCompany(req, res) {
       }
 
       const racmDeleteCounts = await prisma.$transaction(async (tx) => {
+        const deletedApproverAssignments = await deleteApproverAssignmentsForRacms(tx, {
+          formIds,
+          companyIdentifier: company_identifier,
+        });
         const deletedUserDocsResult = await tx.racmDoc.deleteMany({
           where: { formId: { in: formIds } },
         });
@@ -739,6 +744,7 @@ async function deleteCompany(req, res) {
           deletedUserDocRows: deletedUserDocsResult.count,
           deletedSampleDocRows: deletedSampleDocsResult.count,
           deletedRacmRows: deletedRacmsResult.count,
+          deletedApproverAssignmentRows: deletedApproverAssignments,
         };
       });
 

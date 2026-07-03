@@ -10,6 +10,8 @@ router.post('/users/bulk', verifyCompanyAdmin, controller.createUsersBulk);
 router.post('/users/delete', verifyCompanyAdmin, controller.deleteUsers);
 router.get('/racm-dashboard/filters', verifyCompanyAdmin, controller.getDashboardFilters);
 router.get('/racm-dashboard/racms', verifyCompanyAdmin, controller.getDashboardRacms);
+router.get('/racm-audit-logs/:form_id', verifyCompanyAdmin, controller.getRacmAuditLogs);
+router.get('/control-form-history/:form_id', verifyCompanyAdmin, controller.getControlFormHistory);
 router.get('/unit-management', verifyCompanyAdmin, controller.getUnitManagement);
 router.post('/unit-management/units', verifyCompanyAdmin, controller.createCompanyUnit);
 router.patch('/unit-management/units/:unit_id', verifyCompanyAdmin, controller.updateCompanyUnit);

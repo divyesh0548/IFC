@@ -45,7 +45,7 @@ import {
 } from '../../uiConstants'
 import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
 import { fetchUnitUsers } from '../../components/company_co/unitUserSearch'
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, hasValidProcessOwnerAssignment, isCoordinatorAssignedRacm, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE } from '../../racmFormDetailFields'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, hasValidProcessOwnerAssignment, isCoordinatorAssignedRacm, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
@@ -2419,7 +2419,7 @@ function FormDetail() {
                     gap: 2,
                   }}
                 >
-                  {/* Form Status */}
+                  {/* Control Status */}
                   <Box
                     sx={{
                       p: 2,
@@ -2441,7 +2441,7 @@ function FormDetail() {
                         letterSpacing: '0.5px',
                       }}
                     >
-                      Form Status
+                      Control Status
                     </Typography>
                     <Typography
                       variant="body2"
@@ -3486,6 +3486,92 @@ function FormDetail() {
             disabled={saving}
           />
 
+          {hasGroupedFieldValue ? (
+            <Card
+              sx={{
+                borderRadius: 3,
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                  : '0 2px 12px rgba(0, 0, 0, 0.08)',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.12)'
+                  : 'rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+              }}
+            >
+              <CardContent sx={{ p: 4 }}>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 3,
+                    color: 'text.primary',
+                    fontSize: '1.25rem',
+                    pb: 2,
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  {DESIGN_IMPLEMENTATION_SECTION_TITLE}
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 2 }}>
+                  {getPopulatedApprovalSectionFields(formData).map((key) => {
+                    const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                    const value = formData[key]
+                    const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
+                    return (
+                      <Box
+                        key={key}
+                        sx={{
+                          p: 2.5,
+                          borderRadius: 2,
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.03)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                          border: '1px solid',
+                          borderColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : 'rgba(0, 0, 0, 0.06)',
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          component="dt"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            mb: 1.5,
+                            color: 'text.primary',
+                            fontSize: theme.typography.customSizes.small,
+                          }}
+                        >
+                          {label}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          component="dd"
+                          sx={{
+                            color: 'text.secondary',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            fontSize: theme.typography.customSizes.medium,
+                            whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
+                          }}
+                        >
+                          {String(value)}
+                        </Typography>
+                      </Box>
+                    )
+                  })}
+                </Box>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card
             sx={{
               borderRadius: 3,
@@ -3513,7 +3599,7 @@ function FormDetail() {
                   borderColor: 'divider',
                 }}
               >
-                Submission
+                {DOCUMENTS_APPROVAL_SECTION_TITLE}
               </Typography>
               <Box
                 sx={{
@@ -3794,111 +3880,7 @@ function FormDetail() {
               </Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 4, pt: 1 }}>
-                {hasGroupedFieldValue ? (
-                  <Box>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      {getPopulatedApprovalSectionFields(formData).map((key) => {
-                        const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-                        const value = formData[key]
-                        const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
-                        const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
-
-                        return (
-                          <Box
-                            key={key}
-                            sx={{
-                              p: 2.5,
-                              borderRadius: 2,
-                              backgroundColor: theme.palette.mode === 'dark'
-                                ? 'rgba(255, 255, 255, 0.03)'
-                                : 'rgba(0, 0, 0, 0.02)',
-                              border: '1px solid',
-                              borderColor: theme.palette.mode === 'dark'
-                                ? 'rgba(255, 255, 255, 0.08)'
-                                : 'rgba(0, 0, 0, 0.06)',
-                            }}
-                          >
-                            <Typography
-                              variant="caption"
-                              component="dt"
-                              sx={{
-                                display: 'block',
-                                fontWeight: 700,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px',
-                                mb: 1.5,
-                                color: 'text.primary',
-                                fontSize: theme.typography.customSizes.small,
-                              }}
-                            >
-                              {label}
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              component="dd"
-                              sx={{
-                                color: isEmpty ? 'text.disabled' : 'text.secondary',
-                                wordBreak: 'break-word',
-                                lineHeight: 1.6,
-                                fontSize: theme.typography.customSizes.medium,
-                                whiteSpace: isTextArea ? 'pre-wrap' : 'normal',
-                              }}
-                            >
-                              {isEmpty ? '-' : String(value)}
-                            </Typography>
-                          </Box>
-                        )
-                      })}
-                    </Box>
-                  </Box>
-                ) : null}
-
-                {String(formData?.reason_by_approver || '').trim() !== '' ? (
-                  <Box
-                    sx={{
-                      p: 2.5,
-                      borderRadius: 2,
-                      backgroundColor: theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.03)'
-                        : 'rgba(0, 0, 0, 0.02)',
-                      border: '1px solid',
-                      borderColor: theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(0, 0, 0, 0.06)',
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      component="dt"
-                      sx={{
-                        display: 'block',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        mb: 1.5,
-                        color: 'text.primary',
-                        fontSize: theme.typography.customSizes.small,
-                      }}
-                    >
-                      Reason by Approver
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      component="dd"
-                      sx={{
-                        color: 'text.secondary',
-                        wordBreak: 'break-word',
-                        lineHeight: 1.6,
-                        fontSize: theme.typography.customSizes.medium,
-                        whiteSpace: 'pre-wrap',
-                      }}
-                    >
-                      {String(formData.reason_by_approver)}
-                    </Typography>
-                  </Box>
-                ) : null}
-
-                {(canCoordinatorSubmit || hasRacmFieldValue(formData?.remarks_by_user)) && (
+                <Box sx={DOCUMENTS_APPROVAL_REMARKS_ROW_SX}>
                   <Box
                     sx={{
                       p: 2.5,
@@ -3958,7 +3940,49 @@ function FormDetail() {
                       </>
                     )}
                   </Box>
-                )}
+                  <Box
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.03)'
+                        : 'rgba(0, 0, 0, 0.02)',
+                      border: '1px solid',
+                      borderColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.06)',
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      component="dt"
+                      sx={{
+                        display: 'block',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        mb: 1.5,
+                        color: 'text.primary',
+                        fontSize: theme.typography.customSizes.small,
+                      }}
+                    >
+                      {fieldLabels.reason_by_approver}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      component="dd"
+                      sx={{
+                        color: hasRacmFieldValue(formData?.reason_by_approver) ? 'text.secondary' : 'text.disabled',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.6,
+                        fontSize: theme.typography.customSizes.medium,
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {hasRacmFieldValue(formData?.reason_by_approver) ? String(formData.reason_by_approver) : '-'}
+                    </Typography>
+                  </Box>
+                </Box>
 
                 {canCoordinatorSubmit ? (
                   <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>

@@ -286,7 +286,7 @@ export function RacmAuditLogsDialog({ open, onClose, loading, error, rows }) {
         ) : null}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose} variant="outlined" size="small" sx={{ textTransform: 'none' }}>
+        <Button onClick={onClose} sx={{ textTransform: 'none' }}>
           Close
         </Button>
       </DialogActions>

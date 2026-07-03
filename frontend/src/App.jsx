@@ -56,6 +56,8 @@ const CompanyAdminCompanyDetails = lazy(() => import('./pages/company_admin/Comp
 const CompanyAdminUserManagement = lazy(() => import('./pages/company_admin/CompanyAdminUserManagement'))
 const CompanyAdminUnitManagement = lazy(() => import('./pages/company_admin/CompanyAdminUnitManagement'))
 const CompanyAdminApproverManagement = lazy(() => import('./pages/company_admin/CompanyAdminApproverManagement'))
+const CompanyAdminRacmDashboard = lazy(() => import('./pages/company_admin/CompanyAdminRacmDashboard'))
+const CompanyAdminFormDetail = lazy(() => import('./pages/company_admin/CompanyAdminFormDetail'))
 
 const ApproverHome = lazy(() => import('./pages/approver/ApproverHome'))
 const ApproverDashboard = lazy(() => import('./pages/approver/ApproverDashboard'))
@@ -365,8 +367,8 @@ function App() {
               <Route path="user-management" element={<CompanyAdminUserManagement />} />
               <Route path="unit-management" element={<CompanyAdminUnitManagement />} />
               <Route path="approver-management" element={<CompanyAdminApproverManagement />} />
-              <Route path="racms" element={<AuditorRacmDashboard />} />
-              <Route path="form/:form_id" element={<AuditorFormDetail />} />
+              <Route path="racms" element={<CompanyAdminRacmDashboard />} />
+              <Route path="form/:form_id" element={<CompanyAdminFormDetail />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.company_admin} replace />} />
             </Route>

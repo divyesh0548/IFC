@@ -14,6 +14,7 @@ import Alert from '@mui/material/Alert'
 import {
   DASHBOARD_PAGE_OUTER_SX,
   DASHBOARD_PAPER_SX,
+  DASHBOARD_TABLE_WRAP_SX,
   FILTER_BOX_MIN_WIDTH,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
@@ -62,20 +63,6 @@ function formatDate(date) {
     month: 'short',
     year: 'numeric',
   })
-}
-
-const auditorColumnWidths = {
-  serial: { width: '60px', minWidth: '60px', maxWidth: '60px' },
-  businessProcess: { width: '200px', minWidth: '180px', maxWidth: '220px' },
-  subProcess: { width: '220px', minWidth: '200px', maxWidth: '260px' },
-  description: { width: '260px', minWidth: '220px', maxWidth: '320px' },
-  financialYear: { width: '120px', minWidth: '120px', maxWidth: '120px' },
-  processOwner: { width: '220px', minWidth: '200px', maxWidth: '260px' },
-  unit: { width: '180px', minWidth: '160px', maxWidth: '220px' },
-  company: { width: '220px', minWidth: '200px', maxWidth: '260px' },
-  status: { width: '120px', minWidth: '120px', maxWidth: '120px' },
-  active: { width: '120px', minWidth: '120px', maxWidth: '120px' },
-  dueDate: { width: '140px', minWidth: '140px', maxWidth: '140px' },
 }
 
 function AuditorRacmDashboard() {
@@ -274,6 +261,43 @@ function AuditorRacmDashboard() {
           textOverflow: 'ellipsis',
         }),
   })
+  const AUDITOR_TABLE_COL_PX = {
+    controlNumber: 105,
+    businessProcess: 140,
+    subProcess: 150,
+    description: 195,
+    financialYear: 95,
+    processOwner: 145,
+    unit: 125,
+    company: 145,
+    status: 95,
+    active: 85,
+    dueDate: 100,
+  }
+  const auditorTableColWidthsOrdered = [
+    AUDITOR_TABLE_COL_PX.controlNumber,
+    AUDITOR_TABLE_COL_PX.businessProcess,
+    AUDITOR_TABLE_COL_PX.subProcess,
+    AUDITOR_TABLE_COL_PX.description,
+    AUDITOR_TABLE_COL_PX.financialYear,
+    AUDITOR_TABLE_COL_PX.processOwner,
+    AUDITOR_TABLE_COL_PX.unit,
+    AUDITOR_TABLE_COL_PX.company,
+    AUDITOR_TABLE_COL_PX.status,
+    AUDITOR_TABLE_COL_PX.active,
+    AUDITOR_TABLE_COL_PX.dueDate,
+  ]
+  const auditorTableTotalWidthPx = auditorTableColWidthsOrdered.reduce((a, b) => a + b, 0)
+  const pctColSx = (px) => {
+    const pct = (100 * px) / auditorTableTotalWidthPx
+    const s = `${pct}%`
+    return {
+      width: s,
+      minWidth: s,
+      maxWidth: s,
+      boxSizing: 'border-box',
+    }
+  }
   const filterControlSx = {
     minWidth: { xs: '100%', sm: FILTER_DROPDOWN_MIN_WIDTH_LG },
     '& .MuiOutlinedInput-root': {
@@ -522,18 +546,23 @@ function AuditorRacmDashboard() {
               />
             </Box>
 
-            <Box sx={{ overflowX: 'auto' }}>
+            <Box sx={DASHBOARD_TABLE_WRAP_SX}>
               <Box
                 component="table"
                 sx={{
-                  minWidth: '1860px',
-                  width: 'max-content',
+                  width: '100%',
+                  tableLayout: 'fixed',
                   borderCollapse: 'collapse',
                   '& th, & td': {
                     borderBottom: `1px solid ${theme.palette.divider}`,
                   },
                 }}
               >
+                <Box component="colgroup">
+                  {auditorTableColWidthsOrdered.map((w, i) => (
+                    <Box key={i} component="col" sx={pctColSx(w)} />
+                  ))}
+                </Box>
                 <Box component="thead" sx={{ backgroundColor: TABLE_HEADER_BG }}>
                   <Box component="tr">
                     <Box
@@ -547,10 +576,10 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.serial,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.controlNumber),
                       }}
                     >
-                      #
+                      Control Number
                     </Box>
                     <Box
                       component="th"
@@ -563,7 +592,7 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.businessProcess,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.businessProcess),
                       }}
                     >
                       Business Process
@@ -579,7 +608,7 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.subProcess,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.subProcess),
                       }}
                     >
                       Sub Process
@@ -595,7 +624,7 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.description,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.description),
                       }}
                     >
                       Standard Control Description
@@ -611,7 +640,7 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.financialYear,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.financialYear),
                       }}
                     >
                       Financial Year
@@ -627,7 +656,7 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.processOwner,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.processOwner),
                       }}
                     >
                       Process Owner
@@ -643,7 +672,7 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.unit,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.unit),
                       }}
                     >
                       Unit Name
@@ -659,7 +688,7 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.company,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.company),
                       }}
                     >
                       Company
@@ -675,7 +704,7 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.status,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.status),
                       }}
                     >
                       Status
@@ -691,7 +720,7 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.active,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.active),
                       }}
                     >
                       Active
@@ -707,7 +736,7 @@ function AuditorRacmDashboard() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        ...auditorColumnWidths.dueDate,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.dueDate),
                       }}
                     >
                       Due Date
@@ -733,45 +762,45 @@ function AuditorRacmDashboard() {
                           },
                         }}
                       >
-                        <Box component="td" sx={{ px: 2, py: 2, whiteSpace: 'nowrap', fontSize: '0.875rem', fontWeight: 500, color: theme.palette.text.primary, ...auditorColumnWidths.serial }}>
-                          {index + 1}
+                        <Box component="td" sx={{ px: 2, py: 2, whiteSpace: 'nowrap', fontSize: '0.875rem', fontWeight: 600, color: theme.palette.text.primary, ...pctColSx(AUDITOR_TABLE_COL_PX.controlNumber) }}>
+                          {form.control_number || form.form_id || 'N/A'}
                         </Box>
-                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...auditorColumnWidths.businessProcess })}>
+                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(AUDITOR_TABLE_COL_PX.businessProcess) })}>
                           <Box component="span" sx={dataCellTextSx}>
                             {form.business_process || 'N/A'}
                           </Box>
                         </Box>
-                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...auditorColumnWidths.subProcess })}>
+                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(AUDITOR_TABLE_COL_PX.subProcess) })}>
                           <Box component="span" sx={dataCellTextSx}>
                             {form.sub_process || 'N/A'}
                           </Box>
                         </Box>
-                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...auditorColumnWidths.description })}>
+                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(AUDITOR_TABLE_COL_PX.description) })}>
                           <Box component="span" sx={dataCellTextSx}>
                             {form.standard_control_description || 'N/A'}
                           </Box>
                         </Box>
-                        <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...auditorColumnWidths.financialYear })}>
+                        <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(AUDITOR_TABLE_COL_PX.financialYear) })}>
                           <Box component="span" sx={dataCellTextSx}>
                             {form.financial_year || 'N/A'}
                           </Box>
                         </Box>
-                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...auditorColumnWidths.processOwner })}>
+                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(AUDITOR_TABLE_COL_PX.processOwner) })}>
                           <Box component="span" sx={dataCellTextSx}>
                             {form.control_owner_name || form.control_owner || 'N/A'}
                           </Box>
                         </Box>
-                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...auditorColumnWidths.unit })}>
+                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(AUDITOR_TABLE_COL_PX.unit) })}>
                           <Box component="span" sx={dataCellTextSx}>
                             {form.unit_name || 'N/A'}
                           </Box>
                         </Box>
-                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...auditorColumnWidths.company })}>
+                        <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(AUDITOR_TABLE_COL_PX.company) })}>
                           <Box component="span" sx={dataCellTextSx}>
                             {form.company_name || 'N/A'}
                           </Box>
                         </Box>
-                        <Box component="td" sx={{ px: 3, py: 2, whiteSpace: 'nowrap', ...auditorColumnWidths.status }}>
+                        <Box component="td" sx={{ px: 3, py: 2, whiteSpace: 'nowrap', ...pctColSx(AUDITOR_TABLE_COL_PX.status) }}>
                           <Box
                             component="span"
                             sx={{
@@ -782,12 +811,12 @@ function AuditorRacmDashboard() {
                             {approvalStatus}
                           </Box>
                         </Box>
-                        <Box component="td" sx={{ px: 3, py: 2, whiteSpace: 'nowrap', ...auditorColumnWidths.active }}>
+                        <Box component="td" sx={{ px: 3, py: 2, whiteSpace: 'nowrap', ...pctColSx(AUDITOR_TABLE_COL_PX.active) }}>
                           <Box component="span" sx={{ fontSize: '0.875rem', fontWeight: 600, color: theme.palette.text.primary }}>
                             {isActive ? 'Active' : 'Inactive'}
                           </Box>
                         </Box>
-                        <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...auditorColumnWidths.dueDate })}>
+                        <Box component="td" sx={dataCellSx({ px: 3, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(AUDITOR_TABLE_COL_PX.dueDate) })}>
                           <Box component="span" sx={dataCellTextSx}>
                             {formatDate(form.due_date)}
                           </Box>

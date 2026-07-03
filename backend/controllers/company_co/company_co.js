@@ -37,6 +37,9 @@ const {
   buildSampleSizeForFrequency,
   buildUnitSampleSizeConfigResponse,
 } = require('../../utils/sample_size_resolver');
+const { logAuditEvent } = require('../../utils/auditLog');
+
+const RACM_SPECIFIC_APPROVER_ASSIGNMENT_ACTION = 'RACM Specific approver assignment';
 
 const KEY_MANUAL_AI_PROMPT_VERSION = 'v1';
 
@@ -1315,7 +1318,7 @@ async function getApproverAssignments(req, res) {
           aa.assignment_scope,
           COALESCE(aa.unit_id, cf.unit_id) AS unit_id,
           COALESCE(unit_direct.unit_name, unit_cf.unit_name) AS unit_name,
-          aa.business_process,
+          COALESCE(aa.business_process, cf.business_process) AS business_process,
           aa.form_id,
           cf.control_number,
           cf.standard_control_description,
@@ -1377,7 +1380,7 @@ async function assignRacmApprover(req, res) {
         .filter(Boolean)
     )];
     const confirmReplaceExisting = Boolean(req.body?.confirm_replace_existing);
-    const lockedApprovalStatuses = new Set(['sent for approval', 'approved', 'rejected']);
+    const lockedApprovalStatuses = new Set(['sent for approval']);
 
     if (!companyIdentifier || !coordinatorEmail) {
       return res.status(403).json({
@@ -1470,7 +1473,7 @@ async function assignRacmApprover(req, res) {
       return res.status(409).json({
         success: false,
         code: 'RACM_APPROVER_ASSIGNMENT_LOCKED',
-        message: 'Approver assignment cannot be changed for RACMs already in approval flow',
+        message: 'Approver assignment cannot be changed for RACMs that are sent for approval',
         lockedForms: approvalLockedForms.map((row) => ({
           form_id: row.form_id,
           control_number: row.control_number,
@@ -1549,6 +1552,18 @@ async function assignRacmApprover(req, res) {
     );
 
     await client.query('COMMIT');
+
+    const coordinatorAuditEmail = String(req.user?.email_id || coordinatorEmail || '').trim();
+    await Promise.all(
+      formIds.map((formId) =>
+        logAuditEvent(
+          RACM_SPECIFIC_APPROVER_ASSIGNMENT_ACTION,
+          coordinatorAuditEmail,
+          formId,
+          approverEmailId
+        )
+      )
+    );
 
     return res.status(200).json({
       success: true,

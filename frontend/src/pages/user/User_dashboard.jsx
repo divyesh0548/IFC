@@ -24,6 +24,7 @@ import {
   FILTER_BOX_MIN_WIDTH,
   PAGE_SUBHEADER_TEXT_SX,
   STATUS_BADGE_PILL_SX,
+  CONCLUSION_BADGE_PILL_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   getConclusionBadgeSolidColors,
@@ -249,18 +250,18 @@ function User_dashboard() {
   })
 
   const USER_TABLE_COL_PX = {
-    idx: 48,
-    businessProcess: 130,
-    subProcess: 140,
-    standardControl: 180,
-    financialYear: 100,
-    unit: 110,
-    status: 110,
-    conclusion: 120,
-    dueDate: 100,
+    controlNumber: 100,
+    businessProcess: 125,
+    subProcess: 135,
+    standardControl: 175,
+    financialYear: 95,
+    unit: 105,
+    status: 105,
+    conclusion: 170,
+    dueDate: 95,
   }
   const userTableColWidthsOrdered = [
-    USER_TABLE_COL_PX.idx,
+    USER_TABLE_COL_PX.controlNumber,
     USER_TABLE_COL_PX.businessProcess,
     USER_TABLE_COL_PX.subProcess,
     USER_TABLE_COL_PX.standardControl,
@@ -512,8 +513,8 @@ function User_dashboard() {
               </Box>
               <Box component="thead" sx={{ backgroundColor: TABLE_HEADER_BG }}>
                 <Box component="tr">
-                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.idx) }}>
-                    #
+                  <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.controlNumber) }}>
+                    Control Number
                   </Box>
                   <Box component="th" sx={{ px: 2, py: 1.5, textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.palette.text.secondary, ...pctColSx(USER_TABLE_COL_PX.businessProcess) }}>
                     Business Process
@@ -555,8 +556,8 @@ function User_dashboard() {
                       },
                     }}
                   >
-                    <Box component="td" sx={{ px: 2, py: 2, whiteSpace: 'nowrap', fontSize: '0.875rem', fontWeight: 500, color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.idx), ...(cellWordWrap ? { verticalAlign: 'top' } : {}) }}>
-                      {index + 1}
+                    <Box component="td" sx={{ px: 2, py: 2, whiteSpace: 'nowrap', fontSize: '0.875rem', fontWeight: 600, color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.controlNumber), ...(cellWordWrap ? { verticalAlign: 'top' } : {}) }}>
+                      {form.control_number || form.form_id}
                     </Box>
                     <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.businessProcess) })}>
                       <Tooltip title={form.business_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
@@ -607,7 +608,7 @@ function User_dashboard() {
                       />
                     </Box>
                     <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.conclusion) })}>
-                      <Box component="span" sx={{ ...STATUS_BADGE_PILL_SX, ...getConclusionBadgeSolidColors(form.control_design_conclusion) }}>
+                      <Box component="span" sx={{ ...CONCLUSION_BADGE_PILL_SX, ...getConclusionBadgeSolidColors(form.control_design_conclusion) }}>
                         {formatConclusion(form.control_design_conclusion)}
                       </Box>
                     </Box>

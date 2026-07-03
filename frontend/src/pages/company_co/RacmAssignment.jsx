@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
@@ -9,6 +9,8 @@ import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Tooltip from '@mui/material/Tooltip'
+import IconButton from '@mui/material/IconButton'
+import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined'
 import Switch from '@mui/material/Switch'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Alert from '@mui/material/Alert'
@@ -26,6 +28,8 @@ import {
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
+  STATUS_BADGE_PILL_SX,
+  getApprovalStatusBadgeSolidColors,
 } from '../../uiConstants'
 import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
 import CompanyUserSearchAutocomplete from '../../components/company_co/CompanyUserSearchAutocomplete'
@@ -33,6 +37,35 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { isCoordinatorAssignedRacm } from '../../racmFormDetailFields'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
+import ApproverAssignmentHelpDialog from '../../components/approver/ApproverAssignmentHelpDialog'
+
+function normalizeRacmApprovalStatus(status) {
+  const normalized = String(status ?? '').trim().toLowerCase()
+  if (!normalized || normalized === 'null') return 'pending'
+  return normalized
+}
+
+function isApproverBulkAssignableRacm(form) {
+  const status = normalizeRacmApprovalStatus(form?.status)
+  return status !== 'sent for approval'
+}
+
+function isApproverAssignmentStatusLocked(form) {
+  const status = normalizeRacmApprovalStatus(form?.status)
+  return status === 'sent for approval'
+}
+
+function formatRacmApprovalStatusLabel(status) {
+  const normalized = normalizeRacmApprovalStatus(status)
+  if (normalized === 'sent for approval') return 'Sent for Approval'
+  if (normalized === 'approved') return 'Approved'
+  if (normalized === 'rejected') return 'Rejected'
+  return 'Pending'
+}
+
+function hasRacmSpecificApprover(form) {
+  return Boolean(String(form?.racm_specific_approver_email_id || '').trim())
+}
 
 function RacmAssignment() {
   const UNIT_MISMATCH_TOAST_ID = 'racm-assignment-unit-mismatch'
@@ -43,13 +76,13 @@ function RacmAssignment() {
   const [filterAssignment, setFilterAssignment] = useState('all') // 'all' | 'assigned' | 'unassigned'
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all') // 'all' or specific business process
   const [filterFinancialYear, setFilterFinancialYear] = useState('all') // 'all' or specific financial year
-  const [filterSubProcess, setFilterSubProcess] = useState('all') // 'all' or specific sub_process
   const [filterUnit, setFilterUnit] = useState('all') // 'all' or specific unit_id
   const [filterActive, setFilterActive] = useState('all') // 'all' | 'active' | 'inactive'
+  const [filterApprovalStatus, setFilterApprovalStatus] = useState('all') // 'all' | 'Pending' | 'Sent for Approval' | 'Approved' | 'Rejected'
   const [financialYearOptions, setFinancialYearOptions] = useState([])
-  const [subProcessOptions, setSubProcessOptions] = useState([])
   const [coordinatorUnits, setCoordinatorUnits] = useState([])
   const [cellWordWrap, setCellWordWrap] = useState(false)
+  const [assignmentHelpOpen, setAssignmentHelpOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
   const [bulkAssignmentMode, setBulkAssignmentMode] = useState(false)
@@ -82,16 +115,18 @@ function RacmAssignment() {
   const assignmentPageDescription = isApproverMode
     ? 'Assign RACM-specific approvers and manage existing approver overrides.'
     : 'Assign RACM to Process Owners and manage existing RACM assignments.'
-  const isAssignmentLocked = (form) => (
-    !isApproverMode && (isFormActive(form) || isCoordinatorAssignedRacm(form))
+  const isProcessOwnerAssignmentLocked = (form) => (
+    isFormActive(form) || isCoordinatorAssignedRacm(form)
   )
-  const isApproverApprovalLocked = (form) => {
-    const normalizedStatus = String(form?.status || '').trim().toLowerCase()
-    return normalizedStatus === 'sent for approval' || normalizedStatus === 'approved' || normalizedStatus === 'rejected'
-  }
   const isCurrentAssignmentLocked = (form) => (
-    isApproverMode ? isApproverApprovalLocked(form) : isAssignmentLocked(form)
+    isApproverMode ? isApproverAssignmentStatusLocked(form) : isProcessOwnerAssignmentLocked(form)
   )
+  const tableForms = useMemo(() => {
+    if (isApproverMode && bulkAssignmentMode) {
+      return forms.filter(isApproverBulkAssignableRacm)
+    }
+    return forms
+  }, [forms, isApproverMode, bulkAssignmentMode])
   const getCurrentAssigneeEmail = (form) => {
     if (isApproverMode) {
       return String(form?.approver_email_id || '').trim() || 'N/A'
@@ -110,8 +145,15 @@ function RacmAssignment() {
     }
     return String(form?.control_owner_name || '').trim() || '-'
   }
-  const selectedApprovalLockedForms = selectedFormRows.filter((form) => isApproverApprovalLocked(form))
+  const selectedApprovalLockedForms = selectedFormRows.filter((form) => isApproverAssignmentStatusLocked(form))
   const hasSelectedApproverLockedRacm = selectedApprovalLockedForms.length > 0
+  const selectedRacmsWithSpecificApprover = useMemo(
+    () => (isApproverMode ? selectedFormRows.filter(hasRacmSpecificApprover) : []),
+    [isApproverMode, selectedFormRows]
+  )
+  const singleRacmHasSpecificApprover = Boolean(
+    isApproverMode && selectedForm && hasRacmSpecificApprover(selectedForm)
+  )
 
   const getFinancialYearStorageKey = (companyId) => `ifc_financial_year_options_${companyId}`
 
@@ -121,14 +163,6 @@ function RacmAssignment() {
         .map(form => form.financial_year?.toString().trim())
         .filter(year => year && year !== '')
     )]
-  }
-
-  const extractUniqueSubProcesses = (rows) => {
-    return [...new Set(
-      (rows || [])
-        .map((form) => form.sub_process?.toString().trim())
-        .filter((sp) => sp && sp !== '')
-    )].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
   }
 
   const racmHasSampleDocument = (form) => {
@@ -231,7 +265,7 @@ function RacmAssignment() {
     if (companyIdentifier) {
       fetchForms()
     }
-  }, [companyIdentifier, filterAssignment, filterBusinessProcess, filterFinancialYear, filterSubProcess, filterUnit, filterActive, isApproverMode])
+  }, [companyIdentifier, filterAssignment, filterBusinessProcess, filterFinancialYear, filterUnit, filterActive, filterApprovalStatus, isApproverMode])
 
   useEffect(() => {
     if (!bulkAssignmentMode) {
@@ -243,7 +277,7 @@ function RacmAssignment() {
     if (bulkAssignmentMode) {
       setSelectedForms(new Set())
     }
-  }, [bulkAssignmentMode, filterAssignment, filterBusinessProcess, filterFinancialYear, filterSubProcess, filterUnit, assignmentTarget])
+  }, [bulkAssignmentMode, filterAssignment, filterBusinessProcess, filterFinancialYear, filterUnit, filterApprovalStatus, assignmentTarget])
 
   useEffect(() => {
     setSelectedUser(null)
@@ -299,16 +333,21 @@ function RacmAssignment() {
         url += `&financial_year=${encodeURIComponent(filterFinancialYear)}`
       }
 
-      if (filterSubProcess !== 'all') {
-        url += `&sub_process=${encodeURIComponent(filterSubProcess)}`
-      }
-
       if (filterUnit !== 'all') {
         url += `&unit_id=${encodeURIComponent(filterUnit)}`
       }
 
       if (filterActive !== 'all') {
         url += `&active=${encodeURIComponent(filterActive === 'active' ? 'true' : 'false')}`
+      }
+
+      if (filterApprovalStatus !== 'all') {
+        const statusParam = filterApprovalStatus === 'Pending'
+          ? 'pending'
+          : filterApprovalStatus === 'Sent for Approval'
+            ? 'sent for approval'
+            : filterApprovalStatus.toLowerCase()
+        url += `&status=${encodeURIComponent(statusParam)}`
       }
 
       if (filterAssignment !== 'all') {
@@ -343,16 +382,6 @@ function RacmAssignment() {
           }
         }
 
-        const latestSubProcesses = extractUniqueSubProcesses(data.data)
-        if (latestSubProcesses.length > 0) {
-          setSubProcessOptions((prev) => {
-            const merged = [...new Set([...(prev || []), ...latestSubProcesses])].sort((a, b) =>
-              a.localeCompare(b, undefined, { sensitivity: 'base' })
-            )
-            if (merged.join('|') === (prev || []).join('|')) return prev
-            return merged
-          })
-        }
       } else {
         console.error('Error fetching forms:', data.message)
       }
@@ -449,7 +478,7 @@ function RacmAssignment() {
   }
 
   const handleSelectAllForms = () => {
-    const allVisibleSelected = forms.length > 0 && forms.every((form) => selectedForms.has(form.form_id))
+    const allVisibleSelected = tableForms.length > 0 && tableForms.every((form) => selectedForms.has(form.form_id))
     if (allVisibleSelected) {
       setSelectedForms(new Set())
       toast.dismiss(UNIT_MISMATCH_TOAST_ID)
@@ -457,7 +486,7 @@ function RacmAssignment() {
       return
     }
 
-    const unitIds = [...new Set(forms.map((form) => getFormUnitId(form)).filter(Boolean))]
+    const unitIds = [...new Set(tableForms.map((form) => getFormUnitId(form)).filter(Boolean))]
     if (!isApproverMode && unitIds.length > 1) {
       toast.error('RACMs from different units cannot be selected for bulk assignment', {
         id: UNIT_MISMATCH_TOAST_ID,
@@ -467,16 +496,16 @@ function RacmAssignment() {
 
     toast.dismiss(UNIT_MISMATCH_TOAST_ID)
     setBulkSelectedUser(null)
-    setSelectedForms(new Set(forms.map((form) => form.form_id)))
+    setSelectedForms(new Set(tableForms.map((form) => form.form_id)))
   }
 
   const handleUpdateAssignment = async () => {
     if (!selectedForm?.form_id || !selectedUser?.email_id) return
-    if (isApproverMode && isApproverApprovalLocked(selectedForm)) {
-      toast.error('Approver assignment cannot be changed after RACM is sent for approval or finalized')
+    if (isApproverMode && isApproverAssignmentStatusLocked(selectedForm)) {
+      toast.error('Approver assignment cannot be changed while RACM is sent for approval')
       return
     }
-    if (isAssignmentLocked(selectedForm)) return
+    if (!isApproverMode && isProcessOwnerAssignmentLocked(selectedForm)) return
 
     setUpdatingAssignment(true)
     try {
@@ -518,7 +547,7 @@ function RacmAssignment() {
       let data = await response.json()
 
       if (response.status === 409 && data?.code === 'RACM_APPROVER_ASSIGNMENT_LOCKED') {
-        toast.error(data.message || 'Approver assignment cannot be changed for RACMs already in approval flow')
+        toast.error(data.message || 'Approver assignment cannot be changed for RACMs that are sent for approval')
         return
       }
 
@@ -538,7 +567,7 @@ function RacmAssignment() {
         response = await performRequest(true)
         data = await response.json()
         if (response.status === 409 && data?.code === 'RACM_APPROVER_ASSIGNMENT_LOCKED') {
-          toast.error(data.message || 'Approver assignment cannot be changed for RACMs already in approval flow')
+          toast.error(data.message || 'Approver assignment cannot be changed for RACMs that are sent for approval')
           return
         }
       }
@@ -602,7 +631,7 @@ function RacmAssignment() {
   const handleBulkUpdateAssignment = async () => {
     if (!bulkSelectedUser?.email_id || selectedForms.size === 0) return
     if (isApproverMode && hasSelectedApproverLockedRacm) {
-      toast.error('Remove RACMs in approval flow before updating approver assignment')
+      toast.error('Remove RACMs with status Sent for Approval before updating approver assignment')
       return
     }
     if (!isApproverMode && hasSelectedActiveRacm) return
@@ -640,7 +669,7 @@ function RacmAssignment() {
         let data = await response.json()
 
         if (response.status === 409 && data?.code === 'RACM_APPROVER_ASSIGNMENT_LOCKED') {
-          toast.error(data.message || 'Approver assignment cannot be changed for RACMs already in approval flow')
+          toast.error(data.message || 'Approver assignment cannot be changed for RACMs that are sent for approval')
           return
         }
 
@@ -660,7 +689,7 @@ function RacmAssignment() {
           response = await performRequest(true)
           data = await response.json()
           if (response.status === 409 && data?.code === 'RACM_APPROVER_ASSIGNMENT_LOCKED') {
-            toast.error(data.message || 'Approver assignment cannot be changed for RACMs already in approval flow')
+            toast.error(data.message || 'Approver assignment cannot be changed for RACMs that are sent for approval')
             return
           }
         }
@@ -821,9 +850,40 @@ function RacmAssignment() {
 
   const tableColumnCount =
     7 + (hasMultipleCoordinatorUnits ? 1 : 0) + (bulkAssignmentMode ? 1 : 0)
-  const showEmptyState = !loading && forms.length === 0
-  const tableMinWidth =
-    1084 + (hasMultipleCoordinatorUnits ? 128 : 0) + (bulkAssignmentMode ? 60 : 0)
+  const showEmptyState = !loading && tableForms.length === 0
+  const ASSIGN_TABLE_COL_PX = {
+    checkbox: 44,
+    controlNumber: 95,
+    businessProcess: 130,
+    standardControl: 195,
+    unit: 100,
+    financialYear: 85,
+    active: 80,
+    status: 95,
+    assignment: 130,
+  }
+  const assignTableColWidthsOrdered = [
+    ...(bulkAssignmentMode ? [ASSIGN_TABLE_COL_PX.checkbox] : []),
+    ASSIGN_TABLE_COL_PX.controlNumber,
+    ASSIGN_TABLE_COL_PX.businessProcess,
+    ASSIGN_TABLE_COL_PX.standardControl,
+    ...(hasMultipleCoordinatorUnits ? [ASSIGN_TABLE_COL_PX.unit] : []),
+    ASSIGN_TABLE_COL_PX.financialYear,
+    ASSIGN_TABLE_COL_PX.active,
+    ASSIGN_TABLE_COL_PX.status,
+    ASSIGN_TABLE_COL_PX.assignment,
+  ]
+  const assignTableTotalWidthPx = assignTableColWidthsOrdered.reduce((a, b) => a + b, 0)
+  const pctColSx = (px) => {
+    const pct = (100 * px) / assignTableTotalWidthPx
+    const s = `${pct}%`
+    return {
+      width: s,
+      minWidth: s,
+      maxWidth: s,
+      boxSizing: 'border-box',
+    }
+  }
   const selectedBulkUnitSummary = selectedFormRows.length === 0
     ? ''
     : isApproverMode
@@ -867,13 +927,15 @@ function RacmAssignment() {
               fontSize: '0.875rem',
             }}
           >
-            No forms found.
+            {isApproverMode && bulkAssignmentMode && forms.length > 0
+              ? 'No RACMs available for bulk approver assignment (Sent for Approval RACMs are excluded).'
+              : 'No forms found.'}
           </Box>
         </Box>
       )
     }
 
-    return forms.map((form) => (
+    return tableForms.map((form) => (
       <Box
         component="tr"
         key={form.id}
@@ -893,9 +955,7 @@ function RacmAssignment() {
               px: 2,
               py: 2,
               textAlign: 'center',
-              width: '60px',
-              minWidth: '60px',
-              maxWidth: '60px',
+              ...pctColSx(ASSIGN_TABLE_COL_PX.checkbox),
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -908,15 +968,28 @@ function RacmAssignment() {
         )}
         <Box
           component="td"
+          sx={dataCellSx({
+            px: 2,
+            py: 2,
+            fontSize: '0.875rem',
+            fontWeight: 600,
+            color: theme.palette.text.primary,
+            ...pctColSx(ASSIGN_TABLE_COL_PX.controlNumber),
+          })}
+        >
+          <Box component="span" sx={dataCellTextSx}>
+            {form.control_number || form.form_id || 'N/A'}
+          </Box>
+        </Box>
+        <Box
+          component="td"
           title={form.business_process || 'N/A'}
           sx={dataCellSx({
             px: 2,
             py: 2,
-            width: '10%',
-            minWidth: '128px',
-            maxWidth: '150px',
             fontSize: '0.875rem',
             color: theme.palette.text.primary,
+            ...pctColSx(ASSIGN_TABLE_COL_PX.businessProcess),
           })}
         >
           <Tooltip
@@ -935,10 +1008,9 @@ function RacmAssignment() {
           sx={dataCellSx({
             px: 3,
             py: 2,
-            width: '23%',
-            minWidth: '250px',
             fontSize: '0.875rem',
             color: theme.palette.text.primary,
+            ...pctColSx(ASSIGN_TABLE_COL_PX.standardControl),
           })}
         >
           <Tooltip
@@ -951,28 +1023,6 @@ function RacmAssignment() {
             </Box>
           </Tooltip>
         </Box>
-        <Box
-          component="td"
-          title={form.sub_process || 'N/A'}
-          sx={dataCellSx({
-            px: 3,
-            py: 2,
-            width: '15%',
-            minWidth: '180px',
-            fontSize: '0.875rem',
-            color: theme.palette.text.primary,
-          })}
-        >
-          <Tooltip
-            title={form.sub_process || 'N/A'}
-            arrow
-            slotProps={{ tooltip: { sx: tooltipSx } }}
-          >
-            <Box component="span" sx={dataCellTextSx}>
-              {form.sub_process || 'N/A'}
-            </Box>
-          </Tooltip>
-        </Box>
         {hasMultipleCoordinatorUnits && (
           <Box
             component="td"
@@ -980,11 +1030,9 @@ function RacmAssignment() {
             sx={dataCellSx({
               px: 2,
               py: 2,
-              width: '10%',
-              minWidth: '128px',
-              maxWidth: '150px',
               fontSize: '0.875rem',
               color: theme.palette.text.primary,
+              ...pctColSx(ASSIGN_TABLE_COL_PX.unit),
             })}
           >
             <Tooltip
@@ -1003,11 +1051,9 @@ function RacmAssignment() {
           sx={dataCellSx({
             px: 2,
             py: 2,
-            width: '8%',
-            minWidth: '96px',
-            maxWidth: '120px',
             fontSize: '0.875rem',
             color: theme.palette.text.primary,
+            ...pctColSx(ASSIGN_TABLE_COL_PX.financialYear),
           })}
         >
           <Tooltip
@@ -1025,11 +1071,9 @@ function RacmAssignment() {
           sx={dataCellSx({
             px: 2,
             py: 2,
-            width: '8%',
-            minWidth: '90px',
-            maxWidth: '110px',
             fontSize: '0.875rem',
             color: theme.palette.text.primary,
+            ...pctColSx(ASSIGN_TABLE_COL_PX.active),
           })}
         >
           <Tooltip
@@ -1044,14 +1088,33 @@ function RacmAssignment() {
         </Box>
         <Box
           component="td"
+          sx={dataCellSx({
+            px: 2,
+            py: 2,
+            fontSize: '0.875rem',
+            color: theme.palette.text.primary,
+            ...pctColSx(ASSIGN_TABLE_COL_PX.status),
+          })}
+        >
+          <Box
+            component="span"
+            sx={{
+              ...STATUS_BADGE_PILL_SX,
+              ...getApprovalStatusBadgeSolidColors(formatRacmApprovalStatusLabel(form.status)),
+            }}
+          >
+            {formatRacmApprovalStatusLabel(form.status)}
+          </Box>
+        </Box>
+        <Box
+          component="td"
           title={getCurrentAssigneeEmail(form)}
           sx={dataCellSx({
             px: 2,
             py: 2,
-            width: '17%',
-            minWidth: '180px',
             fontSize: '0.875rem',
             color: theme.palette.text.primary,
+            ...pctColSx(ASSIGN_TABLE_COL_PX.assignment),
           })}
         >
           <Tooltip
@@ -1061,28 +1124,6 @@ function RacmAssignment() {
           >
             <Box component="span" sx={dataCellTextSx}>
               {getCurrentAssigneeEmail(form)}
-            </Box>
-          </Tooltip>
-        </Box>
-        <Box
-          component="td"
-          title={getCurrentAssigneeName(form)}
-          sx={dataCellSx({
-            px: 2,
-            py: 2,
-            width: '17%',
-            minWidth: '160px',
-            fontSize: '0.875rem',
-            color: theme.palette.text.primary,
-          })}
-        >
-          <Tooltip
-            title={getCurrentAssigneeName(form)}
-            arrow
-            slotProps={{ tooltip: { sx: tooltipSx } }}
-          >
-            <Box component="span" sx={dataCellTextSx}>
-              {getCurrentAssigneeName(form)}
             </Box>
           </Tooltip>
         </Box>
@@ -1156,15 +1197,29 @@ function RacmAssignment() {
             minWidth: 0,
           }}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
-              <Typography 
-                variant="h5" 
-                component="h2"
-                sx={{ 
-                  fontWeight: 700, 
-                }}
-              >
-                {assignmentPageTitle}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <Typography 
+                  variant="h5" 
+                  component="h2"
+                  sx={{ 
+                    fontWeight: 700, 
+                  }}
+                >
+                  {assignmentPageTitle}
+                </Typography>
+                {isApproverMode ? (
+                  <Tooltip title="How approver assignment works">
+                    <IconButton
+                      size="small"
+                      onClick={() => setAssignmentHelpOpen(true)}
+                      aria-label="How approver assignment works"
+                      sx={{ color: 'warning.main' }}
+                    >
+                      <LightbulbOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                ) : null}
+              </Box>
               <Typography
                 sx={PAGE_SUBHEADER_TEXT_SX}
               >
@@ -1222,28 +1277,6 @@ function RacmAssignment() {
                   </Select>
                 </FormControl>
               )}
-
-              {/* Sub Process Filter (unique values from loaded RACMs) */}
-              <FormControl
-                variant="outlined"
-                sx={filterFormControlSx}
-              >
-                <InputLabel id="sub-process-filter-label">Sub Process</InputLabel>
-                <Select
-                  labelId="sub-process-filter-label"
-                  id="sub-process-filter"
-                  value={filterSubProcess}
-                  label="Sub Process"
-                  onChange={(e) => setFilterSubProcess(e.target.value)}
-                >
-                  <MenuItem value="all">All</MenuItem>
-                  {subProcessOptions.map((option) => (
-                    <MenuItem key={option} value={option}>
-                      {option}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
 
               {/* Financial Year Filter */}
               <FormControl 
@@ -1312,12 +1345,12 @@ function RacmAssignment() {
                 variant="outlined"
                 sx={filterFormControlSx}
               >
-                <InputLabel id="active-filter-label">Status</InputLabel>
+                <InputLabel id="activity-filter-label">Activity</InputLabel>
                 <Select
-                  labelId="active-filter-label"
-                  id="active-filter"
+                  labelId="activity-filter-label"
+                  id="activity-filter"
                   value={filterActive}
-                  label="Status"
+                  label="Activity"
                   onChange={(e) => setFilterActive(e.target.value)}
                 >
                   <MenuItem value="all">All</MenuItem>
@@ -1325,12 +1358,32 @@ function RacmAssignment() {
                   <MenuItem value="inactive">Inactive</MenuItem>
                 </Select>
               </FormControl>
+
+              <FormControl
+                variant="outlined"
+                sx={filterFormControlSx}
+              >
+                <InputLabel id="approval-status-filter-label">Status</InputLabel>
+                <Select
+                  labelId="approval-status-filter-label"
+                  id="approval-status-filter"
+                  value={filterApprovalStatus}
+                  label="Status"
+                  onChange={(e) => setFilterApprovalStatus(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  <MenuItem value="Pending">Pending</MenuItem>
+                  <MenuItem value="Sent for Approval">Sent for Approval</MenuItem>
+                  <MenuItem value="Approved">Approved</MenuItem>
+                  <MenuItem value="Rejected">Rejected</MenuItem>
+                </Select>
+              </FormControl>
               
             </Box>
           </Box>
 
           <Box sx={{ width: '100%', minWidth: 0 }}>
-            {bulkAssignmentMode && hasSelectedActiveRacm && !loading && forms.length > 0 && (
+            {bulkAssignmentMode && !isApproverMode && hasSelectedActiveRacm && !loading && forms.length > 0 && (
               <Alert severity="warning" sx={{ mb: 2 }}>
                 Active RACM assignment cannot be changed. Remove the selected active RACM(s) before bulk assignment.
               </Alert>
@@ -1371,7 +1424,6 @@ function RacmAssignment() {
                 component="table"
                 sx={{
                   width: '100%',
-                  minWidth: tableMinWidth,
                   tableLayout: 'fixed',
                   borderCollapse: 'collapse',
                   '& th, & td': {
@@ -1379,6 +1431,11 @@ function RacmAssignment() {
                   },
                 }}
               >
+                <Box component="colgroup">
+                  {assignTableColWidthsOrdered.map((w, i) => (
+                    <Box key={i} component="col" sx={pctColSx(w)} />
+                  ))}
+                </Box>
                 <Box
                   component="thead"
                   sx={{
@@ -1393,14 +1450,12 @@ function RacmAssignment() {
                         px: 2,
                         py: 1.5,
                         textAlign: 'center',
-                        width: '60px',
-                        minWidth: '60px',
-                        maxWidth: '60px',
+                        ...pctColSx(ASSIGN_TABLE_COL_PX.checkbox),
                       }}
                     >
                       <Checkbox
-                        checked={forms.length > 0 && forms.every((form) => selectedForms.has(form.form_id))}
-                        indeterminate={selectedForms.size > 0 && selectedForms.size < forms.length}
+                        checked={tableForms.length > 0 && tableForms.every((form) => selectedForms.has(form.form_id))}
+                        indeterminate={selectedForms.size > 0 && selectedForms.size < tableForms.length}
                         onChange={handleSelectAllForms}
                         size="small"
                       />
@@ -1417,9 +1472,23 @@ function RacmAssignment() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '10%',
-                      minWidth: '128px',
-                      maxWidth: '150px',
+                      ...pctColSx(ASSIGN_TABLE_COL_PX.controlNumber),
+                    }}
+                  >
+                    Control Number
+                  </Box>
+                  <Box
+                    component="th"
+                    sx={{
+                      px: 2,
+                      py: 1.5,
+                      textAlign: 'left',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: theme.palette.text.secondary,
+                      ...pctColSx(ASSIGN_TABLE_COL_PX.businessProcess),
                     }}
                   >
                     Business Process
@@ -1435,28 +1504,10 @@ function RacmAssignment() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '23%',
-                      minWidth: '250px',
+                      ...pctColSx(ASSIGN_TABLE_COL_PX.standardControl),
                     }}
                   >
                     Standard Control Description
-                  </Box>
-                  <Box
-                    component="th"
-                    sx={{
-                      px: 3,
-                      py: 1.5,
-                      textAlign: 'left',
-                      fontSize: '0.75rem',
-                      fontWeight: 500,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      color: theme.palette.text.secondary,
-                      width: '15%',
-                      minWidth: '180px',
-                    }}
-                  >
-                    Sub Process
                   </Box>
                   {hasMultipleCoordinatorUnits && (
                     <Box
@@ -1470,9 +1521,7 @@ function RacmAssignment() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '10%',
-                        minWidth: '128px',
-                        maxWidth: '150px',
+                        ...pctColSx(ASSIGN_TABLE_COL_PX.unit),
                       }}
                     >
                       Unit
@@ -1489,9 +1538,7 @@ function RacmAssignment() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '8%',
-                        minWidth: '96px',
-                        maxWidth: '120px',
+                        ...pctColSx(ASSIGN_TABLE_COL_PX.financialYear),
                       }}
                     >
                       Financial Year
@@ -1507,9 +1554,7 @@ function RacmAssignment() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '8%',
-                        minWidth: '90px',
-                        maxWidth: '110px',
+                        ...pctColSx(ASSIGN_TABLE_COL_PX.active),
                       }}
                     >
                       Active
@@ -1525,11 +1570,10 @@ function RacmAssignment() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '17%',
-                        minWidth: '180px',
+                        ...pctColSx(ASSIGN_TABLE_COL_PX.status),
                       }}
                     >
-                      {assignmentSubjectLabel}
+                      Status
                     </Box>
                     <Box
                       component="th"
@@ -1542,11 +1586,10 @@ function RacmAssignment() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '17%',
-                        minWidth: '160px',
+                        ...pctColSx(ASSIGN_TABLE_COL_PX.assignment),
                       }}
                     >
-                      {assignmentSubjectLabel} Name
+                      {assignmentSubjectLabel}
                     </Box>
                   </Box>
                 </Box>
@@ -1568,16 +1611,27 @@ function RacmAssignment() {
           <DialogContent dividers>
             {selectedForm && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                {isApproverMode && isApproverApprovalLocked(selectedForm) && (
+                {isApproverMode && isApproverAssignmentStatusLocked(selectedForm) && (
                   <Alert severity="warning">
-                    This RACM is already in approval flow or finalized. Approver assignment cannot be changed.
+                    This RACM is sent for approval. Approver assignment cannot be changed.
                   </Alert>
                 )}
-                {isAssignmentLocked(selectedForm) && (
+                {!isApproverMode && isProcessOwnerAssignmentLocked(selectedForm) && (
                   <Alert severity="warning">
                     This RACM is Active. Active RACM assignment cannot be changed.
                   </Alert>
                 )}
+                {isApproverMode && singleRacmHasSpecificApprover && (
+                  <Alert severity="warning">
+                    Current approver will be replaced.
+                  </Alert>
+                )}
+                {isApproverMode ? (
+                  <Box sx={popupRowSx}>
+                    <Typography variant="body2" component="span" sx={popupLabelSx}>Total RACMs:</Typography>
+                    <Typography variant="body2" component="span">1</Typography>
+                  </Box>
+                ) : null}
                 <Box sx={popupRowSx}>
                   <Typography variant="body2" component="span" sx={popupLabelSx}>Standard Control Description:</Typography>
                   <Typography variant="body2" component="span">{popupValue(selectedForm.standard_control_description)}</Typography>
@@ -1610,6 +1664,7 @@ function RacmAssignment() {
                 {isApproverMode ? (
                   <CompanyUserSearchAutocomplete
                     role="approver"
+                    label="Search Approver"
                     value={selectedUser}
                     onChange={setSelectedUser}
                     excludeEmails={[selectedForm?.approver_email_id]}
@@ -1667,26 +1722,32 @@ function RacmAssignment() {
               )}
               {isApproverMode && hasSelectedApproverLockedRacm && (
                 <Alert severity="warning">
-                  Remove RACMs with status Sent for Approval, Approved, or Rejected before updating approver assignment.
+                  Remove RACMs with status Sent for Approval before updating approver assignment.
+                </Alert>
+              )}
+              {isApproverMode && selectedRacmsWithSpecificApprover.length > 0 && (
+                <Alert severity="warning">
+                  Current approver will be replaced for {selectedRacmsWithSpecificApprover.length} of {selectedForms.size} selected RACM{selectedForms.size === 1 ? '' : 's'}.
                 </Alert>
               )}
               <Box sx={popupRowSx}>
-                <Typography variant="body2" component="span" sx={popupLabelSx}>Total selected RACMs:</Typography>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Total RACMs:</Typography>
                 <Typography variant="body2" component="span">{popupValue(selectedForms.size)}</Typography>
               </Box>
               <Box sx={popupRowSx}>
                 <Typography variant="body2" component="span" sx={popupLabelSx}>Unit:</Typography>
                 <Typography variant="body2" component="span">{popupValue(selectedBulkUnitSummary)}</Typography>
               </Box>
-              <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-                {isApproverMode
-                  ? 'The selected approver will overwrite any existing RACM-specific approver for the selected RACMs.'
-                  : 'The selected user will overwrite the current Process Owner for all selected RACMs.'}
-              </Typography>
+              {!isApproverMode ? (
+                <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+                  The selected user will overwrite the current Process Owner for all selected RACMs.
+                </Typography>
+              ) : null}
 
               {isApproverMode ? (
                 <CompanyUserSearchAutocomplete
                   role="approver"
+                  label="Search Approver"
                   value={bulkSelectedUser}
                   onChange={setBulkSelectedUser}
                   prefetch={bulkAssignmentDialogOpen}
@@ -1720,7 +1781,13 @@ function RacmAssignment() {
             )}
           </DialogActions>
         </Dialog>
-      </Box>
+
+      <ApproverAssignmentHelpDialog
+        open={assignmentHelpOpen}
+        onClose={() => setAssignmentHelpOpen(false)}
+        variant="coordinator"
+      />
+    </Box>
   )
 }
 

@@ -49,6 +49,7 @@ import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWar
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 import AppDialog, { getAppDialogCancelButtonSx } from '../../components/AppDialog'
+import { buildApproverAssignmentDisplayItems } from '../../utils/approverAssignmentDisplay'
 
 const bulkUploadDialogDefaults = {
   open: false,
@@ -159,29 +160,6 @@ function UserManagement() {
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
       .join(' ')
   }
-  const formatAssignmentScopeLabel = (scope) => {
-    const normalizedScope = String(scope || '').trim().toUpperCase()
-    if (!normalizedScope) return '-'
-    if (normalizedScope === 'BUSINESS_PROCESS') return 'Business Process Level'
-    if (normalizedScope === 'RACM') return 'RACM Level'
-    if (normalizedScope === 'UNIT') return 'Unit Level'
-    return normalizedScope
-  }
-
-  const formatAssignmentDetails = useCallback((assignment) => {
-    const normalizedScope = String(assignment?.assignment_scope || '').trim().toUpperCase()
-    if (normalizedScope === 'RACM') {
-      return assignment?.unit_name || assignment?.unit_id || '-'
-    }
-    if (normalizedScope === 'BUSINESS_PROCESS') {
-      return [assignment?.unit_name || assignment?.unit_id, assignment?.business_process].filter(Boolean).join(' | ') || '-'
-    }
-    if (normalizedScope === 'UNIT') {
-      return assignment?.unit_name || assignment?.unit_id || '-'
-    }
-    return [assignment?.unit_name || assignment?.unit_id, assignment?.business_process].filter(Boolean).join(' | ') || '-'
-  }, [])
-
   const unitOptions = useMemo(() => {
     return mappedUnits
       .map((unit) => ({
@@ -425,6 +403,11 @@ function UserManagement() {
   const currentApproverAssignments = useMemo(() => {
     return Array.isArray(approverDetailsDialog.assignments) ? approverDetailsDialog.assignments : []
   }, [approverDetailsDialog.assignments])
+
+  const currentApproverAssignmentDisplayItems = useMemo(
+    () => buildApproverAssignmentDisplayItems(currentApproverAssignments),
+    [currentApproverAssignments]
+  )
 
   const handleDeleteClick = () => {
     if (selectedUserEmails.size === 0) {
@@ -1714,13 +1697,13 @@ function UserManagement() {
           </Box>
         ) : approverDetailsDialog.error ? (
           <Alert severity="error">{approverDetailsDialog.error}</Alert>
-        ) : currentApproverAssignments.length === 0 ? (
+        ) : currentApproverAssignmentDisplayItems.length === 0 ? (
           <Typography color="text.secondary">No assignments found for this approver.</Typography>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1,  mt:1.5, py: 1.5 }}>
-            {currentApproverAssignments.map((assignment) => (
+            {currentApproverAssignmentDisplayItems.map((item) => (
               <Box
-                key={assignment.id}
+                key={item.key}
                 sx={{
                   px: 1.5,
                   py: 1.2,
@@ -1730,9 +1713,9 @@ function UserManagement() {
                   backgroundColor: alpha(theme.palette.background.default, 0.35),
                 }}
               >
-                <Typography sx={{ fontWeight: 700 }}>{formatAssignmentScopeLabel(assignment.assignment_scope)}</Typography>
+                <Typography sx={{ fontWeight: 700 }}>{item.scopeLabel}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {formatAssignmentDetails(assignment)}
+                  {item.detail}
                 </Typography>
               </Box>
             ))}

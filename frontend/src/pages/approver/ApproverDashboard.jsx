@@ -27,6 +27,7 @@ import {
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   STATUS_BADGE_PILL_SX,
+  CONCLUSION_BADGE_PILL_SX,
   getApprovalStatusBadgeSolidColors,
   getConclusionBadgeSolidColors,
   isMuiAlertCloseActionClick,
@@ -377,19 +378,19 @@ function ApproverDashboard() {
   })
 
   const APPROVER_TABLE_COL_PX = {
-    idx: 72,
-    businessProcess: 170,
-    subProcess: 200,
-    standardControl: 290,
-    unit: 180,
-    financialYear: 140,
-    processOwner: 160,
-    conclusion: 160,
-    approval: 130,
-    sentForApprovalAt: 210,
+    controlNumber: 110,
+    businessProcess: 160,
+    subProcess: 185,
+    standardControl: 270,
+    unit: 170,
+    financialYear: 130,
+    processOwner: 150,
+    conclusion: 185,
+    approval: 120,
+    sentForApprovalAt: 200,
   }
   const approverTableColWidthsOrdered = [
-    APPROVER_TABLE_COL_PX.idx,
+    APPROVER_TABLE_COL_PX.controlNumber,
     APPROVER_TABLE_COL_PX.businessProcess,
     APPROVER_TABLE_COL_PX.subProcess,
     APPROVER_TABLE_COL_PX.standardControl,
@@ -689,18 +690,11 @@ function ApproverDashboard() {
                 </Typography>
               </Box>
             ) : (
-              <Box
-                sx={{
-                  overflowX: 'auto',
-                  scrollbarGutter: 'stable',
-                }}
-              >
             <Box
               component="table"
               sx={{
                 tableLayout: 'fixed',
                 width: '100%',
-                minWidth: approverTableTotalWidthPx,
                 borderCollapse: 'collapse',
                 borderSpacing: 0,
                 '& th, & td': {
@@ -731,10 +725,10 @@ function ApproverDashboard() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      ...pctColSx(APPROVER_TABLE_COL_PX.idx),
+                      ...pctColSx(APPROVER_TABLE_COL_PX.controlNumber),
                     }}
                   >
-                    #
+                    Control Number
                   </Box>
                   <Box
                     component="th"
@@ -906,13 +900,14 @@ function ApproverDashboard() {
                         sx={{
                           px: 2.5,
                           py: 2,
-                          ...pctColSx(APPROVER_TABLE_COL_PX.idx),
+                          ...pctColSx(APPROVER_TABLE_COL_PX.controlNumber),
                           fontSize: '0.875rem',
+                          fontWeight: 600,
                           color: theme.palette.text.primary,
                           ...(cellWordWrap ? { verticalAlign: 'top' } : {}),
                         }}
                       >
-                        {index + 1}
+                        {form.control_number || form.form_id}
                       </Box>
                       <Box
                         component="td"
@@ -1069,7 +1064,7 @@ function ApproverDashboard() {
                         <Box
                           component="span"
                           sx={{
-                            ...STATUS_BADGE_PILL_SX,
+                            ...CONCLUSION_BADGE_PILL_SX,
                             ...getConclusionBadgeSolidColors(form.control_design_conclusion),
                           }}
                         >
@@ -1095,7 +1090,6 @@ function ApproverDashboard() {
                 })}
               </Box>
             </Box>
-              </Box>
             )}
           </Box>
         )}

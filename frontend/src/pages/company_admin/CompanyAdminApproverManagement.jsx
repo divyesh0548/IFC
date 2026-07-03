@@ -19,12 +19,17 @@ import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import { toast } from 'react-hot-toast'
 import { useSearchParams } from 'react-router-dom'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX, getAppDialogCancelButtonSx } from '../../components/AppDialog'
+import ApproverAssignmentHelpDialog from '../../components/approver/ApproverAssignmentHelpDialog'
+import { buildApproverAssignmentDisplayItems } from '../../utils/approverAssignmentDisplay'
 
 const emptyData = {
   approvers: [],
@@ -67,6 +72,7 @@ function CompanyAdminApproverManagement() {
   const [assignmentFilter, setAssignmentFilter] = useState('all')
   const [unitFilter, setUnitFilter] = useState(presetUnitId || 'all')
   const [assignmentDialog, setAssignmentDialog] = useState(createAssignmentDialogState)
+  const [assignmentHelpOpen, setAssignmentHelpOpen] = useState(false)
 
   useSyncGlobalLoading(loading)
   useSyncGlobalLoading(assignmentDialog.submitting)
@@ -162,6 +168,11 @@ function CompanyAdminApproverManagement() {
     return data.approverAssignments.filter((item) => String(item.approver_email_id || '').trim().toLowerCase() === approverEmail)
   }, [assignmentDialog.approver, data.approverAssignments])
 
+  const currentAssignmentDisplayItems = useMemo(
+    () => buildApproverAssignmentDisplayItems(currentAssignments, { scopeLabelStyle: 'company_admin' }),
+    [currentAssignments]
+  )
+
   const handleOpenAssignmentDialog = (approver) => {
     const defaultUnitId = unitFilter !== 'all' ? unitFilter : data.units[0]?.unit_id || ''
     setAssignmentDialog({
@@ -220,9 +231,21 @@ function CompanyAdminApproverManagement() {
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, py: 2 }}>
       <Box sx={{ pb: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap' }}>
         <Box>
-          <Typography component="h1" sx={{ fontSize: { xs: '1.45rem', sm: '1.7rem' }, fontWeight: 850, lineHeight: 1.15 }}>
-            Approver Management
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+            <Typography component="h1" sx={{ fontSize: { xs: '1.45rem', sm: '1.7rem' }, fontWeight: 850, lineHeight: 1.15 }}>
+              Approver Management
+            </Typography>
+            <Tooltip title="How approver assignment works">
+              <IconButton
+                size="small"
+                onClick={() => setAssignmentHelpOpen(true)}
+                aria-label="How approver assignment works"
+                sx={{ color: 'warning.main' }}
+              >
+                <LightbulbOutlinedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
           <Typography sx={{ mt: 0.6, color: 'text.secondary', fontSize: '0.94rem', lineHeight: 1.6 }}>
             Search approvers, filter by assignment status, and assign unit or process scope.
           </Typography>
@@ -382,13 +405,13 @@ function CompanyAdminApproverManagement() {
         )}
       >
         <Typography sx={{ fontWeight: 700, mt: 1 }}>Current Assignments</Typography>
-        {currentAssignments.length === 0 ? (
+        {currentAssignmentDisplayItems.length === 0 ? (
           <Typography color="text.secondary">No assignments found for this approver.</Typography>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {currentAssignments.map((assignment) => (
+            {currentAssignmentDisplayItems.map((item) => (
               <Box
-                key={assignment.id}
+                key={item.key}
                 sx={{
                   px: 1.5,
                   py: 1.2,
@@ -398,9 +421,9 @@ function CompanyAdminApproverManagement() {
                   backgroundColor: alpha(theme.palette.background.default, 0.35),
                 }}
               >
-                <Typography sx={{ fontWeight: 700 }}>{formatScopeLabel(assignment.assignment_scope)}</Typography>
+                <Typography sx={{ fontWeight: 700 }}>{item.scopeLabel}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {[assignment.unit_name, assignment.business_process, assignment.form_id].filter(Boolean).join(' | ') || '-'}
+                  {item.detail}
                 </Typography>
               </Box>
             ))}
@@ -454,6 +477,12 @@ function CompanyAdminApproverManagement() {
         ) : null}
         {assignmentDialog.error && <Alert severity="error">{assignmentDialog.error}</Alert>}
       </AppDialog>
+
+      <ApproverAssignmentHelpDialog
+        open={assignmentHelpOpen}
+        onClose={() => setAssignmentHelpOpen(false)}
+        variant="company_admin"
+      />
     </Box>
   )
 }

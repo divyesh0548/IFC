@@ -23,10 +23,33 @@ function getInactiveRacmApproverAccessError(active) {
   return isRacmMarkedActive(active) ? null : INACTIVE_RACM_APPROVER_MESSAGE;
 }
 
+async function deleteApproverAssignmentsForRacms(tx, { formIds, companyIdentifier = null }) {
+  const normalizedFormIds = [...new Set(
+    (Array.isArray(formIds) ? formIds : [formIds])
+      .map((id) => String(id || '').trim())
+      .filter(Boolean)
+  )];
+  if (normalizedFormIds.length === 0) {
+    return 0;
+  }
+
+  const where = {
+    formId: { in: normalizedFormIds },
+  };
+  const normalizedCompanyIdentifier = String(companyIdentifier || '').trim();
+  if (normalizedCompanyIdentifier) {
+    where.companyIdentifier = normalizedCompanyIdentifier;
+  }
+
+  const result = await tx.approverAssignment.deleteMany({ where });
+  return result.count;
+}
+
 module.exports = {
   ACTIVE_RACM_DELETE_MESSAGE,
   INACTIVE_RACM_APPROVER_MESSAGE,
   isRacmMarkedActive,
   getActiveRacmDeleteError,
   getInactiveRacmApproverAccessError,
+  deleteApproverAssignmentsForRacms,
 };

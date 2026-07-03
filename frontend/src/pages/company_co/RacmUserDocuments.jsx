@@ -423,8 +423,37 @@ function RacmUserDocuments() {
     ? selectedForm.doc_uploaded_by_user_docs
     : []
   const selectedUserDocCount = selectedUserDocs.length
-  const tableColumnCount = showUnitColumn ? 6 : 5
+  const tableColumnCount = showUnitColumn ? 7 : 6
   const showEmptyState = !loading && forms.length === 0
+  const DOC_TABLE_COL_PX = {
+    controlNumber: 100,
+    businessProcess: 140,
+    standardControl: 260,
+    unit: 90,
+    financialYear: 100,
+    processOwner: 150,
+    userDocuments: 120,
+  }
+  const docTableColWidthsOrdered = [
+    DOC_TABLE_COL_PX.controlNumber,
+    DOC_TABLE_COL_PX.businessProcess,
+    DOC_TABLE_COL_PX.standardControl,
+    ...(showUnitColumn ? [DOC_TABLE_COL_PX.unit] : []),
+    DOC_TABLE_COL_PX.financialYear,
+    DOC_TABLE_COL_PX.processOwner,
+    DOC_TABLE_COL_PX.userDocuments,
+  ]
+  const docTableTotalWidthPx = docTableColWidthsOrdered.reduce((a, b) => a + b, 0)
+  const pctColSx = (px) => {
+    const pct = (100 * px) / docTableTotalWidthPx
+    const s = `${pct}%`
+    return {
+      width: s,
+      minWidth: s,
+      maxWidth: s,
+      boxSizing: 'border-box',
+    }
+  }
 
   const renderTableBody = () => {
     if (loading) {
@@ -490,7 +519,23 @@ function RacmUserDocuments() {
               px: 2.5,
               py: 2,
               fontSize: '0.875rem',
+              fontWeight: 600,
               color: theme.palette.text.primary,
+              ...pctColSx(DOC_TABLE_COL_PX.controlNumber),
+            })}
+          >
+            <Box component="span" sx={dataCellTextSx}>
+              {form.control_number || form.form_id || 'N/A'}
+            </Box>
+          </Box>
+          <Box
+            component="td"
+            sx={dataCellSx({
+              px: 2.5,
+              py: 2,
+              fontSize: '0.875rem',
+              color: theme.palette.text.primary,
+              ...pctColSx(DOC_TABLE_COL_PX.businessProcess),
             })}
           >
             <Box component="span" sx={dataCellTextSx}>
@@ -504,6 +549,7 @@ function RacmUserDocuments() {
               py: 2,
               fontSize: '0.875rem',
               color: theme.palette.text.primary,
+              ...pctColSx(DOC_TABLE_COL_PX.standardControl),
             })}
           >
             <Tooltip title={form.standard_control_description || 'N/A'} arrow>
@@ -520,6 +566,7 @@ function RacmUserDocuments() {
                 py: 2,
                 fontSize: '0.875rem',
                 color: theme.palette.text.primary,
+                ...pctColSx(DOC_TABLE_COL_PX.unit),
               })}
             >
               <Box component="span" sx={dataCellTextSx}>
@@ -534,6 +581,7 @@ function RacmUserDocuments() {
               py: 2,
               fontSize: '0.875rem',
               color: theme.palette.text.primary,
+              ...pctColSx(DOC_TABLE_COL_PX.financialYear),
             })}
           >
             <Box component="span" sx={dataCellTextSx}>
@@ -547,6 +595,7 @@ function RacmUserDocuments() {
               py: 2,
               fontSize: '0.875rem',
               color: theme.palette.text.primary,
+              ...pctColSx(DOC_TABLE_COL_PX.processOwner),
             })}
           >
             <Tooltip title={formatProcessOwner(form)} arrow>
@@ -561,6 +610,7 @@ function RacmUserDocuments() {
               px: 2.5,
               py: 2,
               textAlign: 'center',
+              ...pctColSx(DOC_TABLE_COL_PX.userDocuments),
             }}
           >
             <Tooltip
@@ -840,7 +890,6 @@ function RacmUserDocuments() {
               component="table"
               sx={{
                 width: '100%',
-                minWidth: showUnitColumn ? 1110 : 1015,
                 tableLayout: 'fixed',
                 borderCollapse: 'collapse',
                 '& th, & td': {
@@ -848,6 +897,11 @@ function RacmUserDocuments() {
                 },
               }}
             >
+              <Box component="colgroup">
+                {docTableColWidthsOrdered.map((w, i) => (
+                  <Box key={i} component="col" sx={pctColSx(w)} />
+                ))}
+              </Box>
               <Box component="thead" sx={{ backgroundColor: TABLE_HEADER_BG }}>
                 <Box component="tr">
                   <Box
@@ -861,8 +915,23 @@ function RacmUserDocuments() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '170px',
-                      minWidth: '155px',
+                      ...pctColSx(DOC_TABLE_COL_PX.controlNumber),
+                    }}
+                  >
+                    Control Number
+                  </Box>
+                  <Box
+                    component="th"
+                    sx={{
+                      px: 2.5,
+                      py: 1.5,
+                      textAlign: 'left',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: theme.palette.text.secondary,
+                      ...pctColSx(DOC_TABLE_COL_PX.businessProcess),
                     }}
                   >
                     Business Process
@@ -878,8 +947,7 @@ function RacmUserDocuments() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '400px',
-                      minWidth: '320px',
+                      ...pctColSx(DOC_TABLE_COL_PX.standardControl),
                     }}
                   >
                     Standard Control Description
@@ -896,8 +964,7 @@ function RacmUserDocuments() {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         color: theme.palette.text.secondary,
-                        width: '95px',
-                        minWidth: '88px',
+                        ...pctColSx(DOC_TABLE_COL_PX.unit),
                       }}
                     >
                       Unit
@@ -914,8 +981,7 @@ function RacmUserDocuments() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '120px',
-                      minWidth: '120px',
+                      ...pctColSx(DOC_TABLE_COL_PX.financialYear),
                     }}
                   >
                     Financial Year
@@ -931,8 +997,7 @@ function RacmUserDocuments() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '185px',
-                      minWidth: '172px',
+                      ...pctColSx(DOC_TABLE_COL_PX.processOwner),
                     }}
                   >
                     Process Owner
@@ -948,8 +1013,7 @@ function RacmUserDocuments() {
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: theme.palette.text.secondary,
-                      width: '140px',
-                      minWidth: '140px',
+                      ...pctColSx(DOC_TABLE_COL_PX.userDocuments),
                     }}
                   >
                     User Documents
