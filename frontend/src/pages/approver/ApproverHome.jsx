@@ -4,11 +4,6 @@ import { alpha, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Paper from '@mui/material/Paper'
-import Button from '@mui/material/Button'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
 import DomainRoundedIcon from '@mui/icons-material/DomainRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
@@ -17,54 +12,13 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
 import DashboardGreeting from '../../components/DashboardGreeting'
+import HomeHelpSupport from '../../components/help/HomeHelpSupport'
 import { readStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
-
-const COMPANY_DETAIL_LABELS = {
-  company_name: 'Company Name',
-  registered_email: 'Registered Email',
-  registered_address: 'Registered Address',
-  unique_identification_number: 'Unique Identification Number',
-  gst: 'GST',
-  pan: 'PAN',
-  number_of_corporate_offices: 'Corporate Offices',
-  number_of_factory_units: 'Factory Units',
-}
-
-function formatCompanyDetailLabel(key) {
-  return COMPANY_DETAIL_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
-}
-
-function DetailRow({ label, value }) {
-  const theme = useTheme()
-
-  return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: '190px minmax(0, 1fr)' },
-        gap: { xs: 0.4, sm: 2 },
-        py: 1.15,
-        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
-        '&:last-of-type': {
-          borderBottom: 'none',
-        },
-      }}
-    >
-      <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: theme.palette.text.secondary }}>
-        {label}
-      </Typography>
-      <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: theme.palette.text.primary, wordBreak: 'break-word' }}>
-        {value || '-'}
-      </Typography>
-    </Box>
-  )
-}
 
 function ApproverHome() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
-  const [companyDetailsOpen, setCompanyDetailsOpen] = useState(false)
   useSyncGlobalLoading(loading)
   const [stats, setStats] = useState({
     approver_name: '',
@@ -107,66 +61,6 @@ function ApproverHome() {
   const displayName = readStoredUserDisplayName() || formatDisplayName(stats.approver_name, 'Approver')
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
   const mappedUnits = Array.isArray(stats.mapped_units) ? stats.mapped_units : []
-  const uniqueMappedUnits = Array.from(
-    mappedUnits.reduce((map, unit) => {
-      const key = String(unit?.unit_id || '').trim() || `${unit?.company_identifier || 'company'}-${unit?.unit_name || 'unit'}`
-      if (!map.has(key)) {
-        map.set(key, unit)
-      }
-      return map
-    }, new Map()).values()
-  )
-  const companyDetailsPayload = stats.company_details && typeof stats.company_details === 'object'
-    ? stats.company_details
-    : {}
-  const approverCompanyName = String(
-    companyDetailsPayload.company_name || stats.company_name || uniqueMappedUnits[0]?.company_name || ''
-  ).trim()
-  const buildCompanyDetailRows = (details = {}) => (
-    Object.entries(details)
-      .filter(([key]) => !['id', 'company_identifier', 'created_at'].includes(key))
-      .map(([key, value]) => ({
-        label: formatCompanyDetailLabel(key),
-        value,
-      }))
-  )
-  const companyGroups = uniqueMappedUnits.reduce((groups, unit) => {
-    const key = unit.company_identifier || stats.company_identifier || 'unknown-company'
-    if (!groups[key]) {
-      const details = {
-        ...companyDetailsPayload,
-        company_name: companyDetailsPayload.company_name || unit.company_name || stats.company_name || '',
-        registered_email: companyDetailsPayload.registered_email || unit.registered_email || '',
-        registered_address: companyDetailsPayload.registered_address || unit.registered_address || '',
-        unique_identification_number:
-          companyDetailsPayload.unique_identification_number || unit.unique_identification_number || '',
-        gst: companyDetailsPayload.gst || unit.gst || '',
-        pan: companyDetailsPayload.pan || unit.pan || '',
-        number_of_corporate_offices:
-          companyDetailsPayload.number_of_corporate_offices || unit.number_of_corporate_offices || '',
-        number_of_factory_units:
-          companyDetailsPayload.number_of_factory_units || unit.number_of_factory_units || '',
-      }
-
-      groups[key] = {
-        company_identifier: unit.company_identifier || stats.company_identifier,
-        company_name: details.company_name || unit.company_identifier || 'Company',
-        detailRows: buildCompanyDetailRows(details),
-        units: [],
-      }
-    }
-    groups[key].units.push(unit)
-    return groups
-  }, {})
-  const companyDetails = Object.values(companyGroups)
-  const fallbackCompanyDetails = companyDetails.length > 0
-    ? companyDetails
-    : [{
-        company_identifier: stats.company_identifier,
-        company_name: approverCompanyName || 'Company',
-        detailRows: buildCompanyDetailRows(companyDetailsPayload),
-        units: [],
-      }]
 
   const workTiles = [
     {
@@ -184,7 +78,7 @@ function ApproverHome() {
       description: 'View company information and the units mapped to your approval queue.',
       icon: <DomainRoundedIcon sx={{ fontSize: 38 }} />,
       action: 'View details',
-      onClick: () => setCompanyDetailsOpen(true),
+      path: '/approver/company-details',
       accent: blueTokens.accent || theme.palette.info.main,
     },
   ]
@@ -303,9 +197,9 @@ function ApproverHome() {
             </Typography>
 
             <Box sx={{ mt: 2.4, display: 'flex', flexDirection: 'column', gap: 1.1, maxWidth: 760 }}>
-              {uniqueMappedUnits.length > 0 ? (
+              {mappedUnits.length > 0 ? (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.7 }}>
-                  {uniqueMappedUnits.map((unit) => (
+                  {mappedUnits.map((unit) => (
                     <Box
                       key={`${unit.company_identifier || 'company'}-${unit.unit_id}`}
                       sx={{
@@ -418,6 +312,7 @@ function ApproverHome() {
             </Box>
           </Paper>
         </Box>
+        <HomeHelpSupport />
       </Box>
 
       <Box
@@ -571,145 +466,6 @@ function ApproverHome() {
           </Paper>
         ))}
       </Box>
-
-      <Dialog
-        open={companyDetailsOpen}
-        onClose={() => setCompanyDetailsOpen(false)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontWeight: 900, borderBottom: 0 }}>Company Details</DialogTitle>
-        <DialogContent dividers sx={{ p: { xs: 2, sm: 3 } }}>
-          {fallbackCompanyDetails.some((company) => company.detailRows.length > 0 || company.units.length > 0) ? (
-            <Box sx={{ display: 'grid', gap: 2 }}>
-              {fallbackCompanyDetails.map((company) => (
-                <Paper
-                  key={company.company_identifier || company.company_name}
-                  elevation={0}
-                  sx={{
-                    p: { xs: 1.6, sm: 2 },
-                    borderRadius: 2,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    backgroundColor: alpha(theme.palette.background.paper, 0.75),
-                  }}
-                >
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: { xs: 'flex-start', sm: 'center' },
-                      justifyContent: 'space-between',
-                      flexDirection: { xs: 'column', sm: 'row' },
-                      gap: 1,
-                      mb: 1.25,
-                    }}
-                  >
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 900, color: theme.palette.text.primary, wordBreak: 'break-word' }}>
-                        {company.company_name || 'Company'}
-                      </Typography>
-                      <Typography sx={{ fontSize: '0.82rem', color: theme.palette.text.secondary, wordBreak: 'break-word' }}>
-                        {company.company_identifier || '-'}
-                      </Typography>
-                    </Box>
-                    <Box
-                      sx={{
-                        px: 1.1,
-                        py: 0.55,
-                        borderRadius: 999,
-                        backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.09),
-                        color: theme.palette.primary.main,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <Typography sx={{ fontSize: '0.74rem', fontWeight: 850 }}>
-                        {company.units.length} {company.units.length === 1 ? 'Unit' : 'Units'}
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  {company.detailRows.length > 0 && (
-                    <Box
-                      sx={{
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        borderRadius: 2,
-                        px: { xs: 1.25, sm: 1.5 },
-                        mb: 2,
-                      }}
-                    >
-                      {company.detailRows.map((row) => (
-                        <DetailRow key={row.label} label={row.label} value={row.value} />
-                      ))}
-                    </Box>
-                  )}
-
-                  <Typography
-                    sx={{
-                      fontSize: '0.78rem',
-                      fontWeight: 900,
-                      letterSpacing: '0.1em',
-                      textTransform: 'uppercase',
-                      color: theme.palette.text.secondary,
-                      mb: 1,
-                    }}
-                  >
-                    Units
-                  </Typography>
-
-                  {company.units.length > 0 ? (
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-                        gap: 1,
-                      }}
-                    >
-                      {company.units.map((unit) => (
-                        <Box
-                          key={`${company.company_identifier || company.company_name}-${unit.unit_id}`}
-                          sx={{
-                            p: 1.25,
-                            borderRadius: 1.5,
-                            border: `1px solid ${alpha(theme.palette.primary.main, 0.18)}`,
-                            backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
-                          }}
-                        >
-                          <Typography sx={{ fontWeight: 850, fontSize: '0.92rem', color: theme.palette.text.primary }}>
-                            {unit.unit_name || unit.unit_id || 'Unit'}
-                          </Typography>
-                          <Typography sx={{ mt: 0.2, fontSize: '0.78rem', color: theme.palette.text.secondary }}>
-                            Unit ID: {unit.unit_id || '-'}
-                          </Typography>
-                          {unit.unit_address && (
-                            <Typography sx={{ mt: 0.45, fontSize: '0.78rem', color: theme.palette.text.secondary, wordBreak: 'break-word' }}>
-                              {unit.unit_address}
-                            </Typography>
-                          )}
-                        </Box>
-                      ))}
-                    </Box>
-                  ) : (
-                    <Typography color="text.secondary">No units are currently mapped to this approver.</Typography>
-                  )}
-                </Paper>
-              ))}
-            </Box>
-          ) : (
-            <Typography color="text.secondary">No company details are currently available for this approver.</Typography>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={() => setCompanyDetailsOpen(false)}
-            sx={{ textTransform: 'none', fontWeight: 700 }}
-          >
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   )
 }

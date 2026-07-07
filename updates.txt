@@ -8,3 +8,7 @@ IFC Reports to be developed = Reports for Effective/Ineffective RACMs, Number of
 Mail Communication Template to be finalised 
 User Communication for in case of different format = Dynamic RACM template
 ELC to be Developed = Mayank sir will provide info on this later.
+
+Add audit logs of user(all types) creation as well as approver Assignment.
+
+Mention who suggested a change

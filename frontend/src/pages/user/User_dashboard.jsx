@@ -24,7 +24,8 @@ import {
   FILTER_BOX_MIN_WIDTH,
   PAGE_SUBHEADER_TEXT_SX,
   STATUS_BADGE_PILL_SX,
-  CONCLUSION_BADGE_PILL_SX,
+  CONCLUSION_BADGE_TABLE_PILL_SX,
+  CONCLUSION_TABLE_CELL_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   getConclusionBadgeSolidColors,
@@ -543,7 +544,9 @@ function User_dashboard() {
                 </Box>
               </Box>
               <Box component="tbody">
-                {displayedForms.map((form, index) => (
+                {displayedForms.map((form, index) => {
+                  const conclusionLabel = formatConclusion(form.control_design_conclusion)
+                  return (
                   <Box
                     component="tr"
                     key={form.id}
@@ -607,10 +610,12 @@ function User_dashboard() {
                         }}
                       />
                     </Box>
-                    <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.conclusion) })}>
-                      <Box component="span" sx={{ ...CONCLUSION_BADGE_PILL_SX, ...getConclusionBadgeSolidColors(form.control_design_conclusion) }}>
-                        {formatConclusion(form.control_design_conclusion)}
-                      </Box>
+                    <Box component="td" sx={{ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.conclusion), ...CONCLUSION_TABLE_CELL_SX }}>
+                      <Tooltip title={conclusionLabel} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                        <Box component="span" sx={{ ...CONCLUSION_BADGE_TABLE_PILL_SX, ...getConclusionBadgeSolidColors(form.control_design_conclusion) }}>
+                          {conclusionLabel}
+                        </Box>
+                      </Tooltip>
                     </Box>
                     <Box component="td" sx={dataCellSx({ px: 2, py: 2, fontSize: '0.875rem', color: theme.palette.text.primary, ...pctColSx(USER_TABLE_COL_PX.dueDate) })}>
                       <Box component="span" sx={dataCellTextSx}>
@@ -618,7 +623,8 @@ function User_dashboard() {
                       </Box>
                     </Box>
                   </Box>
-                ))}
+                  )
+                })}
               </Box>
             </Box>
           </Box>

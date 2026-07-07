@@ -13,12 +13,35 @@ const normalizeKeyControlWords = (value) =>
 const classifyKeyControlValue = (formOrValue) => {
   if (formOrValue && typeof formOrValue === 'object' && !Array.isArray(formOrValue)) {
     const backendClassification = String(formOrValue.key_control_classification || '').trim()
-    if (backendClassification === 'key' || backendClassification === 'nonKey' || backendClassification === 'unclassified') {
-      return backendClassification
+    const normalizedBackendClassification = normalizeKeyControlToken(backendClassification)
+    if (
+      backendClassification === 'key' ||
+      normalizedBackendClassification === 'key' ||
+      normalizedBackendClassification === 'keycontrol' ||
+      normalizedBackendClassification === 'keycontrols'
+    ) {
+      return 'key'
+    }
+    if (
+      backendClassification === 'nonKey' ||
+      normalizedBackendClassification === 'nonkey' ||
+      normalizedBackendClassification === 'nonkeycontrol' ||
+      normalizedBackendClassification === 'nonkeycontrols'
+    ) {
+      return 'nonKey'
     }
 
     const rawValue = getFieldValue(formOrValue, 'key_control', 'keyControl')
-    return classifyKeyControlValue(rawValue)
+    const rawClassification = classifyKeyControlValue(rawValue)
+    if (rawClassification !== 'unclassified') {
+      return rawClassification
+    }
+
+    if (backendClassification === 'unclassified' || normalizedBackendClassification === 'unclassified') {
+      return 'unclassified'
+    }
+
+    return 'unclassified'
   }
 
   const normalized = normalizeValue(formOrValue)
@@ -35,7 +58,7 @@ const classifyKeyControlValue = (formOrValue) => {
     return 'nonKey'
   }
 
-  if (normalized === 'yes' || normalizedToken === 'keycontrol') {
+  if (normalized === 'yes' || normalizedToken === 'keycontrol' || normalizedToken === 'keycontrols') {
     return 'key'
   }
 

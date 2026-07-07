@@ -132,6 +132,22 @@ export const CONCLUSION_BADGE_PILL_SX = {
   minWidth: 'min-content',
 }
 
+/** Conclusion badges in dashboard table cells — single line with ellipsis; pair with Tooltip */
+export const CONCLUSION_BADGE_TABLE_PILL_SX = {
+  ...STATUS_BADGE_PILL_SX,
+  display: 'block',
+  maxWidth: '100%',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  boxSizing: 'border-box',
+}
+
+export const CONCLUSION_TABLE_CELL_SX = {
+  overflow: 'hidden',
+  verticalAlign: 'middle',
+}
+
 /** Same colors, slightly larger type for form summary cards */
 export const STATUS_BADGE_DETAIL_SX = {
   ...STATUS_BADGE_PILL_SX,

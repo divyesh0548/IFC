@@ -14,6 +14,7 @@ import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { apiUrl } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
 import DashboardGreeting from '../../components/DashboardGreeting'
+import HomeHelpSupport from '../../components/help/HomeHelpSupport'
 import { readStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
 
 function CompanyAdminHome() {
@@ -69,18 +70,18 @@ function CompanyAdminHome() {
       icon: <AccountBalanceRoundedIcon sx={{ fontSize: 38 }} />,
     },
     {
-      eyebrow: 'Users',
-      title: 'User Management',
-      description: 'Create users, coordinators, and approvers, then manage bulk onboarding.',
-      path: '/company_admin/user-management',
-      icon: <PeopleAltRoundedIcon sx={{ fontSize: 38 }} />,
-    },
-    {
       eyebrow: 'Units',
       title: 'Unit Management',
       description: 'Create units and manage coordinator or approver assignment by unit.',
       path: '/company_admin/unit-management',
       icon: <ApartmentRoundedIcon sx={{ fontSize: 38 }} />,
+    },
+    {
+      eyebrow: 'Users',
+      title: 'User Management',
+      description: 'Create users, coordinators, and approvers, then manage bulk onboarding.',
+      path: '/company_admin/user-management',
+      icon: <PeopleAltRoundedIcon sx={{ fontSize: 38 }} />,
     },
     {
       eyebrow: 'Approvers',
@@ -98,7 +99,7 @@ function CompanyAdminHome() {
     },
     {
       eyebrow: 'RACM',
-      title: 'View Only RACMs',
+      title: 'RACM Dashboard',
       description: 'Open the company RACM list with filters and view form details in read-only mode.',
       path: '/company_admin/racms',
       icon: <FactCheckRoundedIcon sx={{ fontSize: 38 }} />,
@@ -208,6 +209,7 @@ function CompanyAdminHome() {
             ))}
           </Paper>
         </Box>
+        <HomeHelpSupport />
       </Box>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 2.5 }}>

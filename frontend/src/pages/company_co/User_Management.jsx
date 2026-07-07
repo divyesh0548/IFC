@@ -49,7 +49,7 @@ import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWar
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 import AppDialog, { getAppDialogCancelButtonSx } from '../../components/AppDialog'
-import { buildApproverAssignmentDisplayItems } from '../../utils/approverAssignmentDisplay'
+import ApproverAssignmentsPanel from '../../components/approver/ApproverAssignmentsPanel'
 
 const bulkUploadDialogDefaults = {
   open: false,
@@ -403,11 +403,6 @@ function UserManagement() {
   const currentApproverAssignments = useMemo(() => {
     return Array.isArray(approverDetailsDialog.assignments) ? approverDetailsDialog.assignments : []
   }, [approverDetailsDialog.assignments])
-
-  const currentApproverAssignmentDisplayItems = useMemo(
-    () => buildApproverAssignmentDisplayItems(currentApproverAssignments),
-    [currentApproverAssignments]
-  )
 
   const handleDeleteClick = () => {
     if (selectedUserEmails.size === 0) {
@@ -1697,28 +1692,12 @@ function UserManagement() {
           </Box>
         ) : approverDetailsDialog.error ? (
           <Alert severity="error">{approverDetailsDialog.error}</Alert>
-        ) : currentApproverAssignmentDisplayItems.length === 0 ? (
-          <Typography color="text.secondary">No assignments found for this approver.</Typography>
         ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1,  mt:1.5, py: 1.5 }}>
-            {currentApproverAssignmentDisplayItems.map((item) => (
-              <Box
-                key={item.key}
-                sx={{
-                  px: 1.5,
-                  py: 1.2,
-                  borderRadius: 2,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  backgroundColor: alpha(theme.palette.background.default, 0.35),
-                }}
-              >
-                <Typography sx={{ fontWeight: 700 }}>{item.scopeLabel}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {item.detail}
-                </Typography>
-              </Box>
-            ))}
+          <Box sx={{ mt: 1.5, py: 1.5 }}>
+            <ApproverAssignmentsPanel
+              key={approverDetailsDialog.approver?.email_id || 'none'}
+              assignments={currentApproverAssignments}
+            />
           </Box>
         )}
       </AppDialog>

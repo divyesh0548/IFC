@@ -29,7 +29,13 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX, getAppDialogCancelButtonSx } from '../../components/AppDialog'
 import ApproverAssignmentHelpDialog from '../../components/approver/ApproverAssignmentHelpDialog'
-import { buildApproverAssignmentDisplayItems } from '../../utils/approverAssignmentDisplay'
+import ApproverAssignmentsPanel from '../../components/approver/ApproverAssignmentsPanel'
+import {
+  buildConflictingApproverAssignmentWarning,
+  buildDuplicateApproverAssignmentBlockMessage,
+  findConflictingApproverScopeAssignment,
+  findDuplicateApproverScopeAssignment,
+} from '../../utils/approverAssignmentDisplay'
 
 const emptyData = {
   approvers: [],
@@ -168,19 +174,68 @@ function CompanyAdminApproverManagement() {
     return data.approverAssignments.filter((item) => String(item.approver_email_id || '').trim().toLowerCase() === approverEmail)
   }, [assignmentDialog.approver, data.approverAssignments])
 
-  const currentAssignmentDisplayItems = useMemo(
-    () => buildApproverAssignmentDisplayItems(currentAssignments, { scopeLabelStyle: 'company_admin' }),
-    [currentAssignments]
-  )
+  const conflictingAssignmentWarning = useMemo(() => {
+    if (!assignmentDialog.open || !assignmentDialog.approver?.email_id || !assignmentDialog.unitId) {
+      return ''
+    }
+
+    const conflictingAssignment = findConflictingApproverScopeAssignment(data.approverAssignments, {
+      approverEmail: assignmentDialog.approver.email_id,
+      assignmentScope: assignmentDialog.scopeType,
+      unitId: assignmentDialog.unitId,
+      businessProcess: assignmentDialog.businessProcess,
+    })
+
+    return buildConflictingApproverAssignmentWarning(conflictingAssignment)
+  }, [
+    assignmentDialog.approver,
+    assignmentDialog.businessProcess,
+    assignmentDialog.open,
+    assignmentDialog.scopeType,
+    assignmentDialog.unitId,
+    data.approverAssignments,
+  ])
+
+  const duplicateAssignmentBlockMessage = useMemo(() => {
+    if (!assignmentDialog.open || !assignmentDialog.approver?.email_id || !assignmentDialog.unitId) {
+      return ''
+    }
+    if (assignmentDialog.scopeType === 'BUSINESS_PROCESS' && !assignmentDialog.businessProcess) {
+      return ''
+    }
+
+    const duplicateAssignment = findDuplicateApproverScopeAssignment(data.approverAssignments, {
+      approverEmail: assignmentDialog.approver.email_id,
+      assignmentScope: assignmentDialog.scopeType,
+      unitId: assignmentDialog.unitId,
+      businessProcess: assignmentDialog.businessProcess,
+    })
+
+    if (!duplicateAssignment) return ''
+
+    const selectedUnit = data.units.find((unit) => unit.unit_id === assignmentDialog.unitId)
+
+    return buildDuplicateApproverAssignmentBlockMessage(assignmentDialog.scopeType, {
+      unitName: selectedUnit?.unit_name || duplicateAssignment.unit_name || assignmentDialog.unitId,
+      businessProcess: assignmentDialog.businessProcess || duplicateAssignment.business_process,
+    })
+  }, [
+    assignmentDialog.approver,
+    assignmentDialog.businessProcess,
+    assignmentDialog.open,
+    assignmentDialog.scopeType,
+    assignmentDialog.unitId,
+    data.approverAssignments,
+    data.units,
+  ])
+
+  const isAssignmentSaveBlocked = Boolean(duplicateAssignmentBlockMessage)
 
   const handleOpenAssignmentDialog = (approver) => {
-    const defaultUnitId = unitFilter !== 'all' ? unitFilter : data.units[0]?.unit_id || ''
     setAssignmentDialog({
       ...createAssignmentDialogState(),
       open: true,
       approver,
-      unitId: defaultUnitId,
-      businessProcess: data.businessProcesses[0] || '',
     })
   }
 
@@ -195,6 +250,10 @@ function CompanyAdminApproverManagement() {
     }
     if (assignmentDialog.scopeType === 'BUSINESS_PROCESS' && !assignmentDialog.businessProcess) {
       setAssignmentDialog((prev) => ({ ...prev, error: 'Business process is required' }))
+      return
+    }
+    if (isAssignmentSaveBlocked) {
+      setAssignmentDialog((prev) => ({ ...prev, error: duplicateAssignmentBlockMessage }))
       return
     }
 
@@ -398,37 +457,28 @@ function CompanyAdminApproverManagement() {
             <Button onClick={() => setAssignmentDialog(createAssignmentDialogState())} disabled={assignmentDialog.submitting} variant="outlined" sx={getAppDialogCancelButtonSx(theme)}>
               Cancel
             </Button>
-            <Button variant="contained" onClick={handleSaveAssignment} disabled={assignmentDialog.submitting || !assignmentDialog.unitId} sx={APP_DIALOG_PRIMARY_BUTTON_SX}>
+            <Button
+              variant="contained"
+              onClick={handleSaveAssignment}
+              disabled={
+                assignmentDialog.submitting
+                || !assignmentDialog.unitId
+                || (assignmentDialog.scopeType === 'BUSINESS_PROCESS' && !assignmentDialog.businessProcess)
+                || isAssignmentSaveBlocked
+              }
+              sx={APP_DIALOG_PRIMARY_BUTTON_SX}
+            >
               {assignmentDialog.submitting ? 'Saving...' : 'Save Assignment'}
             </Button>
           </>
         )}
       >
         <Typography sx={{ fontWeight: 700, mt: 1 }}>Current Assignments</Typography>
-        {currentAssignmentDisplayItems.length === 0 ? (
-          <Typography color="text.secondary">No assignments found for this approver.</Typography>
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {currentAssignmentDisplayItems.map((item) => (
-              <Box
-                key={item.key}
-                sx={{
-                  px: 1.5,
-                  py: 1.2,
-                  borderRadius: 2,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  backgroundColor: alpha(theme.palette.background.default, 0.35),
-                }}
-              >
-                <Typography sx={{ fontWeight: 700 }}>{item.scopeLabel}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {item.detail}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-        )}
+        <ApproverAssignmentsPanel
+          key={assignmentDialog.approver?.email_id || 'none'}
+          assignments={currentAssignments}
+          scopeLabelStyle="company_admin"
+        />
 
         <Typography sx={{ fontWeight: 700, mt: 0.5 }}>New Assignment</Typography>
         <FormControl fullWidth required>
@@ -444,12 +494,26 @@ function CompanyAdminApproverManagement() {
           </Select>
         </FormControl>
         <FormControl fullWidth required>
-          <InputLabel id="company-admin-approver-unit-label">Unit</InputLabel>
+          <InputLabel id="company-admin-approver-unit-label" shrink>
+            Unit
+          </InputLabel>
           <Select
             labelId="company-admin-approver-unit-label"
             label="Unit"
             value={assignmentDialog.unitId}
             onChange={(event) => setAssignmentDialog((prev) => ({ ...prev, unitId: event.target.value, error: '' }))}
+            displayEmpty
+            renderValue={(selected) => {
+              if (!selected) {
+                return (
+                  <Typography component="span" sx={{ color: 'text.secondary' }}>
+                    Select unit
+                  </Typography>
+                )
+              }
+              const unit = data.units.find((item) => item.unit_id === selected)
+              return unit?.unit_name || selected
+            }}
           >
             {data.units.map((unit) => (
               <MenuItem key={unit.unit_id} value={unit.unit_id}>
@@ -460,12 +524,25 @@ function CompanyAdminApproverManagement() {
         </FormControl>
         {assignmentDialog.scopeType === 'BUSINESS_PROCESS' ? (
           <FormControl fullWidth required>
-            <InputLabel id="company-admin-approver-process-label">Business Process</InputLabel>
+            <InputLabel id="company-admin-approver-process-label" shrink>
+              Business Process
+            </InputLabel>
             <Select
               labelId="company-admin-approver-process-label"
               label="Business Process"
               value={assignmentDialog.businessProcess}
               onChange={(event) => setAssignmentDialog((prev) => ({ ...prev, businessProcess: event.target.value, error: '' }))}
+              displayEmpty
+              renderValue={(selected) => {
+                if (!selected) {
+                  return (
+                    <Typography component="span" sx={{ color: 'text.secondary' }}>
+                      Select business process
+                    </Typography>
+                  )
+                }
+                return selected
+              }}
             >
               {data.businessProcesses.map((processName) => (
                 <MenuItem key={processName} value={processName}>
@@ -474,6 +551,15 @@ function CompanyAdminApproverManagement() {
               ))}
             </Select>
           </FormControl>
+        ) : null}
+        {duplicateAssignmentBlockMessage ? (
+          <Alert severity="error" sx={{ mt: 0.5 }}>
+            {duplicateAssignmentBlockMessage}
+          </Alert>
+        ) : conflictingAssignmentWarning ? (
+          <Alert severity="warning" sx={{ mt: 0.5 }}>
+            {conflictingAssignmentWarning}
+          </Alert>
         ) : null}
         {assignmentDialog.error && <Alert severity="error">{assignmentDialog.error}</Alert>}
       </AppDialog>

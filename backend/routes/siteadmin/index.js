@@ -1,5 +1,6 @@
 const express = require('express');
 const controller = require('../../controllers/siteadmin/siteadmin');
+const userQueryController = require('../../controllers/user_query');
 const { verifySiteadminAuth } = require('../../modules/auth/auth.middleware');
 
 const router = express.Router();
@@ -10,6 +11,8 @@ router.get('/auditors', verifySiteadminAuth, controller.getAuditors);
 router.post('/auditors', verifySiteadminAuth, controller.createAuditor);
 router.get('/companies/:company_identifier', verifySiteadminAuth, controller.getCompanyByIdentifier);
 router.post('/companies/create', verifySiteadminAuth, controller.createCompany);
-router.delete('/companies/:company_identifier', verifySiteadminAuth, controller.deleteCompany);
+
+router.get('/user-queries', verifySiteadminAuth, userQueryController.getUserQueries);
+router.patch('/user-queries/:id/reviewed', verifySiteadminAuth, userQueryController.markUserQueryReviewed);
 
 module.exports = router;

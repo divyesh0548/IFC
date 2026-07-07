@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -11,6 +10,7 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
+import ListItemText from '@mui/material/ListItemText'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -25,6 +25,8 @@ import DialogContentText from '@mui/material/DialogContentText'
 import TextField from '@mui/material/TextField'
 import IconButton from '@mui/material/IconButton'
 import Checkbox from '@mui/material/Checkbox'
+import InputAdornment from '@mui/material/InputAdornment'
+import SearchIcon from '@mui/icons-material/Search'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { toast } from 'react-hot-toast'
@@ -32,10 +34,14 @@ import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import {
   DASHBOARD_PAGE_OUTER_SX,
+  FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
 } from '../../uiConstants'
+
+const ALL_PROCESSES_KEYWORD = 'All_Processes'
+const ALL_PROCESSES_LABEL = 'All Business Process'
 
 const addDialogDefaults = {
   open: false,
@@ -44,19 +50,57 @@ const addDialogDefaults = {
   error: '',
 }
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function formatBusinessProcessDisplay(value) {
+  const normalized = String(value || '').trim()
+  if (normalized === ALL_PROCESSES_KEYWORD) return ALL_PROCESSES_LABEL
+  return normalized || '-'
+}
+
+function isAllProcessesEntry(value) {
+  return String(value || '').trim() === ALL_PROCESSES_KEYWORD
+}
+
+function mapDisplayEntries(rawEntries) {
+  return (rawEntries || [])
+    .map((entry) => {
+      const entryId = Number(entry.id)
+      return {
+        key: `entry-${entryId}`,
+        email_id: entry.email_id,
+        unit_id: entry.unit_id,
+        unit_name: entry.unit_name,
+        business_process: entry.business_process,
+        business_process_display: formatBusinessProcessDisplay(entry.business_process),
+        entryIds: entryId ? [entryId] : [],
+        isAllBusinessProcesses: isAllProcessesEntry(entry.business_process),
+      }
+    })
+    .sort((left, right) => {
+      const processCompare = String(left.business_process_display || '').localeCompare(String(right.business_process_display || ''))
+      if (processCompare !== 0) return processCompare
+      const emailCompare = String(left.email_id || '').localeCompare(String(right.email_id || ''))
+      if (emailCompare !== 0) return emailCompare
+      return String(left.unit_name || left.unit_id || '').localeCompare(String(right.unit_name || right.unit_id || ''))
+    })
+}
+
 function CommunicationMatrix() {
   const theme = useTheme()
-  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [businessProcessFilter, setBusinessProcessFilter] = useState('all')
-  const [companyIdentifier, setCompanyIdentifier] = useState('')
+  const [unitFilter, setUnitFilter] = useState('all')
+  const [emailSearch, setEmailSearch] = useState('')
   const [mappedUnits, setMappedUnits] = useState([])
   const [businessProcesses, setBusinessProcesses] = useState([])
   const [entries, setEntries] = useState([])
   const [addDialog, setAddDialog] = useState(addDialogDefaults)
   const [selectedUnitIds, setSelectedUnitIds] = useState([])
-  const [businessProcessForSpecific, setBusinessProcessForSpecific] = useState('')
+  const [selectedBusinessProcesses, setSelectedBusinessProcesses] = useState([])
   const [emailInputs, setEmailInputs] = useState([''])
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedEntryIds, setSelectedEntryIds] = useState(new Set())
@@ -71,10 +115,7 @@ function CommunicationMatrix() {
     setLoading(true)
     setError('')
     try {
-      const search = businessProcessFilter === 'all'
-        ? ''
-        : `?business_process=${encodeURIComponent(businessProcessFilter)}`
-      const response = await fetch(apiUrl(`/api/company-co/communication-matrix${search}`), {
+      const response = await fetch(apiUrl('/api/company-co/communication-matrix'), {
         credentials: 'include',
       })
       const result = await response.json()
@@ -82,10 +123,8 @@ function CommunicationMatrix() {
         throw new Error(result?.message || 'Failed to fetch communication matrix')
       }
 
-      const resolvedCompanyIdentifier = String(result.data?.company_identifier || '')
       const units = Array.isArray(result.data?.mappedUnits) ? result.data.mappedUnits : []
       const processes = Array.isArray(result.data?.businessProcesses) ? result.data.businessProcesses : []
-      setCompanyIdentifier(resolvedCompanyIdentifier)
       setMappedUnits(units)
       setBusinessProcesses(processes)
       setEntries(Array.isArray(result.data?.entries) ? result.data.entries : [])
@@ -100,16 +139,42 @@ function CommunicationMatrix() {
     } finally {
       setLoading(false)
     }
-  }, [businessProcessFilter])
+  }, [])
 
   useEffect(() => {
     fetchMatrix()
   }, [fetchMatrix])
 
+  const displayEntries = useMemo(() => {
+    let rows = mapDisplayEntries(entries)
+
+    if (unitFilter !== 'all') {
+      rows = rows.filter((row) => String(row.unit_id || '').trim() === unitFilter)
+    }
+
+    if (businessProcessFilter !== 'all') {
+      rows = rows.filter((row) => (
+        row.isAllBusinessProcesses || String(row.business_process || '').trim() === businessProcessFilter
+      ))
+    }
+
+    const searchTerm = emailSearch.trim().toLowerCase()
+    if (searchTerm) {
+      rows = rows.filter((row) => normalizeEmail(row.email_id).includes(searchTerm))
+    }
+
+    return rows
+  }, [entries, unitFilter, businessProcessFilter, emailSearch])
+
+  const allVisibleEntryIds = useMemo(
+    () => [...new Set(displayEntries.flatMap((row) => row.entryIds))],
+    [displayEntries]
+  )
+
   const handleOpenAddDialog = () => {
     const defaultUnitId = String(mappedUnits[0]?.unit_id || '').trim()
     setSelectedUnitIds(defaultUnitId ? [defaultUnitId] : [])
-    setBusinessProcessForSpecific(businessProcesses[0] || '')
+    setSelectedBusinessProcesses(businessProcesses[0] ? [businessProcesses[0]] : [])
     setEmailInputs([''])
     setAddDialog({ ...addDialogDefaults, open: true })
   }
@@ -122,7 +187,7 @@ function CommunicationMatrix() {
 
   const normalizedEmails = useMemo(
     () =>
-      [...new Set(emailInputs.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean))],
+      [...new Set(emailInputs.map((value) => normalizeEmail(value)).filter(Boolean))],
     [emailInputs]
   )
 
@@ -135,43 +200,58 @@ function CommunicationMatrix() {
       setAddDialog((prev) => ({ ...prev, error: 'Provide at least one email ID' }))
       return
     }
-    if (addDialog.mode === 'specific' && !businessProcessForSpecific) {
-      setAddDialog((prev) => ({ ...prev, error: 'Select a Business Process' }))
+    if (addDialog.mode === 'specific' && selectedBusinessProcesses.length === 0) {
+      setAddDialog((prev) => ({ ...prev, error: 'Select at least one Business Process' }))
       return
     }
 
     setAddDialog((prev) => ({ ...prev, submitting: true, error: '' }))
     try {
-      const endpoint = addDialog.mode === 'common'
-        ? '/api/company-co/communication-matrix/common'
-        : '/api/company-co/communication-matrix/specific'
-      const payload = {
-        email_ids: normalizedEmails,
-        unit_ids: selectedUnitIds,
-      }
-      if (addDialog.mode === 'specific') {
-        payload.business_process = businessProcessForSpecific
+      let totalInserted = 0
+      let totalSkipped = 0
+
+      if (addDialog.mode === 'common') {
+        const response = await fetch(apiUrl('/api/company-co/communication-matrix/common'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            email_ids: normalizedEmails,
+            unit_ids: selectedUnitIds,
+          }),
+        })
+        const result = await response.json()
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'Failed to add communication emails')
+        }
+        totalInserted += Number(result.inserted || 0)
+        totalSkipped += Number(result.skipped || 0)
+      } else {
+        for (const businessProcess of selectedBusinessProcesses) {
+          const response = await fetch(apiUrl('/api/company-co/communication-matrix/specific'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              email_ids: normalizedEmails,
+              unit_ids: selectedUnitIds,
+              business_process: businessProcess,
+            }),
+          })
+          const result = await response.json()
+          if (!response.ok || !result?.success) {
+            throw new Error(result?.message || 'Failed to add communication emails')
+          }
+          totalInserted += Number(result.inserted || 0)
+          totalSkipped += Number(result.skipped || 0)
+        }
       }
 
-      const response = await fetch(apiUrl(endpoint), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload),
-      })
-      const result = await response.json()
-      if (!response.ok || !result?.success) {
-        throw new Error(result?.message || 'Failed to add communication emails')
+      if (totalInserted > 0) {
+        toast.success(`Added successfully. Inserted: ${totalInserted}`)
       }
-
-      const insertedCount = Number(result.inserted || 0)
-      const skippedCount = Number(result.skipped || 0)
-
-      if (insertedCount > 0) {
-        toast.success(`Added successfully. Inserted: ${insertedCount}`)
-      }
-      if (skippedCount > 0) {
-        toast.error(`${skippedCount} email(s) already exists for selected unit and business process`)
+      if (totalSkipped > 0) {
+        toast.error(`${totalSkipped} email(s) already exist for the selected unit${addDialog.mode === 'specific' ? ' and business process' : ''}`)
       }
       handleCloseAddDialog()
       await fetchMatrix()
@@ -227,6 +307,19 @@ function CommunicationMatrix() {
     setDeleteConfirmDialogOpen(true)
   }
 
+  const toggleDisplayRowSelection = (row, checked) => {
+    setSelectedEntryIds((prev) => {
+      const next = new Set(prev)
+      row.entryIds.forEach((entryId) => {
+        if (checked) next.add(entryId)
+        else next.delete(entryId)
+      })
+      return next
+    })
+  }
+
+  const isDisplayRowSelected = (row) => row.entryIds.every((entryId) => selectedEntryIds.has(entryId))
+
   const handleListContainerClick = (event) => {
     if (!deleteMode || deleteConfirmDialogOpen) return
     const target = event?.target
@@ -246,7 +339,7 @@ function CommunicationMatrix() {
   }
 
   const tableBorderColor = alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.16 : 0.2)
-  const filterControlSx = { minWidth: { xs: '100%', sm: 240 } }
+  const filterControlSx = { minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, maxWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, flex: '0 0 auto' }
   const actionButtonSx = { textTransform: 'none', fontWeight: 700 }
   const bodyCellSx = {
     py: 1.55,
@@ -301,27 +394,10 @@ function CommunicationMatrix() {
               Communication CC List
             </Typography>
             <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, mt: 0.75, maxWidth: 760 }}>
-              Emails added for a business process are included in the CC list on all emails sent for that business process.
+              Emails added for a business process are included in the CC list of all emails sent for that business process.
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', flexWrap: 'wrap', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
-            <FormControl size="small" sx={filterControlSx}>
-              <InputLabel id="business-process-filter-label">Business Process</InputLabel>
-              <Select
-                labelId="business-process-filter-label"
-                value={businessProcessFilter}
-                label="Business Process"
-                onChange={(event) => setBusinessProcessFilter(event.target.value)}
-                disabled={loading}
-              >
-                <MenuItem value="all">All Business Processes</MenuItem>
-                {businessProcesses.map((process) => (
-                  <MenuItem key={process} value={process}>
-                    {process}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
             <Button
               variant="contained"
               color="secondary"
@@ -343,7 +419,7 @@ function CommunicationMatrix() {
                   handleDeleteModeToggle()
                 }
               }}
-              disabled={loading || deleting || entries.length === 0 || (deleteMode && selectedEntryIds.size === 0)}
+              disabled={loading || deleting || displayEntries.length === 0 || (deleteMode && selectedEntryIds.size === 0)}
               sx={actionButtonSx}
             >
               {deleteMode
@@ -351,6 +427,72 @@ function CommunicationMatrix() {
                 : 'Delete'}
             </Button>
           </Box>
+        </Box>
+
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            overflowY: 'visible',
+            alignItems: 'flex-start',
+            gap: 2,
+            mb: 2,
+            pt: 0.5,
+            pb: 0.5,
+          }}
+        >
+          <FormControl size="small" sx={filterControlSx}>
+            <InputLabel id="business-process-filter-label">Business Process</InputLabel>
+            <Select
+              labelId="business-process-filter-label"
+              value={businessProcessFilter}
+              label="Business Process"
+              onChange={(event) => setBusinessProcessFilter(event.target.value)}
+              disabled={loading}
+            >
+              <MenuItem value="all">All Business Processes</MenuItem>
+              {businessProcesses.map((process) => (
+                <MenuItem key={process} value={process}>
+                  {process}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={filterControlSx}>
+            <InputLabel id="unit-filter-label">Unit</InputLabel>
+            <Select
+              labelId="unit-filter-label"
+              value={unitFilter}
+              label="Unit"
+              onChange={(event) => setUnitFilter(event.target.value)}
+              disabled={loading}
+            >
+              <MenuItem value="all">All Units</MenuItem>
+              {mappedUnits.map((unit) => (
+                <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                  {unit.unit_name || unit.unit_id}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <TextField
+            size="small"
+            label="Search Email"
+            value={emailSearch}
+            onChange={(event) => setEmailSearch(event.target.value)}
+            disabled={loading}
+            sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, maxWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, flex: '0 0 auto' }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            }}
+          />
         </Box>
 
         {loading ? (
@@ -378,16 +520,19 @@ function CommunicationMatrix() {
                   {deleteMode ? (
                     <TableCell sx={{ ...headCellSx, width: 54, px: 2 }}>
                       <Checkbox
-                        checked={entries.length > 0 && selectedEntryIds.size === entries.length}
-                        indeterminate={selectedEntryIds.size > 0 && selectedEntryIds.size < entries.length}
+                        checked={allVisibleEntryIds.length > 0 && allVisibleEntryIds.every((entryId) => selectedEntryIds.has(entryId))}
+                        indeterminate={
+                          allVisibleEntryIds.some((entryId) => selectedEntryIds.has(entryId))
+                          && !allVisibleEntryIds.every((entryId) => selectedEntryIds.has(entryId))
+                        }
                         onChange={(event) => {
                           if (event.target.checked) {
-                            setSelectedEntryIds(new Set(entries.map((entry) => Number(entry.id))))
+                            setSelectedEntryIds(new Set(allVisibleEntryIds))
                           } else {
                             setSelectedEntryIds(new Set())
                           }
                         }}
-                        disabled={deleting || entries.length === 0}
+                        disabled={deleting || allVisibleEntryIds.length === 0}
                       />
                     </TableCell>
                   ) : null}
@@ -397,16 +542,16 @@ function CommunicationMatrix() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {entries.length === 0 ? (
+                {displayEntries.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={deleteMode ? 4 : 3} sx={{ py: 4, px: 2.25, borderBottom: 0 }}>
                       <Typography color="text.secondary">No communication emails found.</Typography>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  entries.map((entry, index) => (
+                  displayEntries.map((row, index) => (
                     <TableRow
-                      key={`${entry.id}-${entry.email_id}-${entry.business_process}-${entry.unit_id}`}
+                      key={row.key}
                       hover
                       sx={{
                         '&:hover': {
@@ -414,30 +559,22 @@ function CommunicationMatrix() {
                         },
                         '&:last-of-type td': { borderBottom: 0 },
                         '& td': {
-                          borderBottom: index === entries.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
+                          borderBottom: index === displayEntries.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
                         },
                       }}
                     >
                       {deleteMode ? (
                         <TableCell sx={{ ...bodyCellSx, px: 2 }}>
                           <Checkbox
-                            checked={selectedEntryIds.has(Number(entry.id))}
-                            onChange={(event) => {
-                              const entryId = Number(entry.id)
-                              setSelectedEntryIds((prev) => {
-                                const next = new Set(prev)
-                                if (event.target.checked) next.add(entryId)
-                                else next.delete(entryId)
-                                return next
-                              })
-                            }}
+                            checked={isDisplayRowSelected(row)}
+                            onChange={(event) => toggleDisplayRowSelection(row, event.target.checked)}
                             disabled={deleting}
                           />
                         </TableCell>
                       ) : null}
-                      <TableCell sx={bodyCellSx}>{entry.business_process || '-'}</TableCell>
-                      <TableCell sx={bodyCellSx}>{entry.email_id || '-'}</TableCell>
-                      <TableCell sx={bodyCellSx}>{entry.unit_name || entry.unit_id || '-'}</TableCell>
+                      <TableCell sx={bodyCellSx}>{row.business_process_display}</TableCell>
+                      <TableCell sx={bodyCellSx}>{row.email_id || '-'}</TableCell>
+                      <TableCell sx={bodyCellSx}>{row.unit_name || row.unit_id || '-'}</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -468,17 +605,27 @@ function CommunicationMatrix() {
 
           {addDialog.mode === 'specific' && (
             <FormControl fullWidth required>
-              <InputLabel id="specific-business-process-label">Business Process</InputLabel>
+              <InputLabel id="specific-business-process-label">Business Processes</InputLabel>
               <Select
                 labelId="specific-business-process-label"
-                value={businessProcessForSpecific}
-                label="Business Process"
-                onChange={(event) => setBusinessProcessForSpecific(event.target.value)}
+                multiple
+                value={selectedBusinessProcesses}
+                label="Business Processes"
+                onChange={(event) => {
+                  const nextValue = typeof event.target.value === 'string'
+                    ? event.target.value.split(',')
+                    : event.target.value
+                  if (nextValue.length === 0) return
+                  setSelectedBusinessProcesses(nextValue)
+                  setAddDialog((prev) => ({ ...prev, error: '' }))
+                }}
+                renderValue={(selected) => selected.join(', ')}
                 disabled={addDialog.submitting}
               >
                 {businessProcesses.map((process) => (
                   <MenuItem key={process} value={process}>
-                    {process}
+                    <Checkbox checked={selectedBusinessProcesses.includes(process)} size="small" />
+                    <ListItemText primary={process} />
                   </MenuItem>
                 ))}
               </Select>
@@ -493,7 +640,9 @@ function CommunicationMatrix() {
               value={selectedUnitIds}
               label="Units"
               onChange={(event) => {
-                const nextValue = Array.isArray(event.target.value) ? event.target.value : []
+                const nextValue = typeof event.target.value === 'string'
+                  ? event.target.value.split(',')
+                  : event.target.value
                 if (nextValue.length === 0) return
                 setSelectedUnitIds(nextValue)
                 setAddDialog((prev) => ({ ...prev, error: '' }))
@@ -505,7 +654,8 @@ function CommunicationMatrix() {
             >
               {mappedUnits.map((unit) => (
                 <MenuItem key={unit.unit_id} value={unit.unit_id}>
-                  {unit.unit_name || unit.unit_id}
+                  <Checkbox checked={selectedUnitIds.includes(unit.unit_id)} size="small" />
+                  <ListItemText primary={unit.unit_name || unit.unit_id} />
                 </MenuItem>
               ))}
             </Select>
@@ -578,9 +728,8 @@ function CommunicationMatrix() {
       >
         <DialogTitle
           sx={{
-            pb: 2.5,
-            pt: 3,
-            px: 3,
+            px: 2.5,
+            py: 2.5,
             fontWeight: 600,
             fontSize: '1.25rem',
             color: theme.palette.text.primary,
@@ -588,7 +737,7 @@ function CommunicationMatrix() {
         >
           Confirm Delete
         </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+        <DialogContent sx={{ px: 3, mt: 1.5 }}>
           <DialogContentText>
             Deleting selected communication entr{selectedEntryIds.size === 1 ? 'y' : 'ies'} cannot be undone.
           </DialogContentText>

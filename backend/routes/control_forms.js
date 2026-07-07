@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const path = require('path');
 const { prisma } = require('../lib/prisma');
 const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
+const { normalizeDateOnlyValue } = require('../utils/dateOnly');
 const { sendEmail } = require('../utils/send_email');
 const { getCcEmailsForRacm } = require('../utils/racm_cc_recipients');
 const { buildRacmInactiveUserEmail, buildApproverFormDetailUrl, buildUserFormDetailUrl } = require('../utils/racm_status_user_email');
@@ -303,7 +304,7 @@ const CONTROL_FORMS_LIST_SELECT = `
 `;
 
 function appendControlFormsListFilters(req, options, queryParts) {
-  const { assignmentEligibleOnly = false } = options;
+  const { assignmentEligibleOnly = false, excludeConclusionFilter = false } = options;
   const {
     assignment,
     company_identifier,
@@ -431,7 +432,7 @@ function appendControlFormsListFilters(req, options, queryParts) {
     paramIndex += 1;
   }
 
-  if (conclusion) {
+  if (conclusion && !excludeConclusionFilter) {
     const normalizedConclusion = String(conclusion).trim();
     if (normalizedConclusion.toLowerCase() === 'none') {
       whereClause += ` AND (
@@ -502,6 +503,10 @@ function buildControlFormsListQueryParts(req, options = {}) {
 
 async function getControlFormsForList(req, options = {}) {
   const { whereClause, queryParams } = buildControlFormsListQueryParts(req, options);
+  const {
+    whereClause: conclusionOptionsWhereClause,
+    queryParams: conclusionOptionsQueryParams,
+  } = buildControlFormsListQueryParts(req, { ...options, excludeConclusionFilter: true });
   const orderByClause = ' ORDER BY COALESCE(cf.updated_at, cf.created_at) DESC, cf.created_at DESC';
   const shouldPaginate = req.query.page !== undefined || req.query.page_size !== undefined;
 
@@ -531,7 +536,7 @@ async function getControlFormsForList(req, options = {}) {
         WHEN cf.control_design_conclusion IS NULL OR TRIM(cf.control_design_conclusion) = '' THEN 'None'
         ELSE INITCAP(TRIM(cf.control_design_conclusion))
       END AS conclusion_label
-    ${CONTROL_FORMS_LIST_FROM}${whereClause}
+    ${CONTROL_FORMS_LIST_FROM}${conclusionOptionsWhereClause}
     ORDER BY conclusion_label
   `;
   const dataQuery = `${CONTROL_FORMS_LIST_SELECT}${CONTROL_FORMS_LIST_FROM}${whereClause}${orderByClause} LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`;
@@ -539,7 +544,7 @@ async function getControlFormsForList(req, options = {}) {
   const [countResult, summaryResult, conclusionOptionsResult, dataResult] = await Promise.all([
     pool.query(countQuery, queryParams),
     pool.query(summaryQuery, queryParams),
-    pool.query(conclusionOptionsQuery, queryParams),
+    pool.query(conclusionOptionsQuery, conclusionOptionsQueryParams),
     pool.query(dataQuery, [...queryParams, pageSize, offset]),
   ]);
 
@@ -1004,9 +1009,7 @@ function normalizeChangeRequestTextValue(fieldName, value) {
   if (value == null) return '';
 
   if (fieldName === 'due_date') {
-    const raw = String(value).trim();
-    if (!raw) return '';
-    return raw.length >= 10 ? raw.slice(0, 10) : raw;
+    return normalizeDateOnlyValue(value);
   }
 
   return String(value).trim();
@@ -1124,7 +1127,7 @@ function isDatabaseConnectionError(error) {
   return isPgConnectionError(error);
 }
 
-const MISSING_UNIT_APPROVER_MESSAGE = 'No approver is assigned for current company unit';
+const MISSING_UNIT_APPROVER_MESSAGE = 'Approver do not exists, Contact Coordinator';
 
 async function getControlFormApproverDetails(clientOrPool, formId) {
   return resolveControlFormApproverDetails(clientOrPool, formId);
@@ -1864,12 +1867,7 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     });
   }
 
-  const normalizeDateOnly = (value) => {
-    if (value == null) return '';
-    const raw = String(value).trim();
-    if (!raw) return '';
-    return raw.length >= 10 ? raw.slice(0, 10) : raw;
-  };
+  const normalizeDateOnly = (value) => normalizeDateOnlyValue(value);
   const normalizeReminderFrequency = (value) => value == null ? '' : String(value).trim().toLowerCase();
   const dueDateChanged = due_date !== undefined && normalizeDateOnly(due_date) !== normalizeDateOnly(currentForm.dueDate);
   const reminderFrequencyChanged = reminder_frequency !== undefined
@@ -2310,6 +2308,10 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       if (newActiveStatus !== currentActiveStatus) {
         await logAuditEvent(newActiveStatus === true ? 'Set RACM Active' : 'Set RACM Inactive', req.user.email_id, form_id);
       }
+    }
+
+    if (dueDateChanged) {
+      await resetReminderDatetimeForForms([normalizedFormId]);
     }
 
     const form = await prisma.controlForm.findUnique({
@@ -3537,6 +3539,13 @@ router.post('/:form_id/change-request/:request_id/review', verifyAuth, async (re
 
     await client.query('COMMIT');
 
+    const dueDateApproved = approvedItems.some(
+      (item) => String(item.field_db_name || '').trim() === 'due_date'
+    );
+    if (dueDateApproved) {
+      await resetReminderDatetimeForForms([normalizedFormId]);
+    }
+
     await logAuditEvent(
       'RACM Change Request Reviewed',
       reviewerEmail,
@@ -4726,6 +4735,143 @@ router.get('/:form_id/check-sampling-exists', verifyAuth, async (req, res) => {
       success: false,
       message: 'Error checking sampling document',
       error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Delete one user-uploaded document for a RACM (rejected RACMs only; process owner)
+router.delete('/:form_id/user-doc', verifyAuth, async (req, res) => {
+  const { form_id } = req.params;
+  const docIdRaw = req.body?.id ?? req.query?.id;
+  const docPathRaw = req.body?.doc_uploaded_by_user ?? req.query?.path;
+  const client = await pool.connect();
+
+  try {
+    if (req.user?.role !== 'user') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied',
+      });
+    }
+
+    const userEmail = String(req.user?.email_id || '').trim().toLowerCase();
+    if (!userEmail) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    await client.query('BEGIN');
+
+    const formResult = await client.query(
+      `
+        SELECT form_id, control_owner, status
+        FROM control_forms
+        WHERE form_id = $1
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [form_id]
+    );
+
+    if (formResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'RACM not found',
+      });
+    }
+
+    const form = formResult.rows[0];
+    const processOwnerEmail = String(form.control_owner || '').trim().toLowerCase();
+    if (processOwnerEmail !== userEmail) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You are not authorized to delete documents for this RACM.',
+      });
+    }
+
+    if (String(form.status || '').trim() !== 'Rejected') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Documents can only be removed from rejected RACMs',
+      });
+    }
+
+    const docId = docIdRaw != null ? String(docIdRaw).trim() : '';
+    const docPath = docPathRaw != null ? String(docPathRaw).trim() : '';
+    let docResult;
+
+    if (docId && /^\d+$/.test(docId)) {
+      docResult = await client.query(
+        `
+          SELECT id, form_id, doc_uploaded_by_user
+          FROM racm_docs
+          WHERE id = $1 AND form_id = $2
+          LIMIT 1
+        `,
+        [docId, form_id]
+      );
+    } else if (docPath) {
+      docResult = await client.query(
+        `
+          SELECT id, form_id, doc_uploaded_by_user
+          FROM racm_docs
+          WHERE form_id = $1 AND doc_uploaded_by_user = $2
+          LIMIT 1
+        `,
+        [form_id, docPath]
+      );
+    } else {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Document id or path is required',
+      });
+    }
+
+    if (docResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Uploaded document not found',
+      });
+    }
+
+    const userDoc = docResult.rows[0];
+    const s3Key = String(userDoc.doc_uploaded_by_user || '').trim();
+    if (s3Key) {
+      await deleteFileFromS3(s3Key);
+    }
+
+    await client.query(
+      'DELETE FROM racm_docs WHERE id = $1 AND form_id = $2',
+      [userDoc.id, form_id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Document deleted successfully',
+      data: {
+        id: userDoc.id,
+        form_id,
+        doc_uploaded_by_user: userDoc.doc_uploaded_by_user,
+      },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting user document:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error deleting uploaded document',
+      error: error.message,
     });
   } finally {
     client.release();

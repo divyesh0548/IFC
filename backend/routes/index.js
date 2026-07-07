@@ -10,5 +10,6 @@ router.use('/approver', require('./approver/index'));
 router.use('/auditor', require('./auditor/index'));
 router.use('/stats', require('./stats'));
 router.use('/business-processes', require('./business_processes'));
+router.use('/user-queries', require('./user_queries'));
 
 module.exports = router;

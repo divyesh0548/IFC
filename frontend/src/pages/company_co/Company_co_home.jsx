@@ -5,7 +5,7 @@ import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Paper from '@mui/material/Paper'
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
+import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded'
@@ -15,6 +15,7 @@ import TableViewRoundedIcon from '@mui/icons-material/TableViewRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { apiUrl } from '../../config/api'
 import DashboardGreeting from '../../components/DashboardGreeting'
+import HomeHelpSupport from '../../components/help/HomeHelpSupport'
 import { readStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
 
 function formatCoordinatorName(empName, emailId) {
@@ -48,11 +49,11 @@ function Company_co_home() {
 
   const tiles = [
     {
-      eyebrow: 'Units',
-      title: 'Unit Management',
-      description: 'Review unit mappings for coordinators and approvers across the company.',
-      path: '/company_co/unit-management',
-      icon: <ApartmentRoundedIcon sx={{ fontSize: 38 }} />,
+      eyebrow: 'Company',
+      title: 'Company Details',
+      description: 'Review the registered company profile, identifiers, and unit master.',
+      path: '/company_co/company-details',
+      icon: <AccountBalanceRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },
     {
@@ -399,6 +400,7 @@ function Company_co_home() {
             </Box>
           </Paper>
         </Box>
+        <HomeHelpSupport />
       </Box>
 
       <Box

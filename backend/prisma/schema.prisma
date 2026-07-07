@@ -517,3 +517,19 @@ model AuditLogsRacm {
 
   @@map("audit_logs_racm")
 }
+
+model UserQuery {
+  id              Int       @id @default(autoincrement())
+  typeOfQuery     String    @map("type_of_query") @db.VarChar(255)
+  explanation     String
+  userEmailId     String    @map("user_email_id") @db.VarChar(255)
+  reviewed        Boolean   @default(false)
+  submittedOn     DateTime  @default(dbgenerated("CURRENT_TIMESTAMP")) @map("submitted_on") @db.Timestamp(6)
+  reviewedOn      DateTime? @map("reviewed_on") @db.Timestamp(6)
+  mailSentToAdmin Boolean   @default(false) @map("mail_sent_to_admin")
+
+  @@index([submittedOn])
+  @@index([reviewed])
+  @@index([mailSentToAdmin])
+  @@map("user_query")
+}

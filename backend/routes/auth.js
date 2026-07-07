@@ -387,6 +387,131 @@ router.get('/profile', async (req, res) => {
   }
 });
 
+router.get('/company-details', async (req, res) => {
+  try {
+    const emailId = getEmailFromAuthCookies(req);
+    if (!emailId) {
+      return clearCookiesAndRespondAuthError(res, 401, 'No token provided');
+    }
+
+    const normalizedEmail = normalizeEmail(emailId);
+    const userResult = await pool.query(
+      `
+        SELECT
+          u.email_id,
+          u.role,
+          u.company_identifier,
+          c.company_name,
+          c.registered_email,
+          c.registered_address,
+          c.unique_identification_number,
+          c.gst,
+          c.pan,
+          c.number_of_corporate_offices,
+          c.number_of_factory_units
+        FROM ifc_users u
+        LEFT JOIN companies c ON u.company_identifier = c.company_identifier
+        WHERE LOWER(TRIM(u.email_id)) = $1
+        LIMIT 1
+      `,
+      [normalizedEmail]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const user = userResult.rows[0];
+    const companyIdentifier = String(user.company_identifier || '').trim();
+    const role = String(user.role || '').trim().toLowerCase();
+
+    const companyDetails = {
+      company_name: user.company_name ?? null,
+      registered_email: user.registered_email ?? null,
+      registered_address: user.registered_address ?? null,
+      unique_identification_number: user.unique_identification_number ?? null,
+      gst: user.gst ?? null,
+      pan: user.pan ?? null,
+      number_of_corporate_offices: user.number_of_corporate_offices ?? null,
+      number_of_factory_units: user.number_of_factory_units ?? null,
+    };
+
+    if (!companyIdentifier) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          company_name: null,
+          company_identifier: null,
+          company_details: companyDetails,
+          units: [],
+          linked_unit_ids: [],
+          show_linked_unit_legend: false,
+        },
+      });
+    }
+
+    const [unitsResult, linkedUnitsResult] = await Promise.all([
+      pool.query(
+        `
+          SELECT id, unit_id, unit_name, unit_address
+          FROM company_unit_master
+          WHERE company_identifier = $1
+          ORDER BY unit_name ASC, id ASC
+        `,
+        [companyIdentifier]
+      ),
+      role === 'user'
+        ? pool.query(
+          `
+            SELECT unit_id
+            FROM user_unit_memberships
+            WHERE company_identifier = $1
+              AND LOWER(TRIM(user_email_id)) = $2
+            ORDER BY unit_id ASC
+          `,
+          [companyIdentifier, normalizedEmail]
+        )
+        : role === 'company_co'
+          ? pool.query(
+            `
+              SELECT unit_id
+              FROM coordinator_unit_assignments
+              WHERE company_identifier = $1
+                AND LOWER(TRIM(coordinator_email_id)) = $2
+              ORDER BY unit_id ASC
+            `,
+            [companyIdentifier, normalizedEmail]
+          )
+          : Promise.resolve({ rows: [] }),
+    ]);
+
+    const linkedUnitIds = linkedUnitsResult.rows
+      .map((row) => String(row.unit_id || '').trim())
+      .filter(Boolean);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        company_name: user.company_name ?? null,
+        company_identifier: companyIdentifier,
+        company_details: companyDetails,
+        units: unitsResult.rows,
+        linked_unit_ids: linkedUnitIds,
+        show_linked_unit_legend: role === 'user' || role === 'company_co',
+      },
+    });
+  } catch (error) {
+    console.error('Company details fetch error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load company details',
+    });
+  }
+});
+
 // Update current user profile fields (ifc_users only)
 router.put('/profile', async (req, res) => {
   try {

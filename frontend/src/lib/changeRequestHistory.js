@@ -1,3 +1,17 @@
+import { formatDateOnly } from './dateTime'
+
+export function formatChangeRequestDisplayValue(fieldDbName, value) {
+  const normalizedField = String(fieldDbName || '').trim()
+  const raw = value == null ? '' : String(value).trim()
+  if (!raw) return '-'
+
+  if (normalizedField === 'due_date') {
+    return formatDateOnly(raw)
+  }
+
+  return raw
+}
+
 export function getChangeRequestOutcomeSx(status) {
   const normalized = String(status || '').trim().toLowerCase()
 

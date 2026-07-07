@@ -38,6 +38,7 @@ const {
   buildUnitSampleSizeConfigResponse,
 } = require('../../utils/sample_size_resolver');
 const { logAuditEvent } = require('../../utils/auditLog');
+const { ALL_PROCESSES_KEYWORD } = require('../../utils/racm_cc_recipients');
 
 const RACM_SPECIFIC_APPROVER_ASSIGNMENT_ACTION = 'RACM Specific approver assignment';
 
@@ -803,128 +804,6 @@ async function generateRiskAnalysisByControl(req, res) {
     }
     lockClient.release();
   }
-}
-
-async function createCompanyUser(client, coordinator, payload = {}) {
-  getPasswordPepper();
-
-  const emailId = normalizeEmail(payload.email_id);
-  const empCode = payload.emp_code && payload.emp_code.trim() ? payload.emp_code.trim() : null;
-  const empName = payload.emp_name && payload.emp_name.trim() ? payload.emp_name.trim() : null;
-  const designation = payload.designation && payload.designation.trim() ? payload.designation.trim() : null;
-  const department = payload.department && payload.department.trim() ? payload.department.trim() : null;
-  const mobileDigits = normalizeMobileDigits(payload.mobile);
-  const mobile = mobileDigits || null;
-  const unitId = payload.unit_id && String(payload.unit_id).trim() ? String(payload.unit_id).trim() : null;
-
-  if (!emailId) {
-    const error = new Error('Email ID is required');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (!isValidEmail(emailId)) {
-    const error = new Error('Invalid email format');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (mobile) {
-    const mobileError = getMobileValidationError(mobile);
-    if (mobileError) {
-      const error = new Error(mobileError);
-      error.statusCode = 400;
-      throw error;
-    }
-  }
-
-  const companyIdentifier = coordinator.company_identifier || null;
-
-  if (unitId) {
-    if (!companyIdentifier) {
-      const error = new Error('Company identifier is required');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const assignedUnitResult = await client.query(
-      `
-        SELECT cum.unit_id
-        FROM company_unit_master cum
-        INNER JOIN company_unit_responsibilities cur
-          ON cur.company_identifier = cum.company_identifier
-         AND cur.unit_id = cum.unit_id
-         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-        WHERE cum.company_identifier = $1
-          AND cum.unit_id = $2
-          AND LOWER(TRIM(cur.user_email_id)) = $3
-        LIMIT 1
-      `,
-      [companyIdentifier, unitId, normalizeEmail(coordinator.email_id)]
-    );
-
-    if (assignedUnitResult.rows.length === 0) {
-      const error = new Error('Selected unit is not mapped with this company coordinator');
-      error.statusCode = 403;
-      throw error;
-    }
-  }
-
-  const existingUser = await client.query(
-    'SELECT id FROM ifc_users WHERE LOWER(TRIM(email_id)) = $1 LIMIT 1',
-    [emailId]
-  );
-
-  if (existingUser.rows.length > 0) {
-    const error = new Error('User with this email already exists');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const tempPassword = crypto.randomBytes(8).toString('hex');
-  const tempPasswordHash = await hashPassword(tempPassword);
-  const tempPasswordEncrypted = encryptTempPassword(tempPassword);
-
-  const userResult = await client.query(
-    `
-      INSERT INTO ifc_users (
-        email_id,
-        password,
-        role,
-        company_identifier,
-        temp_login,
-        emp_code,
-        emp_name,
-        designation,
-        department,
-        mobile,
-        unit_id,
-        login_email_sent,
-        temp_password_encrypted
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE, $12)
-      RETURNING id, email_id, company_identifier, unit_id
-    `,
-    [
-      emailId,
-      tempPasswordHash,
-      'user',
-      companyIdentifier,
-      true,
-      empCode,
-      empName,
-      designation,
-      department,
-      mobile,
-      unitId,
-      tempPasswordEncrypted,
-    ]
-  );
-
-  return {
-    user: userResult.rows[0],
-    loginEmailQueued: true,
-  };
 }
 
 function getUnitMappingRoleConfig(role) {
@@ -3217,34 +3096,28 @@ async function createUsersBulk(req, res) {
   req.on('close', markRequestAborted);
 
   const companyIdentifier = coordinator.company_identifier || null;
-  const inputEmails = Array.isArray(req.body?.email_ids) ? req.body.email_ids : [];
   const usersInput = Array.isArray(req.body?.users) ? req.body.users : [];
   const selectedUnitIds = normalizeSelectedUnitIds(req.body?.unit_ids, req.body?.unit_id);
   const confirmExistingUserUnits = Boolean(req.body?.confirm_existing_user_units);
 
-  if (usersInput.length > 0 && selectedUnitIds.length === 0) {
+  if (usersInput.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'At least one user row is required for bulk user upload',
+    });
+  }
+
+  if (selectedUnitIds.length === 0) {
     return res.status(400).json({
       success: false,
       message: 'At least one unit is required for bulk user upload',
     });
   }
 
-  if (usersInput.length > 0 && !companyIdentifier) {
+  if (!companyIdentifier) {
     return res.status(400).json({
       success: false,
       message: 'Company identifier is missing for coordinator',
-    });
-  }
-
-  const normalizedEmails = [...new Set(inputEmails.map(normalizeEmail).filter(Boolean))];
-  const invalidEmails = normalizedEmails.filter((email) => !isValidEmail(email));
-  const legacyEmailIds = normalizedEmails.filter((email) => isValidEmail(email));
-
-  if (usersInput.length === 0 && legacyEmailIds.length > 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Mobile number is required for user creation. Use the user management form or bulk upload sheet with Mobile column.',
-      invalidEmails,
     });
   }
 
@@ -3252,8 +3125,7 @@ async function createUsersBulk(req, res) {
   const skippedRows = [];
   const invalidRowEmails = [];
 
-  if (usersInput.length > 0) {
-    usersInput.forEach((row, index) => {
+  usersInput.forEach((row, index) => {
       const rowNumber = index + 2;
       const emailId = normalizeEmail(row?.email_id);
 
@@ -3307,24 +3179,14 @@ async function createUsersBulk(req, res) {
         },
       });
     });
-  }
 
-  const emailPayloadRows = legacyEmailIds.map((emailId) => ({
-    rowNumber: null,
-    payload: { email_id: emailId },
-  }));
-
-  const rowsToCreate = [...uploadRows, ...emailPayloadRows];
+  const rowsToCreate = uploadRows;
 
   if (rowsToCreate.length === 0) {
     return res.status(400).json({
       success: false,
-      message: usersInput.length > 0
-        ? 'No valid rows found for user creation'
-        : (invalidEmails.length > 0
-          ? 'No valid email IDs found for user creation'
-          : 'At least one email ID is required'),
-      invalidEmails: [...invalidEmails, ...invalidRowEmails],
+      message: 'No valid rows found for user creation',
+      invalidEmails: invalidRowEmails,
       skippedRows,
     });
   }
@@ -3637,7 +3499,7 @@ async function createUsersBulk(req, res) {
       message: `Created ${createdUsers.length} user(s) successfully`,
       createdUsers: createdUsers.map(({ tempPassword: _tempPassword, emp_name: _empName, ...rest }) => rest),
       skippedEmails,
-      invalidEmails: [...invalidEmails, ...invalidRowEmails],
+      invalidEmails: invalidRowEmails,
       skippedRows: [
         ...skippedRows,
         ...duplicateRows,
@@ -4107,12 +3969,11 @@ async function getCommunicationMatrix(req, res) {
           NULLIF(TRIM(cum.unit_id), '') AS unit_id,
           NULLIF(TRIM(cum.unit_name), '') AS unit_name
         FROM company_unit_master cum
-        INNER JOIN company_unit_responsibilities cur
-          ON cur.company_identifier = cum.company_identifier
-         AND cur.unit_id = cum.unit_id
-         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        INNER JOIN coordinator_unit_assignments cua
+          ON cua.company_identifier = cum.company_identifier
+         AND cua.unit_id = cum.unit_id
         WHERE cum.company_identifier = $1
-          AND LOWER(TRIM(cur.user_email_id)) = $2
+          AND LOWER(TRIM(cua.coordinator_email_id)) = $2
           AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
         ORDER BY unit_name ASC, unit_id ASC
       `,
@@ -4156,8 +4017,11 @@ async function getCommunicationMatrix(req, res) {
     `;
     const params = [companyIdentifier, mappedUnitIds];
     if (businessProcessFilter) {
-      entriesQuery += ` AND TRIM(COALESCE(r.business_process, '')) = $3`;
-      params.push(businessProcessFilter);
+      entriesQuery += ` AND (
+        TRIM(COALESCE(r.business_process, '')) = $3
+        OR TRIM(COALESCE(r.business_process, '')) = $4
+      )`;
+      params.push(businessProcessFilter, ALL_PROCESSES_KEYWORD);
     }
     entriesQuery += ' ORDER BY r.business_process ASC, r.email_id ASC, unit_name ASC';
 
@@ -4228,12 +4092,11 @@ async function addCommonCommunicationEmails(req, res) {
       `
         SELECT DISTINCT NULLIF(TRIM(cum.unit_id), '') AS unit_id
         FROM company_unit_master cum
-        INNER JOIN company_unit_responsibilities cur
-          ON cur.company_identifier = cum.company_identifier
-         AND cur.unit_id = cum.unit_id
-         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        INNER JOIN coordinator_unit_assignments cua
+          ON cua.company_identifier = cum.company_identifier
+         AND cua.unit_id = cum.unit_id
         WHERE cum.company_identifier = $1
-          AND LOWER(TRIM(cur.user_email_id)) = $2
+          AND LOWER(TRIM(cua.coordinator_email_id)) = $2
           AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
       `,
       [companyIdentifier, coordinatorEmail]
@@ -4254,43 +4117,28 @@ async function addCommonCommunicationEmails(req, res) {
       });
     }
 
-    const businessProcessRows = await listBusinessProcessesForCompany(client, companyIdentifier);
-    const businessProcesses = businessProcessRows
-      .map((row) => String(row.business_process || '').trim())
-      .filter(Boolean);
-
-    if (businessProcesses.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        message: 'No business process master data found',
-      });
-    }
-
     let inserted = 0;
     let skipped = 0;
 
     for (const unitId of normalizedUnitIds) {
-      for (const businessProcess of businessProcesses) {
-        for (const emailId of normalizedEmails) {
-          const result = await client.query(
-            `
-              INSERT INTO racm_cc_users (email_id, business_process, company_identifier, unit_id)
-              SELECT $1::text, $2::text, $3::text, $4::text
-              WHERE NOT EXISTS (
-                SELECT 1
-                FROM racm_cc_users
-                WHERE LOWER(TRIM(email_id)) = $5
-                  AND company_identifier = $3
-                  AND unit_id = $4
-                  AND TRIM(COALESCE(business_process, '')) = $2::text
-              )
-            `,
-            [emailId, businessProcess, companyIdentifier, unitId, emailId]
-          );
-          if (result.rowCount > 0) inserted += 1;
-          else skipped += 1;
-        }
+      for (const emailId of normalizedEmails) {
+        const result = await client.query(
+          `
+            INSERT INTO racm_cc_users (email_id, business_process, company_identifier, unit_id)
+            SELECT $1::text, $2::text, $3::text, $4::text
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM racm_cc_users
+              WHERE LOWER(TRIM(email_id)) = $5
+                AND company_identifier = $3
+                AND unit_id = $4
+                AND TRIM(COALESCE(business_process, '')) = $2::text
+            )
+          `,
+          [emailId, ALL_PROCESSES_KEYWORD, companyIdentifier, unitId, emailId]
+        );
+        if (result.rowCount > 0) inserted += 1;
+        else skipped += 1;
       }
     }
 
@@ -4300,7 +4148,7 @@ async function addCommonCommunicationEmails(req, res) {
       message: 'Common CC email(s) added successfully',
       inserted,
       skipped,
-      businessProcessCount: businessProcesses.length,
+      business_process: ALL_PROCESSES_KEYWORD,
       unitCount: normalizedUnitIds.length,
       emailCount: normalizedEmails.length,
     });
@@ -4377,6 +4225,13 @@ async function addBusinessProcessSpecificCommunicationEmails(req, res) {
     });
   }
 
+  if (businessProcess === ALL_PROCESSES_KEYWORD) {
+    return res.status(400).json({
+      success: false,
+      message: 'Use the common CC email option for all business processes',
+    });
+  }
+
   const normalizedEmails = [...new Set(inputEmails.map(normalizeEmail).filter(Boolean))];
   if (normalizedEmails.length === 0) {
     return res.status(400).json({
@@ -4410,12 +4265,11 @@ async function addBusinessProcessSpecificCommunicationEmails(req, res) {
       `
         SELECT DISTINCT NULLIF(TRIM(cum.unit_id), '') AS unit_id
         FROM company_unit_master cum
-        INNER JOIN company_unit_responsibilities cur
-          ON cur.company_identifier = cum.company_identifier
-         AND cur.unit_id = cum.unit_id
-         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        INNER JOIN coordinator_unit_assignments cua
+          ON cua.company_identifier = cum.company_identifier
+         AND cua.unit_id = cum.unit_id
         WHERE cum.company_identifier = $1
-          AND LOWER(TRIM(cur.user_email_id)) = $2
+          AND LOWER(TRIM(cua.coordinator_email_id)) = $2
           AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
       `,
       [companyIdentifier, coordinatorEmail]
@@ -4517,12 +4371,11 @@ async function deleteCommunicationMatrixEntries(req, res) {
       `
         SELECT DISTINCT NULLIF(TRIM(cum.unit_id), '') AS unit_id
         FROM company_unit_master cum
-        INNER JOIN company_unit_responsibilities cur
-          ON cur.company_identifier = cum.company_identifier
-         AND cur.unit_id = cum.unit_id
-         AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
+        INNER JOIN coordinator_unit_assignments cua
+          ON cua.company_identifier = cum.company_identifier
+         AND cua.unit_id = cum.unit_id
         WHERE cum.company_identifier = $1
-          AND LOWER(TRIM(cur.user_email_id)) = $2
+          AND LOWER(TRIM(cua.coordinator_email_id)) = $2
           AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
       `,
       [companyIdentifier, coordinatorEmail]

@@ -24,7 +24,8 @@ import {
   FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
   STATUS_BADGE_PILL_SX,
-  CONCLUSION_BADGE_PILL_SX,
+  CONCLUSION_BADGE_TABLE_PILL_SX,
+  CONCLUSION_TABLE_CELL_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   getApprovalStatusBadgeSolidColors,
@@ -592,6 +593,7 @@ function CompanyAdminRacmDashboard() {
                       const isActive = getIsActive(form.active)
                       const status = formatStatus(form.status)
                       const processOwner = getRacmProcessOwnerDisplayValue(form)
+                      const conclusionLabel = formatConclusion(form.control_design_conclusion)
 
                       return (
                         <Box
@@ -665,16 +667,18 @@ function CompanyAdminRacmDashboard() {
                               {status}
                             </Box>
                           </Box>
-                          <Box component="td" sx={{ px: 2.5, py: 2, ...pctColSx(CA_TABLE_COL_PX.conclusion) }}>
-                            <Box
-                              component="span"
-                              sx={{
-                                ...CONCLUSION_BADGE_PILL_SX,
-                                ...getConclusionBadgeSolidColors(form.control_design_conclusion),
-                              }}
-                            >
-                              {formatConclusion(form.control_design_conclusion)}
-                            </Box>
+                          <Box component="td" sx={{ px: 2.5, py: 2, ...pctColSx(CA_TABLE_COL_PX.conclusion), ...CONCLUSION_TABLE_CELL_SX }}>
+                            <Tooltip title={conclusionLabel} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                              <Box
+                                component="span"
+                                sx={{
+                                  ...CONCLUSION_BADGE_TABLE_PILL_SX,
+                                  ...getConclusionBadgeSolidColors(form.control_design_conclusion),
+                                }}
+                              >
+                                {conclusionLabel}
+                              </Box>
+                            </Tooltip>
                           </Box>
                           <Box component="td" sx={dataCellSx({ px: 2.5, py: 2, fontSize: '0.875rem', ...pctColSx(CA_TABLE_COL_PX.dueDate) })}>
                             <Box component="span" sx={dataCellTextSx}>{formatDate(form.due_date)}</Box>

@@ -418,6 +418,10 @@ async function createRoleUser(req, res, role) {
     return res.status(400).json({ success: false, message: mobileError });
   }
 
+  if (role !== 'approver' && unitIds.length === 0) {
+    return res.status(400).json({ success: false, message: 'At least one unit is required' });
+  }
+
   try {
     await client.query('BEGIN');
     await assertUnitsBelongToCompany(client, companyIdentifier, unitIds);
@@ -648,14 +652,19 @@ async function createUsersBulk(req, res) {
   const client = await pool.connect();
   const companyIdentifier = String(req.user?.company_identifier || '').trim();
   const role = String(req.body?.role || 'user').trim();
+  const unitIds = normalizeUnitIds(req.body?.unit_ids);
   const rowsInput = Array.isArray(req.body?.users) ? req.body.users : [];
 
   if (!companyIdentifier) {
     return res.status(400).json({ success: false, message: 'Company identifier is missing for company admin' });
   }
 
-  if (!['user', 'company_co', 'approver'].includes(role)) {
-    return res.status(400).json({ success: false, message: 'Invalid role for bulk creation' });
+  if (role !== 'user') {
+    return res.status(400).json({ success: false, message: 'Bulk upload supports normal users only' });
+  }
+
+  if (unitIds.length === 0) {
+    return res.status(400).json({ success: false, message: 'At least one unit is required for bulk user upload' });
   }
 
   if (rowsInput.length === 0) {
@@ -663,6 +672,7 @@ async function createUsersBulk(req, res) {
   }
 
   try {
+    await assertUnitsBelongToCompany(client, companyIdentifier, unitIds);
     const companyName = await getCompanyName(client, companyIdentifier);
     const createdUsers = [];
     const duplicateRows = [];
@@ -701,6 +711,17 @@ async function createUsersBulk(req, res) {
           mobile,
         });
 
+        for (const unitId of unitIds) {
+          await client.query(
+            `
+              INSERT INTO user_unit_memberships (company_identifier, user_email_id, unit_id)
+              VALUES ($1, $2, $3)
+              ON CONFLICT DO NOTHING
+            `,
+            [companyIdentifier, emailId, unitId]
+          );
+        }
+
         await client.query('COMMIT');
         createdUsers.push({ user, tempPassword, rowNumber });
       } catch (error) {
@@ -724,7 +745,7 @@ async function createUsersBulk(req, res) {
 
     return res.status(201).json({
       success: true,
-      message: `${createdUsers.length} ${role === 'user' ? 'user' : role === 'company_co' ? 'coordinator' : 'approver'}(s) created successfully`,
+      message: `${createdUsers.length} user(s) created successfully`,
       created_count: createdUsers.length,
       duplicate_count: duplicateRows.length,
       skipped_count: skippedRows.length,
@@ -1370,6 +1391,45 @@ async function assignApprover(req, res) {
       if (formResult.rows.length === 0) {
         await client.query('ROLLBACK');
         return res.status(400).json({ success: false, message: 'RACM not found for this company' });
+      }
+    }
+
+    if (assignmentScope === 'UNIT' || assignmentScope === 'BUSINESS_PROCESS') {
+      const duplicateResult = assignmentScope === 'UNIT'
+        ? await client.query(
+          `
+            SELECT 1
+            FROM approver_assignments
+            WHERE company_identifier = $1
+              AND LOWER(TRIM(approver_email_id)) = $2
+              AND assignment_scope = 'UNIT'
+              AND unit_id = $3
+            LIMIT 1
+          `,
+          [companyIdentifier, approverEmailId, unitId]
+        )
+        : await client.query(
+          `
+            SELECT 1
+            FROM approver_assignments
+            WHERE company_identifier = $1
+              AND LOWER(TRIM(approver_email_id)) = $2
+              AND assignment_scope = 'BUSINESS_PROCESS'
+              AND unit_id = $3
+              AND LOWER(TRIM(business_process)) = LOWER(TRIM($4))
+            LIMIT 1
+          `,
+          [companyIdentifier, approverEmailId, unitId, businessProcess]
+        );
+
+      if (duplicateResult.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          message: assignmentScope === 'UNIT'
+            ? 'This approver is already assigned at unit level for the selected unit'
+            : 'This approver is already assigned to the selected unit and business process',
+        });
       }
     }
 

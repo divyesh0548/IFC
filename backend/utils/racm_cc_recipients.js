@@ -1,5 +1,7 @@
 const { pool } = require('./db');
 
+const ALL_PROCESSES_KEYWORD = 'All_Processes';
+
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
@@ -25,11 +27,14 @@ async function getCcEmailsForRacm({
       FROM racm_cc_users
       WHERE company_identifier = $1
         AND unit_id = $2
-        AND TRIM(COALESCE(business_process, '')) = $3
+        AND (
+          TRIM(COALESCE(business_process, '')) = $3
+          OR TRIM(COALESCE(business_process, '')) = $4
+        )
         AND COALESCE(TRIM(email_id), '') <> ''
       ORDER BY email_id ASC
     `,
-    [normalizedCompany, normalizedUnit, normalizedProcess]
+    [normalizedCompany, normalizedUnit, normalizedProcess, ALL_PROCESSES_KEYWORD]
   );
 
   return result.rows
@@ -38,5 +43,6 @@ async function getCcEmailsForRacm({
 }
 
 module.exports = {
+  ALL_PROCESSES_KEYWORD,
   getCcEmailsForRacm,
 };

@@ -340,7 +340,7 @@ function CompanyCreation() {
                     disabled={loading}
                     placeholder="Enter company admin email"
                     error={!!errors[`company_admin_email_${index}`]}
-                    helperText={errors[`company_admin_email_${index}`]}
+                    helperText={errors[`company_admin_email_${index}`] || 'This email will be used for company admin login.'}
                     fullWidth
                   />
                   <TextField
@@ -355,7 +355,7 @@ function CompanyCreation() {
                     inputProps={{ maxLength: 10 }}
                     placeholder="Enter 10-digit mobile number"
                     error={!!errors[`company_admin_mobile_${index}`]}
-                    helperText={errors[`company_admin_mobile_${index}`] || 'Required for company admin login profile.'}
+                    helperText={errors[`company_admin_mobile_${index}`]}
                     fullWidth
                   />
                   <Tooltip title={companyAdminEmails.length === 1 ? 'At least one company admin email is required' : 'Remove company admin email'}>

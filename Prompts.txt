@@ -1,1 +1,3 @@
-In every dashbaoard where RACMs are listed, add a new column on the left most side which will be "Control Number". Adjust other columns and do not make dashbaoard scrollable in X-axis.
+Approver module fixes.
+
+1. On approver's home page do not display unit name, because approver will not be linked with unit, approver will have different level of assignments.

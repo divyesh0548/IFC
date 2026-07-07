@@ -47,7 +47,8 @@ import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistory
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { formatIndianDateTime } from '../../lib/dateTime'
+import { formatIndianDateTime, formatDateOnly, toDateOnlyString } from '../../lib/dateTime'
+import { formatChangeRequestDisplayValue } from '../../lib/changeRequestHistory'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
 
@@ -135,9 +136,7 @@ function normalizeRequestChangeValue(fieldKey, value) {
   }
 
   if (fieldKey === 'due_date') {
-    if (!value) return ''
-    const raw = String(value).trim()
-    return raw.length >= 10 ? raw.slice(0, 10) : raw
+    return toDateOnlyString(value)
   }
 
   return value == null ? '' : String(value)
@@ -184,7 +183,7 @@ function UserFormDetail() {
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [sampleDocsDialogOpen, setSampleDocsDialogOpen] = useState(false)
   const [userDocsDialogOpen, setUserDocsDialogOpen] = useState(false)
-  const [removedUploadedDocPaths, setRemovedUploadedDocPaths] = useState([])
+  const [removingUserDocPath, setRemovingUserDocPath] = useState('')
   const [deficiencyResponseForm, setDeficiencyResponseForm] = useState({
     response_type: 'mitigation_plan',
     explaination: '',
@@ -265,7 +264,6 @@ function UserFormDetail() {
         setRequestChangeValues(nextRequestValues)
         setIsRequestChangeMode(false)
         setRequestReason('')
-        setRemovedUploadedDocPaths([])
         setDeficiencyResponseForm(buildDeficiencyResponseFormState(data.data))
         setDeficiencyResponseFiles([])
       } else if (response.status === 403) {
@@ -414,14 +412,39 @@ function UserFormDetail() {
     setUserDocsDialogOpen(false)
   }
 
-  const handleRemoveExistingUploadedDoc = (docPath) => {
-    if (!isRejected || !docPath) return
+  const handleRemoveExistingUploadedDoc = async (doc) => {
+    const docPath = String(doc?.doc_uploaded_by_user || '').trim()
+    if (formData?.status !== 'Rejected' || !docPath || removingUserDocPath) return
 
-    setRemovedUploadedDocPaths((currentPaths) => (
-      currentPaths.includes(docPath)
-        ? currentPaths
-        : [...currentPaths, docPath]
-    ))
+    const docId = String(doc?.id || '').trim()
+    const requestBody = /^\d+$/.test(docId)
+      ? { id: Number(docId) }
+      : { doc_uploaded_by_user: docPath }
+
+    setRemovingUserDocPath(docPath)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}/user-doc`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(requestBody),
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast.success(data.message || 'Document removed successfully')
+        await fetchFormData()
+      } else {
+        toast.error(data.message || 'Failed to remove document')
+      }
+    } catch (error) {
+      console.error('Error removing user document:', error)
+      toast.error('Failed to remove document')
+    } finally {
+      setRemovingUserDocPath('')
+    }
   }
 
   const handleDownloadUserDocument = async (filePath) => {
@@ -523,9 +546,7 @@ function UserFormDetail() {
       return
     }
 
-    const existingUploadedDocs = getUserUploadedDocs().filter(
-      (doc) => !removedUploadedDocPaths.includes(doc.doc_uploaded_by_user)
-    )
+    const existingUploadedDocs = getUserUploadedDocs()
     if (existingUploadedDocs.length === 0) {
       toast.error('Please upload at least one document before sending for approval')
       return
@@ -537,7 +558,7 @@ function UserFormDetail() {
       String(formData?.approver_email_id || '').trim()
     )
     if (!hasApproverInfo) {
-      toast.error('Approval is not configured for this RACM')
+      toast.error('Approver do not exists, Contact Coordinator')
       return
     }
 
@@ -567,7 +588,6 @@ function UserFormDetail() {
           .filter(Boolean)
       )]
       const documentPath = uploadedDocumentPaths[uploadedDocumentPaths.length - 1] || null
-      const shouldReplaceUploadedDocuments = removedUploadedDocPaths.length > 0
       const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'PUT',
         headers: {
@@ -577,11 +597,8 @@ function UserFormDetail() {
         body: JSON.stringify({
           remarks_by_user: remarksByUser,
           status: 'sent for approval',
-          ...(shouldReplaceUploadedDocuments ? {
-            doc_uploaded_by_user: documentPath,
-            doc_uploaded_by_user_docs: uploadedDocumentPaths,
-            replace_user_documents: true,
-          } : {}),
+          doc_uploaded_by_user: documentPath,
+          doc_uploaded_by_user_docs: uploadedDocumentPaths,
         })
       })
 
@@ -593,7 +610,6 @@ function UserFormDetail() {
           : 'RACM sent for approval successfully'
         toast.success(successMessage)
         setSelectedFiles([])
-        setRemovedUploadedDocPaths([])
         setRemarksDraftDirty(false)
         // Update local state immediately with new status
         if (data.data) {
@@ -815,18 +831,6 @@ function UserFormDetail() {
       .filter(Boolean)
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ')
-  }
-
-  const formatDateOnly = (dateString) => {
-    if (!dateString) return '-'
-    const date = new Date(dateString)
-    if (Number.isNaN(date.getTime())) return '-'
-    return date.toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      timeZone: 'Asia/Kolkata',
-    })
   }
 
   const getFileName = (filePath) => {
@@ -1212,10 +1216,7 @@ function UserFormDetail() {
   const sampleDocs = getSampleDocs()
   const sampleDocCount = sampleDocs.length
   const uploadedUserDocs = getUserUploadedDocs()
-  const visibleUploadedUserDocs = uploadedUserDocs.filter(
-    (doc) => !removedUploadedDocPaths.includes(doc.doc_uploaded_by_user)
-  )
-  const uploadedUserDocCount = visibleUploadedUserDocs.length
+  const uploadedUserDocCount = uploadedUserDocs.length
   const deficiencyResponse = formData?.deficiency_response || null
   const deficiencyCurrentSubmission = deficiencyResponse?.current_submission || null
   const deficiencySubmissions = Array.isArray(deficiencyResponse?.submissions)
@@ -2458,6 +2459,48 @@ function UserFormDetail() {
                           : 'rgba(0, 0, 0, 0.06)',
                       }}
                     >
+                      <Typography
+                        variant="caption"
+                        component="dt"
+                        sx={{
+                          display: 'block',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          mb: 1.5,
+                          color: 'text.primary',
+                          fontSize: theme.typography.customSizes.small,
+                        }}
+                      >
+                        {fieldLabels.reason_by_approver}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        component="dd"
+                        sx={{
+                          color: hasRacmFieldValue(formData?.reason_by_approver) ? 'text.secondary' : 'text.disabled',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.6,
+                          fontSize: theme.typography.customSizes.medium,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {hasRacmFieldValue(formData?.reason_by_approver) ? String(formData.reason_by_approver) : '-'}
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.03)'
+                          : 'rgba(0, 0, 0, 0.02)',
+                        border: '1px solid',
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
+                      }}
+                    >
                       {canModifySubmissionDetails ? (
                         <TextField
                           label={fieldLabels.remarks_by_user}
@@ -2503,48 +2546,6 @@ function UserFormDetail() {
                           </Typography>
                         </>
                       )}
-                    </Box>
-                    <Box
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 2,
-                        backgroundColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.03)'
-                          : 'rgba(0, 0, 0, 0.02)',
-                        border: '1px solid',
-                        borderColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.08)'
-                          : 'rgba(0, 0, 0, 0.06)',
-                      }}
-                    >
-                      <Typography
-                        variant="caption"
-                        component="dt"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          mb: 1.5,
-                          color: 'text.primary',
-                          fontSize: theme.typography.customSizes.small,
-                        }}
-                      >
-                        {fieldLabels.reason_by_approver}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        component="dd"
-                        sx={{
-                          color: hasRacmFieldValue(formData?.reason_by_approver) ? 'text.secondary' : 'text.disabled',
-                          wordBreak: 'break-word',
-                          lineHeight: 1.6,
-                          fontSize: theme.typography.customSizes.medium,
-                          whiteSpace: 'pre-wrap',
-                        }}
-                      >
-                        {hasRacmFieldValue(formData?.reason_by_approver) ? String(formData.reason_by_approver) : '-'}
-                      </Typography>
                     </Box>
                   </Box>
 
@@ -3034,9 +3035,9 @@ function UserFormDetail() {
           Uploaded Documents ({uploadedUserDocCount})
         </DialogTitle>
         <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
-          {visibleUploadedUserDocs.length > 0 ? (
+          {uploadedUserDocs.length > 0 ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-              {visibleUploadedUserDocs.map((doc, index) => (
+              {uploadedUserDocs.map((doc, index) => (
                 <Box
                   key={doc.id || `${doc.doc_uploaded_by_user}-${index}`}
                   sx={{
@@ -3080,7 +3081,8 @@ function UserFormDetail() {
                     <Button
                       size="small"
                       color="error"
-                      onClick={() => handleRemoveExistingUploadedDoc(doc.doc_uploaded_by_user)}
+                      onClick={() => handleRemoveExistingUploadedDoc(doc)}
+                      disabled={removingUserDocPath === doc.doc_uploaded_by_user}
                       sx={{ textTransform: 'none', minWidth: 'auto' }}
                     >
                       Remove
@@ -3157,7 +3159,7 @@ function UserFormDetail() {
                         Current Value
                       </Typography>
                       <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
-                        {String(item.old_value_text || '').trim() || '-'}
+                        {formatChangeRequestDisplayValue(item.field_db_name, item.old_value_text)}
                       </Typography>
                     </Box>
                     <Box>
@@ -3165,7 +3167,7 @@ function UserFormDetail() {
                         Suggested Value
                       </Typography>
                       <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
-                        {String(item.new_value_text || '').trim() || '-'}
+                        {formatChangeRequestDisplayValue(item.field_db_name, item.new_value_text)}
                       </Typography>
                     </Box>
                   </Box>

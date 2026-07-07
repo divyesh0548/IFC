@@ -4,6 +4,7 @@ import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import {
   formatChangeRequestOutcome,
+  formatChangeRequestDisplayValue,
   getChangeRequestOutcomeSx,
 } from '../../lib/changeRequestHistory'
 
@@ -181,7 +182,7 @@ function ChangeRequestHistoryList({ requests, formatDateTime, formatNameWithEmai
                               Old Value
                             </Typography>
                             <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
-                              {String(item.old_value_text || '').trim() || '-'}
+                              {formatChangeRequestDisplayValue(item.field_db_name, item.old_value_text)}
                             </Typography>
                           </Box>
                           <Box>
@@ -189,7 +190,7 @@ function ChangeRequestHistoryList({ requests, formatDateTime, formatNameWithEmai
                               New Value
                             </Typography>
                             <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
-                              {String(item.new_value_text || '').trim() || '-'}
+                              {formatChangeRequestDisplayValue(item.field_db_name, item.new_value_text)}
                             </Typography>
                           </Box>
                         </Box>

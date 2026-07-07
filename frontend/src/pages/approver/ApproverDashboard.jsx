@@ -27,7 +27,8 @@ import {
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   STATUS_BADGE_PILL_SX,
-  CONCLUSION_BADGE_PILL_SX,
+  CONCLUSION_BADGE_TABLE_PILL_SX,
+  CONCLUSION_TABLE_CELL_SX,
   getApprovalStatusBadgeSolidColors,
   getConclusionBadgeSolidColors,
   isMuiAlertCloseActionClick,
@@ -881,6 +882,7 @@ function ApproverDashboard() {
               <Box component="tbody">
                 {formsToDisplay.map((form, index) => {
                   const status = formatStatus(form.status)
+                  const conclusionLabel = formatConclusion(form.control_design_conclusion)
 
                   return (
                     <Box
@@ -1057,19 +1059,22 @@ function ApproverDashboard() {
                           px: 2.5,
                           py: 2,
                           ...pctColSx(APPROVER_TABLE_COL_PX.conclusion),
+                          ...CONCLUSION_TABLE_CELL_SX,
                           fontSize: '0.875rem',
                           color: theme.palette.text.primary,
                         })}
                       >
-                        <Box
-                          component="span"
-                          sx={{
-                            ...CONCLUSION_BADGE_PILL_SX,
-                            ...getConclusionBadgeSolidColors(form.control_design_conclusion),
-                          }}
-                        >
-                          {formatConclusion(form.control_design_conclusion)}
-                        </Box>
+                        <Tooltip title={conclusionLabel} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                          <Box
+                            component="span"
+                            sx={{
+                              ...CONCLUSION_BADGE_TABLE_PILL_SX,
+                              ...getConclusionBadgeSolidColors(form.control_design_conclusion),
+                            }}
+                          >
+                            {conclusionLabel}
+                          </Box>
+                        </Tooltip>
                       </Box>
                       <Box
                         component="td"

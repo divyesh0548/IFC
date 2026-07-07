@@ -44,6 +44,48 @@ export function formatIndianDateTime(value, fallback = 'N/A') {
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
+    timeZone: 'UTC',
+  })
+}
+
+export function toDateOnlyString(value) {
+  if (!value) return ''
+
+  const raw = String(value).trim()
+  if (!raw) return ''
+
+  const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (dateOnlyMatch) {
+    return `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}`
+  }
+
+  const date = parseDateValue(value)
+  if (!date || Number.isNaN(date.getTime())) {
+    const prefixMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    return prefixMatch ? `${prefixMatch[1]}-${prefixMatch[2]}-${prefixMatch[3]}` : ''
+  }
+
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+export function formatDateOnly(value, fallback = '-') {
+  const dateOnly = toDateOnlyString(value)
+  if (!dateOnly) return fallback
+
+  const [year, month, day] = dateOnly.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+  if (Number.isNaN(date.getTime())) return fallback
+
+  return date.toLocaleDateString('en-IN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC',
   })
 }
 

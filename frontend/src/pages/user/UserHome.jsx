@@ -4,11 +4,6 @@ import { alpha, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Paper from '@mui/material/Paper'
-import Button from '@mui/material/Button'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
@@ -20,53 +15,17 @@ import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import DashboardGreeting from '../../components/DashboardGreeting'
+import HomeHelpSupport from '../../components/help/HomeHelpSupport'
 import { clearStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
 
 function normalizeStatus(status) {
   return String(status || '').trim().toLowerCase()
 }
 
-const COMPANY_DETAIL_LABELS = {
-  company_name: 'Company Name',
-  registered_email: 'Registered Email',
-  registered_address: 'Registered Address',
-  unique_identification_number: 'Unique Identification Number',
-  gst: 'GST',
-  pan: 'PAN',
-  number_of_corporate_offices: 'Corporate Offices',
-  number_of_factory_units: 'Factory Units',
-}
-
-function DetailRow({ label, value }) {
-  const theme = useTheme()
-  return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: '160px minmax(0, 1fr)' },
-        gap: { xs: 0.4, sm: 2 },
-        py: 1.2,
-        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
-        '&:last-of-type': {
-          borderBottom: 'none',
-        },
-      }}
-    >
-      <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: theme.palette.text.secondary }}>
-        {label}
-      </Typography>
-      <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: theme.palette.text.primary, wordBreak: 'break-word' }}>
-        {value || '-'}
-      </Typography>
-    </Box>
-  )
-}
-
 function UserHome() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
-  const [companyDialogOpen, setCompanyDialogOpen] = useState(false)
   const [profile, setProfile] = useState(null)
   const [forms, setForms] = useState([])
   useSyncGlobalLoading(loading)
@@ -180,12 +139,6 @@ function UserHome() {
       ? unitIds.join(', ')
       : profile?.unit_name || profile?.unit_id || '-'
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
-  const companyDetailRows = Object.entries(profile?.company_details || {})
-    .filter(([key]) => !['id', 'company_identifier', 'created_at'].includes(key))
-    .map(([key, value]) => ({
-      label: COMPANY_DETAIL_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
-      value,
-    }))
 
   const statCards = [
     {
@@ -216,7 +169,7 @@ function UserHome() {
       action: 'View details',
       icon: <BusinessRoundedIcon sx={{ fontSize: 38 }} />,
       accent: theme.palette.primary.main,
-      onClick: () => setCompanyDialogOpen(true),
+      onClick: () => navigate('/user/company-details'),
     },
     {
       eyebrow: 'RACM',
@@ -448,6 +401,7 @@ function UserHome() {
             </Box>
           </Paper>
         </Box>
+        <HomeHelpSupport />
       </Box>
 
       <Box
@@ -563,42 +517,6 @@ function UserHome() {
           </Paper>
         ))}
       </Box>
-
-      <Dialog
-        open={companyDialogOpen}
-        onClose={() => setCompanyDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
-      >
-        <DialogTitle sx={{ fontWeight: 800, borderBottom: 0 }}>Company Details</DialogTitle>
-        <DialogContent>
-          <Box
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              backgroundColor: alpha(theme.palette.background.paper, 0.75),
-            }}
-          >
-            {companyDetailRows.map((row) => (
-              <DetailRow key={row.label} label={row.label} value={row.value} />
-            ))}
-            <DetailRow label="Unit" value={unitDisplay} />
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={() => setCompanyDialogOpen(false)}
-            sx={{ textTransform: 'none', fontWeight: 700 }}
-          >
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   )
 }

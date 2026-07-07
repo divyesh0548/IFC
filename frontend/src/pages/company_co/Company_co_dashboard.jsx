@@ -449,7 +449,13 @@ function Company_Co_dashboard() {
       .filter(Boolean)
   )].sort((left, right) => left.localeCompare(right))
   const controlCombinationCounts = countControlsByCombination(allRacms)
-  const unclassifiedControlsCount = countUnclassifiedControls(allRacms, dashboardFilters)
+  const locallyComputedUnclassifiedCount = countUnclassifiedControls(allRacms, dashboardFilters)
+  const unclassifiedControlsCount = Math.max(
+    locallyComputedUnclassifiedCount,
+    Number(dashboardStats.keyNotClassified || 0),
+    Number(dashboardStats.natureNotClassified || 0),
+    Number(dashboardStats.typeNotClassified || 0),
+  )
   const highRiskColumnBackground = theme.palette.mode === 'dark'
     ? 'rgba(239, 68, 68, 0.16)'
     : 'rgba(239, 68, 68, 0.10)'
@@ -1148,7 +1154,7 @@ function Company_Co_dashboard() {
               textAlign: 'left',
             }}
           >
-            Open Risk Analysis ->
+            Open Risk Analysis {'->'}
           </Link>
         </Box>
       </Paper>

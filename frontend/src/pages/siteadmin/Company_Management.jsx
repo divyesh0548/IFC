@@ -9,18 +9,9 @@ import Typography from '@mui/material/Typography'
 import Grid from '@mui/material/Grid'
 import CircularProgress from '@mui/material/CircularProgress'
 import Alert from '@mui/material/Alert'
-import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContent from '@mui/material/DialogContent'
-import DialogContentText from '@mui/material/DialogContentText'
-import DialogTitle from '@mui/material/DialogTitle'
-import Checkbox from '@mui/material/Checkbox'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import DeleteIcon from '@mui/icons-material/Delete'
-import { toast } from 'react-hot-toast'
 import { MAIN_CONTENT_MAX_WIDTH } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { apiUrl, API_BASE_URL } from '../../config/api'
+import { apiUrl } from '../../config/api'
 
 function Company_Management() {
   const theme = useTheme()
@@ -28,14 +19,7 @@ function Company_Management() {
   const [companies, setCompanies] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [selectedCompany, setSelectedCompany] = useState(null)
-  const [deletingCompany, setDeletingCompany] = useState(false)
-  const [deleteOptions, setDeleteOptions] = useState({
-    deleteUsers: false,
-    deleteRacms: false,
-  })
-  useSyncGlobalLoading(loading || deletingCompany)
+  useSyncGlobalLoading(loading)
 
   useEffect(() => {
     fetchCompanies()
@@ -74,67 +58,6 @@ function Company_Management() {
       day: 'numeric',
       timeZone: 'Asia/Kolkata'
     })
-  }
-
-  const handleDeleteClick = (event, company) => {
-    event.stopPropagation()
-    setSelectedCompany(company)
-    setDeleteOptions({
-      deleteUsers: false,
-      deleteRacms: false,
-    })
-    setDeleteDialogOpen(true)
-  }
-
-  const handleDeleteCancel = () => {
-    if (deletingCompany) return
-    setDeleteDialogOpen(false)
-    setSelectedCompany(null)
-  }
-
-  const handleDeleteOptionChange = (field) => (event) => {
-    setDeleteOptions(prev => ({
-      ...prev,
-      [field]: event.target.checked,
-    }))
-  }
-
-  const handleDeleteConfirm = async () => {
-    if (!selectedCompany?.company_identifier) return
-
-    setDeletingCompany(true)
-    setError(null)
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/siteadmin/companies/${encodeURIComponent(selectedCompany.company_identifier)}`,
-        {
-          method: 'DELETE',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(deleteOptions),
-        }
-      )
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        toast.success(data.message || 'Company deleted successfully')
-        setCompanies(prev =>
-          prev.filter(company => company.company_identifier !== selectedCompany.company_identifier)
-        )
-        setDeleteDialogOpen(false)
-        setSelectedCompany(null)
-      } else {
-        setError(data.message || 'Failed to delete company')
-      }
-    } catch (err) {
-      console.error('Error deleting company:', err)
-      setError('Error deleting company')
-    } finally {
-      setDeletingCompany(false)
-    }
   }
 
   return (
@@ -424,23 +347,6 @@ function Company_Management() {
                         </Typography>
                       </Box>
                     </Box>
-                    <Box sx={{ mt: 2.5, pt: 2, borderTop: `1px solid ${theme.palette.divider}` }}>
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        size="small"
-                        startIcon={<DeleteIcon />}
-                        disabled={deletingCompany}
-                        onClick={(event) => handleDeleteClick(event, company)}
-                        sx={{
-                          textTransform: 'none',
-                          borderRadius: '4px',
-                          fontWeight: 600,
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </Box>
                   </CardContent>
                 </Card>
               </Grid>
@@ -448,75 +354,6 @@ function Company_Management() {
           </Grid>
         )}
       </Box>
-      <Dialog
-        open={deleteDialogOpen}
-        onClose={handleDeleteCancel}
-        aria-labelledby="delete-company-dialog-title"
-        PaperProps={{
-          sx: {
-            borderRadius: '6px',
-            width: '100%',
-            maxWidth: 560,
-          },
-        }}
-      >
-        <DialogTitle id="delete-company-dialog-title" sx={{ fontWeight: 700 }}>
-          Delete Company
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText component="div" sx={{ color: 'text.secondary' }}>
-            Delete <strong>{selectedCompany?.company_name || 'this company'}</strong>?
-            <Box component="span" sx={{ display: 'block', mt: 1.5 }}>
-              Company can be deleted without selecting these options. Select the data you also want to remove.
-            </Box>
-          </DialogContentText>
-          <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={deleteOptions.deleteUsers}
-                  onChange={handleDeleteOptionChange('deleteUsers')}
-                  disabled={deletingCompany}
-                />
-              }
-              label="Delete users"
-            />
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={deleteOptions.deleteRacms}
-                  onChange={handleDeleteOptionChange('deleteRacms')}
-                  disabled={deletingCompany}
-                />
-              }
-              label="Delete RACMs"
-            />
-          </Box>
-          {deleteOptions.deleteRacms && (
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              All associated sample documents and user-uploaded documents will be removed permanently from S3 and the database.
-            </Alert>
-          )}
-          {deleteOptions.deleteUsers && (
-            <Alert severity="warning" sx={{ mt: 1.5 }}>
-              All users with this company identifier will be deleted permanently.
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1, flexWrap: 'wrap' }}>
-          <Button onClick={handleDeleteCancel} disabled={deletingCompany}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            color="error"
-            disabled={deletingCompany}
-            onClick={handleDeleteConfirm}
-          >
-            {deletingCompany ? 'Deleting...' : 'Delete Company'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   )
 }

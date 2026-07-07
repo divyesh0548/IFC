@@ -16,6 +16,7 @@ import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatDisplayName } from '../../utils/displayName'
 import DashboardGreeting from '../../components/DashboardGreeting'
+import HomeHelpSupport from '../../components/help/HomeHelpSupport'
 import { readStoredUserDisplayName, writeStoredUserDisplayName } from '../../storageKeys'
 
 function AuditorHome() {
@@ -392,6 +393,7 @@ function AuditorHome() {
             </Box>
           </Paper>
         </Box>
+        <HomeHelpSupport />
       </Box>
 
       {error && (

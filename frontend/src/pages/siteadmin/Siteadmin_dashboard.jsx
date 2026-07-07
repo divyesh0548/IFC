@@ -129,6 +129,13 @@ function Siteadmin_Dashboard() {
             path: '/siteadmin/auditors',
             accent: theme.palette.primary.main,
         },
+        {
+            eyebrow: 'Support',
+            title: 'User Queries',
+            description: 'Review website issues and suggestions submitted by users across the platform.',
+            path: '/siteadmin/user-queries',
+            accent: theme.palette.primary.main,
+        },
     ]
 
     const fetchMonthlyData = async (year) => {

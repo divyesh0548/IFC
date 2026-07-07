@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
+import ListItemText from '@mui/material/ListItemText'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -51,8 +53,12 @@ function formatRoleLabel(role) {
 
 function CompanyAdminUserManagement() {
   const theme = useTheme()
+  const navigate = useNavigate()
   const bulkFileInputRef = useRef(null)
   const [users, setUsers] = useState([])
+  const [currentUserEmail, setCurrentUserEmail] = useState('')
+  const [unitOptions, setUnitOptions] = useState([])
+  const [unitsLoading, setUnitsLoading] = useState(false)
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [usersError, setUsersError] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
@@ -60,20 +66,9 @@ function CompanyAdminUserManagement() {
   const [selectedUserEmails, setSelectedUserEmails] = useState(new Set())
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingUsers, setDeletingUsers] = useState(false)
-  const [createDialog, setCreateDialog] = useState({
-    open: false,
-    role: 'user',
-    email: '',
-    emp_name: '',
-    department: '',
-    designation: '',
-    mobile: '',
-    submitting: false,
-    error: '',
-  })
   const [bulkDialog, setBulkDialog] = useState({
     open: false,
-    role: 'user',
+    unitIds: [],
     fileName: '',
     rows: [],
     nonOrgCount: 0,
@@ -82,8 +77,8 @@ function CompanyAdminUserManagement() {
     error: '',
   })
   const [bulkWarningDialogOpen, setBulkWarningDialogOpen] = useState(false)
-  const pageLoading = loadingUsers || createDialog.submitting || bulkDialog.submitting || deletingUsers
-  const { getEmailWarning, getEmailWarningHelperTextSx, countNonOrganizationEmails } = useOrganizationEmailWarning()
+  const pageLoading = loadingUsers || bulkDialog.submitting || deletingUsers || unitsLoading
+  const { countNonOrganizationEmails } = useOrganizationEmailWarning()
 
   useSyncGlobalLoading(pageLoading)
 
@@ -108,6 +103,44 @@ function CompanyAdminUserManagement() {
 
   useEffect(() => {
     fetchUsers()
+    fetchCompanyUnits()
+  }, [])
+
+  const fetchCompanyUnits = async () => {
+    setUnitsLoading(true)
+    try {
+      const response = await fetch(apiUrl('/api/company-admin/unit-management'), { credentials: 'include' })
+      const result = await response.json()
+      if (response.ok && result?.success) {
+        const units = Array.isArray(result.data?.units) ? result.data.units : []
+        setUnitOptions(units)
+      } else {
+        setUnitOptions([])
+      }
+    } catch (error) {
+      console.error('Company admin fetch units error:', error)
+      setUnitOptions([])
+    } finally {
+      setUnitsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const result = await response.json()
+        if (response.ok && result?.success) {
+          setCurrentUserEmail(String(result.user?.email_id || result.user?.emailId || '').trim().toLowerCase())
+        }
+      } catch (error) {
+        console.error('Company admin current user fetch error:', error)
+      }
+    }
+    fetchCurrentUser()
   }, [])
 
   useEffect(() => {
@@ -116,57 +149,73 @@ function CompanyAdminUserManagement() {
     }
   }, [deleteMode])
 
+  const handleDeleteModeClickOutside = useCallback((event) => {
+    if (deleteDialogOpen) return
+
+    const target = event.target
+    const isCheckbox = target.type === 'checkbox'
+      || target.closest('input[type="checkbox"]')
+      || target.closest('[role="checkbox"]')
+    const isDialog = target.closest('[role="dialog"]')
+    const isDeleteModeToggle = target.closest('[data-delete-mode-toggle]')
+
+    if (isCheckbox || isDialog || isDeleteModeToggle) return
+
+    setDeleteMode(false)
+    setSelectedUserEmails(new Set())
+  }, [deleteDialogOpen])
+
+  useEffect(() => {
+    if (!deleteMode) return undefined
+
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('click', handleDeleteModeClickOutside, true)
+    }, 100)
+
+    return () => {
+      clearTimeout(timeoutId)
+      document.removeEventListener('click', handleDeleteModeClickOutside, true)
+    }
+  }, [deleteMode, handleDeleteModeClickOutside])
+
   const roleOptions = useMemo(() => Array.from(new Set(users.map((user) => String(user.role || '').trim()).filter(Boolean))).sort(), [users])
   const filteredUsers = useMemo(
     () => users.filter((user) => roleFilter === 'all' || String(user.role || '').trim() === roleFilter),
     [users, roleFilter]
   )
 
-  const handleCreateUser = async () => {
-    const email = String(createDialog.email || '').trim()
-    if (!email) {
-      setCreateDialog((prev) => ({ ...prev, error: 'Email ID is required' }))
-      return
-    }
-    if (!createDialog.mobile.trim()) {
-      setCreateDialog((prev) => ({ ...prev, error: 'Mobile number is required' }))
-      return
-    }
-    const mobileError = getMobileValidationError(createDialog.mobile)
-    if (mobileError) {
-      setCreateDialog((prev) => ({ ...prev, error: mobileError }))
-      return
-    }
+  const hasMultipleUnits = unitOptions.length > 1
+  const getUnitNamesFromIds = useCallback((unitIds) => (
+    (Array.isArray(unitIds) ? unitIds : [])
+      .map((unitId) => unitOptions.find((unit) => unit.unit_id === unitId))
+      .filter(Boolean)
+      .map((unit) => unit.unit_name || unit.unit_id)
+  ), [unitOptions])
 
-    setCreateDialog((prev) => ({ ...prev, submitting: true, error: '' }))
-    try {
-      const endpoint = createDialog.role === 'company_co'
-        ? '/api/company-admin/unit-management/coordinators'
-        : createDialog.role === 'approver'
-          ? '/api/company-admin/unit-management/approvers'
-          : '/api/company-admin/users'
-      const response = await fetch(apiUrl(endpoint), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email_id: email,
-          emp_name: createDialog.emp_name || null,
-          department: createDialog.department || null,
-          designation: createDialog.designation || null,
-          mobile: normalizeMobileDigits(createDialog.mobile) || null,
-        }),
-      })
-      const result = await response.json()
-      if (!response.ok || !result?.success) {
-        throw new Error(result?.message || 'Failed to create user')
-      }
-      toast.success(result.message || 'User created successfully')
-      setCreateDialog({ open: false, role: 'user', email: '', emp_name: '', department: '', designation: '', mobile: '', submitting: false, error: '' })
-      await fetchUsers()
-    } catch (error) {
-      setCreateDialog((prev) => ({ ...prev, submitting: false, error: error.message || 'Failed to create user' }))
-    }
+  const openBulkDialog = () => {
+    setBulkDialog({
+      open: true,
+      unitIds: unitOptions[0]?.unit_id ? [unitOptions[0].unit_id] : [],
+      fileName: '',
+      rows: [],
+      nonOrgCount: 0,
+      confirmNonOrg: false,
+      submitting: false,
+      error: '',
+    })
+  }
+
+  const closeBulkDialog = () => {
+    setBulkDialog({
+      open: false,
+      unitIds: [],
+      fileName: '',
+      rows: [],
+      nonOrgCount: 0,
+      confirmNonOrg: false,
+      submitting: false,
+      error: '',
+    })
   }
 
   const handleBulkFileChange = async (event) => {
@@ -199,6 +248,11 @@ function CompanyAdminUserManagement() {
   }
 
   const executeBulkUpload = async () => {
+    if (bulkDialog.unitIds.length === 0) {
+      setBulkDialog((prev) => ({ ...prev, error: 'Select at least one unit to map users' }))
+      return
+    }
+
     if (bulkDialog.rows.length === 0) {
       setBulkDialog((prev) => ({ ...prev, error: 'Upload a valid excel file first' }))
       return
@@ -223,7 +277,8 @@ function CompanyAdminUserManagement() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          role: bulkDialog.role,
+          role: 'user',
+          unit_ids: bulkDialog.unitIds,
           users: bulkDialog.rows,
         }),
       })
@@ -232,7 +287,7 @@ function CompanyAdminUserManagement() {
         throw new Error(result?.message || 'Failed to upload users')
       }
       toast.success(result.message || 'Bulk upload completed')
-      setBulkDialog({ open: false, role: 'user', fileName: '', rows: [], nonOrgCount: 0, confirmNonOrg: false, submitting: false, error: '' })
+      setBulkDialog({ open: false, unitIds: [], fileName: '', rows: [], nonOrgCount: 0, confirmNonOrg: false, submitting: false, error: '' })
       await fetchUsers()
     } catch (error) {
       setBulkDialog((prev) => ({ ...prev, submitting: false, error: error.message || 'Failed to upload users' }))
@@ -307,7 +362,7 @@ function CompanyAdminUserManagement() {
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', alignItems: 'center' }}>
-            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 220 } }}>
+            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 220 } }} disabled={deleteMode}>
               <InputLabel id="company-admin-role-filter">Role</InputLabel>
               <Select labelId="company-admin-role-filter" label="Role" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
                 <MenuItem value="all">All Roles</MenuItem>
@@ -316,13 +371,14 @@ function CompanyAdminUserManagement() {
                 ))}
               </Select>
             </FormControl>
-            <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} onClick={() => setBulkDialog({ open: true, role: 'user', fileName: '', rows: [], nonOrgCount: 0, confirmNonOrg: false, submitting: false, error: '' })} sx={{ textTransform: 'none', fontWeight: 700 }}>
+            <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} disabled={deleteMode} onClick={openBulkDialog} sx={{ textTransform: 'none', fontWeight: 700 }}>
               Bulk Upload
             </Button>
-            <Button variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={handleExport} sx={{ textTransform: 'none', fontWeight: 700 }}>
+            <Button variant="outlined" startIcon={<DownloadRoundedIcon />} disabled={deleteMode} onClick={handleExport} sx={{ textTransform: 'none', fontWeight: 700 }}>
               Export
             </Button>
             <Button
+              data-delete-mode-toggle
               variant={deleteMode ? 'contained' : 'outlined'}
               color="error"
               onClick={() => {
@@ -340,7 +396,7 @@ function CompanyAdminUserManagement() {
             >
               <DeleteIcon />
             </Button>
-            <Button variant="contained" color="secondary" onClick={() => setCreateDialog({ open: true, role: 'user', email: '', emp_name: '', department: '', designation: '', mobile: '', submitting: false, error: '' })} sx={{ minWidth: 0, px: 1.25 }}>
+            <Button variant="contained" color="secondary" disabled={deleteMode} onClick={() => navigate('/company_admin/create-user')} sx={{ minWidth: 0, px: 1.25 }}>
               <AddIcon />
             </Button>
           </Box>
@@ -375,7 +431,10 @@ function CompanyAdminUserManagement() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredUsers.map((user, index) => (
+                filteredUsers.map((user, index) => {
+                  const isCurrentUser = String(user.email_id || '').trim().toLowerCase() === currentUserEmail
+                  const rowTextSx = isCurrentUser ? { fontWeight: 700 } : undefined
+                  return (
                   <TableRow key={`${user.email_id}-${index}`} sx={{ '&:hover': { backgroundColor: TABLE_ROW_HOVER_BG }, '&:last-of-type td': { borderBottom: 0 }, '& td': { borderBottom: index === filteredUsers.length - 1 ? 0 : `1px solid ${tableBorderColor}` } }}>
                     {deleteMode ? (
                       <TableCell sx={{ ...bodyCellSx, px: 2, width: 54 }}>
@@ -391,75 +450,57 @@ function CompanyAdminUserManagement() {
                         />
                       </TableCell>
                     ) : null}
-                    <TableCell sx={bodyCellSx}>{user.emp_name || '-'}</TableCell>
-                    <TableCell sx={bodyCellSx}>{user.email_id || '-'}</TableCell>
-                    <TableCell sx={bodyCellSx}>{formatRoleLabel(user.role)}</TableCell>
-                    <TableCell sx={bodyCellSx}>{user.department || '-'}</TableCell>
-                    <TableCell sx={bodyCellSx}>{user.designation || '-'}</TableCell>
-                    <TableCell sx={bodyCellSx}>{user.mobile || '-'}</TableCell>
+                    <TableCell sx={{ ...bodyCellSx, ...rowTextSx }}>{user.emp_name || '-'}</TableCell>
+                    <TableCell sx={{ ...bodyCellSx, ...rowTextSx }}>{user.email_id || '-'}</TableCell>
+                    <TableCell sx={{ ...bodyCellSx, ...rowTextSx }}>{formatRoleLabel(user.role)}</TableCell>
+                    <TableCell sx={{ ...bodyCellSx, ...rowTextSx }}>{user.department || '-'}</TableCell>
+                    <TableCell sx={{ ...bodyCellSx, ...rowTextSx }}>{user.designation || '-'}</TableCell>
+                    <TableCell sx={{ ...bodyCellSx, ...rowTextSx }}>{user.mobile || '-'}</TableCell>
                   </TableRow>
-                ))
+                  )
+                })
               )}
             </TableBody>
           </Table>
         </TableContainer>
       </Paper>
 
-      <Dialog open={createDialog.open} onClose={() => !createDialog.submitting && setCreateDialog({ open: false, role: 'user', email: '', emp_name: '', department: '', designation: '', mobile: '', submitting: false, error: '' })} fullWidth maxWidth="sm">
-        <DialogTitle>Create User</DialogTitle>
-        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2.5 }}>
-          <FormControl fullWidth required>
-            <InputLabel id="company-admin-create-role">Role</InputLabel>
-            <Select labelId="company-admin-create-role" label="Role" value={createDialog.role} onChange={(event) => setCreateDialog((prev) => ({ ...prev, role: event.target.value, error: '' }))}>
-              <MenuItem value="user">User</MenuItem>
-              <MenuItem value="company_co">Company Coordinator</MenuItem>
-              <MenuItem value="approver">Approver</MenuItem>
-            </Select>
-          </FormControl>
-          <TextField
-            label="Email ID"
-            type="email"
-            value={createDialog.email}
-            onChange={(event) => setCreateDialog((prev) => ({ ...prev, email: event.target.value, error: '' }))}
-            required
-            fullWidth
-            helperText={createDialog.error ? undefined : getEmailWarning(createDialog.email)}
-            FormHelperTextProps={{ sx: createDialog.error ? undefined : getEmailWarningHelperTextSx(createDialog.email) }}
-          />
-          <TextField label="Employee Name" value={createDialog.emp_name} onChange={(event) => setCreateDialog((prev) => ({ ...prev, emp_name: event.target.value, error: '' }))} fullWidth />
-          <TextField label="Department" value={createDialog.department} onChange={(event) => setCreateDialog((prev) => ({ ...prev, department: event.target.value, error: '' }))} fullWidth />
-          <TextField label="Designation" value={createDialog.designation} onChange={(event) => setCreateDialog((prev) => ({ ...prev, designation: event.target.value, error: '' }))} fullWidth />
-          <TextField
-            label="Mobile"
-            value={createDialog.mobile}
-            onChange={(event) => setCreateDialog((prev) => ({ ...prev, mobile: event.target.value, error: '' }))}
-            required
-            fullWidth
-            error={!createDialog.mobile.trim() || !!getMobileValidationError(createDialog.mobile)}
-            helperText={(!createDialog.mobile.trim() && 'Mobile number is required') || getMobileValidationError(createDialog.mobile) || 'Enter a valid 10-digit mobile number.'}
-            inputProps={{ maxLength: 10 }}
-          />
-          {createDialog.error && <Alert severity="error">{createDialog.error}</Alert>}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCreateDialog({ open: false, role: 'user', email: '', emp_name: '', department: '', designation: '', mobile: '', submitting: false, error: '' })} disabled={createDialog.submitting}>Cancel</Button>
-          <Button variant="contained" onClick={handleCreateUser} disabled={createDialog.submitting}>
-            {createDialog.submitting ? 'Creating...' : 'Create'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={bulkDialog.open} onClose={() => !bulkDialog.submitting && setBulkDialog({ open: false, role: 'user', fileName: '', rows: [], nonOrgCount: 0, confirmNonOrg: false, submitting: false, error: '' })} fullWidth maxWidth="sm">
+      <Dialog open={bulkDialog.open} onClose={() => !bulkDialog.submitting && closeBulkDialog()} fullWidth maxWidth="sm">
         <DialogTitle>Bulk User Upload</DialogTitle>
         <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2.5 }}>
-          <FormControl fullWidth required>
-            <InputLabel id="company-admin-bulk-role">Role</InputLabel>
-            <Select labelId="company-admin-bulk-role" label="Role" value={bulkDialog.role} onChange={(event) => setBulkDialog((prev) => ({ ...prev, role: event.target.value, error: '' }))}>
-              <MenuItem value="user">User</MenuItem>
-              <MenuItem value="company_co">Company Coordinator</MenuItem>
-              <MenuItem value="approver">Approver</MenuItem>
-            </Select>
-          </FormControl>
+          <Alert severity="info">
+            Bulk upload creates normal users only. Select unit carefully. Multiple units are allowed.
+          </Alert>
+          {unitOptions.length === 0 ? (
+            <Alert severity="info">No units are configured for this company.</Alert>
+          ) : (
+            <FormControl fullWidth required disabled={bulkDialog.submitting}>
+              <InputLabel id="company-admin-bulk-unit-label">{hasMultipleUnits ? 'Units' : 'Unit'}</InputLabel>
+              <Select
+                labelId="company-admin-bulk-unit-label"
+                label={hasMultipleUnits ? 'Units' : 'Unit'}
+                multiple={hasMultipleUnits}
+                value={hasMultipleUnits ? bulkDialog.unitIds : (bulkDialog.unitIds[0] || '')}
+                onChange={(event) => setBulkDialog((prev) => ({
+                  ...prev,
+                  unitIds: typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value,
+                  error: '',
+                }))}
+                renderValue={
+                  hasMultipleUnits
+                    ? (selected) => getUnitNamesFromIds(Array.isArray(selected) ? selected : []).join(', ')
+                    : undefined
+                }
+              >
+                {unitOptions.map((unit) => (
+                  <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
+                    {hasMultipleUnits ? <Checkbox checked={bulkDialog.unitIds.includes(unit.unit_id)} size="small" /> : null}
+                    <ListItemText primary={unit.unit_name || unit.unit_id} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
           <Button variant="outlined" component="label" startIcon={<UploadFileRoundedIcon />}>
             Upload Excel
             <input ref={bulkFileInputRef} type="file" hidden accept=".xlsx,.xls" onChange={handleBulkFileChange} />
@@ -481,8 +522,8 @@ function CompanyAdminUserManagement() {
           {bulkDialog.error && <Alert severity="error">{bulkDialog.error}</Alert>}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setBulkDialog({ open: false, role: 'user', fileName: '', rows: [], nonOrgCount: 0, confirmNonOrg: false, submitting: false, error: '' })} disabled={bulkDialog.submitting}>Cancel</Button>
-          <Button variant="contained" onClick={handleBulkUpload} disabled={bulkDialog.submitting || bulkDialog.rows.length === 0}>
+          <Button onClick={closeBulkDialog} disabled={bulkDialog.submitting}>Cancel</Button>
+          <Button variant="contained" onClick={handleBulkUpload} disabled={bulkDialog.submitting || bulkDialog.rows.length === 0 || bulkDialog.unitIds.length === 0}>
             {bulkDialog.submitting ? 'Uploading...' : 'Upload'}
           </Button>
         </DialogActions>

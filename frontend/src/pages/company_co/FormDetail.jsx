@@ -50,6 +50,7 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
 import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistoryList'
+import { formatChangeRequestDisplayValue } from '../../lib/changeRequestHistory'
 import { formatIndianDateTime } from '../../lib/dateTime'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
@@ -59,7 +60,6 @@ import {
   validateSampleSizeForFrequency,
 } from '../../utils/controlFrequencyValidation'
 import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
-import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 import {
   DOCUMENT_UPLOAD_ACCEPT,
   DOCUMENT_UPLOAD_INVALID_SIZE_MESSAGE,
@@ -119,9 +119,6 @@ function FormDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [updating, setUpdating] = useState(false)
-  const [createUserConfirmDialogOpen, setCreateUserConfirmDialogOpen] = useState(false)
-  const [processOwnerEmail, setProcessOwnerEmail] = useState('')
-  const [createUserMobile, setCreateUserMobile] = useState('')
   const [isEditMode, setIsEditMode] = useState(false)
   const [editableFields, setEditableFields] = useState({})
   const [unitSampleSizeSettings, setUnitSampleSizeSettings] = useState([])
@@ -150,7 +147,6 @@ function FormDetail() {
   const [replicating, setReplicating] = useState(false)
   const [replicateSuccessDialogOpen, setReplicateSuccessDialogOpen] = useState(false)
   const [newReplicatedFormId, setNewReplicatedFormId] = useState('')
-  const [creatingUser, setCreatingUser] = useState(false)
   const [scheduleFields, setScheduleFields] = useState({
     due_date: '',
     reminder_frequency: '',
@@ -195,7 +191,6 @@ function FormDetail() {
     Boolean(deletingSampleDocId) ||
     deleting ||
     replicating ||
-    creatingUser ||
     savingSchedule ||
     activeChangeRequestLoading ||
     reviewSaving ||
@@ -481,8 +476,7 @@ function FormDetail() {
           const ownerCheck = await checkUserRole(processOwnerEmailValue, racmUnitId)
 
           if (!ownerCheck.exists) {
-            setProcessOwnerEmail(processOwnerEmailValue)
-            setCreateUserConfirmDialogOpen(true)
+            toast.error('Process Owner user does not exist. Please create the user via User Management first.')
             return
           }
 
@@ -553,70 +547,6 @@ function FormDetail() {
     } finally {
       setUpdating(false)
     }
-  }
-
-  const handleCreateUserConfirm = async () => {
-    const email = (processOwnerEmail || '').trim()
-    const unitId = formData?.unit_id ? String(formData.unit_id).trim() : ''
-    if (!email) {
-      toast.error('Process owner email is missing')
-      return
-    }
-
-    if (!unitId) {
-      toast.error('RACM unit is missing. Cannot create user for assignment.')
-      return
-    }
-
-    if (!createUserMobile.trim()) {
-      toast.error('Mobile number is required')
-      return
-    }
-
-    const mobileError = getMobileValidationError(createUserMobile.trim())
-    if (mobileError) {
-      toast.error(mobileError)
-      return
-    }
-
-    setCreatingUser(true)
-    try {
-      const response = await fetch(apiUrl('/api/company-co/create-user'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          email_id: email,
-          unit_id: unitId,
-          mobile: normalizeMobileDigits(createUserMobile) || null,
-        }),
-      })
-
-      const data = await response.json()
-      if (response.ok && data.success) {
-        toast.success('User created successfully')
-        setCreateUserConfirmDialogOpen(false)
-        setProcessOwnerEmail('')
-        setCreateUserMobile('')
-        await validateAndToggleActive('1')
-      } else {
-        toast.error(data.message || 'Failed to create user')
-      }
-    } catch (error) {
-      console.error('Error creating user:', error)
-      toast.error('Failed to create user')
-    } finally {
-      setCreatingUser(false)
-    }
-  }
-
-  const handleCreateUserCancel = () => {
-    if (creatingUser) return
-    setCreateUserConfirmDialogOpen(false)
-    setProcessOwnerEmail('')
-    setCreateUserMobile('')
   }
 
   const handleModifyClick = () => {
@@ -4382,125 +4312,6 @@ function FormDetail() {
         </Box>
       </Box>
 
-      {/* Create User Confirmation Dialog */}
-      <Dialog
-        open={createUserConfirmDialogOpen}
-        onClose={handleCreateUserCancel}
-        aria-labelledby="create-user-confirm-dialog-title"
-        aria-describedby="create-user-confirm-dialog-description"
-        PaperProps={{
-          sx: {
-            borderRadius: 2,
-            minWidth: { xs: '90%', sm: '400px' },
-            boxShadow: theme.palette.mode === 'dark'
-              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
-              : '0 8px 32px rgba(0, 0, 0, 0.12)',
-          },
-        }}
-      >
-        <DialogTitle
-          id="create-user-confirm-dialog-title"
-          sx={{
-            pb: 2.5,
-            pt: 3,
-            px: 3,
-            fontWeight: 600,
-            fontSize: '1.25rem',
-            color: theme.palette.text.primary,
-          }}
-        >
-          User Not Found
-        </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
-          <DialogContentText
-            id="create-user-confirm-dialog-description"
-            sx={{
-              color: theme.palette.text.secondary,
-              fontSize: '0.9375rem',
-              lineHeight: 1.5,
-              m: 0,
-              mb: 2,
-            }}
-          >
-          User with email <strong>{processOwnerEmail}</strong> does not exist as a user in your company (with role set to &quot;user&quot;). Please create a user account to proceed with setting the RACM to Active.
-          </DialogContentText>
-          <TextField
-            id="create-user-mobile"
-            label="Mobile Number"
-            type="tel"
-            value={createUserMobile}
-            onChange={(event) => setCreateUserMobile(event.target.value)}
-            required
-            fullWidth
-            inputProps={{ maxLength: 10 }}
-            error={!createUserMobile.trim() || !!getMobileValidationError(createUserMobile)}
-            helperText={
-              (!createUserMobile.trim() && 'Mobile number is required') ||
-              getMobileValidationError(createUserMobile) ||
-              'Enter a valid 10-digit mobile number.'
-            }
-            sx={{ mt: 2 }}
-          />
-        </DialogContent>
-        <DialogActions
-          sx={{
-            px: 3,
-            pb: 3,
-            pt: 2.5,
-            gap: 1.5,
-            borderTop: '1px solid',
-            borderColor: 'divider',
-          }}
-        >
-          <Button
-            onClick={handleCreateUserCancel}
-            variant="outlined"
-            disabled={creatingUser}
-            sx={{
-              textTransform: 'none',
-              px: 3,
-              py: 1,
-              minWidth: '100px',
-              borderColor: theme.palette.mode === 'dark'
-                ? 'rgba(255, 255, 255, 0.23)'
-                : 'rgba(0, 0, 0, 0.23)',
-              color: theme.palette.text.primary,
-              '&:hover': {
-                borderColor: theme.palette.mode === 'dark'
-                  ? 'rgba(255, 255, 255, 0.3)'
-                  : 'rgba(0, 0, 0, 0.3)',
-                backgroundColor: theme.palette.mode === 'dark'
-                  ? 'rgba(255, 255, 255, 0.05)'
-                  : 'rgba(0, 0, 0, 0.04)',
-              },
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleCreateUserConfirm}
-            variant="contained"
-            color="secondary"
-            autoFocus
-            disabled={creatingUser}
-            sx={{
-              textTransform: 'none',
-              px: 3,
-              py: 1,
-              minWidth: '100px',
-              fontWeight: 600,
-              '&:hover': {
-                backgroundColor: theme.palette.mode === 'dark'
-                  ? '#0284c7'
-                  : '#0369a1',
-              },
-            }}
-          >
-            {creatingUser ? 'Creating...' : 'Create User + Set RACM Active'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
       {/* Sample Documents Dialog */}
       <Dialog
         open={sampleDocsDialogOpen}
@@ -4872,7 +4683,7 @@ function FormDetail() {
                           Current Value
                         </Typography>
                         <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
-                          {String(item.old_value_text || '').trim() || '-'}
+                          {formatChangeRequestDisplayValue(item.field_db_name, item.old_value_text)}
                         </Typography>
                       </Box>
                       <Box>
@@ -4880,7 +4691,7 @@ function FormDetail() {
                           Suggested Value
                         </Typography>
                         <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', mt: 0.5 }}>
-                          {String(item.new_value_text || '').trim() || '-'}
+                          {formatChangeRequestDisplayValue(item.field_db_name, item.new_value_text)}
                         </Typography>
                       </Box>
                     </Box>

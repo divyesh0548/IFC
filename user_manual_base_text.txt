@@ -1,0 +1,73 @@
+I want to make a user manual which will explain users how to operate our website and what they can do.
+
+Approver : 
+
+1. On the home page, the approver will see a snapshot of approval activity (total, pending, approved, and rejected RACMs) and links to the Approval Dashboard and Company Details. RACMs are assigned by company admin or coordinator based on assignment scope — unit level, unit + business process level, or RACM-specific assignment. When scopes overlap, the more specific assignment takes precedence.
+
+2. On the Approval Dashboard, the approver will see all RACMs which are submitted by process owner. The dashboard includes filters for approval status, business process, financial year, unit (when more than one unit is in scope), conclusion, and control number search. By default, pending RACMs are shown. Clicking a RACM opens it in a new window with all important details listed on top.
+
+3. Each RACM has the same major sections as the process owner view: (1) Process and Risk, (2) Control Details, and (3) Assertions (may not exists in some). The approver can review evidence/documents uploaded by the process owner. Audit logs and RACM history are also available from the RACM page.
+
+4. For RACMs with status "sent for approval", the approver must either Approve or Reject the RACM.
+
+(1) Approve — The approver must fill in Design and Implementation details: procedures taken to evaluate the control, and conclusion (Effective / Not Effective / Accepted under deviation). If the conclusion is Not Effective, a description of the deficiency is required. Reason for approval is optional.
+
+(2) Reject — The approver must provide a reason for rejection. The process owner will need to upload at least one new document and resubmit the RACM.
+
+5. After the initial approval decision, there are three main outcomes :
+
+(1) RACM Rejected — Process owner must resubmit with at least one new document.
+
+(2) RACM Approved - Not Effective — Process owner (or coordinator) must submit a deficiency response: either a Mitigation Plan or Compensatory RACM. The approver will see the submitted response on the RACM page and must review it.
+
+(3) RACM Approved - Effective / Accepted under Deviation — No further action is required.
+
+6. Deficiency response review — When a deficiency response is submitted, the dashboard shows an "Action Required" alert. On the RACM page, the approver can approve the response as Effective or Accepted under deviation, or reject it. Rejection requires a comment. If rejected, the RACM remains Not Effective and another response is required from the process owner.
+
+7. Types of deficiency responses (for reference when reviewing):
+
+(1) Mitigation Plan — Includes explanation, concerned person, and due date (today or a future date).
+
+(2) Compensatory RACM — Includes explanation and at least one uploaded document.
+
+
+
+
+
+
+
+
+
+Process Owners:
+
+1. On dashboard user will see all assigned RACMs list. RACMs will be assigned by respective coordinator. Dashbaoard includes various filters, which can be used to make it easy to find target RACMs or have an idea of status of them.
+
+
+2. On click RACM will be opened in new window with all important details listed on top. Each ramcs will have two major sections 1. Process and Risk 2. Control Details. third one is assertion, which may not be available if coordinator has not defined it. 
+RACMs will have sample docs provided by company coordinator for reference. Some RACMs may not have them. 
+Based on control frequency and sample size set by coordinator, dates/intervals for sample required will be provided in excel format.
+User will have to upload evidence/docuemnts and submit the RACM for approval. User can't remove a document once it is uploaded. Writing remakrs is optional.
+
+
+3. User can request chnages in RACM if necessary. On top-right corner a button will be provided for requesting changes. User can request to chnage due date and other majority of fields in RACM. Business process and Control frequency can't be changed. 
+For this user need to click on "Request Change" button and all fields will become editable. Change them and providing a reason is optional but recommanded. Coordinator will review the requeted changes and will approver/reject individual fields. After successfull review the user will see it in Change Request option. For rejected fields coordinator will also provide remarks. 
+
+User can't request chnages in RACMs which are sent for approval.
+
+
+4. Approver will either Approver or Reject RACMs upon their judgement. There are three cases after that.
+(1) . RACM Rejected.  For rejected RACMs user will have to resubmit the RACM by uploading at leat one new document, User can remove old documents before re-submitting.
+
+(2) . RACM Approved - Not Effective. Means RACM's documents were relevent but did not meet the requirement. In this case user need to submit a deficiency response with will be either Mitigation plan or Compensatory RACMs. In RACM Page user will have information of procedures taken to evaluate and description of deficiency in "Design and Implementation" section. Coordinator can also submit the deficiency response, so it should be agreed in advance who will submit it.
+
+(3) . RACM Approved - Effective/Accepted under Deviation. This means the RACM is approved as Effective or Accepted under Deviation. No further action is required.
+
+
+5. Types of Deficiency responses
+(1) . Mitigation Plan = Requires explanation, concerned person, and due date (today or a future date).
+
+(2) . Compensatory RACM = Requires explanation and at least one uploaded document.
+
+
+6. Deficiemcy responses are also subject to the judgment of approver. if rejected, RACM will still remain Ineffective and requries another response. If approved, RACM will be either Effective or Accepted under deviation, no action required.
+

@@ -9,7 +9,16 @@ import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
-import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
+import {
+  DASHBOARD_PAGE_OUTER_SX,
+  DASHBOARD_PAPER_SX,
+  FILTER_DROPDOWN_MIN_WIDTH_LG,
+  PAGE_SUBHEADER_TEXT_SX,
+} from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
 import {
@@ -30,6 +39,13 @@ function UnclassifiedControls() {
   const [loading, setLoading] = useState(true)
   const [forms, setForms] = useState([])
   const [selectedDialog, setSelectedDialog] = useState(null)
+  const [filterActive, setFilterActive] = useState('all')
+  const [filterBusinessProcess, setFilterBusinessProcess] = useState('all')
+  const [filterUnit, setFilterUnit] = useState('all')
+  const [filterFinancialYear, setFilterFinancialYear] = useState('all')
+  const [filterApprovalStatus, setFilterApprovalStatus] = useState('all')
+  const [filterConclusion, setFilterConclusion] = useState('all')
+  const [mappedUnits, setMappedUnits] = useState([])
   useSyncGlobalLoading(loading)
 
   useEffect(() => {
@@ -38,22 +54,36 @@ function UnclassifiedControls() {
     const fetchDashboardRacms = async () => {
       setLoading(true)
       try {
-        const response = await fetch(apiUrl(`/api/company-co/dashboard/racms${location.search || ''}`), {
-          credentials: 'include',
-        })
-        const data = await response.json()
+        const [racmsResponse, filtersResponse] = await Promise.all([
+          fetch(apiUrl('/api/company-co/dashboard/racms'), {
+            credentials: 'include',
+          }),
+          fetch(apiUrl('/api/company-co/dashboard/filters'), {
+            credentials: 'include',
+          }),
+        ])
+        const [racmsData, filtersData] = await Promise.all([
+          racmsResponse.json(),
+          filtersResponse.json(),
+        ])
 
-        if (!response.ok || !data?.success) {
-          throw new Error(data?.message || 'Failed to fetch unclassified controls')
+        if (!racmsResponse.ok || !racmsData?.success) {
+          throw new Error(racmsData?.message || 'Failed to fetch unclassified controls')
         }
 
         if (!cancelled) {
-          setForms(Array.isArray(data.data) ? data.data : [])
+          setForms(Array.isArray(racmsData.data) ? racmsData.data : [])
+          setMappedUnits(
+            filtersResponse.ok && filtersData?.success && Array.isArray(filtersData.data?.units)
+              ? filtersData.data.units
+              : []
+          )
         }
       } catch (error) {
         console.error('Error fetching unclassified controls:', error)
         if (!cancelled) {
           setForms([])
+          setMappedUnits([])
         }
       } finally {
         if (!cancelled) {
@@ -69,16 +99,79 @@ function UnclassifiedControls() {
     }
   }, [location.search])
 
-  const summaryRows = createUnclassifiedSummaryRows(forms)
+  useEffect(() => {
+    const query = new URLSearchParams(location.search || '')
+    const activeParam = query.get('active')
+    const statusParam = String(query.get('status') || '').trim()
+
+    setFilterActive(activeParam === 'true' ? 'active' : activeParam === 'false' ? 'inactive' : 'all')
+    setFilterBusinessProcess(query.get('business_process') || 'all')
+    setFilterUnit(query.get('unit_id') || 'all')
+    setFilterFinancialYear(query.get('financial_year') || 'all')
+    setFilterApprovalStatus(
+      statusParam
+        ? statusParam.charAt(0).toUpperCase() + statusParam.slice(1).toLowerCase()
+        : 'all'
+    )
+    setFilterConclusion(query.get('conclusion') || 'all')
+  }, [location.search])
+
+  const unitOptions = [...new Map(
+    (mappedUnits.length > 0 ? mappedUnits : forms || [])
+      .map((unitLike) => {
+        const unitId = String(unitLike?.unit_id || '').trim()
+        if (!unitId) return null
+        const unitName = String(unitLike?.unit_name || '').trim() || unitId
+        return [unitId, { unitId, unitName }]
+      })
+      .filter(Boolean)
+  ).values()].sort((a, b) => a.unitName.localeCompare(b.unitName))
+
+  const financialYearOptions = [...new Set(
+    (forms || [])
+      .map((form) => String(form?.financial_year || '').trim())
+      .filter(Boolean)
+  )].sort((a, b) => b.localeCompare(a))
+
+  const businessProcessOptions = [...new Set(
+    (forms || [])
+      .map((form) => String(getFieldValue(form, 'business_process', 'businessProcess') || '').trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b))
+
+  const conclusionOptions = [...new Set(
+    (forms || [])
+      .map((form) => {
+        const rawConclusion = String(form?.control_design_conclusion || '').trim()
+        return rawConclusion
+          ? rawConclusion.charAt(0).toUpperCase() + rawConclusion.slice(1).toLowerCase()
+          : 'None'
+      })
+  )].sort((a, b) => {
+    if (a === 'None') return 1
+    if (b === 'None') return -1
+    return a.localeCompare(b)
+  })
+
+  const dashboardFilters = {
+    active: filterActive,
+    businessProcess: filterBusinessProcess,
+    financialYear: filterFinancialYear,
+    approvalStatus: filterApprovalStatus,
+    unit: filterUnit,
+    conclusion: filterConclusion,
+  }
+
+  const filteredForms = (forms || []).filter((form) => {
+    return matchesDashboardFilters(form, dashboardFilters)
+  })
+
+  const summaryRows = createUnclassifiedSummaryRows(filteredForms)
     .sort((left, right) => left.businessProcess.localeCompare(right.businessProcess))
-  const totalUnclassifiedControls = countUnclassifiedControls(forms)
+  const totalUnclassifiedControls = countUnclassifiedControls(filteredForms)
 
   const getDialogForms = (businessProcess, categoryKey) => (
-    (forms || []).filter((form) => {
-      if (!matchesDashboardFilters(form)) {
-        return false
-      }
-
+    filteredForms.filter((form) => {
       const flags = getUnclassifiedFlags(form)
       if (!flags.isUnclassified) {
         return false
@@ -111,6 +204,39 @@ function UnclassifiedControls() {
     })
   )
 
+  const getCategoryDistinctValues = (formsForDialog, categoryKey) => {
+    const valuesByCategory = {
+      key: [],
+      nature: [],
+      type: [],
+    }
+
+    ;(formsForDialog || []).forEach((form) => {
+      const flags = getUnclassifiedFlags(form)
+      const keyValue = String(getFieldValue(form, 'key_control', 'keyControl') || '').trim() || 'Empty'
+      const natureValue = String(getFieldValue(form, 'nature_of_control', 'natureOfControl') || '').trim() || 'Empty'
+      const typeValue = String(getFieldValue(form, 'control_type_ma', 'controlTypeMa') || '').trim() || 'Empty'
+
+      if (flags.key) valuesByCategory.key.push(keyValue)
+      if (flags.nature) valuesByCategory.nature.push(natureValue)
+      if (flags.type) valuesByCategory.type.push(typeValue)
+    })
+
+    const toDistinct = (values) => [...new Set(values.filter(Boolean))]
+
+    if (categoryKey === 'total') {
+      return {
+        key: toDistinct(valuesByCategory.key),
+        nature: toDistinct(valuesByCategory.nature),
+        type: toDistinct(valuesByCategory.type),
+      }
+    }
+
+    return {
+      [categoryKey]: toDistinct(valuesByCategory[categoryKey] || []),
+    }
+  }
+
   const handleCellClick = (businessProcess, categoryKey, dialogTitle) => {
     const matchingForms = getDialogForms(businessProcess, categoryKey)
     setSelectedDialog({
@@ -118,6 +244,7 @@ function UnclassifiedControls() {
       categoryKey,
       dialogTitle,
       forms: matchingForms,
+      distinctValues: getCategoryDistinctValues(matchingForms, categoryKey),
     })
   }
 
@@ -160,6 +287,117 @@ function UnclassifiedControls() {
         <Button variant="contained" onClick={() => navigate(`/company_co/dashboard${location.search || ''}`)}>
           Back To Dashboard
         </Button>
+      </Box>
+
+      <Box
+        sx={{
+          mb: 3,
+          display: 'flex',
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          overflowY: 'visible',
+          alignItems: 'flex-start',
+          gap: 2,
+          pt: 0.5,
+          pb: 0.5,
+        }}
+      >
+        <FormControl variant="outlined" size="small" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, maxWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, flex: '0 0 auto' }}>
+          <InputLabel id="unclassified-business-process-filter-label">Business Process</InputLabel>
+          <Select
+            labelId="unclassified-business-process-filter-label"
+            value={filterBusinessProcess}
+            label="Business Process"
+            onChange={(event) => setFilterBusinessProcess(event.target.value)}
+          >
+            <MenuItem value="all">All</MenuItem>
+            {businessProcessOptions.map((option) => (
+              <MenuItem key={option} value={option}>
+                {option}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl variant="outlined" size="small" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, maxWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, flex: '0 0 auto' }}>
+          <InputLabel id="unclassified-financial-year-filter-label">Financial Year</InputLabel>
+          <Select
+            labelId="unclassified-financial-year-filter-label"
+            value={filterFinancialYear}
+            label="Financial Year"
+            onChange={(event) => setFilterFinancialYear(event.target.value)}
+          >
+            <MenuItem value="all">All</MenuItem>
+            {financialYearOptions.map((year) => (
+              <MenuItem key={year} value={year}>
+                {year}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl variant="outlined" size="small" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, maxWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, flex: '0 0 auto' }}>
+          <InputLabel id="unclassified-active-filter-label">Activity</InputLabel>
+          <Select
+            labelId="unclassified-active-filter-label"
+            value={filterActive}
+            label="Activity"
+            onChange={(event) => setFilterActive(event.target.value)}
+          >
+            <MenuItem value="all">All</MenuItem>
+            <MenuItem value="active">Active</MenuItem>
+            <MenuItem value="inactive">Inactive</MenuItem>
+          </Select>
+        </FormControl>
+
+        <FormControl variant="outlined" size="small" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, maxWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, flex: '0 0 auto' }}>
+          <InputLabel id="unclassified-approval-filter-label">Approval Status</InputLabel>
+          <Select
+            labelId="unclassified-approval-filter-label"
+            value={filterApprovalStatus}
+            label="Approval Status"
+            onChange={(event) => setFilterApprovalStatus(event.target.value)}
+          >
+            <MenuItem value="all">All</MenuItem>
+            <MenuItem value="Approved">Approved</MenuItem>
+            <MenuItem value="Rejected">Rejected</MenuItem>
+            <MenuItem value="Pending">Pending</MenuItem>
+          </Select>
+        </FormControl>
+
+        <FormControl variant="outlined" size="small" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, maxWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, flex: '0 0 auto' }}>
+          <InputLabel id="unclassified-conclusion-filter-label">Conclusion</InputLabel>
+          <Select
+            labelId="unclassified-conclusion-filter-label"
+            value={filterConclusion}
+            label="Conclusion"
+            onChange={(event) => setFilterConclusion(event.target.value)}
+          >
+            <MenuItem value="all">All</MenuItem>
+            {conclusionOptions.map((option) => (
+              <MenuItem key={option} value={option}>
+                {option}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl variant="outlined" size="small" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, maxWidth: FILTER_DROPDOWN_MIN_WIDTH_LG, flex: '0 0 auto' }}>
+          <InputLabel id="unclassified-unit-filter-label">Unit</InputLabel>
+          <Select
+            labelId="unclassified-unit-filter-label"
+            value={filterUnit}
+            label="Unit"
+            onChange={(event) => setFilterUnit(event.target.value)}
+          >
+            <MenuItem value="all">All</MenuItem>
+            {unitOptions.map((unit) => (
+              <MenuItem key={unit.unitId} value={unit.unitId}>
+                {unit.unitName}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
       </Box>
 
       <Paper
@@ -384,6 +622,56 @@ function UnclassifiedControls() {
                   )
                 })}
               </Box>
+              {selectedDialog?.distinctValues ? (
+                <Box sx={{ mt: 1.5, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+                  {Object.entries(selectedDialog.distinctValues).map(([categoryKey, values]) => {
+                    if (!Array.isArray(values) || values.length === 0) return null
+                    const labelByCategory = {
+                      key: 'Distinct Key / Non-Key values',
+                      nature: 'Distinct Preventive / Detective values',
+                      type: 'Distinct Automated / Manual values',
+                    }
+                    return (
+                      <Box key={categoryKey} sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                        <Typography variant="body2" sx={{ color: theme.palette.text.secondary, fontWeight: 600 }}>
+                          {labelByCategory[categoryKey] || 'Distinct Values'}
+                        </Typography>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            gap: 1,
+                            overflowX: 'auto',
+                            pb: 0.5,
+                            pr: 0.5,
+                            '&::-webkit-scrollbar': {
+                              height: 8,
+                            },
+                          }}
+                        >
+                          {values.map((value) => (
+                            <Box
+                              key={`${categoryKey}-${value}`}
+                              sx={{
+                                px: 1.25,
+                                py: 0.75,
+                                borderRadius: 999,
+                                border: `1px solid ${theme.palette.divider}`,
+                                backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : theme.palette.grey[100],
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Typography variant="caption" sx={{ color: theme.palette.text.primary }}>
+                                {value}
+                              </Typography>
+                            </Box>
+                          ))}
+                        </Box>
+                      </Box>
+                    )
+                  })}
+                </Box>
+              ) : null}
             </Box>
           ) : (
             <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>

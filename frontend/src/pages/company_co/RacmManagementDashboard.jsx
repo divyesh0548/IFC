@@ -35,7 +35,8 @@ import {
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   STATUS_BADGE_PILL_SX,
-  CONCLUSION_BADGE_PILL_SX,
+  CONCLUSION_BADGE_TABLE_PILL_SX,
+  CONCLUSION_TABLE_CELL_SX,
   getApprovalStatusBadgeSolidColors,
   getConclusionBadgeSolidColors,
   isMuiAlertCloseActionClick,
@@ -100,8 +101,6 @@ function RacmManagementDashboard() {
   const [loading, setLoading] = useState(true)
   const [cellWordWrap, setCellWordWrap] = useState(false)
   const [bulkUpdating, setBulkUpdating] = useState(false)
-  const [missingUsersDialogOpen, setMissingUsersDialogOpen] = useState(false)
-  const [missingProcessOwners, setMissingProcessOwners] = useState([])
   const [deleteMode, setDeleteMode] = useState(false)
   const [setActiveMode, setSetActiveMode] = useState(false)
   const [replicateMode, setReplicateMode] = useState(false)
@@ -135,10 +134,7 @@ function RacmManagementDashboard() {
   const [eligibleSetActiveFormIds, setEligibleSetActiveFormIds] = useState([])
   const [isSingleSetActiveSelectionNotice, setIsSingleSetActiveSelectionNotice] = useState(false)
   const [singleSelectionProblemLines, setSingleSelectionProblemLines] = useState([])
-  const [formsToActivateAfterMissingUsersConfirm, setFormsToActivateAfterMissingUsersConfirm] = useState([])
-  const [missingRacmCount, setMissingRacmCount] = useState(0)
   const [validatingSetActiveSelection, setValidatingSetActiveSelection] = useState(false)
-  const [creatingMissingUsers, setCreatingMissingUsers] = useState(false)
   const [setActiveClassifying, setSetActiveClassifying] = useState(false)
   const [actionRequiredAlertDismissed, setActionRequiredAlertDismissed] = useState(false)
   const [actionRequiredDialogOpen, setActionRequiredDialogOpen] = useState(false)
@@ -150,7 +146,6 @@ function RacmManagementDashboard() {
   useSyncGlobalLoading(loading)
   useSyncGlobalLoading(bulkUpdating)
   useSyncGlobalLoading(setDueDateSubmitting)
-  useSyncGlobalLoading(creatingMissingUsers)
   useSyncGlobalLoading(validatingSetActiveSelection)
   useSyncGlobalLoading(deleting)
   useSyncGlobalLoading(replicating)
@@ -587,7 +582,7 @@ function RacmManagementDashboard() {
   // Handle click outside to cancel selection mode
   const handleClickOutside = (e) => {
     // If any dialog is open, do not cancel selection modes
-    if (setActiveConfirmDialogOpen || replicateDialogOpen || deleteConfirmDialogOpen || setDueDateDialogOpen || missingUsersDialogOpen || nonUserRoleDialogOpen) {
+    if (setActiveConfirmDialogOpen || replicateDialogOpen || deleteConfirmDialogOpen || setDueDateDialogOpen || nonUserRoleDialogOpen) {
       return
     }
 
@@ -856,8 +851,6 @@ function RacmManagementDashboard() {
     setNotInUnitBlockedEmails(uniqueNotInUnitEmails)
     setInvalidMobileBlockedCount(uniqueInvalidMobileEmails.length)
     setInvalidMobileBlockedEmails(uniqueInvalidMobileEmails)
-    // Keep in sync with selection notice so "Create User" works from any path (confirm vs checkbox / select-all).
-    setMissingProcessOwners(uniqueMissingUserEmails)
     setMissingReminderCount(reminderMissingCount)
     setEligibleSetActiveFormIds(Array.isArray(eligibleFormIds) ? eligibleFormIds : [])
     setIsSingleSetActiveSelectionNotice(Boolean(isSingle))
@@ -876,9 +869,6 @@ function RacmManagementDashboard() {
     setEligibleSetActiveFormIds([])
     setIsSingleSetActiveSelectionNotice(false)
     setSingleSelectionProblemLines([])
-    setMissingProcessOwners([])
-    setFormsToActivateAfterMissingUsersConfirm([])
-    setMissingRacmCount(0)
     setSetActiveMode(false)
     setSelectedForms(new Set())
   }
@@ -937,11 +927,6 @@ function RacmManagementDashboard() {
       (invalidMobileEmails?.length || 0) > 0
 
     if (hasAnyIssues) {
-      // Keep these for existing user-creation handler
-      setMissingProcessOwners(missingEmails)
-      setMissingRacmCount(missingFormIds.length)
-      setFormsToActivateAfterMissingUsersConfirm(validFormIds)
-
       showSetActiveSelectionInfoDialog({
         emptyOwnerCount: emptyOwnerFormIds?.length || 0,
         reminderMissingCount: reminderMissingFormIds?.length || 0,
@@ -1021,8 +1006,6 @@ function RacmManagementDashboard() {
       // Reset set active mode and refresh forms
       setSetActiveMode(false)
       setSelectedForms(new Set())
-      setFormsToActivateAfterMissingUsersConfirm([])
-      setMissingRacmCount(0)
       setNonUserRoleCount(0)
       setNonUserRoleEmails([])
       await fetchForms()
@@ -1031,80 +1014,6 @@ function RacmManagementDashboard() {
       toast.error('Error setting forms to active')
     } finally {
       setBulkUpdating(false)
-    }
-  }
-
-  const handleMissingUsersCancel = () => {
-    setMissingUsersDialogOpen(false)
-    setMissingProcessOwners([])
-    setFormsToActivateAfterMissingUsersConfirm([])
-    setMissingRacmCount(0)
-  }
-
-  const handleCreateMissingUsers = async () => {
-    const emailsToCreate = missingProcessOwners.length > 0
-      ? missingProcessOwners
-      : missingUserEmailsForDialog
-    if (!emailsToCreate.length) {
-      toast.error('No missing Process Owner email IDs found')
-      return
-    }
-
-    const validEmails = emailsToCreate.filter((email) => isValidEmail(email))
-    const invalidEmails = emailsToCreate.filter((email) => !isValidEmail(email))
-
-    if (invalidEmails.length > 0) {
-      const invalidPreview = invalidEmails.slice(0, 3).join(', ')
-      const extraCount = invalidEmails.length - Math.min(invalidEmails.length, 3)
-      const suffix = extraCount > 0 ? ` and ${extraCount} more` : ''
-      toast.error(`Invalid email ID(s) selected for user creation: ${invalidPreview}${suffix}`)
-      return
-    }
-
-    if (validEmails.length === 0) {
-      toast.error('No valid email IDs found for user creation')
-      return
-    }
-
-    setCreatingMissingUsers(true)
-    try {
-      const response = await fetch(apiUrl('/api/company-co/create-users-bulk'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          email_ids: validEmails,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok || !data.success) {
-        toast.error(data.message || 'Failed to create missing users')
-        return
-      }
-
-      userRoleChecksRef.current = {}
-
-      const createdCount = Array.isArray(data.createdUsers) ? data.createdUsers.length : 0
-      const skippedCount = Array.isArray(data.skippedEmails) ? data.skippedEmails.length : 0
-      if (createdCount > 0) {
-        toast.success(`Created ${createdCount} user(s) successfully`)
-      }
-      if (skippedCount > 0) {
-        toast.error(`${skippedCount} email ID(s) were skipped because users already exist`)
-      }
-
-      handleSetActiveSelectionInfoCancel()
-      setMissingUsersDialogOpen(false)
-      fetchForms()
-    } catch (error) {
-      console.error('Error creating missing users:', error)
-      toast.error('Error creating missing users')
-    } finally {
-      setCreatingMissingUsers(false)
     }
   }
 
@@ -1730,7 +1639,6 @@ function RacmManagementDashboard() {
     replicateDialogOpen,
     deleteConfirmDialogOpen,
     setDueDateDialogOpen,
-    missingUsersDialogOpen,
     nonUserRoleDialogOpen,
     setActiveSelectionInfoDialogOpen,
   ])
@@ -2593,6 +2501,7 @@ function RacmManagementDashboard() {
                   {forms.map((form) => {
                     const isActive = form.active && form.active !== '' && form.active !== '0'
                     const status = formatStatus(form.status)
+                    const conclusionLabel = formatConclusion(form.control_design_conclusion)
                     const isSelected = selectedForms.has(form.form_id)
                     return (
                       <Box
@@ -2781,23 +2690,26 @@ function RacmManagementDashboard() {
                         </Box>
                         <Box
                           component="td"
-                          sx={dataCellSx({
+                          sx={{
                             px: 3,
                             py: 2,
                             fontSize: '0.875rem',
                             color: theme.palette.text.primary,
                             ...pctColSx(MGMT_TABLE_COL_PX.conclusion),
-                          })}
+                            ...CONCLUSION_TABLE_CELL_SX,
+                          }}
                         >
-                          <Box
-                            component="span"
-                            sx={{
-                              ...CONCLUSION_BADGE_PILL_SX,
-                              ...getConclusionBadgeSolidColors(form.control_design_conclusion),
-                            }}
-                          >
-                            {formatConclusion(form.control_design_conclusion)}
-                          </Box>
+                          <Tooltip title={conclusionLabel} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                            <Box
+                              component="span"
+                              sx={{
+                                ...CONCLUSION_BADGE_TABLE_PILL_SX,
+                                ...getConclusionBadgeSolidColors(form.control_design_conclusion),
+                              }}
+                            >
+                              {conclusionLabel}
+                            </Box>
+                          </Tooltip>
                         </Box>
                         <Box
                           component="td"
@@ -3651,24 +3563,6 @@ function RacmManagementDashboard() {
               borderColor: 'divider',
             }}
           >
-            {missingUsersCount > 0 ? (
-              <Button
-                onClick={handleCreateMissingUsers}
-                variant="contained"
-                color="secondary"
-                disabled={creatingMissingUsers}
-                sx={{
-                  textTransform: 'none',
-                  px: 3,
-                  py: 1,
-                  minWidth: '140px',
-                  fontWeight: 600,
-                }}
-              >
-                {creatingMissingUsers ? 'Creating...' : 'Create User'}
-              </Button>
-            ) : null}
-
             {eligibleSetActiveFormIds.length > 0 && !isSingleSetActiveSelectionNotice ? (
               <Button
                 onClick={async () => {
@@ -3714,207 +3608,6 @@ function RacmManagementDashboard() {
             >
               Close
             </Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Missing Process Owners Dialog */}
-        <Dialog
-          open={missingUsersDialogOpen}
-          onClose={handleMissingUsersCancel}
-          aria-labelledby="missing-users-dialog-title"
-          aria-describedby="missing-users-dialog-description"
-          PaperProps={{
-            sx: {
-              borderRadius: 2,
-              minWidth: { xs: '90%', sm: '500px' },
-              maxWidth: { xs: '90%', sm: '600px' },
-              boxShadow: theme.palette.mode === 'dark'
-                ? '0 8px 32px rgba(0, 0, 0, 0.4)'
-                : '0 8px 32px rgba(0, 0, 0, 0.12)',
-            },
-          }}
-        >
-          <DialogTitle 
-            id="missing-users-dialog-title"
-            sx={{
-              pb: 2.5,
-              pt: 3,
-              px: 3,
-              fontWeight: 600,
-              fontSize: '1.25rem',
-              color: theme.palette.text.primary,
-            }}
-          >
-            Create Missing Users
-          </DialogTitle>
-          <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
-            <DialogContentText 
-              id="missing-users-dialog-description"
-              sx={{
-                color: theme.palette.text.secondary,
-                fontSize: '0.9375rem',
-                lineHeight: 1.5,
-                m: 0,
-                mb: 2,
-              }}
-            >
-              Some selected RACM(s) still have Process Owner assignment remaining. Please create the missing user accounts or complete the assignment before setting those RACM(s) active.
-            </DialogContentText>
-            <Box sx={{ mt: 2 }}>
-              {missingRacmCount === 1 ? (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: theme.palette.text.primary,
-                    fontWeight: 500,
-                    mb: 0.5,
-                  }}
-                >
-                  The selected RACM does not have a valid Process Owner assignment.
-                </Typography>
-              ) : (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: theme.palette.text.primary,
-                    fontWeight: 500,
-                    mb: 0.5,
-                  }}
-                >
-                  Total number of RACM(s) whose user doesn&apos;t exist: <strong>{missingRacmCount}</strong>
-                </Typography>
-              )}
-              {formsToActivateAfterMissingUsersConfirm.length > 0 && (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: theme.palette.text.primary,
-                    mt: 0.5,
-                  }}
-                >
-                  Would you like to set Active the other RACM(s) whose users exist? These RACM(s) count:{' '}
-                  <strong>{formsToActivateAfterMissingUsersConfirm.length}</strong>
-                </Typography>
-              )}
-            </Box>
-            {missingProcessOwners.length > 0 && (
-              <Box sx={{ mt: 2, mb: 1 }}>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: theme.palette.text.primary,
-                    fontWeight: 500,
-                    mb: 1.5,
-                  }}
-                >
-                  Process Owner email ID(s) not found in users table ({missingProcessOwners.length}):
-                </Typography>
-                <Box
-                  sx={{
-                    maxHeight: '260px',
-                    overflowY: 'auto',
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    borderRadius: 1,
-                    p: 2,
-                    backgroundColor: theme.palette.mode === 'dark'
-                      ? 'rgba(255, 255, 255, 0.05)'
-                      : 'rgba(0, 0, 0, 0.02)',
-                  }}
-                >
-                  {missingProcessOwners.map((email, index) => (
-                    <Typography
-                      key={email}
-                      variant="body2"
-                      sx={{
-                        color: theme.palette.text.primary,
-                        py: 0.5,
-                        borderBottom: index < missingProcessOwners.length - 1 ? '1px solid' : 'none',
-                        borderColor: 'divider',
-                      }}
-                    >
-                      {email}
-                    </Typography>
-                  ))}
-                </Box>
-              </Box>
-            )}
-          </DialogContent>
-          <DialogActions 
-            sx={{ 
-              px: 3, 
-              pb: 3, 
-              pt: 2.5,
-              gap: 1.5,
-              borderTop: '1px solid',
-              borderColor: 'divider',
-            }}
-          >
-            <Button 
-              onClick={handleMissingUsersCancel}
-              variant="outlined"
-              disabled={creatingMissingUsers || bulkUpdating}
-              sx={{
-                textTransform: 'none',
-                px: 3,
-                py: 1,
-                minWidth: '100px',
-                borderColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.23)' 
-                  : 'rgba(0, 0, 0, 0.23)',
-                color: theme.palette.text.primary,
-                '&:hover': {
-                  borderColor: theme.palette.mode === 'dark' 
-                    ? 'rgba(255, 255, 255, 0.3)' 
-                    : 'rgba(0, 0, 0, 0.3)',
-                  backgroundColor: theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.05)'
-                    : 'rgba(0, 0, 0, 0.04)',
-                },
-              }}
-            >
-              Close
-            </Button>
-            {missingProcessOwners.length > 0 && (
-              <Button
-                onClick={handleCreateMissingUsers}
-                variant="contained"
-                color="primary"
-                disabled={creatingMissingUsers || bulkUpdating}
-                sx={{
-                  textTransform: 'none',
-                  px: 3,
-                  py: 1,
-                  minWidth: '140px',
-                  fontWeight: 600,
-                }}
-              >
-                {creatingMissingUsers ? 'Creating...' : 'Create Users'}
-              </Button>
-            )}
-            {formsToActivateAfterMissingUsersConfirm.length > 0 && (
-              <Button 
-                onClick={async () => {
-                  setMissingUsersDialogOpen(false)
-                  const idsToActivate = [...formsToActivateAfterMissingUsersConfirm]
-                  setFormsToActivateAfterMissingUsersConfirm([])
-                  setMissingRacmCount(0)
-                  await performSetActive(idsToActivate)
-                }}
-                variant="contained"
-                color="secondary"
-                disabled={bulkUpdating || creatingMissingUsers}
-                sx={{
-                  textTransform: 'none',
-                  px: 3,
-                  py: 1,
-                  minWidth: '160px',
-                  fontWeight: 600,
-                }}
-              >
-                {bulkUpdating ? 'Setting...' : 'Set Active Other RACM(s)'}
-              </Button>
-            )}
           </DialogActions>
         </Dialog>
 

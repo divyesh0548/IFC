@@ -19,10 +19,10 @@ const UpdatePassword = lazy(() => import('./pages/UpdatePassword'))
 const Company_Management = lazy(() => import('./pages/siteadmin/Company_Management'))
 const CompanyCreation = lazy(() => import('./pages/siteadmin/CompanyCreation'))
 const CompanyDetail = lazy(() => import('./pages/siteadmin/CompanyDetail'))
-const CompanyUnitManagement = lazy(() => import('./pages/siteadmin/CompanyUnitManagement'))
 const AuditorManagement = lazy(() => import('./pages/siteadmin/AuditorManagement'))
 const Siteadmin_Dashboard = lazy(() => import('./pages/siteadmin/Siteadmin_dashboard'))
 const SiteadminBusinessProcessManagement = lazy(() => import('./pages/siteadmin/BusinessProcessManagement'))
+const UserQueries = lazy(() => import('./pages/siteadmin/UserQueries'))
 
 const AuditorHome = lazy(() => import('./pages/auditor/Auditor_Home'))
 const Auditor_dashboard = lazy(() => import('./pages/auditor/Auditor_dashboard'))
@@ -36,7 +36,6 @@ const UserFormDetail = lazy(() => import('./pages/user/UserFormDetail'))
 const Company_Co_dashboard = lazy(() => import('./pages/company_co/Company_co_dashboard'))
 const RacmAssignment = lazy(() => import('./pages/company_co/RacmAssignment'))
 const UserManagement = lazy(() => import('./pages/company_co/User_Management'))
-const UnitManagement = lazy(() => import('./pages/company_co/UnitManagement'))
 const ExcelUpload = lazy(() => import('./pages/forms/ExcelUpload'))
 const ExcelColumnMap = lazy(() => import('./pages/forms/ExcelColumnMap'))
 const FormDetail = lazy(() => import('./pages/company_co/FormDetail'))
@@ -50,10 +49,11 @@ const CreateUser = lazy(() => import('./pages/company_co/CreateUser'))
 const UnclassifiedControls = lazy(() => import('./pages/company_co/UnclassifiedControls'))
 const KeyManualAiInsightsSummary = lazy(() => import('./pages/company_co/KeyManualAiInsightsSummary'))
 const RiskAnalysis = lazy(() => import('./pages/company_co/RiskAnalysis'))
+const CompanyDetailsPage = lazy(() => import('./pages/CompanyDetailsPage'))
 const CompanyAdminHome = lazy(() => import('./pages/company_admin/companyAdminHome'))
 const CompanyAdminBusinessProcessManagement = lazy(() => import('./pages/company_admin/BusinessProcessManagement'))
-const CompanyAdminCompanyDetails = lazy(() => import('./pages/company_admin/CompanyAdminCompanyDetails'))
 const CompanyAdminUserManagement = lazy(() => import('./pages/company_admin/CompanyAdminUserManagement'))
+const CompanyAdminCreateUser = lazy(() => import('./pages/company_admin/CompanyAdminCreateUser'))
 const CompanyAdminUnitManagement = lazy(() => import('./pages/company_admin/CompanyAdminUnitManagement'))
 const CompanyAdminApproverManagement = lazy(() => import('./pages/company_admin/CompanyAdminApproverManagement'))
 const CompanyAdminRacmDashboard = lazy(() => import('./pages/company_admin/CompanyAdminRacmDashboard'))
@@ -261,8 +261,8 @@ function App() {
               <Route path="auditors" element={<AuditorManagement />} />
               <Route path="create-company" element={<CompanyCreation />} />
               <Route path="business-processes" element={<SiteadminBusinessProcessManagement />} />
+              <Route path="user-queries" element={<UserQueries />} />
               <Route path="company/:company_identifier" element={<CompanyDetail />} />
-              <Route path="company/:company_identifier/unit-management" element={<CompanyUnitManagement />} />
               <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.siteadmin} replace />} />
             </Route>
 
@@ -297,6 +297,7 @@ function App() {
             >
               <Route index element={<Navigate to={ROLE_HOME_ROUTES.approver} replace />} />
               <Route path="home" element={<ApproverHome />} />
+              <Route path="company-details" element={<CompanyDetailsPage />} />
               <Route path="dashboard" element={<ApproverDashboard />} />
               <Route path="form/:form_id" element={<ApproverFormDetail />} />
               <Route path="profile" element={<ProfilePage />} />
@@ -314,6 +315,7 @@ function App() {
             >
               <Route index element={<Navigate to={ROLE_HOME_ROUTES.user} replace />} />
               <Route path="home" element={<UserHome />} />
+              <Route path="company-details" element={<CompanyDetailsPage />} />
               <Route path="dashboard" element={<User_dashboard />} />
               <Route path="form/:form_id" element={<UserFormDetail />} />
               <Route path="profile" element={<ProfilePage />} />
@@ -342,7 +344,7 @@ function App() {
               <Route path="racm-templates" element={<RacmTemplates />} />
               <Route path="racm-assignment" element={<RacmAssignment />} />
               <Route path="user-management" element={<UserManagement />} />
-              <Route path="unit-management" element={<UnitManagement />} />
+              <Route path="company-details" element={<CompanyDetailsPage />} />
               <Route path="create-user" element={<CreateUser />} />
               <Route path="control-creation" element={<ExcelUpload />} />
               <Route path="control-creation/column-map" element={<ExcelColumnMap />} />
@@ -362,9 +364,10 @@ function App() {
             >
               <Route index element={<Navigate to={ROLE_HOME_ROUTES.company_admin} replace />} />
               <Route path="home" element={<CompanyAdminHome />} />
-              <Route path="company-details" element={<CompanyAdminCompanyDetails />} />
+              <Route path="company-details" element={<CompanyDetailsPage />} />
               <Route path="business-processes" element={<CompanyAdminBusinessProcessManagement />} />
               <Route path="user-management" element={<CompanyAdminUserManagement />} />
+              <Route path="create-user" element={<CompanyAdminCreateUser />} />
               <Route path="unit-management" element={<CompanyAdminUnitManagement />} />
               <Route path="approver-management" element={<CompanyAdminApproverManagement />} />
               <Route path="racms" element={<CompanyAdminRacmDashboard />} />
