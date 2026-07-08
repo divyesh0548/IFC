@@ -6,10 +6,10 @@ const cookieParser = require('cookie-parser');
 // Load environment variables first
 dotenv.config();
 
-const { runReminderEmails } = require('./scripts/reminder_emails');
-const { runApproverReminderEmails } = require('./scripts/approver_reminder_emails');
-const { runIneffectiveReminderEmails } = require('./scripts/ineffective_reminder_emails');
-const { runDeficiencyReviewReminderEmails } = require('./scripts/deficiency_review_reminder_emails');
+const { runReminderEmails } = require('./scripts/reminder_emails/reminder_emails');
+const { runApproverReminderEmails } = require('./scripts/reminder_emails/approver_reminder_emails');
+const { runIneffectiveReminderEmails } = require('./scripts/reminder_emails/ineffective_reminder_emails');
+const { runDeficiencyReviewReminderEmails } = require('./scripts/reminder_emails/deficiency_review_reminder_emails');
 const { runPendingLoginEmails } = require('./scripts/login_email_sender');
 const { runPendingRacmActiveUserEmails } = require('./scripts/racm_active_user_email_sender');
 const { runPendingRacmInactiveUserEmails } = require('./scripts/racm_inactive_user_email_sender');

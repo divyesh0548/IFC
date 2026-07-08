@@ -362,6 +362,7 @@ function Company_co_home() {
                   color: blueTokens.accent || theme.palette.primary.light,
                 },
                 { label: 'Approved RACMs', value: stats.approvedRacms, color: theme.palette.success.main },
+                { label: 'Rejected RACMs', value: stats.rejectedRacms, color: theme.palette.error.main },
               ].map((item) => (
                 <Box
                   key={item.label}

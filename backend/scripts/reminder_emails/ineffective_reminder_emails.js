@@ -11,17 +11,17 @@
  * marks a RACM as Not Effective. After sending, it is updated to UTC now + 2 days.
  */
 
-const { pool } = require('../utils/db');
-const { sendEmail } = require('../utils/send_email');
-const { getCoordinatorEmailForUnit } = require('../utils/deficiency_response_notifications');
+const { pool } = require('../../utils/db');
+const { sendEmail } = require('../../utils/send_email');
+const { getCoordinatorEmailForUnit } = require('../../utils/deficiency_response_notifications');
 const {
   updateIneffectiveReminderDatetime,
   INEFFECTIVE_REMINDER_DATETIME_DUE_SQL,
   NOT_EFFECTIVE_CONCLUSION_WHERE_SQL,
   formatReminderTimestampForLog,
-} = require('../utils/controls_reminder');
-const { buildRacmDetailsSection } = require('../utils/racm_email_details');
-const { buildUserFormDetailUrl } = require('../utils/racm_status_user_email');
+} = require('../../utils/controls_reminder');
+const { buildRacmDetailsSection } = require('../../utils/racm_email_details');
+const { buildUserFormDetailUrl } = require('../../utils/racm_status_user_email');
 
 function isValidEmail(value) {
   const email = String(value || '').trim();

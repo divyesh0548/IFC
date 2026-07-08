@@ -57,12 +57,64 @@ const bulkUploadDialogDefaults = {
   fileName: '',
   nonOrgCount: 0,
   confirmNonOrg: false,
-  confirmExistingUsers: false,
   submitting: false,
   error: '',
 }
 
 const bulkUploadRequiredHeaders = ['Name', 'Email ID', 'Department', 'Designation', 'Mobile']
+const BULK_UPLOAD_BLOCKED_TOAST = 'Upload excel again with corrections, See Logs !'
+
+function validateBulkUploadRows(rows, validateEmailFn) {
+  const errors = []
+  const emailToRowNumbers = new Map()
+
+  rows.forEach((row, index) => {
+    const rowNumber = index + 2
+    const emailId = String(row?.email_id || '').trim()
+    const normalizedEmail = emailId.toLowerCase()
+    const mobileDigits = normalizeMobileDigits(row?.mobile)
+
+    if (!emailId) {
+      errors.push({ rowNumber, field: 'Email ID', message: 'Email ID is required' })
+    } else if (!validateEmailFn(emailId)) {
+      errors.push({ rowNumber, field: 'Email ID', message: 'Invalid email format', email_id: emailId })
+    }
+
+    if (!mobileDigits) {
+      errors.push({ rowNumber, field: 'Mobile', message: 'Mobile number is required', email_id: emailId || undefined })
+    } else {
+      const mobileError = getMobileValidationError(mobileDigits)
+      if (mobileError) {
+        errors.push({ rowNumber, field: 'Mobile', message: mobileError, email_id: emailId || undefined })
+      }
+    }
+
+    if (emailId && validateEmailFn(emailId)) {
+      const rowNumbers = emailToRowNumbers.get(normalizedEmail) || []
+      rowNumbers.push(rowNumber)
+      emailToRowNumbers.set(normalizedEmail, rowNumbers)
+    }
+  })
+
+  emailToRowNumbers.forEach((rowNumbers, email) => {
+    if (rowNumbers.length > 1) {
+      errors.push({
+        rowNumber: rowNumbers.join(', '),
+        field: 'Email ID',
+        message: `Duplicate email in Excel (rows ${rowNumbers.join(', ')})`,
+        email_id: email,
+      })
+    }
+  })
+
+  return errors
+}
+
+function buildBulkValidationLogEntries(validationErrors) {
+  return validationErrors.map((error) => ({
+    message: `Row ${error.rowNumber} - ${error.field}: ${error.message}${error.email_id ? ` (${error.email_id})` : ''}`,
+  }))
+}
 
 function UserManagement() {
   const theme = useTheme()
@@ -98,6 +150,14 @@ function UserManagement() {
     approver: null,
     assignments: [],
   })
+  const [userUnitsDialog, setUserUnitsDialog] = useState({
+    open: false,
+    user: null,
+    linkedUnitIds: [],
+    selectedUnitIdsToAdd: [],
+    linking: false,
+    error: '',
+  })
 
   const [email, setEmail] = useState('')
   const [empCode, setEmpCode] = useState('')
@@ -108,10 +168,7 @@ function UserManagement() {
   const [selectedCreateUnitIds, setSelectedCreateUnitIds] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [bulkExistingUsersDialog, setBulkExistingUsersDialog] = useState({
-    open: false,
-    users: [],
-  })
+  const [loggedCoordinatorEmail, setLoggedCoordinatorEmail] = useState('')
   const { getEmailWarning, getEmailWarningHelperTextSx, countNonOrganizationEmails } = useOrganizationEmailWarning()
   const showUnitControls = mappedUnits.length > 1
 
@@ -119,6 +176,7 @@ function UserManagement() {
   useSyncGlobalLoading(loading)
   useSyncGlobalLoading(deletingUsers)
   useSyncGlobalLoading(bulkUploadDialog.submitting)
+  useSyncGlobalLoading(userUnitsDialog.linking)
 
   const validateEmail = (emailValue) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -206,6 +264,29 @@ function UserManagement() {
     })
   }, [users, unitFilter, roleFilter])
 
+  const sortedFilteredUsers = useMemo(() => {
+    const normalizedCoordinatorEmail = String(loggedCoordinatorEmail || '').trim().toLowerCase()
+    return [...filteredUsers].sort((left, right) => {
+      const leftIsLoggedCoordinator =
+        String(left.role || '').trim() === 'company_co'
+        && String(left.email_id || '').trim().toLowerCase() === normalizedCoordinatorEmail
+      const rightIsLoggedCoordinator =
+        String(right.role || '').trim() === 'company_co'
+        && String(right.email_id || '').trim().toLowerCase() === normalizedCoordinatorEmail
+
+      if (leftIsLoggedCoordinator && !rightIsLoggedCoordinator) return -1
+      if (!leftIsLoggedCoordinator && rightIsLoggedCoordinator) return 1
+      return 0
+    })
+  }, [filteredUsers, loggedCoordinatorEmail])
+
+  const isLoggedCoordinatorUser = useCallback((user) => {
+    return (
+      String(user?.role || '').trim() === 'company_co'
+      && String(user?.email_id || '').trim().toLowerCase() === String(loggedCoordinatorEmail || '').trim().toLowerCase()
+    )
+  }, [loggedCoordinatorEmail])
+
   const fetchUsers = useCallback(async () => {
     setUsersLoading(true)
     setUsersError('')
@@ -254,6 +335,28 @@ function UserManagement() {
     fetchUsers()
     fetchMappedUnits()
   }, [fetchUsers, fetchMappedUnits])
+
+  useEffect(() => {
+    const fetchLoggedCoordinator = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/auth/verify'), {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+        if (response.ok && data.success && String(data.user?.role || '').trim() === 'company_co') {
+          setLoggedCoordinatorEmail(String(data.user?.email_id || '').trim())
+        } else {
+          setLoggedCoordinatorEmail('')
+        }
+      } catch (verifyError) {
+        console.error('Fetch logged coordinator error:', verifyError)
+        setLoggedCoordinatorEmail('')
+      }
+    }
+
+    fetchLoggedCoordinator()
+  }, [])
 
   useEffect(() => {
     if (!bulkUploadDialog.submitting) return undefined
@@ -403,6 +506,79 @@ function UserManagement() {
   const currentApproverAssignments = useMemo(() => {
     return Array.isArray(approverDetailsDialog.assignments) ? approverDetailsDialog.assignments : []
   }, [approverDetailsDialog.assignments])
+
+  const availableUnitsToLink = useMemo(() => {
+    const linkedSet = new Set(userUnitsDialog.linkedUnitIds)
+    return unitOptions.filter((unit) => !linkedSet.has(unit.unitId))
+  }, [unitOptions, userUnitsDialog.linkedUnitIds])
+
+  const handleOpenUserUnits = (user) => {
+    if (!user || String(user.role || '').trim() !== 'user' || deleteMode) {
+      return
+    }
+
+    setUserUnitsDialog({
+      open: true,
+      user,
+      linkedUnitIds: getUserUnitIds(user),
+      selectedUnitIdsToAdd: [],
+      linking: false,
+      error: '',
+    })
+  }
+
+  const handleLinkUserUnits = async () => {
+    if (!userUnitsDialog.user?.email_id) {
+      return
+    }
+
+    if (userUnitsDialog.selectedUnitIdsToAdd.length === 0) {
+      setUserUnitsDialog((prev) => ({ ...prev, error: 'Select at least one unit to link' }))
+      return
+    }
+
+    setUserUnitsDialog((prev) => ({ ...prev, linking: true, error: '' }))
+    try {
+      const response = await fetch(apiUrl('/api/company-co/users/link-units'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email_id: userUnitsDialog.user.email_id,
+          unit_ids: userUnitsDialog.selectedUnitIdsToAdd,
+        }),
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Failed to link unit(s)')
+      }
+
+      const addedCount = Array.isArray(result.data?.added_unit_ids) ? result.data.added_unit_ids.length : 0
+      if (addedCount > 0) {
+        toast.success(result.message || `Linked ${addedCount} unit(s) successfully`)
+      } else {
+        toast.success(result.message || 'Selected unit(s) are already linked')
+      }
+
+      setUserUnitsDialog({
+        open: false,
+        user: null,
+        linkedUnitIds: [],
+        selectedUnitIdsToAdd: [],
+        linking: false,
+        error: '',
+      })
+      await fetchUsers()
+    } catch (linkError) {
+      console.error('Link user units error:', linkError)
+      setUserUnitsDialog((prev) => ({
+        ...prev,
+        linking: false,
+        error: linkError.message || 'Failed to link unit(s)',
+      }))
+    }
+  }
 
   const handleDeleteClick = () => {
     if (selectedUserEmails.size === 0) {
@@ -556,6 +732,14 @@ function UserManagement() {
     }
   }
 
+  const reportBulkValidationFailure = (validationErrors) => {
+    const logs = buildBulkValidationLogEntries(validationErrors)
+    setBulkUploadLogs(logs)
+    setShowBulkLogsButton(true)
+    toast.error(BULK_UPLOAD_BLOCKED_TOAST)
+    console.error('Bulk user upload validation failed:', validationErrors)
+  }
+
   const handleOpenBulkUploadDialog = () => {
     setBulkUploadRows([])
     setBulkUploadDialog({
@@ -572,10 +756,6 @@ function UserManagement() {
     }
     setBulkUploadRows([])
     setBulkUploadDialog(bulkUploadDialogDefaults)
-    setBulkExistingUsersDialog({
-      open: false,
-      users: [],
-    })
   }
 
   const handleBulkFileChange = async (event) => {
@@ -619,34 +799,40 @@ function UserManagement() {
       }
 
       const jsonRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' })
-      const parsedRows = []
-      const invalidMobileRows = []
+        .filter((row) =>
+          bulkUploadRequiredHeaders.some((header) => String(row[header] || '').trim() !== '')
+        )
 
-      jsonRows.forEach((row, index) => {
+      const parsedRows = jsonRows.map((row) => {
         const mobileDigits = normalizeMobileDigits(row['Mobile'])
-        const mobileError = !mobileDigits ? 'Mobile number is required' : getMobileValidationError(mobileDigits)
-
-        if (mobileError) {
-          invalidMobileRows.push(index + 2)
-          return
-        }
-
-        parsedRows.push({
+        return {
           emp_name: String(row['Name'] || '').trim(),
           email_id: String(row['Email ID'] || '').trim(),
           department: String(row['Department'] || '').trim(),
           designation: String(row['Designation'] || '').trim(),
           mobile: mobileDigits,
-        })
+        }
       })
 
-      if (invalidMobileRows.length > 0) {
+      if (parsedRows.length === 0) {
         setBulkUploadRows([])
         setBulkUploadDialog((prev) => ({
           ...prev,
           fileName: file.name,
-          error: `Invalid mobile number on row(s): ${invalidMobileRows.join(', ')}`,
+          error: 'Excel file does not contain any user rows',
         }))
+        return
+      }
+
+      const validationErrors = validateBulkUploadRows(parsedRows, validateEmail)
+      if (validationErrors.length > 0) {
+        setBulkUploadRows([])
+        setBulkUploadDialog((prev) => ({
+          ...prev,
+          fileName: file.name,
+          error: BULK_UPLOAD_BLOCKED_TOAST,
+        }))
+        reportBulkValidationFailure(validationErrors)
         return
       }
 
@@ -677,7 +863,7 @@ function UserManagement() {
     toast.success('Bulk upload template downloaded')
   }
 
-  const executeBulkUploadUsers = async (confirmExistingUsersOverride = bulkUploadDialog.confirmExistingUsers) => {
+  const executeBulkUploadUsers = async () => {
     if (bulkUploadDialog.unitIds.length === 0) {
       setBulkUploadDialog((prev) => ({ ...prev, error: 'Select at least one unit to map users' }))
       return
@@ -688,15 +874,10 @@ function UserManagement() {
       return
     }
 
-    const invalidBulkMobileRows = bulkUploadRows
-      .map((row, index) => ({ row, rowNumber: index + 2 }))
-      .filter(({ row }) => !row.mobile || getMobileValidationError(row.mobile))
-
-    if (invalidBulkMobileRows.length > 0) {
-      setBulkUploadDialog((prev) => ({
-        ...prev,
-        error: `Invalid or missing mobile number on row(s): ${invalidBulkMobileRows.map((item) => item.rowNumber).join(', ')}`,
-      }))
+    const validationErrors = validateBulkUploadRows(bulkUploadRows, validateEmail)
+    if (validationErrors.length > 0) {
+      setBulkUploadDialog((prev) => ({ ...prev, error: BULK_UPLOAD_BLOCKED_TOAST }))
+      reportBulkValidationFailure(validationErrors)
       return
     }
 
@@ -714,22 +895,26 @@ function UserManagement() {
         signal: abortController.signal,
         body: JSON.stringify({
           unit_ids: bulkUploadDialog.unitIds,
-          confirm_existing_user_units: confirmExistingUsersOverride,
           users: bulkUploadRows,
         }),
       })
       const result = await response.json()
 
-      if (!response.ok && result?.code === 'CONFIRM_EXISTING_USER_UNITS' && result?.requiresConfirmation) {
+      if (!response.ok && result?.code === 'BULK_UPLOAD_VALIDATION_FAILED') {
+        const backendValidationErrors = Array.isArray(result.validationErrors) ? result.validationErrors : []
         setBulkUploadDialog((prev) => ({
           ...prev,
           submitting: false,
-          error: '',
+          error: BULK_UPLOAD_BLOCKED_TOAST,
         }))
-        setBulkExistingUsersDialog({
-          open: true,
-          users: Array.isArray(result.users) ? result.users : [],
-        })
+        reportBulkValidationFailure(
+          backendValidationErrors.map((error) => ({
+            rowNumber: error.rowNumber,
+            field: error.field || 'Validation',
+            message: error.reason || error.message || 'Invalid row',
+            email_id: error.email_id,
+          }))
+        )
         return
       }
 
@@ -738,12 +923,14 @@ function UserManagement() {
       }
 
       const createdCount = Array.isArray(result.createdUsers) ? result.createdUsers.length : 0
+      const membershipAddedCount = Array.isArray(result.createdUsers)
+        ? result.createdUsers.filter((user) => user.membershipAdded).length
+        : 0
+      const newUsersCount = createdCount - membershipAddedCount
       const skippedRows = Array.isArray(result.skippedRows) ? result.skippedRows : []
-      const invalidEmails = Array.isArray(result.invalidEmails) ? result.invalidEmails : []
-      const missingEmailCount = skippedRows.filter((row) => row?.reason === 'Email ID is missing').length
       const duplicateCount = skippedRows.filter((row) => row?.reason === 'User already exists').length
       const alreadyMappedCount = skippedRows.filter((row) => row?.reason === 'User already exists in selected unit(s)').length
-      const invalidEmailCount = invalidEmails.length
+      const skippedCount = duplicateCount + alreadyMappedCount
 
       const duplicateEmails = skippedRows
         .filter((row) => row?.reason === 'User already exists' && row?.email_id)
@@ -753,9 +940,20 @@ function UserManagement() {
         .filter((row) => row?.reason === 'User already exists in selected unit(s)' && row?.email_id)
         .map((row) => String(row.email_id).trim())
 
+      const membershipAddedEmails = Array.isArray(result.createdUsers)
+        ? result.createdUsers
+          .filter((user) => user.membershipAdded && user.email_id)
+          .map((user) => String(user.email_id).trim())
+        : []
+
       const logs = [
-        createdCount > 0 ? { message: `Users created successfully: ${createdCount}` } : null,
-        missingEmailCount > 0 ? { message: `Rows skipped (empty Email ID): ${missingEmailCount}` } : null,
+        newUsersCount > 0 ? { message: `Users created successfully: ${newUsersCount}` } : null,
+        membershipAddedCount > 0
+          ? {
+              message: `Unit membership updated for existing user(s): ${membershipAddedCount}`,
+              items: membershipAddedEmails,
+            }
+          : null,
         duplicateCount > 0
           ? {
               message: `Rows skipped (user already exists): ${duplicateCount}`,
@@ -768,11 +966,18 @@ function UserManagement() {
               items: alreadyMappedEmails,
             }
           : null,
-        invalidEmailCount > 0 ? { message: `Rows skipped (invalid email format): ${invalidEmailCount}` } : null,
       ].filter(Boolean)
       setBulkUploadLogs(logs)
       setShowBulkLogsButton(true)
-      toast.success('Bulk upload completed. Click "Logs !" to view details.')
+
+      if (skippedCount > 0) {
+        toast.error(`User(s) already exists, Skipped ${skippedCount}`)
+      }
+      if (newUsersCount > 0) {
+        toast.success(`${newUsersCount} user(s) created successfully`)
+      } else if (membershipAddedCount > 0 && skippedCount === 0) {
+        toast.success(`Unit membership updated for ${membershipAddedCount} existing user(s)`)
+      }
 
       handleCloseBulkUploadDialog()
       await fetchUsers()
@@ -1373,7 +1578,11 @@ function UserManagement() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredUsers.map((user, idx) => (
+                sortedFilteredUsers.map((user, idx) => {
+                  const isCoordinatorRow = isLoggedCoordinatorUser(user)
+                  const rowTextSx = isCoordinatorRow ? { fontWeight: 800 } : undefined
+
+                  return (
                   <TableRow
                     key={`${user.email_id}-${idx}`}
                     hover
@@ -1384,7 +1593,8 @@ function UserManagement() {
                       '&:last-of-type td': { borderBottom: 0 },
                       '& td': {
                         borderBottom:
-                          idx === filteredUsers.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
+                          idx === sortedFilteredUsers.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
+                        ...(isCoordinatorRow ? { fontWeight: 800 } : {}),
                       },
                     }}
                   >
@@ -1399,12 +1609,16 @@ function UserManagement() {
                       </TableCell>
                     ) : null}
                     <TableCell sx={bodyCellSx}>
-                      {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (Company Coordinator)' : ''}` : ''}
+                      <Typography component="span" sx={rowTextSx}>
+                        {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (Company Coordinator)' : ''}` : ''}
+                      </Typography>
                     </TableCell>
-                    <TableCell sx={bodyCellSx}>{user.email_id || '-'}</TableCell>
+                    <TableCell sx={bodyCellSx}>
+                      <Typography component="span" sx={rowTextSx}>{user.email_id || '-'}</Typography>
+                    </TableCell>
                     <TableCell sx={{ ...bodyCellSx, whiteSpace: 'nowrap' }}>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
-                        <Typography component="span" sx={{ fontSize: '0.89rem', lineHeight: 1.2 }}>
+                        <Typography component="span" sx={{ fontSize: '0.89rem', lineHeight: 1.2, ...rowTextSx }}>
                           {formatRoleLabel(user.role)}
                         </Typography>
                         {user.role === 'approver' ? (
@@ -1430,12 +1644,52 @@ function UserManagement() {
                         ) : null}
                       </Box>
                     </TableCell>
-                    {showUnitControls ? <TableCell sx={bodyCellSx}>{user.unit_name || user.unit_id || '-'}</TableCell> : null}
-                    <TableCell sx={bodyCellSx}>{user.department || '-'}</TableCell>
-                    <TableCell sx={bodyCellSx}>{user.designation || '-'}</TableCell>
-                    <TableCell sx={bodyCellSx}>{user.mobile || '-'}</TableCell>
+                    {showUnitControls ? (
+                      <TableCell sx={bodyCellSx}>
+                        {user.role === 'user' ? (
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
+                            <Typography component="span" sx={{ fontSize: '0.89rem', lineHeight: 1.2, ...rowTextSx }}>
+                              {user.unit_name || user.unit_id || '-'}
+                            </Typography>
+                            {!deleteMode ? (
+                              <Typography
+                                component="button"
+                                type="button"
+                                onClick={() => handleOpenUserUnits(user)}
+                                sx={{
+                                  p: 0,
+                                  m: 0,
+                                  border: 0,
+                                  background: 'transparent',
+                                  textAlign: 'left',
+                                  cursor: 'pointer',
+                                  color: theme.palette.primary.main,
+                                  fontSize: '0.7rem',
+                                  lineHeight: 1.2,
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                (Click to see details)
+                              </Typography>
+                            ) : null}
+                          </Box>
+                        ) : (
+                          <Typography component="span" sx={rowTextSx}>{user.unit_name || user.unit_id || '-'}</Typography>
+                        )}
+                      </TableCell>
+                    ) : null}
+                    <TableCell sx={bodyCellSx}>
+                      <Typography component="span" sx={rowTextSx}>{user.department || '-'}</Typography>
+                    </TableCell>
+                    <TableCell sx={bodyCellSx}>
+                      <Typography component="span" sx={rowTextSx}>{user.designation || '-'}</Typography>
+                    </TableCell>
+                    <TableCell sx={bodyCellSx}>
+                      <Typography component="span" sx={rowTextSx}>{user.mobile || '-'}</Typography>
+                    </TableCell>
                   </TableRow>
-                ))
+                  )
+                })
               )}
             </TableBody>
           </Table>
@@ -1516,7 +1770,7 @@ function UserManagement() {
               )}
 
               <Alert severity="info">
-                Excel header row must include: Name, Email ID, Department, Designation, Mobile. Extra columns are ignored.
+                Excel header row must include: Name, Email ID, Department, Designation, Mobile. Email ID and Mobile are required and must be valid for every row. Duplicate emails within the file are not allowed. Existing users in other units are added to the selected unit(s) automatically. Rows with an email that already exists in the selected unit(s) will be skipped.
               </Alert>
 
               {bulkUploadRows.length > 0 && (
@@ -1568,61 +1822,6 @@ function UserManagement() {
               setBulkWarningDialogOpen(false)
               setBulkUploadDialog((prev) => ({ ...prev, confirmNonOrg: true }))
               await executeBulkUploadUsers()
-            }}
-            disabled={bulkUploadDialog.submitting}
-          >
-            Continue
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog
-        open={bulkExistingUsersDialog.open}
-        onClose={() => !bulkUploadDialog.submitting && setBulkExistingUsersDialog({ open: false, users: [] })}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Existing Users Found</DialogTitle>
-        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, pt: 2.5 }}>
-          <DialogContentText>
-            The following users already exist in other unit(s). On continue, they will be added to the selected unit membership.
-          </DialogContentText>
-          {bulkExistingUsersDialog.users.length === 0 ? (
-            <Typography color="text.secondary">No users available.</Typography>
-          ) : (
-            bulkExistingUsersDialog.users.map((user) => (
-              <Box
-                key={user.email_id}
-                sx={{
-                  px: 1.5,
-                  py: 1.2,
-                  borderRadius: 1.5,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  backgroundColor: alpha(theme.palette.background.default, 0.35),
-                }}
-              >
-                <Typography sx={{ fontWeight: 700 }}>{user.email_id}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Existing units: {getUnitNamesFromIds(user.existing_unit_ids).join(', ') || (user.existing_unit_ids || []).join(', ') || '-'}
-                </Typography>
-              </Box>
-            ))
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => setBulkExistingUsersDialog({ open: false, users: [] })}
-            disabled={bulkUploadDialog.submitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={async () => {
-              setBulkExistingUsersDialog({ open: false, users: [] })
-              setBulkUploadDialog((prev) => ({ ...prev, confirmExistingUsers: true }))
-              await executeBulkUploadUsers(true)
             }}
             disabled={bulkUploadDialog.submitting}
           >
@@ -1700,6 +1899,137 @@ function UserManagement() {
             />
           </Box>
         )}
+      </AppDialog>
+
+      <AppDialog
+        open={userUnitsDialog.open}
+        onClose={() => {
+          if (userUnitsDialog.linking) return
+          setUserUnitsDialog({
+            open: false,
+            user: null,
+            linkedUnitIds: [],
+            selectedUnitIdsToAdd: [],
+            linking: false,
+            error: '',
+          })
+        }}
+        title={userUnitsDialog.user ? (
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.1, flexWrap: 'wrap', py: 1.5 }}>
+            <Typography component="span" sx={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.25 }}>
+              Linked Units
+            </Typography>
+            <Typography component="span" sx={{ color: 'text.secondary', fontSize: '0.92rem', fontWeight: 400, lineHeight: 1.25 }}>
+              ({userUnitsDialog.user.email_id})
+            </Typography>
+          </Box>
+        ) : 'Linked Units'}
+        titleId="company-co-user-units-dialog-title"
+        fullWidth
+        maxWidth="md"
+        showTitleDivider
+        titleSx={{ py: 1.75 }}
+        contentSx={{ py: 2.2, display: 'flex', flexDirection: 'column', gap: 2 }}
+        actions={(
+          <Button
+            onClick={() => {
+              if (userUnitsDialog.linking) return
+              setUserUnitsDialog({
+                open: false,
+                user: null,
+                linkedUnitIds: [],
+                selectedUnitIdsToAdd: [],
+                linking: false,
+                error: '',
+              })
+            }}
+            variant="outlined"
+            disabled={userUnitsDialog.linking}
+            sx={getAppDialogCancelButtonSx(theme)}
+          >
+            Close
+          </Button>
+        )}
+      >
+        <Box sx={{ mt: 1.5, py: 1.5 }}>
+          <Typography sx={{ fontWeight: 700, mb: 1 }}>Current linked units</Typography>
+          {userUnitsDialog.linkedUnitIds.length === 0 ? (
+            <Typography color="text.secondary">No units linked.</Typography>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {userUnitsDialog.linkedUnitIds.map((unitId) => (
+                <Box
+                  key={unitId}
+                  sx={{
+                    px: 1.5,
+                    py: 1.1,
+                    borderRadius: 1.5,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    backgroundColor: alpha(theme.palette.background.default, 0.35),
+                  }}
+                >
+                  <Typography sx={{ fontWeight: 700 }}>
+                    {unitOptions.find((unit) => unit.unitId === unitId)?.unitName || unitId}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Box>
+
+        <Box>
+          <Typography sx={{ fontWeight: 700, mb: 1 }}>Link another unit</Typography>
+          {availableUnitsToLink.length === 0 ? (
+            <Typography color="text.secondary">
+              This user is already linked to all units available under your coordinator assignment.
+            </Typography>
+          ) : (
+            <>
+              <FormControl fullWidth>
+                <InputLabel id="link-user-units-label">Units</InputLabel>
+                <Select
+                  labelId="link-user-units-label"
+                  multiple
+                  value={userUnitsDialog.selectedUnitIdsToAdd}
+                  label="Units"
+                  disabled={userUnitsDialog.linking}
+                  onChange={(event) => {
+                    const nextValue = typeof event.target.value === 'string'
+                      ? event.target.value.split(',')
+                      : event.target.value
+                    setUserUnitsDialog((prev) => ({
+                      ...prev,
+                      selectedUnitIdsToAdd: nextValue,
+                      error: '',
+                    }))
+                  }}
+                  renderValue={(selected) => getUnitNamesFromIds(Array.isArray(selected) ? selected : []).join(', ')}
+                >
+                  {availableUnitsToLink.map((unit) => (
+                    <MenuItem key={unit.unitId} value={unit.unitId}>
+                      <Checkbox checked={userUnitsDialog.selectedUnitIdsToAdd.includes(unit.unitId)} size="small" />
+                      <ListItemText primary={unit.unitName} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                <Button
+                  variant="contained"
+                  color="secondary"
+                  disabled={userUnitsDialog.linking || userUnitsDialog.selectedUnitIdsToAdd.length === 0}
+                  onClick={handleLinkUserUnits}
+                  sx={{ textTransform: 'none', fontWeight: 700 }}
+                >
+                  {userUnitsDialog.linking ? 'Linking...' : 'Link Unit(s)'}
+                </Button>
+              </Box>
+            </>
+          )}
+        </Box>
+
+        {userUnitsDialog.error ? <Alert severity="error">{userUnitsDialog.error}</Alert> : null}
       </AppDialog>
 
       <Dialog

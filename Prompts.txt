@@ -1,3 +1,5 @@
-Approver module fixes.
+Fixes in coordinator module. 
 
-1. On approver's home page do not display unit name, because approver will not be linked with unit, approver will have different level of assignments.
+In form details page do not display "Remarks by User" and "Reason by Approver" if they are empty. Only show those which are not null.
+
+There is an issue in replicate function. It is not replicating cusomt added columns of base RACM. Just fixed columns are getting replicated. Fix that. All custom columns must be replicated because they are just read-only metadata fields.

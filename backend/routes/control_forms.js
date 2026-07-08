@@ -4260,7 +4260,23 @@ router.post('/replicate', verifyAuth, async (req, res) => {
       const insertPlaceholders = columns.map((_, idx) => `$${idx + 1}`).join(', ');
       const insertQuery = `INSERT INTO control_forms (${columns.join(', ')}) VALUES (${insertPlaceholders}) RETURNING form_id`;
       const insertResult = await client.query(insertQuery, values);
-      createdFormIds.push(insertResult.rows[0].form_id);
+      const newFormId = insertResult.rows[0].form_id;
+      createdFormIds.push(newFormId);
+
+      // Replicate custom (template) column values. These live in racm_field_values,
+      // not on control_forms, so a plain row copy misses them. They are read-only
+      // metadata fields, so carry them over verbatim to the new RACM.
+      await client.query(
+        `
+          INSERT INTO racm_field_values (form_id, template_field_id, value_text)
+          SELECT $1, template_field_id, value_text
+          FROM racm_field_values
+          WHERE form_id = $2
+          ON CONFLICT (form_id, template_field_id)
+          DO UPDATE SET value_text = EXCLUDED.value_text
+        `,
+        [newFormId, row.form_id]
+      );
     }
 
     await client.query('COMMIT');

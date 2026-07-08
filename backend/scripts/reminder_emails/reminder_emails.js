@@ -10,17 +10,17 @@
  * After sending, reminder_datetime is updated to current UTC time + interval.
  */
 
-const { pool } = require('../utils/db');
-const { sendEmail } = require('../utils/send_email');
+const { pool } = require('../../utils/db');
+const { sendEmail } = require('../../utils/send_email');
 const {
   updateReminderDatetime,
   REMINDER_DATETIME_DUE_SQL,
   formatReminderTimestampForLog,
   formatDueDateForEmail,
-} = require('../utils/controls_reminder');
-const { buildRacmDetailsSection } = require('../utils/racm_email_details');
-const { isCoordinatorAssignedRacm, buildCoordinatorFormDetailUrl } = require('../utils/racm_coordinator_assignment');
-const { buildUserFormDetailUrl } = require('../utils/racm_status_user_email');
+} = require('../../utils/controls_reminder');
+const { buildRacmDetailsSection } = require('../../utils/racm_email_details');
+const { isCoordinatorAssignedRacm, buildCoordinatorFormDetailUrl } = require('../../utils/racm_coordinator_assignment');
+const { buildUserFormDetailUrl } = require('../../utils/racm_status_user_email');
 
 const IST_CURRENT_DATE_SQL = `((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date)`;
 

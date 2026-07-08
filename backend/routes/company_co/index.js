@@ -34,6 +34,7 @@ router.post('/unit-management/units', verifyCompanyCoordinator, controller.creat
 router.patch('/unit-management/units/:unit_id/assignment', verifyCompanyCoordinator, controller.updateUnitAssignment);
 router.post('/create-user', verifyCompanyCoordinator, controller.createUser);
 router.post('/create-users-bulk', verifyCompanyCoordinator, controller.createUsersBulk);
+router.post('/users/link-units', verifyCompanyCoordinator, controller.linkUserUnits);
 router.post('/delete-users', verifyCompanyCoordinator, controller.deleteUsers);
 router.get('/check-user/:email', verifyCompanyCoordinator, controller.checkUser);
 router.get('/check-user-role/:email', verifyCompanyCoordinator, controller.checkUserRole);

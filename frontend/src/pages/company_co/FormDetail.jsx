@@ -2114,6 +2114,8 @@ function FormDetail() {
   const hasReminderSettings = Boolean(String(formData?.due_date || '').trim()) && Boolean(String(formData?.reminder_frequency || '').trim())
   const showSelfAssignButton = !isCoordinatorAssigned && !validProcessOwnerAssigned
   const canCoordinatorSubmit = isCoordinatorAssigned && isActive && !isSentForApproval && !isApprovedRacm
+  const showRemarksByUser = canCoordinatorSubmit || (formData?.remarks_by_user || '').trim() !== ''
+  const showReasonByApprover = hasRacmFieldValue(formData?.reason_by_approver)
   const assignmentDisplayValue = isCoordinatorAssigned
     ? 'Coordinator (Self)'
     : ((processOwnerName && processOwnerName !== '-')
@@ -3810,7 +3812,9 @@ function FormDetail() {
               </Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 4, pt: 1 }}>
+                {(showRemarksByUser || showReasonByApprover) ? (
                 <Box sx={DOCUMENTS_APPROVAL_REMARKS_ROW_SX}>
+                  {showRemarksByUser ? (
                   <Box
                     sx={{
                       p: 2.5,
@@ -3858,18 +3862,20 @@ function FormDetail() {
                           variant="body2"
                           component="dd"
                           sx={{
-                            color: (formData?.remarks_by_user || '').trim() === '' ? 'text.disabled' : 'text.secondary',
+                            color: 'text.secondary',
                             wordBreak: 'break-word',
                             lineHeight: 1.6,
                             fontSize: theme.typography.customSizes.medium,
                             whiteSpace: 'pre-wrap',
                           }}
                         >
-                          {(formData?.remarks_by_user || '').trim() === '' ? '-' : formData.remarks_by_user}
+                          {formData.remarks_by_user}
                         </Typography>
                       </>
                     )}
                   </Box>
+                  ) : null}
+                  {showReasonByApprover ? (
                   <Box
                     sx={{
                       p: 2.5,
@@ -3902,17 +3908,19 @@ function FormDetail() {
                       variant="body2"
                       component="dd"
                       sx={{
-                        color: hasRacmFieldValue(formData?.reason_by_approver) ? 'text.secondary' : 'text.disabled',
+                        color: 'text.secondary',
                         wordBreak: 'break-word',
                         lineHeight: 1.6,
                         fontSize: theme.typography.customSizes.medium,
                         whiteSpace: 'pre-wrap',
                       }}
                     >
-                      {hasRacmFieldValue(formData?.reason_by_approver) ? String(formData.reason_by_approver) : '-'}
+                      {String(formData.reason_by_approver)}
                     </Typography>
                   </Box>
+                  ) : null}
                 </Box>
+                ) : null}
 
                 {canCoordinatorSubmit ? (
                   <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>

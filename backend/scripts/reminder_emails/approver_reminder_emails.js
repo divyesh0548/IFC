@@ -10,16 +10,16 @@
  * After sending, reminder_to_approver_datetime is updated to UTC now + 2 days.
  */
 
-const { pool } = require('../utils/db');
-const { sendEmail } = require('../utils/send_email');
+const { pool } = require('../../utils/db');
+const { sendEmail } = require('../../utils/send_email');
 const {
   updateReminderToApproverDatetime,
   REMINDER_TO_APPROVER_DATETIME_DUE_SQL,
   formatReminderTimestampForLog,
   formatDueDateForEmail,
-} = require('../utils/controls_reminder');
-const { buildPendingApprovalRacmDetailsSection } = require('../utils/racm_email_details');
-const { buildApproverFormDetailUrl } = require('../utils/racm_status_user_email');
+} = require('../../utils/controls_reminder');
+const { buildPendingApprovalRacmDetailsSection } = require('../../utils/racm_email_details');
+const { buildApproverFormDetailUrl } = require('../../utils/racm_status_user_email');
 
 function isValidEmail(value) {
   const email = String(value || '').trim();

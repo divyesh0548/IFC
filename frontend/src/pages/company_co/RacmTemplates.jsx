@@ -86,11 +86,8 @@ function buildGroupedFieldsFromDetails(details, extras = null) {
       .filter((field) => field.section_key === section.key)
       .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
       .map((field) => ({
-        clientId: field.field_key,
-        field_key: field.field_key,
-        label: field.label,
-        section_key: field.section_key,
-        display_order: field.display_order,
+        ...field,
+        clientId: field.clientId || field.field_key,
       })),
   }))
 }
@@ -118,10 +115,10 @@ function CustomColumnEditorDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ px: 3, pt: 2.5, pb: 1, fontWeight: 700 }}>
+      <DialogTitle sx={{ px: 3, pt: 2.5, pb: 2, fontWeight: 700 }}>
         {isEditing ? 'Edit custom column' : 'Custom column'}
       </DialogTitle>
-      <DialogContent sx={{ px: 3, pt: 1, pb: 1 }}>
+      <DialogContent sx={{ px: 3, mt: 1.5 }}>
         {isEditing ? (
           <Stack spacing={2}>
             <TextField
@@ -188,14 +185,7 @@ function CustomColumnEditorDialog({
   )
 }
 
-function TemplateColumnListing({
-  groupedFields,
-  canEditExtras,
-  onColumnClick,
-  onExtraFieldChange,
-  onSaveInline,
-  onCancelInline,
-}) {
+function TemplateColumnListing({ groupedFields, canEditExtras, onColumnClick }) {
   return (
     <Stack spacing={2.5} divider={<Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }} />}>
       {groupedFields.map((section) => {
@@ -228,66 +218,7 @@ function TemplateColumnListing({
 
               {section.extras.map((field) => {
                 const clientId = field.clientId || field.field_key
-                const isDraft = Boolean(field.isDraft)
-
-                if (isDraft && canEditExtras) {
-                  return (
-                    <Box
-                      key={clientId}
-                      sx={{
-                        ...columnCellSx,
-                        alignItems: 'stretch',
-                        flexDirection: 'column',
-                        gap: 1.25,
-                        minHeight: 88,
-                        py: 1.5,
-                      }}
-                    >
-                      <Stack direction="row" alignItems="center" spacing={0.75}>
-                        <CustomColumnDot />
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ fontWeight: 600, letterSpacing: '0.02em' }}
-                        >
-                          New custom column
-                        </Typography>
-                      </Stack>
-                      <TextField
-                        size="small"
-                        label="Column label"
-                        value={field.label || ''}
-                        onChange={(e) => onExtraFieldChange(clientId, 'label', e.target.value)}
-                        fullWidth
-                        autoFocus
-                      />
-                      {isDraft && !field.fromCatalog && field.section_key !== 'assertions' ? (
-                        <FormControl size="small" fullWidth>
-                          <InputLabel>Section</InputLabel>
-                          <Select
-                            value={field.draft_section_key ?? field.section_key ?? 'others'}
-                            label="Section"
-                            onChange={(e) => onExtraFieldChange(clientId, 'section_key', e.target.value)}
-                          >
-                            {SECTION_OPTIONS.map((option) => (
-                              <MenuItem key={option.key} value={option.key}>
-                                {option.label}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      ) : null}
-                      <Stack direction="row" spacing={1} flexWrap="wrap">
-                        <Button size="small" variant="contained" onClick={() => onSaveInline(clientId)}>
-                          Save
-                        </Button>
-                        <Button size="small" variant="outlined" onClick={() => onCancelInline(clientId)}>
-                          Cancel
-                        </Button>
-                      </Stack>
-                    </Box>
-                  )
-                }
+                const displayLabel = String(field.label || '').trim() || (field.isDraft ? 'New custom column' : field.label)
 
                 return (
                   <Box
@@ -321,7 +252,7 @@ function TemplateColumnListing({
                     <Stack direction="row" alignItems="center" spacing={1} sx={{ width: '100%', minWidth: 0 }}>
                       <CustomColumnDot />
                       <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>
-                        {field.label}
+                        {displayLabel}
                       </Typography>
                     </Stack>
                   </Box>
@@ -355,6 +286,48 @@ function CustomColumnDot({ size = 8 }) {
       }}
     />
   )
+}
+
+function mapEditableFieldForComparison(field) {
+  if (field.isDraft) {
+    const label = String(field.label || '').trim()
+    if (!label) return null
+    const sectionKey = field.draft_section_key ?? field.section_key ?? 'others'
+    return {
+      field_key: slugifyFieldKey(field.field_key) || slugifyFieldKey(label),
+      label,
+      section_key: sectionKey,
+      display_order: Number(field.display_order || 0),
+    }
+  }
+
+  return {
+    field_key: slugifyFieldKey(field.field_key) || slugifyFieldKey(field.label),
+    label: String(field.label || '').trim(),
+    section_key: field.section_key || 'others',
+    display_order: Number(field.display_order || 0),
+  }
+}
+
+function finalizeEditableExtraFields(fields) {
+  return fields
+    .map((item) => {
+      if (!item.isDraft) return item
+
+      const label = String(item.label || '').trim()
+      if (!label) return null
+
+      const sectionKey = item.draft_section_key ?? item.section_key ?? 'others'
+      return {
+        ...item,
+        label,
+        section_key: sectionKey,
+        isDraft: false,
+        draft_section_key: undefined,
+        excel_keywords: item.fromCatalog ? item.excel_keywords : deriveKeywordsFromLabel(label),
+      }
+    })
+    .filter(Boolean)
 }
 
 function buildNormalizedExtraFields(fields) {
@@ -611,14 +584,8 @@ function RacmTemplates() {
       }))
       .sort((a, b) => a.field_key.localeCompare(b.field_key))
     const current = [...editableExtraFields]
-      .filter((field) => !field.isDraft)
-      .map((field) => ({
-        field_key: slugifyFieldKey(field.field_key) || slugifyFieldKey(field.label),
-        label: String(field.label || '').trim(),
-        section_key: field.section_key || 'others',
-        display_order: Number(field.display_order || 0),
-      }))
-      .filter((field) => field.label)
+      .map(mapEditableFieldForComparison)
+      .filter((field) => field && field.label)
       .sort((a, b) => a.field_key.localeCompare(b.field_key))
     return JSON.stringify(original) !== JSON.stringify(current)
   }, [editableExtraFields, templateDetails])
@@ -634,7 +601,6 @@ function RacmTemplates() {
     !isSelectedActiveTemplate &&
     linkedRacmCount === 0 &&
     versions.length > 1
-  const hasOpenDraft = editableExtraFields.some((field) => field.isDraft)
 
   const availableCatalogAssertions = useMemo(() => {
     const usedKeys = new Set(editableExtraFields.map((field) => field.field_key).filter(Boolean))
@@ -670,22 +636,23 @@ function RacmTemplates() {
     }
   }, [selectedTemplateId, requiresVersionedSave])
 
-  const handleOpenColumnEditor = (clientId) => {
+  const handleOpenColumnEditor = (clientId, { startInEditMode = false } = {}) => {
     const field = editableExtraFields.find((item) => item.clientId === clientId)
-    if (!field || field.isDraft) return
+    if (!field) return
+    const sectionKey = field.draft_section_key ?? field.section_key ?? 'others'
     setColumnEditor({
       open: true,
-      mode: 'view',
+      mode: startInEditMode ? 'edit' : 'view',
       clientId,
       label: field.label || '',
-      sectionKey: field.section_key || 'others',
+      sectionKey,
       fromCatalog: Boolean(field.fromCatalog),
       isNew: Boolean(field.isNew),
-      canEditSection: !field.fromCatalog && field.section_key !== 'assertions',
+      canEditSection: !field.fromCatalog && sectionKey !== 'assertions',
     })
   }
 
-  const handleCloseColumnEditor = () => {
+  const resetColumnEditor = () => {
     setColumnEditor({
       open: false,
       mode: 'view',
@@ -698,14 +665,22 @@ function RacmTemplates() {
     })
   }
 
+  const handleDialogClose = () => {
+    if (columnEditor.mode === 'edit') {
+      handleCancelColumnEdit()
+      return
+    }
+    resetColumnEditor()
+  }
+
   const handleEnterColumnEditMode = () => {
     setColumnEditor((prev) => ({ ...prev, mode: 'edit' }))
   }
 
   const handleCancelColumnEdit = () => {
     const field = editableExtraFields.find((item) => item.clientId === columnEditor.clientId)
-    if (!field) {
-      handleCloseColumnEditor()
+    if (!field || field.isDraft) {
+      resetColumnEditor()
       return
     }
     setColumnEditor((prev) => ({
@@ -733,6 +708,7 @@ function RacmTemplates() {
           label,
           section_key: columnEditor.sectionKey,
           draft_section_key: undefined,
+          isDraft: false,
         }
         if (!item.fromCatalog) {
           next.excel_keywords = deriveKeywordsFromLabel(label)
@@ -740,51 +716,27 @@ function RacmTemplates() {
         return next
       })
     )
-    handleCloseColumnEditor()
+    resetColumnEditor()
   }
 
   const handleColumnEditorDelete = () => {
     const { clientId, label } = columnEditor
-    handleCloseColumnEditor()
+    const field = editableExtraFields.find((item) => item.clientId === clientId)
+    resetColumnEditor()
+    if (field?.isDraft || field?.isNew) {
+      handleRemoveExtraField(clientId)
+      return
+    }
     handleRequestRemoveExtraField(clientId, label)
   }
 
-  const handleSaveInline = (clientId) => {
-    const field = editableExtraFields.find((item) => item.clientId === clientId)
-    const label = String(field?.label || '').trim()
-    if (!label) {
-      toast.error('Column label is required')
-      return
-    }
-    if (!assertUniqueColumnLabel(label, { excludeClientId: clientId })) {
-      return
-    }
-    setEditableExtraFields((prev) =>
-      prev.map((item) => {
-        if (item.clientId !== clientId) return item
-        const sectionKey = item.draft_section_key ?? item.section_key ?? 'others'
-        const next = {
-          ...item,
-          label,
-          section_key: sectionKey,
-          isDraft: false,
-          draft_section_key: undefined,
-        }
-        if (!item.fromCatalog) {
-          next.excel_keywords = deriveKeywordsFromLabel(label)
-        }
-        return next
-      })
-    )
-  }
-
-  const handleCancelInline = (clientId) => {
-    setEditableExtraFields((prev) => prev.filter((item) => item.clientId !== clientId))
-  }
-
   const appendDraftField = (sectionKey) => {
-    if (hasOpenDraft || columnEditor.open) {
-      toast.error('Save or cancel the column you are editing first')
+    if (columnEditor.open) {
+      toast.error('Close the column editor first')
+      return
+    }
+    if (editableExtraFields.some((field) => field.isDraft)) {
+      toast.error('Finish or delete the new column before adding another')
       return
     }
     const clientId = `new-${Date.now()}-${editableExtraFields.length}`
@@ -801,6 +753,16 @@ function RacmTemplates() {
         isDraft: true,
       },
     ])
+    setColumnEditor({
+      open: true,
+      mode: 'edit',
+      clientId,
+      label: '',
+      sectionKey: sectionKey,
+      fromCatalog: false,
+      isNew: true,
+      canEditSection: sectionKey !== 'assertions',
+    })
   }
 
   const handleAddCatalogAssertion = (catalogItem) => {
@@ -829,28 +791,8 @@ function RacmTemplates() {
     toast.success(`Added ${catalogItem.label}`)
   }
 
-  const handleAddAssertionCustomField = () => {
-    appendDraftField('assertions')
-  }
-
   const handleAddExtraField = () => {
     appendDraftField('others')
-  }
-
-  const handleExtraFieldChange = (clientId, field, value) => {
-    setEditableExtraFields((prev) =>
-      prev.map((item) => {
-        if (item.clientId !== clientId) return item
-        if (field === 'section_key') {
-          return { ...item, draft_section_key: value }
-        }
-        const next = { ...item, [field]: value }
-        if (field === 'label') {
-          next.excel_keywords = deriveKeywordsFromLabel(value)
-        }
-        return next
-      })
-    )
   }
 
   const handleRemoveExtraField = (clientId) => {
@@ -868,7 +810,7 @@ function RacmTemplates() {
   const handleConfirmRemoveExtraField = () => {
     if (removeConfirm.clientId) {
       if (columnEditor.clientId === removeConfirm.clientId) {
-        handleCloseColumnEditor()
+        resetColumnEditor()
       }
       handleRemoveExtraField(removeConfirm.clientId)
     }
@@ -880,8 +822,15 @@ function RacmTemplates() {
       toast.error('Only the active template can be edited')
       return
     }
-    if (hasOpenDraft || columnEditor.open) {
-      toast.error('Save or cancel the column you are editing first')
+    if (columnEditor.open) {
+      toast.error('Close the column editor first')
+      return
+    }
+    const hasIncompleteDraft = editableExtraFields.some(
+      (field) => field.isDraft && !String(field.label || '').trim()
+    )
+    if (hasIncompleteDraft) {
+      toast.error('Enter a label for each new column before saving')
       return
     }
     if (!hasStructuralChanges) {
@@ -1039,7 +988,7 @@ function RacmTemplates() {
   }
 
   const handleSaveStructure = async (modeOverride) => {
-    const committedFields = editableExtraFields.filter((field) => !field.isDraft)
+    const committedFields = finalizeEditableExtraFields(editableExtraFields)
     if (!assertNoDuplicateLabelsInCommittedFields(committedFields)) {
       return
     }
@@ -1112,7 +1061,7 @@ function RacmTemplates() {
       }
       toast.success(data.message || 'Template version deleted')
       setDeleteTemplateConfirmOpen(false)
-      handleCloseColumnEditor()
+      resetColumnEditor()
       await fetchVersions(selectedUnitId)
     } catch (error) {
       console.error('Failed to delete template version:', error)
@@ -1151,7 +1100,7 @@ function RacmTemplates() {
       toast.success(data.message || 'Template created')
       setCreateTemplateDialogOpen(false)
       setFreshTemplateName('')
-      handleCloseColumnEditor()
+      resetColumnEditor()
       await fetchVersions(selectedUnitId)
       const newId = data.data?.template?.id
       if (newId) {
@@ -1336,9 +1285,6 @@ function RacmTemplates() {
                   groupedFields={groupedFields}
                   canEditExtras={canEditExtras}
                   onColumnClick={handleOpenColumnEditor}
-                  onExtraFieldChange={handleExtraFieldChange}
-                  onSaveInline={handleSaveInline}
-                  onCancelInline={handleCancelInline}
                 />
 
                 {canEditExtras ? (
@@ -1364,15 +1310,6 @@ function RacmTemplates() {
                           ))}
                         </Select>
                       </FormControl>
-                    ) : null}
-                    {!allCatalogAssertionsAdded ? (
-                      <Button
-                        startIcon={<AddRoundedIcon />}
-                        variant="outlined"
-                        onClick={handleAddAssertionCustomField}
-                      >
-                        Add custom assertion column
-                      </Button>
                     ) : null}
                     <Button
                       startIcon={<AddRoundedIcon />}
@@ -1404,7 +1341,7 @@ function RacmTemplates() {
       <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Save Template Changes</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3, mt: 1.5 }}>
             {requiresVersionedSave
               ? 'Existing RACMs keep their current template version (linked via control_forms.template_id). Choose how to save structural changes.'
               : 'No RACMs are linked to this template yet. You can update the current template or create a new version if you prefer.'}
@@ -1421,7 +1358,7 @@ function RacmTemplates() {
                 <MenuItem value="update_in_place">Update Current Template (Recommended)</MenuItem>
               ) : null}
               <MenuItem value="update_version">
-                {requiresVersionedSave ? 'Update Version (Recommended)' : 'Create New Version'}
+                {requiresVersionedSave ? 'Update Version (Recommended)' : 'Update Version'}
               </MenuItem>
               <MenuItem value="save_as_new_template">Create New Template</MenuItem>
             </Select>
@@ -1452,11 +1389,8 @@ function RacmTemplates() {
         canEditSection={columnEditor.canEditSection}
         canEditLabel
         saveRequiresNewVersion={requiresVersionedSave}
-        canDelete={
-          columnEditor.isNew ||
-          editableExtraFields.some((field) => field.clientId === columnEditor.clientId && !field.isDraft)
-        }
-        onClose={handleCloseColumnEditor}
+        canDelete={editableExtraFields.some((field) => field.clientId === columnEditor.clientId)}
+        onClose={handleDialogClose}
         onEdit={handleEnterColumnEditMode}
         onSave={handleColumnEditorSave}
         onDelete={handleColumnEditorDelete}
@@ -1534,10 +1468,10 @@ function RacmTemplates() {
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle sx={{ px: 3, pt: 2.5, pb: 1, fontWeight: 700 }}>
+        <DialogTitle sx={{ px: 3, pt: 2.5, mb: 1, fontWeight: 700 }}>
           Import template preview
         </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 1, pb: 1 }}>
+        <DialogContent sx={{ px: 3, mt: 1.5 }}>
           {importPreviewDetails ? (
             <Stack spacing={2}>
               <Box>

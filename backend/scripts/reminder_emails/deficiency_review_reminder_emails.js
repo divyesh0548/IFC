@@ -10,18 +10,18 @@
  * response is submitted. After sending, it is updated to UTC now + 2 days.
  */
 
-const { pool } = require('../utils/db');
-const { sendEmail } = require('../utils/send_email');
+const { pool } = require('../../utils/db');
+const { sendEmail } = require('../../utils/send_email');
 const {
   updateDeficiencyReviewReminderDatetime,
   DEFICIENCY_REVIEW_REMINDER_DATETIME_DUE_SQL,
   formatReminderTimestampForLog,
   formatDueDateForEmail,
-} = require('../utils/controls_reminder');
+} = require('../../utils/controls_reminder');
 const {
   buildDeficiencyResponseDetailsSection,
-} = require('../utils/racm_email_details');
-const { buildApproverFormDetailUrl } = require('../utils/racm_status_user_email');
+} = require('../../utils/racm_email_details');
+const { buildApproverFormDetailUrl } = require('../../utils/racm_status_user_email');
 
 function isValidEmail(value) {
   const email = String(value || '').trim();

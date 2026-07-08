@@ -60,7 +60,6 @@ function ApproverHome() {
 
   const displayName = readStoredUserDisplayName() || formatDisplayName(stats.approver_name, 'Approver')
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
-  const mappedUnits = Array.isArray(stats.mapped_units) ? stats.mapped_units : []
 
   const workTiles = [
     {
@@ -193,36 +192,8 @@ function ApproverHome() {
                 lineHeight: 1.7,
               }}
             >
-              Review approval activity for your assigned units, keep pending RACMs moving, and use the dashboard as the operational hub for decisions.
+              Review approval activity for your assigned RACMs, keep pending items moving, and use the dashboard as the operational hub for decisions.
             </Typography>
-
-            <Box sx={{ mt: 2.4, display: 'flex', flexDirection: 'column', gap: 1.1, maxWidth: 760 }}>
-              {mappedUnits.length > 0 ? (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.7 }}>
-                  {mappedUnits.map((unit) => (
-                    <Box
-                      key={`${unit.company_identifier || 'company'}-${unit.unit_id}`}
-                      sx={{
-                        px: 1,
-                        py: 0.45,
-                        borderRadius: 999,
-                        border: `1px solid ${alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.2 : 0.13)}`,
-                        backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.2 : 0.54),
-                        maxWidth: '100%',
-                      }}
-                    >
-                      <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, color: theme.palette.text.primary }}>
-                        {unit.unit_name || unit.unit_id || 'Unit'}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Box>
-              ) : (
-                <Typography sx={{ fontSize: '0.82rem', color: theme.palette.text.secondary }}>
-                  No units are currently mapped to this approver.
-                </Typography>
-              )}
-            </Box>
           </Box>
 
           <Paper

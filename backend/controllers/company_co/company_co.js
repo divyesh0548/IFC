@@ -3098,7 +3098,6 @@ async function createUsersBulk(req, res) {
   const companyIdentifier = coordinator.company_identifier || null;
   const usersInput = Array.isArray(req.body?.users) ? req.body.users : [];
   const selectedUnitIds = normalizeSelectedUnitIds(req.body?.unit_ids, req.body?.unit_id);
-  const confirmExistingUserUnits = Boolean(req.body?.confirm_existing_user_units);
 
   if (usersInput.length === 0) {
     return res.status(400).json({
@@ -3122,63 +3121,93 @@ async function createUsersBulk(req, res) {
   }
 
   const uploadRows = [];
-  const skippedRows = [];
-  const invalidRowEmails = [];
+  const validationErrors = [];
+  const seenUploadEmails = new Map();
 
   usersInput.forEach((row, index) => {
-      const rowNumber = index + 2;
-      const emailId = normalizeEmail(row?.email_id);
+    const rowNumber = index + 2;
+    const emailId = normalizeEmail(row?.email_id);
+    const mobileDigits = normalizeMobileDigits(row?.mobile);
+    let rowHasError = false;
 
-      if (!emailId) {
-        skippedRows.push({
-          rowNumber,
-          reason: 'Email ID is missing',
-        });
-        return;
-      }
+    if (!emailId) {
+      validationErrors.push({
+        rowNumber,
+        field: 'Email ID',
+        reason: 'Email ID is missing',
+      });
+      rowHasError = true;
+    } else if (!isValidEmail(emailId)) {
+      validationErrors.push({
+        rowNumber,
+        field: 'Email ID',
+        email_id: emailId,
+        reason: 'Invalid email format',
+      });
+      rowHasError = true;
+    } else {
+      const duplicateRows = seenUploadEmails.get(emailId) || [];
+      duplicateRows.push(rowNumber);
+      seenUploadEmails.set(emailId, duplicateRows);
+    }
 
-      if (!isValidEmail(emailId)) {
-        invalidRowEmails.push(emailId);
-        skippedRows.push({
-          rowNumber,
-          email_id: emailId,
-          reason: 'Invalid email format',
-        });
-        return;
-      }
-
-      const mobileDigits = normalizeMobileDigits(row?.mobile);
-      if (!mobileDigits) {
-        skippedRows.push({
-          rowNumber,
-          email_id: emailId,
-          reason: 'Mobile number is required',
-        });
-        return;
-      }
-
+    if (!mobileDigits) {
+      validationErrors.push({
+        rowNumber,
+        field: 'Mobile',
+        email_id: emailId || null,
+        reason: 'Mobile number is required',
+      });
+      rowHasError = true;
+    } else {
       const mobileError = getMobileValidationError(mobileDigits);
       if (mobileError) {
-        skippedRows.push({
+        validationErrors.push({
           rowNumber,
-          email_id: emailId,
+          field: 'Mobile',
+          email_id: emailId || null,
           reason: mobileError,
         });
-        return;
+        rowHasError = true;
       }
+    }
 
-      uploadRows.push({
-        rowNumber,
-        payload: {
-          email_id: emailId,
-          emp_name: row?.emp_name || null,
-          department: row?.department || null,
-          designation: row?.designation || null,
-          mobile: mobileDigits || null,
-          unit_ids: selectedUnitIds,
-        },
-      });
+    if (rowHasError) {
+      return;
+    }
+
+    uploadRows.push({
+      rowNumber,
+      payload: {
+        email_id: emailId,
+        emp_name: row?.emp_name || null,
+        department: row?.department || null,
+        designation: row?.designation || null,
+        mobile: mobileDigits,
+        unit_ids: selectedUnitIds,
+      },
     });
+  });
+
+  seenUploadEmails.forEach((rowNumbers, emailId) => {
+    if (rowNumbers.length > 1) {
+      validationErrors.push({
+        rowNumber: rowNumbers.join(', '),
+        field: 'Email ID',
+        email_id: emailId,
+        reason: `Duplicate email in upload file (rows ${rowNumbers.join(', ')})`,
+      });
+    }
+  });
+
+  if (validationErrors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      code: 'BULK_UPLOAD_VALIDATION_FAILED',
+      message: 'Bulk upload blocked: fix invalid rows before uploading',
+      validationErrors,
+    });
+  }
 
   const rowsToCreate = uploadRows;
 
@@ -3186,8 +3215,6 @@ async function createUsersBulk(req, res) {
     return res.status(400).json({
       success: false,
       message: 'No valid rows found for user creation',
-      invalidEmails: invalidRowEmails,
-      skippedRows,
     });
   }
 
@@ -3195,6 +3222,7 @@ async function createUsersBulk(req, res) {
     const createdUsers = [];
     const skippedEmails = [];
     const duplicateRows = [];
+    const skippedRows = [];
     getPasswordPepper();
     const companyName = await getCompanyName(companyIdentifier);
     const coordinatorName = String(coordinator.emp_name || '').trim() || 'Company Coordinator';
@@ -3265,7 +3293,6 @@ async function createUsersBulk(req, res) {
       existingMembershipsByEmail.set(normalizedEmail, current.filter(Boolean));
     });
 
-    const usersNeedingConfirmation = [];
     const usersAlreadyMapped = [];
     if (selectedUnitIds.length > 0) {
       for (const emailId of targetEmails) {
@@ -3283,26 +3310,8 @@ async function createUsersBulk(req, res) {
             email_id: emailId,
             existing_unit_ids: existingUnitIds,
           });
-          continue;
         }
-
-        usersNeedingConfirmation.push({
-          email_id: emailId,
-          existing_unit_ids: existingUnitIds,
-          target_unit_ids: selectedUnitIds,
-          units_to_add: unitsToAdd,
-        });
       }
-    }
-
-    if (usersNeedingConfirmation.length > 0 && !confirmExistingUserUnits) {
-      return res.status(409).json({
-        success: false,
-        code: 'CONFIRM_EXISTING_USER_UNITS',
-        requiresConfirmation: true,
-        message: 'Some users already exist in other units. Confirm to add them to the selected units.',
-        users: usersNeedingConfirmation,
-      });
     }
 
     for (const item of rowsToCreate) {
@@ -3313,30 +3322,7 @@ async function createUsersBulk(req, res) {
       }
 
       const emailId = normalizeEmail(item.payload?.email_id);
-      const mobileValue = normalizeMobileDigits(item.payload?.mobile) || null;
-
-      if (!mobileValue) {
-        if (item.rowNumber != null) {
-          skippedRows.push({
-            rowNumber: item.rowNumber,
-            email_id: emailId,
-            reason: 'Mobile number is required',
-          });
-        }
-        continue;
-      }
-
-      const mobileError = getMobileValidationError(mobileValue);
-      if (mobileError) {
-        if (item.rowNumber != null) {
-          skippedRows.push({
-            rowNumber: item.rowNumber,
-            email_id: emailId,
-            reason: mobileError,
-          });
-        }
-        continue;
-      }
+      const mobileValue = item.payload?.mobile || null;
 
       const existingUser = existingUsersByEmail.get(emailId);
       const payloadUnitIds = normalizeSelectedUnitIds(item.payload?.unit_ids, item.payload?.unit_id);
@@ -3499,9 +3485,7 @@ async function createUsersBulk(req, res) {
       message: `Created ${createdUsers.length} user(s) successfully`,
       createdUsers: createdUsers.map(({ tempPassword: _tempPassword, emp_name: _empName, ...rest }) => rest),
       skippedEmails,
-      invalidEmails: invalidRowEmails,
       skippedRows: [
-        ...skippedRows,
         ...duplicateRows,
         ...usersAlreadyMapped.map((user) => ({
           email_id: user.email_id,
@@ -3717,6 +3701,168 @@ async function deleteUsers(req, res) {
     return res.status(500).json({
       success: false,
       message: 'Failed to delete user(s)',
+    });
+  }
+}
+
+async function linkUserUnits(req, res) {
+  try {
+    const coordinator = req.user;
+    const companyIdentifier = coordinator.company_identifier || null;
+    const coordinatorEmail = normalizeEmail(coordinator.email_id);
+    const emailId = normalizeEmail(req.body?.email_id);
+    const unitIdsToAdd = normalizeSelectedUnitIds(req.body?.unit_ids);
+
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is missing for coordinator',
+      });
+    }
+
+    if (!emailId || !isValidEmail(emailId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid user email ID is required',
+      });
+    }
+
+    if (unitIdsToAdd.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Select at least one unit to link',
+      });
+    }
+
+    const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+    const mappedUnitSet = new Set(
+      mappedUnits.map((row) => String(row.unit_id || '').trim()).filter(Boolean)
+    );
+
+    if (mappedUnitSet.size === 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not mapped to any unit',
+      });
+    }
+
+    const unauthorizedUnits = unitIdsToAdd.filter((unitId) => !mappedUnitSet.has(unitId));
+    if (unauthorizedUnits.length > 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'One or more selected units are not mapped to this coordinator',
+        unauthorizedUnits,
+      });
+    }
+
+    const user = await prisma.ifcUser.findFirst({
+      where: {
+        companyIdentifier,
+        role: 'user',
+        emailId: {
+          equals: emailId,
+          mode: 'insensitive',
+        },
+      },
+      select: {
+        id: true,
+        emailId: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found for this company',
+      });
+    }
+
+    const existingMembershipRows = await prisma.userUnitMembership.findMany({
+      where: {
+        companyIdentifier,
+        userEmailId: {
+          equals: emailId,
+          mode: 'insensitive',
+        },
+      },
+      select: {
+        unitId: true,
+      },
+    });
+
+    const existingUnitIds = existingMembershipRows
+      .map((row) => String(row.unitId || '').trim())
+      .filter(Boolean);
+
+    const hasCoordinatorScope = existingUnitIds.some((unitId) => mappedUnitSet.has(unitId));
+    if (!hasCoordinatorScope) {
+      return res.status(403).json({
+        success: false,
+        message: 'This user is outside your assigned unit scope',
+      });
+    }
+
+    const newUnitIds = unitIdsToAdd.filter((unitId) => !existingUnitIds.includes(unitId));
+    if (newUnitIds.length === 0) {
+      const existingUnitDetails = await pool.query(
+        `
+          SELECT NULLIF(TRIM(unit_id), '') AS unit_id, NULLIF(TRIM(unit_name), '') AS unit_name
+          FROM company_unit_master
+          WHERE company_identifier = $1
+            AND unit_id = ANY($2::text[])
+          ORDER BY unit_name ASC, unit_id ASC
+        `,
+        [companyIdentifier, existingUnitIds]
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: 'Selected unit(s) are already linked to this user',
+        data: {
+          email_id: user.emailId,
+          unit_ids: existingUnitDetails.rows.map((row) => row.unit_id).filter(Boolean),
+          unit_names: existingUnitDetails.rows.map((row) => row.unit_name || row.unit_id).filter(Boolean),
+          added_unit_ids: [],
+        },
+      });
+    }
+
+    await prisma.userUnitMembership.createMany({
+      data: newUnitIds.map((unitId) => ({
+        companyIdentifier,
+        userEmailId: emailId,
+        unitId,
+      })),
+      skipDuplicates: true,
+    });
+
+    const allUnitIds = [...new Set([...existingUnitIds, ...newUnitIds])];
+    const unitDetails = await pool.query(
+      `
+        SELECT NULLIF(TRIM(unit_id), '') AS unit_id, NULLIF(TRIM(unit_name), '') AS unit_name
+        FROM company_unit_master
+        WHERE company_identifier = $1
+          AND unit_id = ANY($2::text[])
+        ORDER BY unit_name ASC, unit_id ASC
+      `,
+      [companyIdentifier, allUnitIds]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Linked ${newUnitIds.length} unit(s) successfully`,
+      data: {
+        email_id: user.emailId,
+        unit_ids: unitDetails.rows.map((row) => row.unit_id).filter(Boolean),
+        unit_names: unitDetails.rows.map((row) => row.unit_name || row.unit_id).filter(Boolean),
+        added_unit_ids: newUnitIds,
+      },
+    });
+  } catch (error) {
+    console.error('Link user units error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to link user units',
     });
   }
 }
@@ -4626,6 +4772,7 @@ module.exports = {
   updateUnitAssignment,
   createUser,
   createUsersBulk,
+  linkUserUnits,
   deleteUsers,
   checkUser,
   checkUserRole,
