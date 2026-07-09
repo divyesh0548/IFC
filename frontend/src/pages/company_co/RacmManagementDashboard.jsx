@@ -1887,7 +1887,7 @@ function RacmManagementDashboard() {
             }}
           >
             <Typography sx={{ fontWeight: 700 }}>
-              {pendingChangeRequestCount} RACMs have change requests
+              {pendingChangeRequestCount} RACMs have pending change request
             </Typography>
             {/* <Typography variant="body2">
               Click to view the RACM list.
@@ -2796,11 +2796,12 @@ function RacmManagementDashboard() {
             </DialogContentText>
 
             <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-              Total selected RACM(s): <strong>{selectedForms.size}</strong>
+              Total selected RACM(s) : <strong>{selectedForms.size}</strong>
+              <br />
               {alreadyScheduledCount > 0 ? (
                 <>
                   {' '}
-                  — already having due date & reminder frequency: <strong>{alreadyScheduledCount}</strong>
+                  RACMS(s) already having due date & reminder frequency : <strong>{alreadyScheduledCount}</strong>
                 </>
               ) : null}
             </Typography>

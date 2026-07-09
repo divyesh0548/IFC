@@ -178,40 +178,48 @@ function DashboardLayout() {
             }}
           >
             <Box
-              component={RouterLink}
-              to="/"
               sx={{
                 flexGrow: 1,
-                textDecoration: 'none',
                 minWidth: 0,
               }}
             >
-              <Typography
-                noWrap
+              <Box
+                component={RouterLink}
+                to={homePath}
                 sx={{
-                  fontWeight: 800,
-                  fontSize: '1.2rem',
-                  lineHeight: 1.2,
-                  letterSpacing: '-0.02em',
-                  color: theme.palette.mode === 'dark' ? theme.palette.navbar.fg : theme.palette.text.primary,
+                  display: 'inline-flex',
+                  flexDirection: 'column',
+                  textDecoration: 'none',
+                  minWidth: 0,
                 }}
               >
-                {isSiteadminRoute ? 'Admin' : (companyName || 'Company')}
-              </Typography>
-              <Typography
-                noWrap
-                sx={{
-                  fontWeight: 400,
-                  fontSize: '0.95rem',
-                  lineHeight: 1.3,
-                  color:
-                    theme.palette.mode === 'dark'
-                      ? 'rgba(238, 238, 238, 0.78)'
-                      : alpha(theme.palette.text.primary, 0.78),
-                }}
-              >
-                Internal Financial Controls
-              </Typography>
+                <Typography
+                  noWrap
+                  sx={{
+                    fontWeight: 800,
+                    fontSize: '1.2rem',
+                    lineHeight: 1.2,
+                    letterSpacing: '-0.02em',
+                    color: theme.palette.mode === 'dark' ? theme.palette.navbar.fg : theme.palette.text.primary,
+                  }}
+                >
+                  {isSiteadminRoute ? 'Admin' : (companyName || 'Company')}
+                </Typography>
+                <Typography
+                  noWrap
+                  sx={{
+                    fontWeight: 400,
+                    fontSize: '0.95rem',
+                    lineHeight: 1.3,
+                    color:
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(238, 238, 238, 0.78)'
+                        : alpha(theme.palette.text.primary, 0.78),
+                  }}
+                >
+                  Internal Financial Controls
+                </Typography>
+              </Box>
             </Box>
             <Tooltip title={mode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'} arrow>
               <IconButton

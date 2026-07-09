@@ -38,31 +38,14 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments, normalizeSampleDocuments } from '../../lib/racmUserDocuments'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
+import { formatIndianDateTime, formatDateOnly as formatDateOnlyShared } from '../../lib/dateTime'
 
 function formatDateTime(dateString) {
-  if (!dateString) return 'N/A'
-  const date = new Date(dateString)
-  if (Number.isNaN(date.getTime())) return 'N/A'
-  return date.toLocaleString('en-IN', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    timeZone: 'Asia/Kolkata',
-  })
+  return formatIndianDateTime(dateString, 'N/A')
 }
 
 function formatDate(dateString) {
-  if (!dateString) return 'N/A'
-  const date = new Date(dateString)
-  if (Number.isNaN(date.getTime())) return 'N/A'
-  return date.toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
+  return formatDateOnlyShared(dateString, 'N/A')
 }
 
 function formatStatus(status) {

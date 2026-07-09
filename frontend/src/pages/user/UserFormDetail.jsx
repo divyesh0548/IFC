@@ -582,12 +582,6 @@ function UserFormDetail() {
     setSaving(true)
 
     try {
-      const uploadedDocumentPaths = [...new Set(
-        existingUploadedDocs
-          .map((doc) => doc.doc_uploaded_by_user)
-          .filter(Boolean)
-      )]
-      const documentPath = uploadedDocumentPaths[uploadedDocumentPaths.length - 1] || null
       const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
         method: 'PUT',
         headers: {
@@ -597,8 +591,6 @@ function UserFormDetail() {
         body: JSON.stringify({
           remarks_by_user: remarksByUser,
           status: 'sent for approval',
-          doc_uploaded_by_user: documentPath,
-          doc_uploaded_by_user_docs: uploadedDocumentPaths,
         })
       })
 
@@ -2459,48 +2451,6 @@ function UserFormDetail() {
                           : 'rgba(0, 0, 0, 0.06)',
                       }}
                     >
-                      <Typography
-                        variant="caption"
-                        component="dt"
-                        sx={{
-                          display: 'block',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          mb: 1.5,
-                          color: 'text.primary',
-                          fontSize: theme.typography.customSizes.small,
-                        }}
-                      >
-                        {fieldLabels.reason_by_approver}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        component="dd"
-                        sx={{
-                          color: hasRacmFieldValue(formData?.reason_by_approver) ? 'text.secondary' : 'text.disabled',
-                          wordBreak: 'break-word',
-                          lineHeight: 1.6,
-                          fontSize: theme.typography.customSizes.medium,
-                          whiteSpace: 'pre-wrap',
-                        }}
-                      >
-                        {hasRacmFieldValue(formData?.reason_by_approver) ? String(formData.reason_by_approver) : '-'}
-                      </Typography>
-                    </Box>
-                    <Box
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 2,
-                        backgroundColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.03)'
-                          : 'rgba(0, 0, 0, 0.02)',
-                        border: '1px solid',
-                        borderColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.08)'
-                          : 'rgba(0, 0, 0, 0.06)',
-                      }}
-                    >
                       {canModifySubmissionDetails ? (
                         <TextField
                           label={fieldLabels.remarks_by_user}
@@ -2547,6 +2497,50 @@ function UserFormDetail() {
                         </>
                       )}
                     </Box>
+                    {hasRacmFieldValue(formData?.reason_by_approver) ? (
+                      <Box
+                        sx={{
+                          p: 2.5,
+                          borderRadius: 2,
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.03)'
+                            : 'rgba(0, 0, 0, 0.02)',
+                          border: '1px solid',
+                          borderColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : 'rgba(0, 0, 0, 0.06)',
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          component="dt"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            mb: 1.5,
+                            color: 'text.primary',
+                            fontSize: theme.typography.customSizes.small,
+                          }}
+                        >
+                          {fieldLabels.reason_by_approver}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          component="dd"
+                          sx={{
+                            color: 'text.secondary',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            fontSize: theme.typography.customSizes.medium,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {String(formData.reason_by_approver)}
+                        </Typography>
+                      </Box>
+                    ) : null}
                   </Box>
 
                   {canModifySubmissionDetails &&

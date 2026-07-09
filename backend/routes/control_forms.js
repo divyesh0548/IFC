@@ -1071,6 +1071,44 @@ function parseApprovedChangeRequestValue(fieldName, value) {
   return raw;
 }
 
+function getFormCompanyIdentifier(form) {
+  return String(form?.company_identifier ?? form?.companyIdentifier ?? '').trim();
+}
+
+function getFormUnitId(form) {
+  return String(form?.unit_id ?? form?.unitId ?? '').trim();
+}
+
+async function getCoordinatorUnitAccessError(clientOrPool, form, user) {
+  const userRole = String(user?.role || '').trim().toLowerCase();
+  if (userRole !== 'company_co') {
+    return null;
+  }
+
+  const formCompanyIdentifier = getFormCompanyIdentifier(form);
+  const userCompanyIdentifier = String(user?.company_identifier || '').trim();
+  if (!formCompanyIdentifier || formCompanyIdentifier !== userCompanyIdentifier) {
+    return {
+      status: 403,
+      message: 'Access denied. RACM is not assigned to this company coordinator.',
+    };
+  }
+
+  const hasAccess = await coordinatorHasUnitAccess(clientOrPool, {
+    companyIdentifier: formCompanyIdentifier,
+    unitId: getFormUnitId(form),
+    coordinatorEmail: user?.email_id,
+  });
+  if (!hasAccess) {
+    return {
+      status: 403,
+      message: 'Access denied. You are not assigned to this RACM unit.',
+    };
+  }
+
+  return null;
+}
+
 async function getAuthorizedControlFormForChangeRequest(clientOrPool, formId, user) {
   const result = await clientOrPool.query(
     `
@@ -1090,15 +1128,14 @@ async function getAuthorizedControlFormForChangeRequest(clientOrPool, formId, us
   const userRole = String(user?.role || '').trim().toLowerCase();
   const userEmail = String(user?.email_id || '').trim().toLowerCase();
   const formOwnerEmail = String(form.control_owner || '').trim().toLowerCase();
-  const formCompanyIdentifier = String(form.company_identifier || '').trim();
-  const userCompanyIdentifier = String(user?.company_identifier || '').trim();
 
   if (userRole === 'user' && formOwnerEmail !== userEmail) {
     return { error: { status: 403, message: 'Access denied. You are not authorized to view this change request.' } };
   }
 
-  if (userRole === 'company_co' && formCompanyIdentifier !== userCompanyIdentifier) {
-    return { error: { status: 403, message: 'Access denied. RACM is not assigned to this company coordinator.' } };
+  const coordinatorAccessError = await getCoordinatorUnitAccessError(clientOrPool, form, user);
+  if (coordinatorAccessError) {
+    return { error: coordinatorAccessError };
   }
 
   return { form };
@@ -1166,15 +1203,14 @@ async function getAuthorizedControlFormForDeficiency(clientOrPool, formId, user)
   const userRole = String(user?.role || '').trim().toLowerCase();
   const userEmail = String(user?.email_id || '').trim().toLowerCase();
   const formOwnerEmail = String(form.control_owner || '').trim().toLowerCase();
-  const formCompanyIdentifier = String(form.company_identifier || '').trim();
-  const userCompanyIdentifier = String(user?.company_identifier || '').trim();
 
   if (userRole === 'user' && formOwnerEmail !== userEmail) {
     return { error: { status: 403, message: 'Access denied. You are not authorized to update this deficiency response.' } };
   }
 
-  if (userRole === 'company_co' && formCompanyIdentifier !== userCompanyIdentifier) {
-    return { error: { status: 403, message: 'Access denied. RACM is not assigned to this company coordinator.' } };
+  const coordinatorAccessError = await getCoordinatorUnitAccessError(clientOrPool, form, user);
+  if (coordinatorAccessError) {
+    return { error: coordinatorAccessError };
   }
 
   if (!['user', 'company_co'].includes(userRole)) {
@@ -1773,6 +1809,14 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
         });
       }
     }
+
+    const coordinatorAccessError = await getCoordinatorUnitAccessError(pool, formData, req.user);
+    if (coordinatorAccessError) {
+      return res.status(coordinatorAccessError.status).json({
+        success: false,
+        message: coordinatorAccessError.message,
+      });
+    }
     
     const dataForClient =
       loggedInUserRole === 'user'
@@ -1833,6 +1877,14 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
   });
   if (!currentForm) {
     return res.status(404).json({ success: false, message: 'RACM not found' });
+  }
+
+  const coordinatorAccessError = await getCoordinatorUnitAccessError(pool, currentForm, req.user);
+  if (coordinatorAccessError) {
+    return res.status(coordinatorAccessError.status).json({
+      success: false,
+      message: coordinatorAccessError.message,
+    });
   }
 
   const isCoordinatorAssigned = Boolean(currentForm.assignedToCoordinator);
@@ -2240,7 +2292,18 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
           });
         }
       } else {
-        for (const userDocUrl of uploadedUserDocumentUrls) {
+        const existingDocs = await tx.racmDoc.findMany({
+          where: { formId: normalizedFormId },
+          select: { docUploadedByUser: true },
+        });
+        const existingDocSet = new Set(
+          existingDocs
+            .map((row) => row.docUploadedByUser == null ? '' : String(row.docUploadedByUser).trim())
+            .filter(Boolean)
+        );
+        const missingUserDocumentUrls = uploadedUserDocumentUrls.filter((userDocUrl) => !existingDocSet.has(userDocUrl));
+
+        for (const userDocUrl of missingUserDocumentUrls) {
           await tx.racmDoc.create({
             data: {
               formId: normalizedFormId,
@@ -3589,18 +3652,24 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
   
   try {
     await client.query('BEGIN');
+
+    if (String(req.user?.role || '').trim().toLowerCase() !== 'company_co') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Only company coordinators can update RACM active status.',
+      });
+    }
     
-    const { company_identifier, business_process, active } = req.body;
-    
-    // Get user's company_identifier if not provided
-    let userCompanyIdentifier = company_identifier;
+    const { business_process, active } = req.body;
+    const userCompanyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = String(req.user?.email_id || '').trim().toLowerCase();
     if (!userCompanyIdentifier) {
-      const userEmail = req.user.email_id;
-      const getUserQuery = 'SELECT company_identifier FROM ifc_users WHERE email_id = $1';
-      const userResult = await client.query(getUserQuery, [userEmail]);
-      if (userResult.rows.length > 0 && userResult.rows[0].company_identifier) {
-        userCompanyIdentifier = userResult.rows[0].company_identifier;
-      }
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is required',
+      });
     }
     
     // Build WHERE clause based on filters
@@ -3615,12 +3684,19 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     const queryParams = [true];
     let paramIndex = 2;
     
-    // Filter by company_identifier (required for company_co)
-    if (userCompanyIdentifier) {
-      query += ` AND company_identifier = $${paramIndex}`;
-      queryParams.push(userCompanyIdentifier);
-      paramIndex++;
-    }
+    query += ` AND company_identifier = $${paramIndex}`;
+    queryParams.push(userCompanyIdentifier);
+    paramIndex++;
+
+    query += ` AND EXISTS (
+      SELECT 1
+      FROM coordinator_unit_assignments cua
+      WHERE cua.company_identifier = control_forms.company_identifier
+        AND cua.unit_id = control_forms.unit_id
+        AND LOWER(TRIM(cua.coordinator_email_id)) = $${paramIndex}
+    )`;
+    queryParams.push(coordinatorEmail);
+    paramIndex++;
     
     // Filter by business_process if provided
     if (business_process && business_process !== 'all') {
@@ -3645,12 +3721,19 @@ router.post('/bulk-set-active', verifyAuth, async (req, res) => {
     const getFormsParams = [];
     let getFormsParamIndex = 1;
     
-    // Filter by company_identifier (required for company_co)
-    if (userCompanyIdentifier) {
-      getFormsQuery += ` AND company_identifier = $${getFormsParamIndex}`;
-      getFormsParams.push(userCompanyIdentifier);
-      getFormsParamIndex++;
-    }
+    getFormsQuery += ` AND company_identifier = $${getFormsParamIndex}`;
+    getFormsParams.push(userCompanyIdentifier);
+    getFormsParamIndex++;
+
+    getFormsQuery += ` AND EXISTS (
+      SELECT 1
+      FROM coordinator_unit_assignments cua
+      WHERE cua.company_identifier = control_forms.company_identifier
+        AND cua.unit_id = control_forms.unit_id
+        AND LOWER(TRIM(cua.coordinator_email_id)) = $${getFormsParamIndex}
+    )`;
+    getFormsParams.push(coordinatorEmail);
+    getFormsParamIndex++;
     
     // Filter by business_process if provided
     if (business_process && business_process !== 'all') {
@@ -3756,16 +3839,25 @@ router.post('/bulk-set-due-date', verifyAuth, async (req, res) => {
     }
 
     const dueDateValue = new Date(`${dueDateValidation.dueDate}T00:00:00.000Z`);
+    const coordinatorEmail = String(req.user?.email_id || '').trim().toLowerCase();
 
-    // Only update RACMs that belong to the coordinator's company.
-    const eligible = await prisma.controlForm.findMany({
-      where: {
-        companyIdentifier,
-        formId: { in: formIds },
-      },
-      select: { formId: true },
-    });
-    const eligibleFormIds = eligible.map((r) => r.formId).filter(Boolean);
+    const eligibleResult = await pool.query(
+      `
+        SELECT cf.form_id
+        FROM control_forms cf
+        WHERE cf.company_identifier = $1
+          AND cf.form_id = ANY($2::text[])
+          AND EXISTS (
+            SELECT 1
+            FROM coordinator_unit_assignments cua
+            WHERE cua.company_identifier = cf.company_identifier
+              AND cua.unit_id = cf.unit_id
+              AND LOWER(TRIM(cua.coordinator_email_id)) = $3
+          )
+      `,
+      [companyIdentifier, formIds, coordinatorEmail]
+    );
+    const eligibleFormIds = eligibleResult.rows.map((r) => r.form_id).filter(Boolean);
 
     if (eligibleFormIds.length === 0) {
       return res.status(404).json({ success: false, message: 'No matching RACM(s) found' });
@@ -4120,13 +4212,15 @@ router.post('/replicate', verifyAuth, async (req, res) => {
     if (userRole !== 'company_co') {
       return res.status(403).json({ success: false, message: 'Access denied. Only company coordinators can replicate RACMs.' });
     }
+    const coordinatorEmail = String(userEmail || '').trim().toLowerCase();
 
     await client.query('BEGIN');
 
-    // Fetch selected forms (ensure they belong to coordinator company)
-    const placeholders = form_ids.map((_, idx) => `$${idx + 1}`).join(', ');
-    const selectQuery = `SELECT * FROM control_forms WHERE form_id IN (${placeholders})`;
-    const selectResult = await client.query(selectQuery, form_ids);
+    const normalizedFormIds = [...new Set(form_ids.map((value) => String(value || '').trim()).filter(Boolean))];
+    const selectResult = await client.query(
+      'SELECT * FROM control_forms WHERE form_id = ANY($1::text[])',
+      [normalizedFormIds]
+    );
 
     if (selectResult.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -4140,6 +4234,30 @@ router.post('/replicate', verifyAuth, async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(403).json({ success: false, message: 'Access denied. You can only replicate RACMs from your own company.' });
       }
+    }
+
+    const accessibleResult = await client.query(
+      `
+        SELECT cf.form_id
+        FROM control_forms cf
+        WHERE cf.form_id = ANY($1::text[])
+          AND cf.company_identifier = $2
+          AND EXISTS (
+            SELECT 1
+            FROM coordinator_unit_assignments cua
+            WHERE cua.company_identifier = cf.company_identifier
+              AND cua.unit_id = cf.unit_id
+              AND LOWER(TRIM(cua.coordinator_email_id)) = $3
+          )
+      `,
+      [normalizedFormIds, coordinatorCompany, coordinatorEmail]
+    );
+    if (accessibleResult.rows.length !== selectResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You are not assigned to one or more selected RACM units.',
+      });
     }
 
     const excludedColumns = new Set([
@@ -4343,6 +4461,7 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       select: {
         id: true,
         companyIdentifier: true,
+        unitId: true,
         active: true,
         templateId: true,
       },
@@ -4361,6 +4480,14 @@ router.delete('/:form_id', verifyAuth, async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Access denied. You can only delete forms from your own company.'
+      });
+    }
+
+    const coordinatorAccessError = await getCoordinatorUnitAccessError(pool, form, req.user);
+    if (coordinatorAccessError) {
+      return res.status(coordinatorAccessError.status).json({
+        success: false,
+        message: coordinatorAccessError.message,
       });
     }
 
@@ -4727,11 +4854,19 @@ router.get('/:form_id/check-sampling-exists', verifyAuth, async (req, res) => {
   const client = await pool.connect();
 
   try {
-    const formResult = await client.query('SELECT 1 FROM control_forms WHERE form_id = $1 LIMIT 1', [form_id]);
-    if (formResult.rows.length === 0) {
+    const form = await getControlFormCoordinatorContext(client, form_id);
+    if (!form) {
       return res.status(404).json({
         success: false,
         message: 'RACM not found',
+      });
+    }
+
+    const coordinatorAccessError = await getCoordinatorUnitAccessError(client, form, req.user);
+    if (coordinatorAccessError) {
+      return res.status(coordinatorAccessError.status).json({
+        success: false,
+        message: coordinatorAccessError.message,
       });
     }
 
@@ -4918,7 +5053,7 @@ router.delete('/:form_id/sample-docs/:sample_doc_id', verifyAuth, async (req, re
 
     const docResult = await client.query(
       `
-        SELECT sd.id, sd.form_id, sd.sample_doc, cf.company_identifier
+        SELECT sd.id, sd.form_id, sd.sample_doc, cf.company_identifier, cf.unit_id
         FROM sample_docs sd
         JOIN control_forms cf ON cf.form_id = sd.form_id
         WHERE sd.id = $1 AND sd.form_id = $2
@@ -4936,14 +5071,13 @@ router.delete('/:form_id/sample-docs/:sample_doc_id', verifyAuth, async (req, re
     }
 
     const sampleDoc = docResult.rows[0];
-    const userCompanyIdentifier = String(req.user?.company_identifier || '').trim();
-    const formCompanyIdentifier = String(sampleDoc.company_identifier || '').trim();
-    if (userCompanyIdentifier && formCompanyIdentifier && userCompanyIdentifier !== formCompanyIdentifier) {
+    const coordinatorAccessError = await getCoordinatorUnitAccessError(client, {
+      company_identifier: sampleDoc.company_identifier,
+      unit_id: sampleDoc.unit_id,
+    }, req.user);
+    if (coordinatorAccessError) {
       await client.query('ROLLBACK');
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. You can only delete sample documents from your own company.',
-      });
+      return res.status(coordinatorAccessError.status).json({ success: false, message: coordinatorAccessError.message });
     }
 
     const s3Key = String(sampleDoc.sample_doc || '').trim();
@@ -5002,13 +5136,21 @@ router.post(
   try {
     const form = await prisma.controlForm.findFirst({
       where: { formId: form_id },
-      select: { formId: true },
+      select: { formId: true, companyIdentifier: true, unitId: true },
     });
 
     if (!form) {
       return res.status(404).json({
         success: false,
         message: 'Control form not found'
+      });
+    }
+
+    const coordinatorAccessError = await getCoordinatorUnitAccessError(pool, form, req.user);
+    if (coordinatorAccessError) {
+      return res.status(coordinatorAccessError.status).json({
+        success: false,
+        message: coordinatorAccessError.message,
       });
     }
 

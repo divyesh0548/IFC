@@ -11,6 +11,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Tooltip from '@mui/material/Tooltip'
 import IconButton from '@mui/material/IconButton'
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined'
+import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward'
 import Switch from '@mui/material/Switch'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Alert from '@mui/material/Alert'
@@ -69,6 +70,7 @@ function hasRacmSpecificApprover(form) {
 
 function RacmAssignment() {
   const UNIT_MISMATCH_TOAST_ID = 'racm-assignment-unit-mismatch'
+  const ACTIVE_RACM_SELECTION_TOAST_ID = 'racm-assignment-active-selection'
   const theme = useTheme()
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
   const [forms, setForms] = useState([])
@@ -121,12 +123,32 @@ function RacmAssignment() {
   const isCurrentAssignmentLocked = (form) => (
     isApproverMode ? isApproverAssignmentStatusLocked(form) : isProcessOwnerAssignmentLocked(form)
   )
+  const openRacmInNewPage = (form) => {
+    const normalizedFormId = String(form?.form_id || '').trim()
+    if (!normalizedFormId) return
+    window.open(`/company_co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
+  }
+  const showActiveRacmSelectionToast = () => {
+    toast.error('Active RACMs cannot be selected for bulk assignment', {
+      id: ACTIVE_RACM_SELECTION_TOAST_ID,
+    })
+  }
   const tableForms = useMemo(() => {
     if (isApproverMode && bulkAssignmentMode) {
       return forms.filter(isApproverBulkAssignableRacm)
     }
     return forms
   }, [forms, isApproverMode, bulkAssignmentMode])
+  const selectableTableForms = useMemo(() => {
+    if (!bulkAssignmentMode || isApproverMode) {
+      return tableForms
+    }
+    return tableForms.filter((form) => !isFormActive(form))
+  }, [bulkAssignmentMode, isApproverMode, tableForms])
+  const selectedSelectableFormCount = useMemo(
+    () => selectableTableForms.filter((form) => selectedForms.has(form.form_id)).length,
+    [selectableTableForms, selectedForms]
+  )
   const getCurrentAssigneeEmail = (form) => {
     if (isApproverMode) {
       return String(form?.approver_email_id || '').trim() || 'N/A'
@@ -452,6 +474,13 @@ function RacmAssignment() {
 
   const handleSelectForm = (formId) => {
     const targetForm = forms.find((form) => form.form_id === formId)
+    if (!targetForm) return
+
+    if (!isApproverMode && isFormActive(targetForm)) {
+      showActiveRacmSelectionToast()
+      return
+    }
+
     const targetUnitId = getFormUnitId(targetForm)
 
     setSelectedForms((prev) => {
@@ -459,6 +488,7 @@ function RacmAssignment() {
       if (next.has(formId)) {
         next.delete(formId)
         toast.dismiss(UNIT_MISMATCH_TOAST_ID)
+        toast.dismiss(ACTIVE_RACM_SELECTION_TOAST_ID)
         setBulkSelectedUser(null)
       } else {
         const existingForm = forms.find((form) => next.has(form.form_id))
@@ -471,6 +501,7 @@ function RacmAssignment() {
         }
         next.add(formId)
         toast.dismiss(UNIT_MISMATCH_TOAST_ID)
+        toast.dismiss(ACTIVE_RACM_SELECTION_TOAST_ID)
         setBulkSelectedUser(null)
       }
       return next
@@ -478,15 +509,24 @@ function RacmAssignment() {
   }
 
   const handleSelectAllForms = () => {
-    const allVisibleSelected = tableForms.length > 0 && tableForms.every((form) => selectedForms.has(form.form_id))
-    if (allVisibleSelected) {
+    const allSelectableSelected = selectableTableForms.length > 0 && selectableTableForms.every((form) => selectedForms.has(form.form_id))
+    if (allSelectableSelected) {
       setSelectedForms(new Set())
       toast.dismiss(UNIT_MISMATCH_TOAST_ID)
+      toast.dismiss(ACTIVE_RACM_SELECTION_TOAST_ID)
       setBulkSelectedUser(null)
       return
     }
 
-    const unitIds = [...new Set(tableForms.map((form) => getFormUnitId(form)).filter(Boolean))]
+    if (!isApproverMode && tableForms.some((form) => isFormActive(form))) {
+      showActiveRacmSelectionToast()
+    }
+
+    if (selectableTableForms.length === 0) {
+      return
+    }
+
+    const unitIds = [...new Set(selectableTableForms.map((form) => getFormUnitId(form)).filter(Boolean))]
     if (!isApproverMode && unitIds.length > 1) {
       toast.error('RACMs from different units cannot be selected for bulk assignment', {
         id: UNIT_MISMATCH_TOAST_ID,
@@ -496,7 +536,7 @@ function RacmAssignment() {
 
     toast.dismiss(UNIT_MISMATCH_TOAST_ID)
     setBulkSelectedUser(null)
-    setSelectedForms(new Set(tableForms.map((form) => form.form_id)))
+    setSelectedForms(new Set(selectableTableForms.map((form) => form.form_id)))
   }
 
   const handleUpdateAssignment = async () => {
@@ -1454,8 +1494,8 @@ function RacmAssignment() {
                       }}
                     >
                       <Checkbox
-                        checked={tableForms.length > 0 && tableForms.every((form) => selectedForms.has(form.form_id))}
-                        indeterminate={selectedForms.size > 0 && selectedForms.size < tableForms.length}
+                        checked={selectableTableForms.length > 0 && selectableTableForms.every((form) => selectedForms.has(form.form_id))}
+                        indeterminate={selectedSelectableFormCount > 0 && selectedSelectableFormCount < selectableTableForms.length}
                         onChange={handleSelectAllForms}
                         size="small"
                       />
@@ -1605,8 +1645,27 @@ function RacmAssignment() {
           fullWidth
           maxWidth="md"
         >
-          <DialogTitle sx={{ fontWeight: 700 }}>
-            {assignmentPageTitle}
+          <DialogTitle
+            sx={{
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 2,
+            }}
+          >
+            <Box component="span">{assignmentPageTitle}</Box>
+            {selectedForm?.form_id ? (
+              <Button
+                variant="outlined"
+                size="small"
+                color="secondary"
+                endIcon={<ArrowOutwardIcon fontSize="small" />}
+                onClick={() => openRacmInNewPage(selectedForm)}
+              >
+                Open RACM
+              </Button>
+            ) : null}
           </DialogTitle>
           <DialogContent dividers>
             {selectedForm && (
@@ -1633,10 +1692,6 @@ function RacmAssignment() {
                   </Box>
                 ) : null}
                 <Box sx={popupRowSx}>
-                  <Typography variant="body2" component="span" sx={popupLabelSx}>Standard Control Description:</Typography>
-                  <Typography variant="body2" component="span">{popupValue(selectedForm.standard_control_description)}</Typography>
-                </Box>
-                <Box sx={popupRowSx}>
                   <Typography variant="body2" component="span" sx={popupLabelSx}>Business Process:</Typography>
                   <Typography variant="body2" component="span">{popupValue(selectedForm.business_process)}</Typography>
                 </Box>
@@ -1645,7 +1700,11 @@ function RacmAssignment() {
                   <Typography variant="body2" component="span">{popupValue(selectedForm.sub_process)}</Typography>
                 </Box>
                 <Box sx={popupRowSx}>
-                  <Typography variant="body2" component="span" sx={popupLabelSx}>Financial Year:</Typography>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>Standard Control Description:</Typography>
+                  <Typography variant="body2" component="span">{popupValue(selectedForm.standard_control_description)}</Typography>
+                </Box>
+                <Box sx={popupRowSx}>
+                  <Typography variant="body2" component="span" sx={popupLabelSx}>FY:</Typography>
                   <Typography variant="body2" component="span">{popupValue(selectedForm.financial_year)}</Typography>
                 </Box>
                 <Box sx={popupRowSx}>

@@ -811,7 +811,7 @@ function FormDetail() {
       return
     }
     const apiName = (formData?.control_owner_name || '').trim()
-    setProcessOwnerName(formatDisplayName(apiName || email, '-'))
+    setProcessOwnerName(apiName || email || '-')
   }, [formData?.control_owner, formData?.control_owner_name])
 
   useEffect(() => {
@@ -975,6 +975,21 @@ function FormDetail() {
   }
 
   const formatDateTime = (dateString) => formatIndianDateTime(dateString, 'N/A')
+  const formatBrowserLocalDateTime = (dateString) => {
+    const date = new Date(dateString)
+    const timestamp = date.getTime()
+    if (Number.isNaN(timestamp)) return 'N/A'
+
+    return new Date(timestamp).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+  }
 
   const handleOpenAuditLogs = async () => {
     setAuditLogOpen(true)
@@ -2335,7 +2350,7 @@ function FormDetail() {
                         lineHeight: 1.5,
                       }}
                     >
-                      {formatDateTime(formData?.created_at)}
+                      {formatBrowserLocalDateTime(formData?.created_at)}
                     </Typography>
                   </Box>
                 </Box>
@@ -4569,7 +4584,7 @@ function FormDetail() {
               <Box sx={{ ...popupRowSx, mb: 2 }}>
                 <Typography variant="body2" component="span" sx={popupLabelSx}>Current Process Owner Name:</Typography>
                 <Typography variant="body2" component="span">
-                  {popupValue(formatDisplayName(formData.control_owner_name || formData.control_owner, ''))}
+                  {popupValue((formData?.control_owner_name || '').trim() || (formData?.control_owner || '').trim())}
                 </Typography>
               </Box>
 

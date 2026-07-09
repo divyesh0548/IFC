@@ -1,62 +1,86 @@
 I want to make a user manual which will explain users how to operate our website and what they can do.
 
-Company Coordinator : 
+Company Coordinator:
 
-1. On the home page, the coordinator will see a overall status (total user, total RACMs, Approved/Rejected RACMs) and tabs which links to different pages. Units will be shown which are under the coordinator.
+1. On the home page, the coordinator will see an overall status (total users, total RACMs, approved/rejected RACMs) and tabs that link to different pages. Units under the coordinator will be shown.
 
-2. User Management : In this section all users will be listed unit wise. Approvers from all over the company will be listed here, on click the page will show their current assignments. 
+2. User Management: In this section, all users will be listed unit-wise. Approvers from across the company will be listed here, and on click the page will show their current assignments.
 
-Coordinator can create users by manaul form or bulk excel upload. 
-Clicking on the plus icons will open a form for user creation. Select for which units user should be created and fill in rest of the details. Multiple units can be selected and mobile number and email are mendatory field details for user creation. It is advised to user organization email address only.
+Coordinator can create users by manual form or bulk Excel upload.
+Clicking on the plus icons will open a form for user creation. Select the units for which the user should be created and fill in the rest of the details. Multiple units can be selected, and mobile number and email are mandatory fields for user creation. It is advised to use the organization email address only.
 
-For bulk upload, it is required to fill the users details per row in provided template. Make sure to enter accurate details, as invalid email or mobile number will prevent the user creation.
+For bulk upload, it is required to fill the user details per row in the provided template. Make sure to enter accurate details, as an invalid email or mobile number will prevent user creation.
 
-Coordinator can link users to other units even after creation. For that click on unit row and update units in in pop-up window.
+Coordinator can link users to other units even after creation. For that, click on the unit row and update the units in the pop-up window.
 
-Deleting a user will remove the user account and all linked RACMs will become inactive. 
+Deleting a user will remove the user account, and all linked RACMs will become inactive.
 
-There is an option to export users data, by clicking export button.
+There is an option to export user data by clicking the export button.
 
+3. RACM Communication: In this section, emails can be added for a specific business process or for all processes. An option to choose the unit is also given. Added emails will be included in the CC list of all emails related to that RACM business process.
 
-3. RACM Communication : In this section emails can be added for a specific business process or for all processes. Option to choose unit is also give. Added emails will be included in cc list of all emails related to that RACM of Business process.
+4. RACM Templates: In this section, the coordinator can add column fields for RACM creation and save them as a separate template, which can be used later on.
 
-4. RACM Templates : In this section coordinator can add column fields for RACM creation and save it as a seperate template, which can be used later on. 
+Some standard columns come pre-defined and cannot be changed. We also provide a standard set of assertion columns to add, so the user can add according to the requirement.
 
-Some standard columns come pre-defined and can't be changed. We also provide standard set of assertion columns to add, so user can add according to requirement.
-
-After creating a template make it active, so in next step (RACM creatio/upload) that template will be used to create RACMs.
+After creating a template, make it active so that in the next step (RACM creation/upload) that template will be used to create RACMs.
 
 There can be multiple templates in a single unit, but only one can remain active at a time.
 
 There is also an option to import templates from other units of the company if required.
 
-
-
 5. RACM Create/Upload
 
-In this section coordinator can create RACMs by uploading excel file or by manually form submission.
+In this section, the coordinator can create RACMs by uploading an Excel file or by manual form submission.
 
-First you need to review the sample size for each control frequency, by clicking on Sample Size Settings button. Option to modify the sample size is also provided, within min-max limit. Based on the sample size, the dates and interval will be auto generated. 
+First, you need to review the sample size for each control frequency by clicking on the Sample Size Settings button. An option to modify the sample size is also provided within the min-max limit. Based on the sample size, the dates and interval will be auto-generated.
 
-In the file upload section upload the controls excel file, select the business process, unit and financial year. Providing reminder settings is option, if it is different for all. That can be configured later on in bulk manner. In header detection keep the default option, if program fails to detect header then you have to select "User Excel Row number" option and write the header index. After that user will be asked two options "Use automatic mapping" and "Adjust column mapping". Selecting first option will create RACMs based on auto selecting columns (some columns may not get matching target field). It is advised to use the later one, because user will have ability to configure all columns from excel file to template columns. Control numbers will auto generate if not selected from excel file and configuring control frequency is mendatory before final submit.
+In the file upload section, upload the controls Excel file, select the business process, unit, and financial year. Providing reminder settings is optional if it is different for all. That can be configured later in bulk. In header detection, keep the default option. If the program fails to detect the header, then you have to select the "User Excel Row number" option and write the header index. After that, the user will be asked to choose between "Use automatic mapping" and "Adjust column mapping". Selecting the first option will create RACMs based on automatically selected columns, and some columns may not match the target field. It is advised to use the latter one because the user will have the ability to configure all columns from the Excel file to template columns. Control numbers will auto-generate if not selected from the Excel file, and configuring control frequency is mandatory before final submit.
 
-In case if control frequency has a value which is not recognized by the program, then it will prompt you to select its corresponding category. RACMs will be created after performing these steps.
-
-
+If a control frequency has a value that is not recognized by the program, then it will prompt you to select the corresponding category. RACMs will be created after performing these steps.
 
 6. RACM Management
 
-In this section all RACMs will be listed with various filters and options. It is advised to first set due date of RACMs. For that there is a button  "Set Due Date" which will allow to set due date of multiple RACMs in single click. (It will override if any selected RACM already has a due date). After due date is set, RACMs will be listed in RACM Assignment page, where process owner assignment will take place. (Point No. 7).
+In this section, all RACMs will be listed with various filters and options. It is advised to first set the due date for RACMs. For that, there is a button called "Set Due Date", which will allow the due date of multiple RACMs to be set in a single click. It will override the due date if any selected RACM already has one. After the due date is set, RACMs will be listed in the RACM Assignment page, where process owner assignment will take place. (Point No. 7).
 
-"View Docuemnts" button will list all RACMs with valid process owner assignment and number of document uploaded.
+The "View Documents" button will list all RACMs with valid process owner assignments and the number of documents uploaded.
 
-"Replicate" button is useful if coordinator want to create a replica of an existing RACM for next financial year. With these only basic details will be replicated process owner, due date and other approval related data will not be included.
+The "Replicate" button is useful if the coordinator wants to create a replica of an existing RACM for the next financial year. With this, only basic details will be replicated; process owner, due date, and other approval-related data will not be included.
 
-Clicking on a row will open that particular RACM in new page, where full details will be shown. In this page coordinator can modify due date, upload sample documents, perform RACM assignment (this will set RACM to active if other conditions satisfy, only Active RACMs will be shown to process owner). There is also an option of self-assignment, which will be available in more actions. Performing self assignment will make you the process owner of that RACM, and now it is your responsibility to upload docuemnts and send it for approval.
+Clicking on a row will open that particular RACM in a new page, where full details will be shown. In this page, the coordinator can update the due date, upload sample documents, and perform RACM assignment. This will set the RACM to active if the other conditions are satisfied, and only active RACMs will be shown to the process owner. There is also an option for self-assignment, which will be available in More Actions. Performing self-assignment will make you the process owner of that RACM, and now it is the coordinator's responsibility to upload documents and send it for approval.
+
+Coordinator also has ability to change RACM details on their onw. Samle size can also be chnaged for a particular RACM.
 
 
 
 7. RACM Assignment
+
+This section will list all RACMs whose due dates are updated and ready for process owner assignment. A column for process owner will be given, as well as a filter for assigned/unassigned RACMs.
+
+Click the bulk assign button and select RACMs for assignment of a common process owner. Note that active RACMs cannot be reassigned. A pop-up will display, and a user list will be available with search. Select the user and click "Update Assignment" so that the selected RACMs will be assigned and set active automatically.
+
+To replace the existing process owner of a RACM, first set it inactive from the RACM details page and then perform RACM assignment.
+
+8. Reports
+
+This page provides classification of controls per business process, for example key/non-key controls. It provides counts on the basis of the overall company. For unit-level counts, select the unit from the filters.
+
+9. RACM Change Requests
+
+The process owner can request the coordinator to change some details of a control. These request notifications will be displayed on the RACM Management page. On click, the user can go to that specific RACM page and review the changes requested by the process owner. In the suggested changes section, all fields will be listed for changes. The coordinator can either approve or reject each change; rejecting requires a reason to be provided. On submit, all approved fields will change as suggested by the process owner.
+
+10. RACM deficiency response submission
+
+The coordinator has the right to give a response if any RACM is deemed ineffective by the approver. A warning notification will be shown on the RACM Management page. Using that, you can reach that RACM page and submit a deficiency response.
+
+Here are the types of response:
+
+(1). Mitigation Plan = Requires explanation, concerned person, and due date (today or a future date).
+
+(2). Compensatory RACM = Requires explanation and at least one uploaded document.
+
+Deficiency responses are also subject to the judgment of the approver. If rejected, the RACM will still remain ineffective and requires another response. If approved, the RACM will be either effective or accepted under deviation, and no further action is required.
+
 
 
 

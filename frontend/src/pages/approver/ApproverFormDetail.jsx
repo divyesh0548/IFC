@@ -43,7 +43,7 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext';
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields';
 import { apiUrl } from '../../config/api';
-import { formatIndianDateTime } from '../../lib/dateTime';
+import { formatIndianDateTime, formatDateOnly as formatDateOnlyShared } from '../../lib/dateTime';
 import { formatRacmUserDocumentSubtitle, normalizeSampleDocuments } from '../../lib/racmUserDocuments';
 
 function ApproverFormDetail() {
@@ -464,15 +464,7 @@ function ApproverFormDetail() {
   }
 
   const formatDateOnly = (dateString) => {
-    if (!dateString) return '-'
-    const date = new Date(dateString)
-    if (Number.isNaN(date.getTime())) return '-'
-    return date.toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      timeZone: 'Asia/Kolkata',
-    })
+    return formatDateOnlyShared(dateString, '-')
   }
 
   const getFileName = (filePath) => {
@@ -1169,7 +1161,7 @@ function ApproverFormDetail() {
                         lineHeight: 1.5,
                       }}
                     >
-                      {formatDateOnly(isRejected ? formData?.approval_status_change_timestamp : formData?.sent_for_approval_timestamp)}
+                      {formatDateTime(isRejected ? formData?.approval_status_change_timestamp : formData?.sent_for_approval_timestamp)}
                     </Typography>
                   </Box>
 

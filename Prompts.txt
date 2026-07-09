@@ -1,5 +1,9 @@
-Fixes in coordinator module. 
+For timestamo issue I have full scalable solution.
 
-In form details page do not display "Remarks by User" and "Reason by Approver" if they are empty. Only show those which are not null.
+First of all change all timestamps in website to this -->  DateTime @default(now())
 
-There is an issue in replicate function. It is not replicating cusomt added columns of base RACM. Just fixed columns are getting replicated. Fix that. All custom columns must be replicated because they are just read-only metadata fields.
+Fetch the timestamp without any conversion from DB.
+
+In frontend for each timestamps use toLocaleString() method, which will convert the time in local time of the client location.
+
+This is just for time conversion, keep the formatting intact as in different places, timestamp displays differetly.

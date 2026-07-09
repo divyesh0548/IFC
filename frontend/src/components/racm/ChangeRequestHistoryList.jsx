@@ -7,6 +7,7 @@ import {
   formatChangeRequestDisplayValue,
   getChangeRequestOutcomeSx,
 } from '../../lib/changeRequestHistory'
+import { formatIndianDateTime } from '../../lib/dateTime'
 
 function DetailRow({ label, children }) {
   return (
@@ -21,6 +22,9 @@ function DetailRow({ label, children }) {
 
 function ChangeRequestHistoryList({ requests, formatDateTime, formatNameWithEmail }) {
   const [expandedRequestIds, setExpandedRequestIds] = useState({})
+  const renderDateTime = typeof formatDateTime === 'function'
+    ? formatDateTime
+    : (value) => formatIndianDateTime(value, '-')
 
   const handleToggleRequest = (requestId) => {
     setExpandedRequestIds((prev) => ({
@@ -121,13 +125,13 @@ function ChangeRequestHistoryList({ requests, formatDateTime, formatNameWithEmai
                     {formatNameWithEmail(request.requested_by_display, request.requested_by_email)}
                   </DetailRow>
                   <DetailRow label="Requested on: ">
-                    {request.requested_at ? formatDateTime(request.requested_at) : '-'}
+                    {request.requested_at ? renderDateTime(request.requested_at) : '-'}
                   </DetailRow>
                   <DetailRow label="Reviewed by: ">
                     {formatNameWithEmail(request.reviewed_by_display, request.reviewed_by_email)}
                   </DetailRow>
                   <DetailRow label="Reviewed on: ">
-                    {request.reviewed_at ? formatDateTime(request.reviewed_at) : '-'}
+                    {request.reviewed_at ? renderDateTime(request.reviewed_at) : '-'}
                   </DetailRow>
                 </Box>
 

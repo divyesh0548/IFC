@@ -39,6 +39,10 @@ const {
 } = require('../../utils/sample_size_resolver');
 const { logAuditEvent } = require('../../utils/auditLog');
 const { ALL_PROCESSES_KEYWORD } = require('../../utils/racm_cc_recipients');
+const {
+  coordinatorHasUnitAccess,
+  getControlFormCoordinatorContext,
+} = require('../../utils/racm_coordinator_assignment');
 
 const RACM_SPECIFIC_APPROVER_ASSIGNMENT_ACTION = 'RACM Specific approver assignment';
 
@@ -4038,6 +4042,7 @@ async function getRacmAuditLogs(req, res) {
   try {
     const { form_id } = req.params;
     const companyIdentifier = req.user.company_identifier;
+    const coordinatorEmail = normalizeEmail(req.user.email_id);
     if (!companyIdentifier) {
       return res.status(403).json({
         success: false,
@@ -4045,14 +4050,30 @@ async function getRacmAuditLogs(req, res) {
       });
     }
 
-    const own = await pool.query(
-      'SELECT 1 FROM control_forms WHERE form_id = $1 AND company_identifier = $2 LIMIT 1',
-      [form_id, companyIdentifier]
-    );
-    if (own.rows.length === 0) {
+    const form = await getControlFormCoordinatorContext(pool, form_id);
+    if (!form) {
       return res.status(404).json({
         success: false,
         message: 'RACM not found',
+      });
+    }
+
+    if (String(form.company_identifier || '').trim() !== String(companyIdentifier || '').trim()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. RACM is not assigned to this company coordinator.',
+      });
+    }
+
+    const hasUnitAccess = await coordinatorHasUnitAccess(pool, {
+      companyIdentifier: form.company_identifier,
+      unitId: form.unit_id,
+      coordinatorEmail,
+    });
+    if (!hasUnitAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You are not assigned to this RACM unit.',
       });
     }
 
