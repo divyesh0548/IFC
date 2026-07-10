@@ -1,8 +1,13 @@
-// Backend stores reminder/control timestamps in UTC (timestamp without time zone).
-// Use formatIndianDateTime* helpers below when displaying them in the UI.
+// Backend stores timestamps as UTC values.
+// These helpers format them in the browser's local timezone.
 
-export function parseDateValue(value) {
+function parseTimestampValue(value) {
   if (!value) return null
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
+
   const raw = String(value).trim()
   if (!raw) return null
 
@@ -26,17 +31,21 @@ export function parseDateValue(value) {
 
   const normalized = /[zZ]$|[+-]\d{2}:\d{2}$/.test(raw)
     ? raw
-    : raw.replace(' ', 'T') + 'Z'
+    : raw.replace(' ', 'T')
 
-  return new Date(normalized)
+  const date = new Date(normalized)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+export function parseDateValue(value) {
+  return parseTimestampValue(value)
 }
 
 export function formatIndianDateTime(value, fallback = 'N/A') {
-  const date = parseDateValue(value)
-  if (!date || Number.isNaN(date.getTime())) return fallback
-  const istDate = new Date(date.getTime() + (330 * 60 * 1000))
+  const date = parseTimestampValue(value)
+  if (!date) return fallback
 
-  return istDate.toLocaleString('en-IN', {
+  return date.toLocaleString('en-IN', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -44,7 +53,6 @@ export function formatIndianDateTime(value, fallback = 'N/A') {
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
-    timeZone: 'UTC',
   })
 }
 
@@ -59,8 +67,8 @@ export function toDateOnlyString(value) {
     return `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}`
   }
 
-  const date = parseDateValue(value)
-  if (!date || Number.isNaN(date.getTime())) {
+  const date = parseTimestampValue(value)
+  if (!date) {
     const prefixMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
     return prefixMatch ? `${prefixMatch[1]}-${prefixMatch[2]}-${prefixMatch[3]}` : ''
   }
@@ -90,11 +98,10 @@ export function formatDateOnly(value, fallback = '-') {
 }
 
 export function formatIndianDateTimeCompact(value, fallback = '—') {
-  const date = parseDateValue(value)
-  if (!date || Number.isNaN(date.getTime())) return fallback
-  const istDate = new Date(date.getTime() + (330 * 60 * 1000))
+  const date = parseTimestampValue(value)
+  if (!date) return fallback
+
   const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'UTC',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -102,7 +109,8 @@ export function formatIndianDateTimeCompact(value, fallback = '—') {
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
-  }).formatToParts(istDate)
+  }).formatToParts(date)
+
   const get = (type) => parts.find((p) => p.type === type)?.value || ''
   return `${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')}:${get('second')}`
 }

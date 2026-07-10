@@ -155,3 +155,40 @@ User can't request chnages in RACMs which are sent for approval.
 
 6. Deficiemcy responses are also subject to the judgment of approver. if rejected, RACM will still remain Ineffective and requries another response. If approved, RACM will be either Effective or Accepted under deviation, no action required.
 
+
+
+
+
+
+
+
+
+
+
+Company Admin :
+
+Company Admin will be crated by siteadmin at the time of company creation.
+
+1. In company details section they will be able to details on company, unit and other company admins (if exists).
+
+2. Unit Management :
+
+In this section units for company can be created using just Name and Address. After creation, unit will be listed in the table.
+
+Each unit must have coordinator and approver assigned. One coordinator/approver can be linked with multiple units of same company. Coordinator/approver can be created with help of the button "Add Coordinator/Approver" where email Id and mobile number are mendatory details for user creation.
+
+For assigning coordinator to unit, click on Coordinator button in Actions column, that will show a pop-up where all existing coordinators will be listed. Select a coordinator and click assign to complete the assigment.
+
+Assigning approver is handled in different page, which is "Approver Management", cause there are many levels of assignment.
+
+3. Approver Management
+
+There are three types of approver assigment.
+
+Unit Level : In this type of assigment, all RACMs under a unit will be sent to approver.
+
+Business Process Level : In this, approver will be assigned for a specific Business Process of a unit. So all RACM of the that business process will be sent to approver. Note this assigment is combination of unit + business process. And this assignment overrides the unit level assigment, which means If 'A" approver is assigned to a whole unit, and "B" approver is assiged to a specific business process in that unit. So now approver "A" won't be able to see and approve RACMs under that business process.
+
+RACM Specific : This assigment can't be performed by company admin, it is upto the coordinator. In this coordinator can choose approver for a specific single RACM. This assignment has higest precedence and overrides all other assignments in same manner as explained above.
+
+In this page two filters are provided for easy 

@@ -23,17 +23,20 @@ import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded
 import PolicyRoundedIcon from '@mui/icons-material/PolicyRounded'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { parseDateValue } from '../../lib/dateTime'
 
 function formatDate(dateString) {
   if (!dateString) return 'N/A'
 
-  return new Date(dateString).toLocaleString('en-IN', {
+  const timestamp = parseDateValue(dateString)?.getTime()
+  if (Number.isNaN(timestamp)) return 'N/A'
+
+  return new Date(timestamp).toLocaleString('en-IN', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'Asia/Kolkata',
   })
 }
 

@@ -12,6 +12,7 @@ import Alert from '@mui/material/Alert'
 import { MAIN_CONTENT_MAX_WIDTH } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import { parseDateValue } from '../../lib/dateTime'
 
 function Company_Management() {
   const theme = useTheme()
@@ -51,12 +52,13 @@ function Company_Management() {
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A'
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-IN', {
+    const timestamp = parseDateValue(dateString)?.getTime()
+    if (Number.isNaN(timestamp)) return 'N/A'
+
+    return new Date(timestamp).toLocaleDateString('en-IN', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
-      timeZone: 'Asia/Kolkata'
     })
   }
 

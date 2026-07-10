@@ -518,7 +518,7 @@ async function approveForm(req, res) {
 
       updateFields.push(
         'approval_status_change_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\')',
-        'updated_at = CURRENT_TIMESTAMP'
+        "updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"
       );
 
       if (status === 'Rejected') {
@@ -753,7 +753,7 @@ async function changeApprovalDecision(req, res) {
                WHEN $1 = 'Rejected' THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
                ELSE last_rejected_at
              END,
-             updated_at = CURRENT_TIMESTAMP
+             updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
          WHERE form_id = $3
          RETURNING *`,
         [status, reasonFinal, form_id]
@@ -1203,7 +1203,7 @@ async function reviewDeficiencyResponse(req, res) {
             SET control_design_conclusion = $2,
                 deficiency_action_status = FALSE,
                 deficiency_response_status = 'not_required',
-                updated_at = CURRENT_TIMESTAMP
+                updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             WHERE form_id = $1
           `,
           [form_id, reviewDecision]
@@ -1215,7 +1215,7 @@ async function reviewDeficiencyResponse(req, res) {
             UPDATE control_forms
             SET deficiency_action_status = TRUE,
                 deficiency_response_status = 'resubmission_required',
-                updated_at = CURRENT_TIMESTAMP
+                updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             WHERE form_id = $1
           `,
           [form_id]
@@ -1325,10 +1325,6 @@ async function getRacmAuditLogs(req, res) {
       SELECT
         id,
         timestamp,
-        TO_CHAR(
-          timezone('Asia/Kolkata', timestamp AT TIME ZONE 'UTC'),
-          'DD/MM/YYYY HH24:MI:SS'
-        ) AS timestamp_ist,
         action,
         user_email_id,
         form_id,

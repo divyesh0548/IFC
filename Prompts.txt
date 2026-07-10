@@ -1,9 +1,12 @@
-For timestamo issue I have full scalable solution.
+In company admin creation add mobile number sanity check, which is already available in program. And Also give warning when using non-organization email.
 
-First of all change all timestamps in website to this -->  DateTime @default(now())
+Company Admin module fixes.
 
-Fetch the timestamp without any conversion from DB.
+@frontend/src/pages/company_admin/CompanyAdminCompanyDetails.jsx In this page, the company admins are not being displayed. 
 
-In frontend for each timestamps use toLocaleString() method, which will convert the time in local time of the client location.
+Fix that. 
 
-This is just for time conversion, keep the formatting intact as in different places, timestamp displays differetly.
+In siteadmin they are listed.
+
+
+In "Create Company Unit" pop-up the label of Unit name is partially visible. Fix that. (Same in "Create Coordinator / Approver", "Edit Company Unit" pop-up)

@@ -304,7 +304,7 @@ function CompanyAdminUnitManagement() {
             Create Unit
           </Button>
           <Button variant="outlined" startIcon={<AddRoundedIcon />} onClick={() => setRoleDialog({ ...createRoleDialogState(), open: true })} sx={{ textTransform: 'none', fontWeight: 700 }}>
-            Add Coordinator or Approver
+            Add Coordinator/Approver
           </Button>
           <Button variant="outlined" startIcon={<ManageAccountsRoundedIcon />} onClick={() => openApproverManagement()} sx={{ textTransform: 'none', fontWeight: 700 }}>
             Approver Management
@@ -320,13 +320,13 @@ function CompanyAdminUnitManagement() {
           <Typography color="text.secondary">Loading unit management data...</Typography>
         </Paper>
       ) : (
-        <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-          <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Paper elevation={0} sx={{ borderRadius: 1, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+          {/* <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
             <Typography sx={{ fontWeight: 850 }}>Unit Master</Typography>
             <Typography sx={{ mt: 0.4, color: 'text.secondary', fontSize: '0.92rem', lineHeight: 1.6 }}>
               Review current unit ownership and update mappings where required.
             </Typography>
-          </Box>
+          </Box> */}
           <TableContainer>
             <Table sx={{ minWidth: 840, tableLayout: 'fixed' }}>
               <TableHead>

@@ -815,7 +815,7 @@ async function deleteUsers(req, res) {
         UPDATE control_forms
         SET control_owner = NULL,
             active = FALSE,
-            updated_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
         WHERE company_identifier = $1
           AND LOWER(TRIM(control_owner)) = ANY($2::text[])
       `,
@@ -1017,10 +1017,6 @@ async function getRacmAuditLogs(req, res) {
         SELECT
           id,
           timestamp,
-          TO_CHAR(
-            timezone('Asia/Kolkata', timestamp AT TIME ZONE 'UTC'),
-            'DD/MM/YYYY HH24:MI:SS'
-          ) AS timestamp_ist,
           action,
           user_email_id,
           form_id,

@@ -3649,7 +3649,7 @@ async function deleteUsers(req, res) {
           UPDATE control_forms
           SET control_owner = NULL,
               active = FALSE,
-              updated_at = CURRENT_TIMESTAMP
+              updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
           WHERE company_identifier = $1
             AND LOWER(TRIM(control_owner)) = ANY($2::text[])
             AND unit_id = ANY($3::text[])
@@ -4077,29 +4077,34 @@ async function getRacmAuditLogs(req, res) {
       });
     }
 
-    const result = await pool.query(
-      `
-      SELECT
-        id,
-        timestamp,
-        TO_CHAR(
-          timezone('Asia/Kolkata', timestamp AT TIME ZONE 'UTC'),
-          'DD/MM/YYYY HH24:MI:SS'
-        ) AS timestamp_ist,
-        action,
-        user_email_id,
-        form_id,
-        ref_data
-      FROM audit_logs_racm
-      WHERE form_id = $1
-      ORDER BY timestamp ASC NULLS LAST, id ASC
-    `,
-      [form_id]
-    );
+    const auditRows = await prisma.auditLogsRacm.findMany({
+      where: {
+        formId: form_id,
+      },
+      select: {
+        id: true,
+        timestamp: true,
+        action: true,
+        userEmailId: true,
+        formId: true,
+        refData: true,
+      },
+      orderBy: [
+        { timestamp: { sort: 'asc', nulls: 'last' } },
+        { id: 'asc' },
+      ],
+    });
 
     return res.status(200).json({
       success: true,
-      data: result.rows,
+      data: auditRows.map((row) => ({
+        id: row.id,
+        timestamp: row.timestamp,
+        action: row.action,
+        user_email_id: row.userEmailId,
+        form_id: row.formId,
+        ref_data: row.refData,
+      })),
     });
   } catch (error) {
     console.error('Get RACM audit logs (company_co) error:', error);
@@ -4702,12 +4707,12 @@ async function updateUnitSampleSizeConfig(req, res) {
             updated_by,
             updated_at
           )
-          VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+          VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
           ON CONFLICT (company_identifier, unit_id, frequency_key)
           DO UPDATE SET
             sample_size = EXCLUDED.sample_size,
             updated_by = EXCLUDED.updated_by,
-            updated_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
         `,
         [companyIdentifier, unitId, frequencyKey, validation.sampleSize, coordinatorEmail]
       );

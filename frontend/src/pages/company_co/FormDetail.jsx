@@ -247,6 +247,7 @@ function FormDetail() {
 
       if (response.ok && data.success) {
         setFormData(data.data)
+        console.log('formData', data.data)
         if (!remarksDraftDirty) {
           setRemarksByUser(data.data?.remarks_by_user || '')
         }
@@ -976,8 +977,9 @@ function FormDetail() {
 
   const formatDateTime = (dateString) => formatIndianDateTime(dateString, 'N/A')
   const formatBrowserLocalDateTime = (dateString) => {
-    const date = new Date(dateString)
-    const timestamp = date.getTime()
+    if (!dateString) return 'N/A'
+
+    const timestamp = new Date(dateString).getTime()
     if (Number.isNaN(timestamp)) return 'N/A'
 
     return new Date(timestamp).toLocaleString(undefined, {

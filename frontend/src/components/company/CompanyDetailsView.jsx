@@ -56,6 +56,7 @@ function CompanyDetailsView({
   companyName,
   companyIdentifier,
   companyDetails = {},
+  companyAdmins = [],
   units = [],
   linkedUnitIds = [],
   showLinkedUnitLegend = false,
@@ -150,6 +151,63 @@ function CompanyDetailsView({
                   </Box>
                 ))}
               </Box>
+            </Box>
+
+            <Box sx={{ px: { xs: 2.5, sm: 3 }, pb: 3 }}>
+              <Typography sx={{ fontSize: '1.02rem', fontWeight: 800, color: 'text.primary', mb: 2 }}>
+                Company Admins
+              </Typography>
+
+              {companyAdmins.length === 0 ? (
+                <Box sx={{ py: 1 }}>
+                  <Typography color="text.secondary">No company admins found for this company.</Typography>
+                </Box>
+              ) : (
+                <TableContainer
+                  component={Paper}
+                  elevation={0}
+                  sx={{
+                    overflow: 'hidden',
+                    borderRadius: 2,
+                    mb: 1,
+                  }}
+                >
+                  <Table sx={{ minWidth: 720 }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ ...headCellSx, width: 80 }}>#</TableCell>
+                        <TableCell sx={headCellSx}>Name</TableCell>
+                        <TableCell sx={headCellSx}>Email</TableCell>
+                        <TableCell sx={headCellSx}>Mobile</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {companyAdmins.map((admin, index) => (
+                        <TableRow
+                          key={admin.email_id || admin.id || index}
+                          sx={{
+                            '&:hover': {
+                              backgroundColor: TABLE_ROW_HOVER_BG,
+                            },
+                            '&:last-of-type td': {
+                              borderBottom: 0,
+                            },
+                          }}
+                        >
+                          <TableCell sx={bodyCellSx}>{index + 1}</TableCell>
+                          <TableCell sx={{ ...bodyCellSx, fontWeight: 600 }}>
+                            {String(admin.emp_name || '').trim() || '-'}
+                          </TableCell>
+                          <TableCell sx={{ ...bodyCellSx, wordBreak: 'break-word' }}>
+                            {admin.email_id || '-'}
+                          </TableCell>
+                          <TableCell sx={bodyCellSx}>{admin.mobile || '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
             </Box>
 
             <Box sx={{ px: { xs: 2.5, sm: 3 }, pb: 3 }}>

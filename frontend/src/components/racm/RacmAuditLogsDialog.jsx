@@ -262,7 +262,7 @@ export function RacmAuditLogsDialog({ open, onClose, loading, error, rows }) {
                 {rows.map((row) => (
                   <TableRow key={row.id ?? `${row.timestamp}-${row.action}`}>
                     <TableCell sx={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
-                      {(row.timestamp_ist || formatIndianDateTimeCompact(row.timestamp, '—')).replace(' ', ' - ')}
+                      {formatIndianDateTimeCompact(row.timestamp, '—').replace(' ', ' - ')}
                     </TableCell>
                     <TableCell sx={{ verticalAlign: 'top', wordBreak: 'break-word' }}>
                       {row.user_email_id || '—'}

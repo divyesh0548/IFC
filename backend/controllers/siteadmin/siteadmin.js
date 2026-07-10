@@ -159,12 +159,24 @@ async function getCompanyByIdentifier(req, res) {
       [company_identifier]
     );
 
+    const companyAdminsResult = await pool.query(
+      `
+        SELECT id, email_id, emp_name, mobile, role, created_at, temp_login, login_email_sent
+        FROM ifc_users
+        WHERE company_identifier = $1
+          AND role = 'company_admin'
+        ORDER BY created_at ASC NULLS LAST, id ASC
+      `,
+      [company_identifier]
+    );
+
     res.status(200).json({
       success: true,
       message: 'Company retrieved successfully',
       data: {
         ...result.rows[0],
         company_units: unitsResult.rows,
+        company_admins: companyAdminsResult.rows,
       }
     });
   } catch (error) {
@@ -172,6 +184,170 @@ async function getCompanyByIdentifier(req, res) {
     res.status(500).json({
       success: false,
       message: 'Error fetching company'
+    });
+  }
+}
+
+async function createCompanyAdmin(req, res) {
+  const { company_identifier } = req.params;
+  const emailId = normalizeEmail(req.body?.email_id);
+  const mobile = normalizeMobileDigits(req.body?.mobile) || null;
+  const empName = String(req.body?.emp_name || '').trim() || null;
+
+  if (!company_identifier) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company identifier is required',
+    });
+  }
+
+  if (!emailId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email is required',
+    });
+  }
+
+  if (!isValidEmail(emailId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid email format',
+    });
+  }
+
+  if (!mobile) {
+    return res.status(400).json({
+      success: false,
+      message: 'Mobile number is required',
+    });
+  }
+
+  const mobileError = getMobileValidationError(mobile);
+  if (mobileError) {
+    return res.status(400).json({
+      success: false,
+      message: mobileError,
+    });
+  }
+
+  try {
+    getPasswordPepper();
+
+    const tempPassword = crypto.randomBytes(8).toString('hex');
+    const tempPasswordHash = await hashPassword(tempPassword);
+    const tempPasswordEncrypted = encryptTempPassword(tempPassword);
+
+    const { company, companyAdmin } = await prisma.$transaction(async (tx) => {
+      const existingCompany = await tx.company.findUnique({
+        where: { companyIdentifier: company_identifier },
+        select: {
+          id: true,
+          companyIdentifier: true,
+          companyName: true,
+        },
+      });
+
+      if (!existingCompany) {
+        const error = new Error('Company not found');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const existingUser = await tx.ifcUser.findUnique({
+        where: { emailId },
+        select: { emailId: true },
+      });
+
+      if (existingUser) {
+        const error = new Error('User with this email already exists');
+        error.code = 'P2002';
+        throw error;
+      }
+
+      const createdCompanyAdmin = await tx.ifcUser.create({
+        data: {
+          emailId,
+          password: tempPasswordHash,
+          role: 'company_admin',
+          companyIdentifier: company_identifier,
+          empName,
+          mobile,
+          tempLogin: true,
+          loginEmailSent: false,
+          tempPasswordEncrypted,
+        },
+        select: {
+          id: true,
+          emailId: true,
+          empName: true,
+          mobile: true,
+          role: true,
+          companyIdentifier: true,
+          createdAt: true,
+          tempLogin: true,
+          loginEmailSent: true,
+        },
+      });
+
+      return {
+        company: existingCompany,
+        companyAdmin: createdCompanyAdmin,
+      };
+    });
+
+    try {
+      const emailSent = await sendUserCreationEmail(pool, {
+        userId: companyAdmin.id,
+        emailId: companyAdmin.emailId,
+        role: companyAdmin.role,
+        userName: companyAdmin.empName || 'Company Admin',
+        coordinatorName: req.user?.emp_name || 'Site Admin',
+        coordinatorEmail: req.user?.email_id,
+        companyName: company.companyName || company.companyIdentifier,
+        tempPassword,
+      });
+      if (!emailSent) {
+        console.warn(`Warning: failed to send company admin creation email to ${companyAdmin.emailId}`);
+      }
+    } catch (emailError) {
+      console.error(`Company admin creation email error for ${companyAdmin.emailId}:`, emailError);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Company admin created successfully',
+      data: {
+        id: companyAdmin.id,
+        email_id: companyAdmin.emailId,
+        emp_name: companyAdmin.empName,
+        mobile: companyAdmin.mobile,
+        role: companyAdmin.role,
+        company_identifier: companyAdmin.companyIdentifier,
+        created_at: companyAdmin.createdAt,
+        temp_login: companyAdmin.tempLogin,
+        login_email_sent: companyAdmin.loginEmailSent,
+      },
+    });
+  } catch (error) {
+    console.error('Error creating company admin:', error);
+
+    if (error.statusCode === 404) {
+      return res.status(404).json({
+        success: false,
+        message: error.message || 'Company not found',
+      });
+    }
+
+    if (error.code === 'P2002') {
+      return res.status(409).json({
+        success: false,
+        message: error.message || 'User with this email already exists',
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
     });
   }
 }
@@ -530,6 +706,7 @@ module.exports = {
   getCompanies,
   getCompanyByIdentifier,
   createCompany,
+  createCompanyAdmin,
   getAuditors,
   createAuditor,
   createBusinessProcessManagementEntry,
