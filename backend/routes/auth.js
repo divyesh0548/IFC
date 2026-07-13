@@ -19,6 +19,7 @@ const {
   getMobileValidationError,
   normalizeMobileDigits,
 } = require('../utils/mobile_validation');
+const { createdAtUtcSql } = require('../utils/sqlUtcTimestamps');
 
 const router = express.Router();
 
@@ -84,7 +85,7 @@ router.post('/login', async (req, res) => {
     getPasswordPepper();
 
     // Query the ifc_users table
-    const query = 'SELECT * FROM ifc_users WHERE email_id = $1';
+    const query = `SELECT *, ${createdAtUtcSql('created_at')} FROM ifc_users WHERE email_id = $1`;
     const result = await pool.query(query, [email_id]);
 
     if (result.rows.length === 0) {
@@ -446,6 +447,7 @@ router.get('/company-details', async (req, res) => {
           company_name: null,
           company_identifier: null,
           company_details: companyDetails,
+          company_admins: [],
           units: [],
           linked_unit_ids: [],
           show_linked_unit_legend: false,
@@ -453,7 +455,7 @@ router.get('/company-details', async (req, res) => {
       });
     }
 
-    const [unitsResult, linkedUnitsResult] = await Promise.all([
+    const [unitsResult, linkedUnitsResult, companyAdminsResult] = await Promise.all([
       pool.query(
         `
           SELECT id, unit_id, unit_name, unit_address
@@ -486,6 +488,16 @@ router.get('/company-details', async (req, res) => {
             [companyIdentifier, normalizedEmail]
           )
           : Promise.resolve({ rows: [] }),
+      pool.query(
+        `
+          SELECT id, email_id, emp_name, mobile, role, ${createdAtUtcSql('created_at')}
+          FROM ifc_users
+          WHERE company_identifier = $1
+            AND role = 'company_admin'
+          ORDER BY created_at ASC NULLS LAST, id ASC
+        `,
+        [companyIdentifier]
+      ),
     ]);
 
     const linkedUnitIds = linkedUnitsResult.rows
@@ -498,6 +510,7 @@ router.get('/company-details', async (req, res) => {
         company_name: user.company_name ?? null,
         company_identifier: companyIdentifier,
         company_details: companyDetails,
+        company_admins: companyAdminsResult.rows,
         units: unitsResult.rows,
         linked_unit_ids: linkedUnitIds,
         show_linked_unit_legend: role === 'user' || role === 'company_co',
@@ -656,7 +669,7 @@ router.post('/forgot-password', async (req, res) => {
     getPasswordPepper();
 
     // Check if user exists
-    const userQuery = 'SELECT * FROM ifc_users WHERE email_id = $1';
+    const userQuery = `SELECT *, ${createdAtUtcSql('created_at')} FROM ifc_users WHERE email_id = $1`;
     const userResult = await pool.query(userQuery, [email_id]);
 
     if (userResult.rows.length === 0) {
@@ -728,7 +741,7 @@ router.post('/update-password', async (req, res) => {
     }
 
     // Verify current password (or temp password)
-    const verifyQuery = 'SELECT * FROM ifc_users WHERE LOWER(TRIM(email_id)) = $1';
+    const verifyQuery = `SELECT *, ${createdAtUtcSql('created_at')} FROM ifc_users WHERE LOWER(TRIM(email_id)) = $1`;
     const verifyResult = await pool.query(verifyQuery, [normalizeEmail(sessionEmail)]);
 
     if (verifyResult.rows.length === 0) {

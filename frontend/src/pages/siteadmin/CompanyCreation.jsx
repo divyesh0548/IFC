@@ -15,6 +15,7 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
 const twoColRowSx = {
@@ -46,6 +47,7 @@ function CompanyCreation() {
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const { getEmailWarning, getEmailWarningHelperTextSx } = useOrganizationEmailWarning()
   useSyncGlobalLoading(loading)
 
   const validateGST = (gst) => {
@@ -97,11 +99,14 @@ function CompanyCreation() {
   }
 
   const handleCompanyAdminFieldChange = (index, field, value) => {
+    const nextValue = field === 'mobile' ? normalizeMobileDigits(value) : value
     setCompanyAdminEmails((prev) => prev.map((item, itemIndex) => (
-      itemIndex === index ? { ...item, [field]: value } : item
+      itemIndex === index ? { ...item, [field]: nextValue } : item
     )))
 
-    const errorKey = `company_admin_${field}_${index}`
+    const errorKey = field === 'email_id'
+      ? `company_admin_email_${index}`
+      : `company_admin_${field}_${index}`
     if (errors[errorKey]) {
       setErrors((prev) => {
         const next = { ...prev }
@@ -340,7 +345,16 @@ function CompanyCreation() {
                     disabled={loading}
                     placeholder="Enter company admin email"
                     error={!!errors[`company_admin_email_${index}`]}
-                    helperText={errors[`company_admin_email_${index}`] || 'This email will be used for company admin login.'}
+                    helperText={
+                      errors[`company_admin_email_${index}`]
+                      || getEmailWarning(item.email_id)
+                      || 'This email will be used for company admin login.'
+                    }
+                    FormHelperTextProps={{
+                      sx: errors[`company_admin_email_${index}`]
+                        ? undefined
+                        : getEmailWarningHelperTextSx(item.email_id),
+                    }}
                     fullWidth
                   />
                   <TextField
@@ -352,10 +366,17 @@ function CompanyCreation() {
                     onChange={(e) => handleCompanyAdminFieldChange(index, 'mobile', e.target.value)}
                     required
                     disabled={loading}
-                    inputProps={{ maxLength: 10 }}
+                    inputProps={{ inputMode: 'numeric', maxLength: 10 }}
                     placeholder="Enter 10-digit mobile number"
-                    error={!!errors[`company_admin_mobile_${index}`]}
-                    helperText={errors[`company_admin_mobile_${index}`]}
+                    error={
+                      !!errors[`company_admin_mobile_${index}`]
+                      || !!(item.mobile && getMobileValidationError(item.mobile))
+                    }
+                    helperText={
+                      errors[`company_admin_mobile_${index}`]
+                      || (item.mobile && getMobileValidationError(item.mobile))
+                      || 'Enter a valid 10-digit mobile number.'
+                    }
                     fullWidth
                   />
                   <Tooltip title={companyAdminEmails.length === 1 ? 'At least one company admin email is required' : 'Remove company admin email'}>

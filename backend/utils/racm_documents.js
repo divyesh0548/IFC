@@ -1,3 +1,5 @@
+const { createdAtUtcSql } = require('./sqlUtcTimestamps');
+
 function sanitizeS3PathSegment(value, fallback = 'unknown') {
   const cleaned = String(value ?? '')
     .trim()
@@ -93,7 +95,7 @@ async function getControlFormDocumentRows(db, formIds) {
 
   const sampleResult = await db.query(
     `
-      SELECT id, form_id, sample_doc, user_id, created_at
+      SELECT id, form_id, sample_doc, user_id, ${createdAtUtcSql('created_at')}
       FROM sample_docs
       WHERE form_id = ANY($1::text[])
       ORDER BY id ASC
@@ -102,7 +104,7 @@ async function getControlFormDocumentRows(db, formIds) {
   );
   const userResult = await db.query(
     `
-      SELECT id, form_id, doc_uploaded_by_user, user_id, created_at
+      SELECT id, form_id, doc_uploaded_by_user, user_id, ${createdAtUtcSql('created_at')}
       FROM racm_docs
       WHERE form_id = ANY($1::text[])
       ORDER BY id ASC
@@ -180,7 +182,7 @@ async function insertUserDocument(db, formId, docUrl, userId = null) {
     `
       INSERT INTO racm_docs (form_id, doc_uploaded_by_user, user_id, created_at)
       VALUES ($1, $2, $3, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-      RETURNING id, form_id, doc_uploaded_by_user, user_id, created_at
+      RETURNING id, form_id, doc_uploaded_by_user, user_id, ${createdAtUtcSql('created_at')}
     `,
     [formId, value, normalizedUserId]
   );
@@ -197,7 +199,7 @@ async function insertSampleDocument(db, formId, docUrl, userId = null) {
     `
       INSERT INTO sample_docs (form_id, sample_doc, user_id, created_at)
       VALUES ($1, $2, $3, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-      RETURNING id, form_id, sample_doc, user_id, created_at
+      RETURNING id, form_id, sample_doc, user_id, ${createdAtUtcSql('created_at')}
     `,
     [formId, value, uploaderEmail]
   );

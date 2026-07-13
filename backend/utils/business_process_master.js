@@ -1,5 +1,6 @@
 const { prisma } = require('../lib/prisma');
 const { pool } = require('./db');
+const { createdAtUpdatedAtUtcSql } = require('./sqlUtcTimestamps');
 
 function normalizeBusinessProcessValue(value) {
   return String(value || '').trim();
@@ -57,8 +58,7 @@ async function listBusinessProcessesForCompany(clientOrPool = pool, companyIdent
         bp.is_active,
         bp.created_by_email,
         bp.updated_by_email,
-        bp.created_at,
-        bp.updated_at
+        ${createdAtUpdatedAtUtcSql('bp')}
       FROM business_process_master bp
       WHERE bp.is_active = TRUE
         AND NULLIF(TRIM(COALESCE(bp.business_process, '')), '') IS NOT NULL

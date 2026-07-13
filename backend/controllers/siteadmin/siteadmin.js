@@ -8,6 +8,10 @@ const {
   getMobileValidationError,
   normalizeMobileDigits,
 } = require('../../utils/mobile_validation');
+const {
+  utcTs,
+  createdAtUtcSql,
+} = require('../../utils/sqlUtcTimestamps');
 
 // Helper function to generate company identifier
 function generateCompanyIdentifier(companyName) {
@@ -103,7 +107,7 @@ function normalizeCompanyAdminEntries(companyAdminEntries, companyAdminEmails, f
 // Get all companies API endpoint
 async function getCompanies(req, res) {
   try {
-    const query = 'SELECT * FROM companies ORDER BY created_at DESC';
+    const query = `SELECT *, ${createdAtUtcSql('created_at')} FROM companies ORDER BY created_at DESC`;
     const result = await pool.query(query);
 
     res.status(200).json({
@@ -126,7 +130,7 @@ async function getCompanyByIdentifier(req, res) {
   try {
     const { company_identifier } = req.params;
 
-    const query = 'SELECT * FROM companies WHERE company_identifier = $1';
+    const query = `SELECT *, ${createdAtUtcSql('created_at')} FROM companies WHERE company_identifier = $1`;
     const result = await pool.query(query, [company_identifier]);
 
     if (result.rows.length === 0) {
@@ -161,7 +165,7 @@ async function getCompanyByIdentifier(req, res) {
 
     const companyAdminsResult = await pool.query(
       `
-        SELECT id, email_id, emp_name, mobile, role, created_at, temp_login, login_email_sent
+        SELECT id, email_id, emp_name, mobile, role, ${createdAtUtcSql('created_at')}, temp_login, login_email_sent
         FROM ifc_users
         WHERE company_identifier = $1
           AND role = 'company_admin'
@@ -545,7 +549,7 @@ async function getAuditors(req, res) {
   try {
     const result = await pool.query(
       `
-        SELECT id, email_id, emp_name, mobile, role, created_at, temp_login, login_email_sent
+        SELECT id, email_id, emp_name, mobile, role, ${createdAtUtcSql('created_at')}, temp_login, login_email_sent
         FROM ifc_users
         WHERE role = 'auditor'
         ORDER BY created_at DESC NULLS LAST, id DESC
@@ -643,7 +647,7 @@ async function createAuditor(req, res) {
           temp_password_encrypted
         )
         VALUES ($1, $2, $3, $4, 'auditor', TRUE, FALSE, $5)
-        RETURNING id, email_id, emp_name, mobile, role, created_at, temp_login, login_email_sent
+        RETURNING id, email_id, emp_name, mobile, role, ${utcTs('created_at')}, temp_login, login_email_sent
       `,
       [emailId, empName, userMobile, tempPasswordHash, tempPasswordEncrypted]
     );

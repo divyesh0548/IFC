@@ -1,4 +1,5 @@
 const { RACM_ASSERTION_CATALOG, RACM_ASSERTION_FIELD_KEYS } = require('./racm_assertion_catalog');
+const { createdAtUtcSql } = require('./sqlUtcTimestamps');
 
 const RACM_TEMPLATE_SECTIONS = {
   PROCESS_AND_RISK: 'process_and_risk',
@@ -244,12 +245,14 @@ async function cloneTemplateFields(client, sourceTemplateId, targetTemplateId) {
 async function getActiveTemplateRow(client, companyIdentifier, unitId) {
   const result = await client.query(
     `
-      SELECT *
-      FROM racm_templates
-      WHERE company_identifier = $1
-        AND unit_id = $2
-        AND status = 'active'
-      ORDER BY id DESC
+      SELECT
+        rt.*,
+        ${createdAtUtcSql('rt.created_at')}
+      FROM racm_templates rt
+      WHERE rt.company_identifier = $1
+        AND rt.unit_id = $2
+        AND rt.status = 'active'
+      ORDER BY rt.id DESC
       LIMIT 1
     `,
     [companyIdentifier, unitId]
@@ -293,7 +296,7 @@ async function ensureActiveTemplateForUnit(client, {
         status, is_default, created_by
       )
       VALUES ($1, $2, 'Default', 1, 'active', TRUE, $3)
-      RETURNING *
+      RETURNING *, ${createdAtUtcSql('created_at')}
     `,
     [companyId, unit, createdBy]
   );
@@ -312,7 +315,7 @@ async function getActiveTemplateWithFields(client, companyIdentifier, unitId) {
 
   const fields = await getTemplateFields(client, ensured.template.id);
   const activeRow = await client.query(
-    `SELECT * FROM racm_templates WHERE id = $1 LIMIT 1`,
+    `SELECT *, ${createdAtUtcSql('created_at')} FROM racm_templates WHERE id = $1 LIMIT 1`,
     [ensured.template.id]
   );
   const templateWithCount = await enrichTemplateRowWithLinkedCount(client, activeRow.rows[0]);
@@ -328,7 +331,7 @@ async function getActiveTemplateWithFields(client, companyIdentifier, unitId) {
 async function getTemplateWithFieldsById(client, templateId) {
   const result = await client.query(
     `
-      SELECT *
+      SELECT *, ${createdAtUtcSql('created_at')}
       FROM racm_templates
       WHERE id = $1
       LIMIT 1
@@ -481,7 +484,7 @@ async function createTemplateVersion(client, {
         is_default, copied_from_template_id, created_by
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *
+      RETURNING *, ${createdAtUtcSql('created_at')}
     `,
     [
       companyIdentifier,
@@ -676,7 +679,7 @@ async function updateActiveTemplateExtrasInPlace(client, activeTemplate, extraFi
 
   const templateResult = await client.query(
     `
-      SELECT *
+      SELECT *, ${createdAtUtcSql('created_at')}
       FROM racm_templates
       WHERE id = $1
       LIMIT 1
@@ -846,7 +849,7 @@ async function createFreshTemplate(client, {
   });
 
   const rowResult = await client.query(
-    `SELECT * FROM racm_templates WHERE id = $1 LIMIT 1`,
+    `SELECT *, ${createdAtUtcSql('created_at')} FROM racm_templates WHERE id = $1 LIMIT 1`,
     [newTemplate.id]
   );
   const template = await enrichTemplateRowWithLinkedCount(client, rowResult.rows[0]);
@@ -1049,7 +1052,7 @@ async function importTemplateToUnit(client, {
     ok: true,
     template: await enrichTemplateRowWithLinkedCount(
       client,
-      (await client.query(`SELECT * FROM racm_templates WHERE id = $1 LIMIT 1`, [newTemplate.id])).rows[0]
+      (await client.query(`SELECT *, ${createdAtUtcSql('created_at')} FROM racm_templates WHERE id = $1 LIMIT 1`, [newTemplate.id])).rows[0]
     ),
     fields: await getTemplateFields(client, newTemplate.id),
   };
@@ -1152,6 +1155,7 @@ async function listTemplateVersions(client, companyIdentifier, unitId) {
     `
       SELECT
         rt.*,
+        ${createdAtUtcSql('rt.created_at')},
         COALESCE(cf_counts.linked_racm_count, 0) AS linked_racm_count
       FROM racm_templates rt
       LEFT JOIN LATERAL (
@@ -1171,7 +1175,7 @@ async function listTemplateVersions(client, companyIdentifier, unitId) {
 async function deleteTemplateVersion(client, templateId) {
   const templateResult = await client.query(
     `
-      SELECT *
+      SELECT *, ${createdAtUtcSql('created_at')}
       FROM racm_templates
       WHERE id = $1
       LIMIT 1
@@ -1363,7 +1367,7 @@ async function decrementTemplateLinkedRacmCount(client, templateId) {
 async function activateTemplateVersion(client, companyIdentifier, unitId, templateId) {
   const templateResult = await client.query(
     `
-      SELECT *
+      SELECT *, ${createdAtUtcSql('created_at')}
       FROM racm_templates
       WHERE id = $1
         AND company_identifier = $2
@@ -1394,7 +1398,7 @@ async function activateTemplateVersion(client, companyIdentifier, unitId, templa
 
   const updatedResult = await client.query(
     `
-      SELECT *
+      SELECT *, ${createdAtUtcSql('created_at')}
       FROM racm_templates
       WHERE id = $1
       LIMIT 1

@@ -1,16 +1,15 @@
 const { pool } = require('./db');
 const { prisma } = require('../lib/prisma');
+const {
+  controlsReminderUtcSelectSql,
+  controlsReminderUtcReturningSql,
+} = require('./sqlUtcTimestamps');
 
 const CONTROLS_REMINDER_JOIN_SQL = `
   LEFT JOIN controls_reminder cr ON cr.form_id = cf.form_id
 `;
 
-const CONTROLS_REMINDER_SELECT_SQL = `
-  cr.reminder_datetime,
-  cr.reminder_to_approver_datetime,
-  cr.ineffective_reminder_datetime,
-  cr.deficiency_review_reminder_datetime
-`;
+const CONTROLS_REMINDER_SELECT_SQL = controlsReminderUtcSelectSql('cr');
 
 const APPROVER_REMINDER_INTERVAL = '2 days';
 const INEFFECTIVE_REMINDER_INTERVAL = '2 days';
@@ -109,7 +108,7 @@ async function updateReminderDatetime(client, formId, reminderFrequency) {
       )
       ON CONFLICT (form_id) DO UPDATE
       SET reminder_datetime = EXCLUDED.reminder_datetime
-      RETURNING reminder_datetime;
+      RETURNING ${controlsReminderUtcReturningSql('reminder_datetime')};
     `,
     [formId, intervalLiteral]
   );
@@ -124,7 +123,7 @@ const UPSERT_REMINDER_TO_APPROVER_DATETIME_SQL = `
   )
   ON CONFLICT (form_id) DO UPDATE
   SET reminder_to_approver_datetime = EXCLUDED.reminder_to_approver_datetime
-  RETURNING reminder_to_approver_datetime
+  RETURNING ${controlsReminderUtcReturningSql('reminder_to_approver_datetime')}
 `;
 
 /**
@@ -153,7 +152,7 @@ async function seedReminderToApproverDatetime(tx, formId) {
     )
     ON CONFLICT (form_id) DO UPDATE
     SET reminder_to_approver_datetime = EXCLUDED.reminder_to_approver_datetime
-    RETURNING reminder_to_approver_datetime
+    RETURNING reminder_to_approver_datetime AT TIME ZONE 'UTC' AS reminder_to_approver_datetime
   `;
   return rows?.[0]?.reminder_to_approver_datetime ?? null;
 }
@@ -166,7 +165,7 @@ const UPSERT_INEFFECTIVE_REMINDER_DATETIME_SQL = `
   )
   ON CONFLICT (form_id) DO UPDATE
   SET ineffective_reminder_datetime = EXCLUDED.ineffective_reminder_datetime
-  RETURNING ineffective_reminder_datetime
+  RETURNING ${controlsReminderUtcReturningSql('ineffective_reminder_datetime')}
 `;
 
 /**
@@ -195,7 +194,7 @@ const UPSERT_DEFICIENCY_REVIEW_REMINDER_DATETIME_SQL = `
   )
   ON CONFLICT (form_id) DO UPDATE
   SET deficiency_review_reminder_datetime = EXCLUDED.deficiency_review_reminder_datetime
-  RETURNING deficiency_review_reminder_datetime
+  RETURNING ${controlsReminderUtcReturningSql('deficiency_review_reminder_datetime')}
 `;
 
 async function updateDeficiencyReviewReminderDatetime(client, formId) {

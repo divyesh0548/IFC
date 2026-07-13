@@ -50,6 +50,7 @@ function CompanyDetailsPage() {
       companyName={data?.company_name}
       companyIdentifier={data?.company_identifier}
       companyDetails={data?.company_details}
+      companyAdmins={Array.isArray(data?.company_admins) ? data.company_admins : []}
       units={Array.isArray(data?.units) ? data.units : []}
       linkedUnitIds={Array.isArray(data?.linked_unit_ids) ? data.linked_unit_ids : []}
       showLinkedUnitLegend={Boolean(data?.show_linked_unit_legend)}

@@ -1,6 +1,10 @@
 const { pool } = require('../../utils/db');
 const { attachControlFormDocuments } = require('../../utils/racm_documents');
 const { UNIT_RESPONSIBILITY_TYPES } = require('../../utils/unit_responsibilities');
+const {
+  controlFormsUtcOverridesSql,
+  createdAtUtcSql,
+} = require('../../utils/sqlUtcTimestamps');
 
 async function getHomeStats(req, res) {
   try {
@@ -43,7 +47,7 @@ async function getCompanies(req, res) {
     const [companiesResult, unitsResult, statsResult] = await Promise.all([
       pool.query(
         `
-          SELECT *
+          SELECT *, ${createdAtUtcSql('created_at')}
           FROM companies
           ORDER BY created_at DESC NULLS LAST, id DESC
         `
@@ -149,7 +153,7 @@ async function getUsers(req, res) {
           u.id,
           u.email_id,
           u.role,
-          u.created_at,
+          ${createdAtUtcSql('u.created_at')},
           u.company_identifier,
           u.emp_code,
           u.emp_name,
@@ -190,6 +194,7 @@ async function getRacms(req, res) {
       `
         SELECT
           cf.*,
+          ${controlFormsUtcOverridesSql('cf')},
           c.company_name,
           NULLIF(TRIM(cum.unit_name), '') AS unit_name,
           NULLIF(TRIM(owner.emp_name), '') AS control_owner_name

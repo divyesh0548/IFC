@@ -43,6 +43,12 @@ const {
   coordinatorHasUnitAccess,
   getControlFormCoordinatorContext,
 } = require('../../utils/racm_coordinator_assignment');
+const {
+  utcTs,
+  controlFormsUtcOverridesSql,
+  createdAtUtcSql,
+  createdAtUpdatedAtUtcSql,
+} = require('../../utils/sqlUtcTimestamps');
 
 const RACM_SPECIFIC_APPROVER_ASSIGNMENT_ACTION = 'RACM Specific approver assignment';
 
@@ -425,7 +431,8 @@ async function getCoordinatorDashboardRacmRows(scope) {
   const result = await pool.query(
     `
       SELECT
-        cf.*
+        cf.*,
+        ${controlFormsUtcOverridesSql('cf')}
       FROM control_forms cf
       WHERE ${whereClause}
       ORDER BY
@@ -550,8 +557,7 @@ async function getStoredRiskAnalysis(companyIdentifier, formId) {
         match_confidence,
         coverage_status,
         response_json,
-        created_at,
-        updated_at
+        ${createdAtUpdatedAtUtcSql()}
       FROM risk_analysis
       WHERE company_identifier = $1
         AND form_id = $2
@@ -769,8 +775,7 @@ async function generateRiskAnalysisByControl(req, res) {
           match_confidence,
           coverage_status,
           response_json,
-          created_at,
-          updated_at
+          ${createdAtUpdatedAtUtcSql()}
       `,
       [
         companyIdentifier,
@@ -1205,7 +1210,7 @@ async function getApproverAssignments(req, res) {
           aa.form_id,
           cf.control_number,
           cf.standard_control_description,
-          aa.created_at
+          ${createdAtUtcSql('aa.created_at')}
         FROM approver_assignments aa
         LEFT JOIN control_forms cf
           ON aa.assignment_scope = 'RACM'
@@ -1429,7 +1434,7 @@ async function assignRacmApprover(req, res) {
           NULL,
           form_id
         FROM UNNEST($3::text[]) AS form_id
-        RETURNING id, approver_email_id, assignment_scope, form_id, created_at
+        RETURNING id, approver_email_id, assignment_scope, form_id, ${utcTs('created_at')}
       `,
       [companyIdentifier, approverEmailId, formIds]
     );
@@ -2311,7 +2316,7 @@ async function getUnitManagement(req, res) {
             COALESCE(unit_direct.unit_name, unit_cf.unit_name) AS unit_name,
             aa.business_process,
             aa.form_id,
-            aa.created_at
+            ${createdAtUtcSql('aa.created_at')}
           FROM approver_assignments aa
           LEFT JOIN ifc_users u
             ON u.company_identifier = aa.company_identifier
@@ -4179,7 +4184,7 @@ async function getCommunicationMatrix(req, res) {
         r.business_process,
         r.unit_id,
         COALESCE(NULLIF(TRIM(cum.unit_name), ''), r.unit_id) AS unit_name,
-        r.created_at
+        ${createdAtUtcSql('r.created_at')}
       FROM racm_cc_users r
       LEFT JOIN company_unit_master cum
         ON cum.company_identifier = r.company_identifier

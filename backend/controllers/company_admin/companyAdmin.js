@@ -7,6 +7,12 @@ const {
   listBusinessProcessesForCompany,
   createBusinessProcessMasterEntry,
 } = require('../../utils/business_process_master');
+const {
+  utcTs,
+  createdAtUtcSql,
+  timestampUtcSql,
+  rejectionTimestampUtcSql,
+} = require('../../utils/sqlUtcTimestamps');
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -215,7 +221,7 @@ async function getUnitManagement(req, res) {
             COALESCE(unit_direct.unit_name, unit_cf.unit_name) AS unit_name,
             COALESCE(aa.business_process, cf.business_process) AS business_process,
             aa.form_id,
-            aa.created_at
+            ${createdAtUtcSql('aa.created_at')}
           FROM approver_assignments aa
           LEFT JOIN ifc_users u
             ON u.company_identifier = aa.company_identifier
@@ -964,7 +970,7 @@ async function getDashboardRacms(req, res) {
           cf.status,
           cf.active,
           cf.due_date,
-          cf.created_at,
+          ${createdAtUtcSql('cf.created_at')},
           cum.unit_name,
           NULLIF(TRIM(owner.emp_name), '') AS control_owner_name
         FROM control_forms cf
@@ -1016,7 +1022,7 @@ async function getRacmAuditLogs(req, res) {
       `
         SELECT
           id,
-          timestamp,
+          ${timestampUtcSql('timestamp')},
           action,
           user_email_id,
           form_id,
@@ -1065,7 +1071,7 @@ async function getControlFormHistory(req, res) {
 
     const result = await pool.query(
       `
-        SELECT id, reason_by_approver, rejection_timestamp
+        SELECT id, reason_by_approver, ${rejectionTimestampUtcSql('rejection_timestamp')}
         FROM control_form_history
         WHERE form_id = $1
         ORDER BY rejection_timestamp ASC NULLS LAST, id ASC
@@ -1486,7 +1492,7 @@ async function assignApprover(req, res) {
           form_id
         )
         VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, approver_email_id, assignment_scope, unit_id, business_process, form_id, created_at
+        RETURNING id, approver_email_id, assignment_scope, unit_id, business_process, form_id, ${utcTs('created_at')}
       `,
       [
         companyIdentifier,

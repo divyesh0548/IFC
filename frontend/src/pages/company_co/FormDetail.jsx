@@ -976,22 +976,6 @@ function FormDetail() {
   }
 
   const formatDateTime = (dateString) => formatIndianDateTime(dateString, 'N/A')
-  const formatBrowserLocalDateTime = (dateString) => {
-    if (!dateString) return 'N/A'
-
-    const timestamp = new Date(dateString).getTime()
-    if (Number.isNaN(timestamp)) return 'N/A'
-
-    return new Date(timestamp).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    })
-  }
 
   const handleOpenAuditLogs = async () => {
     setAuditLogOpen(true)
@@ -2352,7 +2336,7 @@ function FormDetail() {
                         lineHeight: 1.5,
                       }}
                     >
-                      {formatBrowserLocalDateTime(formData?.created_at)}
+                      {formatDateTime(formData?.created_at)}
                     </Typography>
                   </Box>
                 </Box>

@@ -94,8 +94,11 @@ function AppDialog({
           flexDirection: 'column',
           gap: 2,
           px: 3,
-          pt: 2.75,
           pb: 2.25,
+          // MUI zeroes padding-top when DialogContent follows DialogTitle; keep room for outlined labels.
+          '&&': {
+            paddingTop: theme.spacing(2.75),
+          },
           ...contentSx,
         }}
       >

@@ -18,6 +18,7 @@ const {
   formatReminderTimestampForLog,
   formatDueDateForEmail,
 } = require('../../utils/controls_reminder');
+const { utcTs } = require('../../utils/sqlUtcTimestamps');
 const {
   buildDeficiencyResponseDetailsSection,
 } = require('../../utils/racm_email_details');
@@ -38,7 +39,7 @@ async function fetchFormsDueForDeficiencyReviewReminder(client) {
       cf.business_process,
       cf.financial_year,
       cf.due_date,
-      cr.deficiency_review_reminder_datetime,
+      ${utcTs('cr.deficiency_review_reminder_datetime')},
       approver_map.approver_email_id AS approver_email_id,
       NULLIF(TRIM(approver.emp_name), '') AS approver_name,
       dr.submitted_by_email,

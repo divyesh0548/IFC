@@ -1,166 +1,3 @@
-I want to make a user manual which will explain users how to operate our website and what they can do.
-
-Company Coordinator:
-
-1. On the home page, the coordinator will see an overall status (total users, total RACMs, approved/rejected RACMs) and tabs that link to different pages. Units under the coordinator will be shown.
-
-2. User Management: In this section, all users will be listed unit-wise. Approvers from across the company will be listed here, and on click the page will show their current assignments.
-
-Coordinator can create users by manual form or bulk Excel upload.
-Clicking on the plus icons will open a form for user creation. Select the units for which the user should be created and fill in the rest of the details. Multiple units can be selected, and mobile number and email are mandatory fields for user creation. It is advised to use the organization email address only.
-
-For bulk upload, it is required to fill the user details per row in the provided template. Make sure to enter accurate details, as an invalid email or mobile number will prevent user creation.
-
-Coordinator can link users to other units even after creation. For that, click on the unit row and update the units in the pop-up window.
-
-Deleting a user will remove the user account, and all linked RACMs will become inactive.
-
-There is an option to export user data by clicking the export button.
-
-3. RACM Communication: In this section, emails can be added for a specific business process or for all processes. An option to choose the unit is also given. Added emails will be included in the CC list of all emails related to that RACM business process.
-
-4. RACM Templates: In this section, the coordinator can add column fields for RACM creation and save them as a separate template, which can be used later on.
-
-Some standard columns come pre-defined and cannot be changed. We also provide a standard set of assertion columns to add, so the user can add according to the requirement.
-
-After creating a template, make it active so that in the next step (RACM creation/upload) that template will be used to create RACMs.
-
-There can be multiple templates in a single unit, but only one can remain active at a time.
-
-There is also an option to import templates from other units of the company if required.
-
-5. RACM Create/Upload
-
-In this section, the coordinator can create RACMs by uploading an Excel file or by manual form submission.
-
-First, you need to review the sample size for each control frequency by clicking on the Sample Size Settings button. An option to modify the sample size is also provided within the min-max limit. Based on the sample size, the dates and interval will be auto-generated.
-
-In the file upload section, upload the controls Excel file, select the business process, unit, and financial year. Providing reminder settings is optional if it is different for all. That can be configured later in bulk. In header detection, keep the default option. If the program fails to detect the header, then you have to select the "User Excel Row number" option and write the header index. After that, the user will be asked to choose between "Use automatic mapping" and "Adjust column mapping". Selecting the first option will create RACMs based on automatically selected columns, and some columns may not match the target field. It is advised to use the latter one because the user will have the ability to configure all columns from the Excel file to template columns. Control numbers will auto-generate if not selected from the Excel file, and configuring control frequency is mandatory before final submit.
-
-If a control frequency has a value that is not recognized by the program, then it will prompt you to select the corresponding category. RACMs will be created after performing these steps.
-
-6. RACM Management
-
-In this section, all RACMs will be listed with various filters and options. It is advised to first set the due date for RACMs. For that, there is a button called "Set Due Date", which will allow the due date of multiple RACMs to be set in a single click. It will override the due date if any selected RACM already has one. After the due date is set, RACMs will be listed in the RACM Assignment page, where process owner assignment will take place. (Point No. 7).
-
-The "View Documents" button will list all RACMs with valid process owner assignments and the number of documents uploaded.
-
-The "Replicate" button is useful if the coordinator wants to create a replica of an existing RACM for the next financial year. With this, only basic details will be replicated; process owner, due date, and other approval-related data will not be included.
-
-Clicking on a row will open that particular RACM in a new page, where full details will be shown. In this page, the coordinator can update the due date, upload sample documents, and perform RACM assignment. This will set the RACM to active if the other conditions are satisfied, and only active RACMs will be shown to the process owner. There is also an option for self-assignment, which will be available in More Actions. Performing self-assignment will make you the process owner of that RACM, and now it is the coordinator's responsibility to upload documents and send it for approval.
-
-Coordinator also has ability to change RACM details on their onw. Samle size can also be chnaged for a particular RACM.
-
-
-
-7. RACM Assignment
-
-This section will list all RACMs whose due dates are updated and ready for process owner assignment. A column for process owner will be given, as well as a filter for assigned/unassigned RACMs.
-
-Click the bulk assign button and select RACMs for assignment of a common process owner. Note that active RACMs cannot be reassigned. A pop-up will display, and a user list will be available with search. Select the user and click "Update Assignment" so that the selected RACMs will be assigned and set active automatically.
-
-To replace the existing process owner of a RACM, first set it inactive from the RACM details page and then perform RACM assignment.
-
-8. Reports
-
-This page provides classification of controls per business process, for example key/non-key controls. It provides counts on the basis of the overall company. For unit-level counts, select the unit from the filters.
-
-9. RACM Change Requests
-
-The process owner can request the coordinator to change some details of a control. These request notifications will be displayed on the RACM Management page. On click, the user can go to that specific RACM page and review the changes requested by the process owner. In the suggested changes section, all fields will be listed for changes. The coordinator can either approve or reject each change; rejecting requires a reason to be provided. On submit, all approved fields will change as suggested by the process owner.
-
-10. RACM deficiency response submission
-
-The coordinator has the right to give a response if any RACM is deemed ineffective by the approver. A warning notification will be shown on the RACM Management page. Using that, you can reach that RACM page and submit a deficiency response.
-
-Here are the types of response:
-
-(1). Mitigation Plan = Requires explanation, concerned person, and due date (today or a future date).
-
-(2). Compensatory RACM = Requires explanation and at least one uploaded document.
-
-Deficiency responses are also subject to the judgment of the approver. If rejected, the RACM will still remain ineffective and requires another response. If approved, the RACM will be either effective or accepted under deviation, and no further action is required.
-
-
-
-
-Approver : 
-
-1. On the home page, the approver will see a snapshot of approval activity (total, pending, approved, and rejected RACMs) and links to the Approval Dashboard and Company Details. RACMs are assigned by company admin or coordinator based on assignment scope — unit level, unit + business process level, or RACM-specific assignment. When scopes overlap, the more specific assignment takes precedence.
-
-2. On the Approval Dashboard, the approver will see all RACMs which are submitted by process owner. The dashboard includes filters for approval status, business process, financial year, unit (when more than one unit is in scope), conclusion, and control number search. By default, pending RACMs are shown. Clicking a RACM opens it in a new window with all important details listed on top.
-
-3. Each RACM has the same major sections as the process owner view: (1) Process and Risk, (2) Control Details, and (3) Assertions (may not exists in some). The approver can review evidence/documents uploaded by the process owner. Audit logs and RACM history are also available from the RACM page.
-
-4. For RACMs with status "sent for approval", the approver must either Approve or Reject the RACM.
-
-(1) Approve — The approver must fill in Design and Implementation details: procedures taken to evaluate the control, and conclusion (Effective / Not Effective / Accepted under deviation). If the conclusion is Not Effective, a description of the deficiency is required. Reason for approval is optional.
-
-(2) Reject — The approver must provide a reason for rejection. The process owner will need to upload at least one new document and resubmit the RACM.
-
-5. After the initial approval decision, there are three main outcomes :
-
-(1) RACM Rejected — Process owner must resubmit with at least one new document.
-
-(2) RACM Approved - Not Effective — Process owner (or coordinator) must submit a deficiency response: either a Mitigation Plan or Compensatory RACM. The approver will see the submitted response on the RACM page and must review it.
-
-(3) RACM Approved - Effective / Accepted under Deviation — No further action is required.
-
-6. Deficiency response review — When a deficiency response is submitted, the dashboard shows an "Action Required" alert. On the RACM page, the approver can approve the response as Effective or Accepted under deviation, or reject it. Rejection requires a comment. If rejected, the RACM remains Not Effective and another response is required from the process owner.
-
-7. Types of deficiency responses (for reference when reviewing):
-
-(1) Mitigation Plan — Includes explanation, concerned person, and due date (today or a future date).
-
-(2) Compensatory RACM — Includes explanation and at least one uploaded document.
-
-
-
-
-
-
-
-
-
-Process Owners:
-
-1. On dashboard user will see all assigned RACMs list. RACMs will be assigned by respective coordinator. Dashbaoard includes various filters, which can be used to make it easy to find target RACMs or have an idea of status of them.
-
-
-2. On click RACM will be opened in new window with all important details listed on top. Each ramcs will have two major sections 1. Process and Risk 2. Control Details. third one is assertion, which may not be available if coordinator has not defined it. 
-RACMs will have sample docs provided by company coordinator for reference. Some RACMs may not have them. 
-Based on control frequency and sample size set by coordinator, dates/intervals for sample required will be provided in excel format.
-User will have to upload evidence/docuemnts and submit the RACM for approval. User can't remove a document once it is uploaded. Writing remakrs is optional.
-
-
-3. User can request chnages in RACM if necessary. On top-right corner a button will be provided for requesting changes. User can request to chnage due date and other majority of fields in RACM. Business process and Control frequency can't be changed. 
-For this user need to click on "Request Change" button and all fields will become editable. Change them and providing a reason is optional but recommanded. Coordinator will review the requeted changes and will approver/reject individual fields. After successfull review the user will see it in Change Request option. For rejected fields coordinator will also provide remarks. 
-
-User can't request chnages in RACMs which are sent for approval.
-
-
-4. Approver will either Approver or Reject RACMs upon their judgement. There are three cases after that.
-(1) . RACM Rejected.  For rejected RACMs user will have to resubmit the RACM by uploading at leat one new document, User can remove old documents before re-submitting.
-
-(2) . RACM Approved - Not Effective. Means RACM's documents were relevent but did not meet the requirement. In this case user need to submit a deficiency response with will be either Mitigation plan or Compensatory RACMs. In RACM Page user will have information of procedures taken to evaluate and description of deficiency in "Design and Implementation" section. Coordinator can also submit the deficiency response, so it should be agreed in advance who will submit it.
-
-(3) . RACM Approved - Effective/Accepted under Deviation. This means the RACM is approved as Effective or Accepted under Deviation. No further action is required.
-
-
-5. Types of Deficiency responses
-(1) . Mitigation Plan = Requires explanation, concerned person, and due date (today or a future date).
-
-(2) . Compensatory RACM = Requires explanation and at least one uploaded document.
-
-
-6. Deficiemcy responses are also subject to the judgment of approver. if rejected, RACM will still remain Ineffective and requries another response. If approved, RACM will be either Effective or Accepted under deviation, no action required.
-
-
-
-
-
-
-
 
 
 
@@ -181,7 +18,12 @@ For assigning coordinator to unit, click on Coordinator button in Actions column
 
 Assigning approver is handled in different page, which is "Approver Management", cause there are many levels of assignment.
 
-3. Approver Management
+
+3. User Management
+
+In this page all types of users will be listed in company. Company admin can create normal users by either form filling and bulk upload. Mobile number and email address is mendatory for a user creation. In bulk upload first download the template provided and fill user details in that file. Then in bulk upload pop-up select the units for which users should be created (One user can be linked to more then one unit). On upload users will get created and logs will be visible in that page, if any error occurs. 
+
+4. Approver Management
 
 There are three types of approver assigment.
 
@@ -191,4 +33,14 @@ Business Process Level : In this, approver will be assigned for a specific Busin
 
 RACM Specific : This assigment can't be performed by company admin, it is upto the coordinator. In this coordinator can choose approver for a specific single RACM. This assignment has higest precedence and overrides all other assignments in same manner as explained above.
 
-In this page two filters are provided for easy 
+In this page two filters are provided for easy visualization for approver's status. All the existing approvers will be listed and their status. Click on a row to see their current assignments, below there will be two dropdows for adding new assigment. Select them as per requirement and click save to finish the assignment.
+
+
+5. Business Process Management
+
+In this section you can review the default processes give by system and add custom Business Process, if missing in default list. Combination of Process Name and code is required. (code will be used to generate control numbers).
+
+
+6. RACM Dashboard 
+
+In this section all existing RACMs will be listed with various filters. On click RACM will open with full details. 

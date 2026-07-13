@@ -20,6 +20,7 @@ const {
   NOT_EFFECTIVE_CONCLUSION_WHERE_SQL,
   formatReminderTimestampForLog,
 } = require('../../utils/controls_reminder');
+const { utcTs } = require('../../utils/sqlUtcTimestamps');
 const { buildRacmDetailsSection } = require('../../utils/racm_email_details');
 const { buildUserFormDetailUrl } = require('../../utils/racm_status_user_email');
 
@@ -44,7 +45,7 @@ async function fetchFormsDueForIneffectiveReminder(client) {
       cf.sub_process,
       cf.due_date,
       cf.design_deficiency_desc,
-      cr.ineffective_reminder_datetime,
+      ${utcTs('cr.ineffective_reminder_datetime')},
       c.company_name
     FROM control_forms cf
     LEFT JOIN controls_reminder cr

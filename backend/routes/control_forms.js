@@ -87,6 +87,11 @@ const {
   seedDeficiencyReviewReminderDatetime,
   mapControlsReminderToApi,
 } = require('../utils/controls_reminder');
+const {
+  controlFormsUtcOverridesSql,
+  controlFormsUtcReturningOverridesSql,
+  utcTs,
+} = require('../utils/sqlUtcTimestamps');
 const { UNIT_RESPONSIBILITY_TYPES } = require('../utils/unit_responsibilities');
 const {
   resolveApproverForRacm,
@@ -293,6 +298,7 @@ const CONTROL_FORMS_LIST_FROM = `
 const CONTROL_FORMS_LIST_SELECT = `
   SELECT
     cf.*,
+    ${controlFormsUtcOverridesSql('cf')},
     ${CONTROLS_REMINDER_SELECT_SQL},
     NULLIF(TRIM(cum.unit_name), '') AS unit_name,
     NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
@@ -1729,9 +1735,11 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
     const loggedInUserRole = req.user.role;
     
     // SELECT cf.* returns all RACM columns; unit and approver details are joined for display.
+    // Timestamp columns are re-selected with AT TIME ZONE 'UTC' so clients get timestamptz.
     const query = `
       SELECT
         cf.*,
+        ${controlFormsUtcOverridesSql('cf')},
         ${CONTROLS_REMINDER_SELECT_SQL},
         cum.unit_name,
         NULLIF(TRIM(owner.emp_name), '') AS control_owner_name,
@@ -2645,6 +2653,7 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
       `
         SELECT
           cf.*,
+          ${controlFormsUtcOverridesSql('cf')},
           ${CONTROLS_REMINDER_SELECT_SQL},
           cum.unit_name,
           NULLIF(TRIM(owner.emp_name), '') AS control_owner_name,
@@ -2846,7 +2855,7 @@ router.post('/:form_id/request-change', verifyAuth, async (req, res) => {
 
     const formResult = await client.query(
       `
-        SELECT *
+        SELECT *, ${controlFormsUtcReturningOverridesSql()}
         FROM control_forms
         WHERE form_id = $1
         FOR UPDATE
@@ -2981,7 +2990,7 @@ router.post('/:form_id/request-change', verifyAuth, async (req, res) => {
           CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
           CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
         )
-        RETURNING id, request_id, status, requested_at, request_reason
+        RETURNING id, request_id, status, ${utcTs('requested_at')}, request_reason
       `,
       [
         requestId,
@@ -3116,15 +3125,15 @@ router.get('/:form_id/change-request/active', verifyAuth, async (req, res) => {
           cr.form_id,
           cr.requested_by_email,
           COALESCE(NULLIF(TRIM(requested_user.emp_name), ''), cr.requested_by_email) AS requested_by_display,
-          cr.requested_at,
+          ${utcTs('cr.requested_at')},
           cr.status,
           cr.reviewed_by_email,
-          cr.reviewed_at,
+          ${utcTs('cr.reviewed_at')},
           COALESCE(NULLIF(TRIM(reviewed_user.emp_name), ''), cr.reviewed_by_email) AS reviewed_by_display,
           cr.request_reason,
           cr.reviewer_comment,
-          cr.created_at,
-          cr.updated_at
+          ${utcTs('cr.created_at')},
+          ${utcTs('cr.updated_at')}
         FROM change_request cr
         LEFT JOIN ifc_users requested_user
           ON LOWER(TRIM(requested_user.email_id)) = LOWER(TRIM(cr.requested_by_email))
@@ -3158,8 +3167,8 @@ router.get('/:form_id/change-request/active', verifyAuth, async (req, res) => {
           status,
           rejection_reason,
           display_order,
-          created_at,
-          updated_at
+          ${utcTs('created_at')},
+          ${utcTs('updated_at')}
         FROM change_request_item
         WHERE change_request_id = $1
         ORDER BY display_order ASC, id ASC
@@ -3222,15 +3231,15 @@ router.get('/:form_id/change-request/history', verifyAuth, async (req, res) => {
           cr.form_id,
           cr.requested_by_email,
           COALESCE(NULLIF(TRIM(requested_user.emp_name), ''), cr.requested_by_email) AS requested_by_display,
-          cr.requested_at,
+          ${utcTs('cr.requested_at')},
           cr.status,
           cr.reviewed_by_email,
-          cr.reviewed_at,
+          ${utcTs('cr.reviewed_at')},
           COALESCE(NULLIF(TRIM(reviewed_user.emp_name), ''), cr.reviewed_by_email) AS reviewed_by_display,
           cr.request_reason,
           cr.reviewer_comment,
-          cr.created_at,
-          cr.updated_at
+          ${utcTs('cr.created_at')},
+          ${utcTs('cr.updated_at')}
         FROM change_request cr
         LEFT JOIN ifc_users requested_user
           ON LOWER(TRIM(requested_user.email_id)) = LOWER(TRIM(cr.requested_by_email))
@@ -3267,8 +3276,8 @@ router.get('/:form_id/change-request/history', verifyAuth, async (req, res) => {
           status,
           rejection_reason,
           display_order,
-          created_at,
-          updated_at
+          ${utcTs('created_at')},
+          ${utcTs('updated_at')}
         FROM change_request_item
         WHERE change_request_id = ANY($1::bigint[])
         ORDER BY change_request_id ASC, display_order ASC, id ASC
@@ -3512,7 +3521,7 @@ router.post('/:form_id/change-request/:request_id/review', verifyAuth, async (re
         if (approvedFieldNames.includes('control_frequency') || approvedFieldNames.includes('sample_size')) {
           const formAfterUpdate = await client.query(
             `
-              SELECT control_frequency, created_at, company_identifier, unit_id, sample_size
+              SELECT control_frequency, ${utcTs('created_at')}, company_identifier, unit_id, sample_size
               FROM control_forms
               WHERE form_id = $1
               LIMIT 1
@@ -4111,7 +4120,7 @@ router.post('/', verifyAuth, async (req, res) => {
         created_at
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, NOW() AT TIME ZONE 'UTC')
-      RETURNING *;
+      RETURNING *, ${controlFormsUtcReturningOverridesSql()};
     `;
 
     const result = await client.query(insertQuery, [
@@ -4218,7 +4227,11 @@ router.post('/replicate', verifyAuth, async (req, res) => {
 
     const normalizedFormIds = [...new Set(form_ids.map((value) => String(value || '').trim()).filter(Boolean))];
     const selectResult = await client.query(
-      'SELECT * FROM control_forms WHERE form_id = ANY($1::text[])',
+      `
+        SELECT *, ${controlFormsUtcReturningOverridesSql()}
+        FROM control_forms
+        WHERE form_id = ANY($1::text[])
+      `,
       [normalizedFormIds]
     );
 

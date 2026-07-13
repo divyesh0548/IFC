@@ -25,6 +25,12 @@ const {
   loadDynamicFieldValuesForForm,
   isRacmTemplateSchemaReady,
 } = require('../../utils/racm_templates');
+const {
+  controlFormsUtcOverridesSql,
+  controlFormsUtcReturningOverridesSql,
+  timestampUtcSql,
+  rejectionTimestampUtcSql,
+} = require('../../utils/sqlUtcTimestamps');
 
 /** Stored in audit_logs_racm.ref_data when approver flips Approved/Rejected within the allowed window. */
 const DECISION_CHANGE_AUDIT_REF = 'Change of decision by approver';
@@ -393,7 +399,8 @@ async function getPendingApprovals(req, res) {
     const approverEmail = req.approver.email_id;
     const requestedUnitId = req.query.unit_id ? String(req.query.unit_id).trim() : '';
     const query = `
-      SELECT cf.*
+      SELECT cf.*,
+        ${controlFormsUtcOverridesSql('cf')}
       FROM control_forms cf
       ${scopedApproverRacmJoin('cf')}
       WHERE cf.status = 'sent for approval'
@@ -560,7 +567,7 @@ async function approveForm(req, res) {
         UPDATE control_forms
         SET ${updateFields.join(', ')}
         WHERE form_id = $${paramIndex}
-        RETURNING *
+        RETURNING *, ${controlFormsUtcReturningOverridesSql()}
       `;
 
       const result = await client.query(updateQuery, updateValues);
@@ -635,7 +642,8 @@ async function changeApprovalDecision(req, res) {
 
     const currentResult = await pool.query(
       `
-        SELECT cf.*
+        SELECT cf.*,
+          ${controlFormsUtcOverridesSql('cf')}
         FROM control_forms cf
         ${scopedApproverRacmJoin('cf')}
         WHERE cf.form_id = $2
@@ -755,7 +763,7 @@ async function changeApprovalDecision(req, res) {
              END,
              updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
          WHERE form_id = $3
-         RETURNING *`,
+         RETURNING *, ${controlFormsUtcReturningOverridesSql()}`,
         [status, reasonFinal, form_id]
       );
 
@@ -812,6 +820,7 @@ async function getControlForms(req, res) {
     let query = `
       SELECT 
         cf.*,
+        ${controlFormsUtcOverridesSql('cf')},
         c.company_name,
         CASE
           WHEN COALESCE(cf.assigned_to_coordinator, FALSE) = TRUE THEN
@@ -890,6 +899,7 @@ async function getControlFormById(req, res) {
     const query = `
       SELECT
         cf.*,
+        ${controlFormsUtcOverridesSql('cf')},
         c.company_name,
         NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
         NULLIF(TRIM(cum.unit_name), '') AS unit_name
@@ -1062,7 +1072,7 @@ async function getControlFormHistory(req, res) {
 
     const result = await pool.query(
       `
-        SELECT id, reason_by_approver, rejection_timestamp
+        SELECT id, reason_by_approver, ${rejectionTimestampUtcSql('rejection_timestamp')}
         FROM control_form_history
         WHERE form_id = $1
         ORDER BY rejection_timestamp ASC NULLS LAST, id ASC
@@ -1112,7 +1122,8 @@ async function reviewDeficiencyResponse(req, res) {
 
       const scopedFormResult = await client.query(
         `
-          SELECT cf.*
+          SELECT cf.*,
+            ${controlFormsUtcOverridesSql('cf')}
           FROM control_forms cf
           ${scopedApproverRacmJoin('cf')}
           WHERE cf.form_id = $2
@@ -1240,6 +1251,7 @@ async function reviewDeficiencyResponse(req, res) {
       `
         SELECT
           cf.*,
+          ${controlFormsUtcOverridesSql('cf')},
           c.company_name,
           NULLIF(TRIM(u.emp_name), '') AS control_owner_name,
           NULLIF(TRIM(cum.unit_name), '') AS unit_name
@@ -1324,7 +1336,7 @@ async function getRacmAuditLogs(req, res) {
     const query = `
       SELECT
         id,
-        timestamp,
+        ${timestampUtcSql('timestamp')},
         action,
         user_email_id,
         form_id,

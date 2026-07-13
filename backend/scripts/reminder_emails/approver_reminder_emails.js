@@ -18,6 +18,7 @@ const {
   formatReminderTimestampForLog,
   formatDueDateForEmail,
 } = require('../../utils/controls_reminder');
+const { utcTs } = require('../../utils/sqlUtcTimestamps');
 const { buildPendingApprovalRacmDetailsSection } = require('../../utils/racm_email_details');
 const { buildApproverFormDetailUrl } = require('../../utils/racm_status_user_email');
 
@@ -39,7 +40,7 @@ async function fetchFormsDueForApproverReminder(client) {
       cf.assigned_to_coordinator,
       cf.control_owner,
       cf.coordinator_assigned_by,
-      cr.reminder_to_approver_datetime,
+      ${utcTs('cr.reminder_to_approver_datetime')},
       approver_map.approver_email_id AS approver_email_id,
       NULLIF(TRIM(approver.emp_name), '') AS approver_name,
       c.company_name,

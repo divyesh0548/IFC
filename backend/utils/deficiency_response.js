@@ -1,4 +1,9 @@
 const crypto = require('crypto');
+const {
+  deficiencyResponseUtcOverridesSql,
+  deficiencySubmissionUtcOverridesSql,
+  deficiencyAttachmentUtcOverridesSql,
+} = require('./sqlUtcTimestamps');
 
 function generateDeficiencyResponseId() {
   const randomPart = crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -40,9 +45,11 @@ function validateMitigationPlanDueDate(dueDate) {
 async function getDeficiencyResponseByFormId(clientOrPool, formId) {
   const parentResult = await clientOrPool.query(
     `
-      SELECT *
-      FROM deficiency_response
-      WHERE form_id = $1
+      SELECT
+        dr.*,
+        ${deficiencyResponseUtcOverridesSql('dr')}
+      FROM deficiency_response dr
+      WHERE dr.form_id = $1
       LIMIT 1
     `,
     [formId]
@@ -55,10 +62,12 @@ async function getDeficiencyResponseByFormId(clientOrPool, formId) {
   const parent = parentResult.rows[0];
   const submissionsResult = await clientOrPool.query(
     `
-      SELECT *
-      FROM deficiency_response_submission
-      WHERE deficiency_response_id = $1
-      ORDER BY version_no DESC, id DESC
+      SELECT
+        drs.*,
+        ${deficiencySubmissionUtcOverridesSql('drs')}
+      FROM deficiency_response_submission drs
+      WHERE drs.deficiency_response_id = $1
+      ORDER BY drs.version_no DESC, drs.id DESC
     `,
     [parent.id]
   );
@@ -70,10 +79,12 @@ async function getDeficiencyResponseByFormId(clientOrPool, formId) {
   if (submissionIds.length > 0) {
     const attachmentsResult = await clientOrPool.query(
       `
-        SELECT *
-        FROM deficiency_response_attachment
-        WHERE submission_id = ANY($1::int[])
-        ORDER BY id ASC
+        SELECT
+          dra.*,
+          ${deficiencyAttachmentUtcOverridesSql('dra')}
+        FROM deficiency_response_attachment dra
+        WHERE dra.submission_id = ANY($1::int[])
+        ORDER BY dra.id ASC
       `,
       [submissionIds]
     );
@@ -170,9 +181,11 @@ async function createOrResubmitDeficiencyResponse(client, payload) {
 
   const existingResult = await client.query(
     `
-      SELECT *
-      FROM deficiency_response
-      WHERE form_id = $1
+      SELECT
+        dr.*,
+        ${deficiencyResponseUtcOverridesSql('dr')}
+      FROM deficiency_response dr
+      WHERE dr.form_id = $1
       LIMIT 1
       FOR UPDATE
     `,

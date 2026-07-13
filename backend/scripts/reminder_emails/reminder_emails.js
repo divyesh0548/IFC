@@ -18,6 +18,7 @@ const {
   formatReminderTimestampForLog,
   formatDueDateForEmail,
 } = require('../../utils/controls_reminder');
+const { utcTs } = require('../../utils/sqlUtcTimestamps');
 const { buildRacmDetailsSection } = require('../../utils/racm_email_details');
 const { isCoordinatorAssignedRacm, buildCoordinatorFormDetailUrl } = require('../../utils/racm_coordinator_assignment');
 const { buildUserFormDetailUrl } = require('../../utils/racm_status_user_email');
@@ -76,7 +77,7 @@ async function fetchFormsDueForReminder(client) {
       cf.business_process,
       cf.due_date,
       cf.reminder_frequency,
-      cr.reminder_datetime,
+      ${utcTs('cr.reminder_datetime')},
       c.company_name
     FROM control_forms cf
     LEFT JOIN controls_reminder cr

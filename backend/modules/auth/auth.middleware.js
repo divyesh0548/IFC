@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { decryptToken } = require('../../utils/auth_utility');
 const { pool } = require('../../utils/db');
 const { clearAuthCookies } = require('./auth.cookies');
+const { createdAtUtcSql } = require('../../utils/sqlUtcTimestamps');
 
 function clearCookiesAndRespondAuthError(res, statusCode, message) {
   clearAuthCookies(res);
@@ -102,7 +103,7 @@ async function verifyCompanyCoordinator(req, res, next) {
     const jwtSecret = process.env.JWT_SECRET;
     const decoded = jwt.verify(decryptToken(token), jwtSecret);
 
-    const userQuery = 'SELECT * FROM ifc_users WHERE email_id = $1';
+    const userQuery = `SELECT *, ${createdAtUtcSql('created_at')} FROM ifc_users WHERE email_id = $1`;
     const userResult = await pool.query(userQuery, [decoded.email_id]);
 
     if (userResult.rows.length === 0) {
@@ -151,7 +152,10 @@ async function verifyCompanyAdmin(req, res, next) {
     const jwtSecret = process.env.JWT_SECRET;
     const decoded = jwt.verify(decryptToken(token), jwtSecret);
 
-    const userResult = await pool.query('SELECT * FROM ifc_users WHERE email_id = $1', [decoded.email_id]);
+    const userResult = await pool.query(
+      `SELECT *, ${createdAtUtcSql('created_at')} FROM ifc_users WHERE email_id = $1`,
+      [decoded.email_id]
+    );
     if (userResult.rows.length === 0) {
       return clearCookiesAndRespondAuthError(res, 401, 'User not found');
     }

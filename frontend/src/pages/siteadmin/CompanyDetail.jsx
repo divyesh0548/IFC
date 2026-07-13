@@ -13,6 +13,7 @@ import { toast } from 'react-hot-toast'
 import CompanyDetailsView from '../../components/company/CompanyDetailsView'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
+import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
 const defaultAdminForm = {
@@ -32,6 +33,7 @@ function CompanyDetail() {
   const [createAdminSaving, setCreateAdminSaving] = useState(false)
   const [adminForm, setAdminForm] = useState(defaultAdminForm)
   const [adminFormErrors, setAdminFormErrors] = useState({})
+  const { getEmailWarning, getEmailWarningHelperTextSx } = useOrganizationEmailWarning()
 
   useSyncGlobalLoading(loading || createAdminSaving)
 
@@ -240,7 +242,10 @@ function CompanyDetail() {
             value={adminForm.email_id}
             onChange={(event) => handleAdminFormChange('email_id', event.target.value)}
             error={Boolean(adminFormErrors.email_id)}
-            helperText={adminFormErrors.email_id || ' '}
+            helperText={adminFormErrors.email_id || getEmailWarning(adminForm.email_id) || ' '}
+            FormHelperTextProps={{
+              sx: adminFormErrors.email_id ? undefined : getEmailWarningHelperTextSx(adminForm.email_id),
+            }}
             disabled={createAdminSaving}
             fullWidth
             required
@@ -249,8 +254,12 @@ function CompanyDetail() {
             label="Mobile Number"
             value={adminForm.mobile}
             onChange={(event) => handleAdminFormChange('mobile', event.target.value)}
-            error={Boolean(adminFormErrors.mobile)}
-            helperText={adminFormErrors.mobile || ' '}
+            error={Boolean(adminFormErrors.mobile) || Boolean(adminForm.mobile && getMobileValidationError(adminForm.mobile))}
+            helperText={
+              adminFormErrors.mobile
+              || (adminForm.mobile && getMobileValidationError(adminForm.mobile))
+              || 'Enter a valid 10-digit mobile number.'
+            }
             disabled={createAdminSaving}
             inputProps={{ inputMode: 'numeric', maxLength: 10 }}
             fullWidth
