@@ -26,11 +26,12 @@ import {
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
-  STATUS_BADGE_PILL_SX,
   CONCLUSION_BADGE_TABLE_PILL_SX,
   CONCLUSION_TABLE_CELL_SX,
   getApprovalStatusBadgeSolidColors,
+  getApprovalStatusBadgePillSx,
   getConclusionBadgeSolidColors,
+  formatRacmApprovalStatusLabel,
   isMuiAlertCloseActionClick,
 } from '../../uiConstants'
 import { STORAGE_KEYS } from '../../storageKeys'
@@ -47,7 +48,7 @@ function ApproverDashboard() {
   const [financialYearOptions, setFinancialYearOptions] = useState([])
   const [loading, setLoading] = useState(true)
   useSyncGlobalLoading(loading)
-  const [filterStatus, setFilterStatus] = useState('pending') // 'pending', 'all', 'approved', 'rejected'
+  const [filterStatus, setFilterStatus] = useState('sent for approval') // awaiting approver action
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all')
   const [filterFinancialYear, setFilterFinancialYear] = useState('all')
   const [filterUnit, setFilterUnit] = useState('all')
@@ -191,29 +192,20 @@ function ApproverDashboard() {
     return apiUrl(`/api/approver/control-forms${query ? `?${query}` : ''}`)
   }
 
-  /** Display label for approver UI; keep actual statuses and only use "—" for empty values. */
-  const formatStatus = (status) => {
-    if (status === null || status === undefined) {
-      return '—'
-    }
-    const s = String(status).trim()
-    if (s === '') {
-      return '—'
-    }
-    return s.charAt(0).toUpperCase() + s.slice(1)
-  }
+  /** Display label for approver UI; keep Sent for Approval distinct from empty/Pending. */
+  const formatStatus = (status) => formatRacmApprovalStatusLabel(status)
 
   const matchesApproverStatusFilter = (form, statusFilter) => {
     if (statusFilter === 'all') return true
-    const raw = (form.status ?? '').toString().trim()
-    if (statusFilter === 'pending') {
+    const raw = (form.status ?? '').toString().trim().toLowerCase()
+    if (statusFilter === 'sent for approval' || statusFilter === 'pending') {
       return raw === 'sent for approval'
     }
     if (statusFilter === 'approved') {
-      return raw.toLowerCase() === 'approved'
+      return raw === 'approved'
     }
     if (statusFilter === 'rejected') {
-      return raw.toLowerCase() === 'rejected'
+      return raw === 'rejected'
     }
     return true
   }
@@ -499,8 +491,8 @@ function ApproverDashboard() {
                 fontWeight: 700,
               }}
             >
-              {filterStatus === 'pending'
-                ? 'Pending Approvals'
+              {filterStatus === 'sent for approval' || filterStatus === 'pending'
+                ? 'Sent for Approval'
                 : filterStatus === 'approved'
                 ? 'Approved RACM'
                 : filterStatus === 'rejected'
@@ -588,7 +580,7 @@ function ApproverDashboard() {
                 onChange={(e) => setFilterStatus(e.target.value)}
               >
                 <MenuItem value="all">All</MenuItem>
-                <MenuItem value="pending">Pending</MenuItem>
+                <MenuItem value="sent for approval">Sent for Approval</MenuItem>
                 <MenuItem value="approved">Approved</MenuItem>
                 <MenuItem value="rejected">Rejected</MenuItem>
               </Select>
@@ -1043,13 +1035,13 @@ function ApproverDashboard() {
                           ...(cellWordWrap ? { verticalAlign: 'top' } : {}),
                         }}
                       >
-                        <Box
-                          component="span"
-                          sx={{
-                            ...STATUS_BADGE_PILL_SX,
-                            ...getApprovalStatusBadgeSolidColors(status),
-                          }}
-                        >
+                          <Box
+                            component="span"
+                            sx={{
+                              ...getApprovalStatusBadgePillSx(status),
+                              ...getApprovalStatusBadgeSolidColors(status),
+                            }}
+                          >
                           {status}
                         </Box>
                       </Box>

@@ -23,13 +23,13 @@ import {
   DASHBOARD_PAPER_SX,
   FILTER_BOX_MIN_WIDTH,
   PAGE_SUBHEADER_TEXT_SX,
-  STATUS_BADGE_PILL_SX,
   CONCLUSION_BADGE_TABLE_PILL_SX,
   CONCLUSION_TABLE_CELL_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   getConclusionBadgeSolidColors,
   getStatusBadgeSolidColors,
+  formatRacmApprovalStatusLabel,
   isMuiAlertCloseActionClick,
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
@@ -66,11 +66,7 @@ function User_dashboard() {
     )]
   }
 
-  const formatStatus = (status) => {
-    if (status === null || status === undefined) return 'Pending'
-    const value = String(status).trim()
-    return value ? value.charAt(0).toUpperCase() + value.slice(1) : 'Pending'
-  }
+  const formatStatus = (status) => formatRacmApprovalStatusLabel(status)
 
   const formatDate = (date) => {
     if (!date) return 'N/A'
@@ -606,7 +602,14 @@ function User_dashboard() {
                           backgroundColor: getStatusBadgeSolidColors(form.status).backgroundColor,
                           color: getStatusBadgeSolidColors(form.status).color,
                           fontWeight: 600,
-                          '& .MuiChip-label': { px: 1 },
+                          maxWidth: '100%',
+                          '& .MuiChip-label': {
+                            px: 1,
+                            whiteSpace: 'normal',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'break-word',
+                            lineHeight: 1.35,
+                          },
                         }}
                       />
                     </Box>

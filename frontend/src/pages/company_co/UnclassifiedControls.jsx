@@ -362,6 +362,7 @@ function UnclassifiedControls() {
             <MenuItem value="Approved">Approved</MenuItem>
             <MenuItem value="Rejected">Rejected</MenuItem>
             <MenuItem value="Pending">Pending</MenuItem>
+            <MenuItem value="Sent for Approval">Sent for Approval</MenuItem>
           </Select>
         </FormControl>
 

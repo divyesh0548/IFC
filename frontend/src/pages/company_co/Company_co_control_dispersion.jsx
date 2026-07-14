@@ -17,6 +17,7 @@ import {
   DASHBOARD_PAPER_SX,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
+  toRacmApprovalStatusQueryParam,
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
@@ -163,7 +164,7 @@ const countControlsByCombination = (forms, filters = {}) =>
     highKeyManual: 0,
   })
 
-function Company_Co_dashboard() {
+function ControlDispersionDashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
@@ -270,7 +271,8 @@ function Company_Co_dashboard() {
     }
 
     if (filterApprovalStatus !== 'all') {
-      params.set('status', filterApprovalStatus.toLowerCase())
+      const statusParam = toRacmApprovalStatusQueryParam(filterApprovalStatus)
+      if (statusParam) params.set('status', statusParam)
     }
 
     if (filterUnit !== 'all') {
@@ -769,6 +771,7 @@ function Company_Co_dashboard() {
               <MenuItem value="Approved">Approved</MenuItem>
               <MenuItem value="Rejected">Rejected</MenuItem>
               <MenuItem value="Pending">Pending</MenuItem>
+              <MenuItem value="Sent for Approval">Sent for Approval</MenuItem>
             </Select>
           </FormControl>
 
@@ -1163,4 +1166,4 @@ function Company_Co_dashboard() {
   )
 }
 
-export default Company_Co_dashboard
+export default ControlDispersionDashboard

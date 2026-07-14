@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -23,13 +24,15 @@ import {
   DASHBOARD_TABLE_WRAP_SX,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
-  STATUS_BADGE_PILL_SX,
   CONCLUSION_BADGE_TABLE_PILL_SX,
   CONCLUSION_TABLE_CELL_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   getApprovalStatusBadgeSolidColors,
+  getApprovalStatusBadgePillSx,
   getConclusionBadgeSolidColors,
+  formatRacmApprovalStatusLabel,
+  toRacmApprovalStatusQueryParam,
 } from '../../uiConstants'
 
 const DEFAULT_ROWS_PER_PAGE = 10
@@ -46,9 +49,7 @@ function getIsActive(value) {
 }
 
 function formatStatus(status) {
-  const value = String(status || '').trim()
-  if (!value || value.toLowerCase() === 'null') return 'Pending'
-  return value.charAt(0).toUpperCase() + value.slice(1)
+  return formatRacmApprovalStatusLabel(status)
 }
 
 function formatConclusion(value) {
@@ -70,6 +71,7 @@ function formatDate(date) {
 
 function CompanyAdminRacmDashboard() {
   const theme = useTheme()
+  const navigate = useNavigate()
   const [companyIdentifier, setCompanyIdentifier] = useState(null)
   const [forms, setForms] = useState([])
   const [page, setPage] = useState(0)
@@ -166,7 +168,8 @@ function CompanyAdminRacmDashboard() {
     }
 
     if (filterStatus !== 'all') {
-      params.set('status', filterStatus === 'Pending' ? 'pending' : filterStatus.toLowerCase())
+      const statusParam = toRacmApprovalStatusQueryParam(filterStatus)
+      if (statusParam) params.set('status', statusParam)
     }
 
     if (filterBusinessProcess !== 'all') {
@@ -334,12 +337,34 @@ function CompanyAdminRacmDashboard() {
   return (
     <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Paper elevation={3} sx={{ ...DASHBOARD_PAPER_SX, p: 3 }}>
-        <Typography variant="h5" component="h1" sx={{ fontWeight: 700, mb: 0.5 }}>
-          RACM Dashboard
-        </Typography>
-        <Typography sx={PAGE_SUBHEADER_TEXT_SX}>
-          View and filter RACMs across your company units.
-        </Typography>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: { xs: 'stretch', sm: 'flex-start' },
+            justifyContent: 'space-between',
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 1.5,
+            mb: 0.5,
+          }}
+        >
+          <Box>
+            <Typography variant="h5" component="h1" sx={{ fontWeight: 700, mb: 0.5 }}>
+              RACM Dashboard
+            </Typography>
+            <Typography sx={PAGE_SUBHEADER_TEXT_SX}>
+              View and filter RACMs across your company units.
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            color="secondary"
+            size="small"
+            onClick={() => navigate('/company_admin/ifc-report')}
+            sx={{ textTransform: 'none', fontWeight: 600, alignSelf: { xs: 'stretch', sm: 'center' } }}
+          >
+            Reports
+          </Button>
+        </Box>
 
         <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Box
@@ -442,6 +467,7 @@ function CompanyAdminRacmDashboard() {
                 <MenuItem value="Approved">Approved</MenuItem>
                 <MenuItem value="Rejected">Rejected</MenuItem>
                 <MenuItem value="Pending">Pending</MenuItem>
+                <MenuItem value="Sent for Approval">Sent for Approval</MenuItem>
               </Select>
             </FormControl>
 
@@ -660,7 +686,7 @@ function CompanyAdminRacmDashboard() {
                             <Box
                               component="span"
                               sx={{
-                                ...STATUS_BADGE_PILL_SX,
+                                ...getApprovalStatusBadgePillSx(status),
                                 ...getApprovalStatusBadgeSolidColors(status),
                               }}
                             >

@@ -18,10 +18,11 @@ import {
   FILTER_BOX_MIN_WIDTH,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
   PAGE_SUBHEADER_TEXT_SX,
-  STATUS_BADGE_PILL_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   getApprovalStatusBadgeSolidColors,
+  getApprovalStatusBadgePillSx,
+  formatRacmApprovalStatusLabel,
 } from '../../uiConstants'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
@@ -44,13 +45,7 @@ function normalizeBusinessProcess(value) {
 }
 
 function formatApprovalStatus(status) {
-  const value = String(status || '').trim()
-
-  if (!value || value.toLowerCase() === 'null') {
-    return 'Pending'
-  }
-
-  return value.charAt(0).toUpperCase() + value.slice(1)
+  return formatRacmApprovalStatusLabel(status)
 }
 
 function formatDate(date) {
@@ -403,6 +398,7 @@ function AuditorRacmDashboard() {
                   >
                     <MenuItem value="all">All</MenuItem>
                     <MenuItem value="Pending">Pending</MenuItem>
+                    <MenuItem value="Sent for Approval">Sent for Approval</MenuItem>
                     <MenuItem value="Approved">Approved</MenuItem>
                     <MenuItem value="Rejected">Rejected</MenuItem>
                   </Select>
@@ -804,7 +800,7 @@ function AuditorRacmDashboard() {
                           <Box
                             component="span"
                             sx={{
-                              ...STATUS_BADGE_PILL_SX,
+                              ...getApprovalStatusBadgePillSx(approvalStatus),
                               ...approvalStatusColors,
                             }}
                           >

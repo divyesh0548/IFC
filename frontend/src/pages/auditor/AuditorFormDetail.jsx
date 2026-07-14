@@ -31,6 +31,7 @@ import { toast } from 'react-hot-toast'
 import {
   FORM_DETAIL_CONTENT_STACK_SX,
   FORM_DETAIL_ROOT_SX,
+  formatRacmApprovalStatusLabel,
 } from '../../uiConstants'
 import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, getRacmProcessOwnerDisplayValue, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
 import { API_BASE_URL, apiUrl } from '../../config/api'
@@ -51,7 +52,7 @@ function formatDate(dateString) {
 function formatStatus(status) {
   const value = String(status || '').trim()
   if (!value || value.toLowerCase() === 'null') return '-'
-  return value.charAt(0).toUpperCase() + value.slice(1)
+  return formatRacmApprovalStatusLabel(value)
 }
 
 function getIsActive(value) {

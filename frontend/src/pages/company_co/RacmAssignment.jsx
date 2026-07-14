@@ -29,8 +29,9 @@ import {
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
-  STATUS_BADGE_PILL_SX,
   getApprovalStatusBadgeSolidColors,
+  getApprovalStatusBadgePillSx,
+  formatRacmApprovalStatusLabel,
 } from '../../uiConstants'
 import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
 import CompanyUserSearchAutocomplete from '../../components/company_co/CompanyUserSearchAutocomplete'
@@ -54,14 +55,6 @@ function isApproverBulkAssignableRacm(form) {
 function isApproverAssignmentStatusLocked(form) {
   const status = normalizeRacmApprovalStatus(form?.status)
   return status === 'sent for approval'
-}
-
-function formatRacmApprovalStatusLabel(status) {
-  const normalized = normalizeRacmApprovalStatus(status)
-  if (normalized === 'sent for approval') return 'Sent for Approval'
-  if (normalized === 'approved') return 'Approved'
-  if (normalized === 'rejected') return 'Rejected'
-  return 'Pending'
 }
 
 function hasRacmSpecificApprover(form) {
@@ -1139,7 +1132,7 @@ function RacmAssignment() {
           <Box
             component="span"
             sx={{
-              ...STATUS_BADGE_PILL_SX,
+              ...getApprovalStatusBadgePillSx(formatRacmApprovalStatusLabel(form.status)),
               ...getApprovalStatusBadgeSolidColors(formatRacmApprovalStatusLabel(form.status)),
             }}
           >

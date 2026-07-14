@@ -18,6 +18,7 @@ const {
   updateIneffectiveReminderDatetime,
   INEFFECTIVE_REMINDER_DATETIME_DUE_SQL,
   NOT_EFFECTIVE_CONCLUSION_WHERE_SQL,
+  formatDueDateForEmail,
   formatReminderTimestampForLog,
 } = require('../../utils/controls_reminder');
 const { utcTs } = require('../../utils/sqlUtcTimestamps');

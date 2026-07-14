@@ -1,41 +1,64 @@
 require('dotenv/config');
 const { PrismaClient } = require('../generated/prisma');
 const { PrismaPg } = require('@prisma/adapter-pg');
+const { pool, isPgConnectionError } = require('../utils/db');
 
-function buildConnectionString() {
-  if (process.env.DATABASE_URL) {
+// Share the app pg Pool so Prisma inherits keepAlive / idle settings.
+// PrismaPg's default idleTimeoutMillis is only 10s, which causes P1017
+// ("Server has closed the connection") after idle periods.
+const adapter = new PrismaPg(pool, {
+  onPoolError: (error) => {
+    console.error('Prisma pg pool error:', error?.message || error);
+  },
+  onConnectionError: (error) => {
+    console.error('Prisma pg connection error:', error?.message || error);
+  },
+});
+
+const prisma = new PrismaClient({ adapter });
+
+function isPrismaConnectionError(error) {
+  if (!error) return false;
+  if (isPgConnectionError(error)) return true;
+
+  const code = String(error.code || error?.meta?.code || '').toUpperCase();
+  if (code === 'P1017' || code === 'P1001' || code === 'P1002') return true;
+
+  const message = String(error.message || error?.meta?.cause?.message || '').toLowerCase();
+  return (
+    message.includes('server has closed the connection')
+    || message.includes('connectionclosed')
+    || message.includes('connection closed')
+    || message.includes("can't reach database server")
+  );
+}
+
+/**
+ * Retry a Prisma operation once after a dropped/idle connection error.
+ */
+async function withPrismaRetry(operation, { retries = 1, label = 'prisma' } = {}) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
-      const u = new URL(process.env.DATABASE_URL);
-      const host = u.hostname;
-      const isLocal = host === 'localhost' || host === '127.0.0.1';
-      if (!isLocal) {
-        // Avoid TLS verification failures with RDS/self-signed chains in Node runtime.
-        u.searchParams.delete('sslmode');
-        u.searchParams.set('sslmode', 'no-verify');
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isPrismaConnectionError(error) || attempt >= retries) {
+        throw error;
       }
-      // Global session timezone for all Prisma queries/defaults (UTC storage).
-      const existingOptions = u.searchParams.get('options') || '';
-      if (!existingOptions.includes('timezone=UTC')) {
-        const tzOption = '-c timezone=UTC';
-        u.searchParams.set('options', existingOptions ? `${existingOptions} ${tzOption}` : tzOption);
-      }
-      return u.toString();
-    } catch {
-      return process.env.DATABASE_URL;
+      console.warn(
+        `Prisma retry after connection error (${label}, attempt ${attempt + 1}):`,
+        error.message || error
+      );
     }
   }
 
-  const host = process.env.DB_HOST || 'localhost';
-  const port = process.env.DB_PORT || '5432';
-  const user = encodeURIComponent(process.env.DB_USER || 'postgres');
-  const password = encodeURIComponent(String(process.env.DB_PASSWORD || ''));
-  const database = encodeURIComponent(process.env.DB_NAME || 'ifc_dev');
-  const isLocal = host === 'localhost' || host === '127.0.0.1';
-  const sslPart = isLocal ? '' : '&sslmode=no-verify';
-  return `postgresql://${user}:${password}@${host}:${port}/${database}?schema=public${sslPart}&options=-c%20timezone%3DUTC`;
+  throw lastError;
 }
 
-const adapter = new PrismaPg({ connectionString: buildConnectionString() });
-const prisma = new PrismaClient({ adapter });
-
-module.exports = { prisma };
+module.exports = {
+  prisma,
+  withPrismaRetry,
+  isPrismaConnectionError,
+};

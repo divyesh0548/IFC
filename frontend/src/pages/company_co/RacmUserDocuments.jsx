@@ -31,6 +31,7 @@ import {
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
+  toRacmApprovalStatusQueryParam,
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
@@ -195,7 +196,8 @@ function RacmUserDocuments() {
     }
 
     if (filterStatus !== 'all') {
-      params.set('status', filterStatus === 'Pending' ? 'pending' : filterStatus.toLowerCase())
+      const statusParam = toRacmApprovalStatusQueryParam(filterStatus)
+      if (statusParam) params.set('status', statusParam)
     }
 
     if (filterBusinessProcess !== 'all') {
@@ -792,6 +794,7 @@ function RacmUserDocuments() {
                 <MenuItem value="Approved">Approved</MenuItem>
                 <MenuItem value="Rejected">Rejected</MenuItem>
                 <MenuItem value="Pending">Pending</MenuItem>
+                <MenuItem value="Sent for Approval">Sent for Approval</MenuItem>
               </Select>
             </FormControl>
 

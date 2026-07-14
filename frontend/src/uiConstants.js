@@ -165,19 +165,57 @@ const STATUS_BADGE_SOLID = {
 /** Raw API/DB `status` on control_forms */
 export function getStatusBadgeSolidColors(status) {
   const s = String(status ?? '').trim()
-  if (s === 'Approved') return STATUS_BADGE_SOLID.success
-  if (s === 'Rejected') return STATUS_BADGE_SOLID.error
-  if (!s || s.toLowerCase() === 'null' || s.toLowerCase() === 'sent for approval') {
+  if (s === 'Approved' || s.toLowerCase() === 'approved') return STATUS_BADGE_SOLID.success
+  if (s === 'Rejected' || s.toLowerCase() === 'rejected') return STATUS_BADGE_SOLID.error
+  if (!s || s.toLowerCase() === 'null' || s.toLowerCase() === 'pending') {
     return STATUS_BADGE_SOLID.warning
+  }
+  if (s.toLowerCase() === 'sent for approval') {
+    return STATUS_BADGE_SOLID.moderate
   }
   return STATUS_BADGE_SOLID.neutral
 }
 
-/** UI labels such as Pending / Approved / Rejected (e.g. after formatStatus) */
+/**
+ * Canonical RACM approval status label for dashboards/tables.
+ * Keeps "Sent for Approval" distinct from empty/pending work.
+ */
+export function formatRacmApprovalStatusLabel(status) {
+  const normalized = String(status ?? '').trim().toLowerCase()
+  if (!normalized || normalized === 'null') return 'Pending'
+  if (normalized === 'sent for approval') return 'Sent for Approval'
+  if (normalized === 'approved') return 'Approved'
+  if (normalized === 'rejected') return 'Rejected'
+  if (normalized === 'pending') return 'Pending'
+  return String(status).trim().charAt(0).toUpperCase() + String(status).trim().slice(1)
+}
+
+/** Convert a UI filter label/value into the API status query param. */
+export function toRacmApprovalStatusQueryParam(filterValue) {
+  const normalized = String(filterValue ?? '').trim().toLowerCase()
+  if (!normalized || normalized === 'all') return null
+  if (normalized === 'pending') return 'pending'
+  if (normalized === 'sent for approval') return 'sent for approval'
+  if (normalized === 'approved') return 'approved'
+  if (normalized === 'rejected') return 'rejected'
+  return normalized
+}
+
+/** UI labels such as Pending / Sent for Approval / Approved / Rejected (e.g. after formatRacmApprovalStatusLabel) */
 export function getApprovalStatusBadgeSolidColors(label) {
   if (label === 'Approved') return STATUS_BADGE_SOLID.success
   if (label === 'Rejected') return STATUS_BADGE_SOLID.error
+  if (label === 'Sent for Approval') return STATUS_BADGE_SOLID.moderate
   return STATUS_BADGE_SOLID.warning
+}
+
+/** Pill layout for approval labels — wrap long text the same way as conclusion badges. */
+export function getApprovalStatusBadgePillSx(label) {
+  const normalized = String(label || '').trim().toLowerCase()
+  if (normalized === 'sent for approval' || normalized.length > 12) {
+    return CONCLUSION_BADGE_PILL_SX
+  }
+  return STATUS_BADGE_PILL_SX
 }
 
 export function getActivityBadgeSolidColors(isActive) {

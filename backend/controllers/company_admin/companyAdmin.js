@@ -13,6 +13,7 @@ const {
   timestampUtcSql,
   rejectionTimestampUtcSql,
 } = require('../../utils/sqlUtcTimestamps');
+const { buildIfcReport, emptyIfcReportPayload } = require('../../utils/ifc_report');
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -951,10 +952,13 @@ async function getDashboardRacms(req, res) {
       conditions.push(`LOWER(TRIM(COALESCE(cf.status, ''))) = 'approved'`);
     } else if (status === 'rejected') {
       conditions.push(`LOWER(TRIM(COALESCE(cf.status, ''))) = 'rejected'`);
+    } else if (status === 'sent for approval') {
+      conditions.push(`LOWER(TRIM(COALESCE(cf.status, ''))) = 'sent for approval'`);
     } else if (status === 'pending') {
       conditions.push(`(
         COALESCE(NULLIF(TRIM(cf.status), ''), '') = ''
-        OR LOWER(TRIM(COALESCE(cf.status, ''))) = 'sent for approval'
+        OR LOWER(TRIM(COALESCE(cf.status, ''))) = 'pending'
+        OR LOWER(TRIM(COALESCE(cf.status, ''))) = 'null'
       )`);
     }
 
@@ -1519,8 +1523,45 @@ async function assignApprover(req, res) {
   }
 }
 
+async function getIfcReport(req, res) {
+  const companyIdentifier = String(req.user?.company_identifier || '').trim();
+
+  if (!companyIdentifier) {
+    return res.status(200).json({
+      success: true,
+      data: emptyIfcReportPayload([]),
+    });
+  }
+
+  try {
+    const unitsResult = await pool.query(
+      `
+        SELECT
+          NULLIF(TRIM(unit_id), '') AS unit_id,
+          NULLIF(TRIM(unit_name), '') AS unit_name
+        FROM company_unit_master
+        WHERE company_identifier = $1
+          AND NULLIF(TRIM(unit_id), '') IS NOT NULL
+        ORDER BY unit_name ASC, unit_id ASC
+      `,
+      [companyIdentifier]
+    );
+
+    const data = await buildIfcReport({
+      companyIdentifier,
+      units: unitsResult.rows,
+    });
+
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Company admin IFC report error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load IFC report' });
+  }
+}
+
 module.exports = {
   getHomeStats,
+  getIfcReport,
   getUnitManagement,
   getUsers,
   createCompanyUnit,

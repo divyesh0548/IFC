@@ -42,6 +42,7 @@ import {
   FORM_DETAIL_ACTION_BAR_SX,
   FORM_DETAIL_CONTENT_STACK_SX,
   FORM_DETAIL_ROOT_SX,
+  formatRacmApprovalStatusLabel,
 } from '../../uiConstants'
 import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
 import { fetchUnitUsers } from '../../components/company_co/unitUserSearch'
@@ -1100,19 +1101,9 @@ function FormDetail() {
   }
 
   const formatStatus = (status) => {
-    if (!status || status === '' || status === null) {
-      return '-'
-    }
-
-    if (status === 'Approved') {
-      return 'Approved'
-    }
-
-    if (status === 'Rejected') {
-      return 'Rejected'
-    }
-
-    return status.charAt(0).toUpperCase() + status.slice(1)
+    const value = String(status || '').trim()
+    if (!value || value.toLowerCase() === 'null') return '-'
+    return formatRacmApprovalStatusLabel(value)
   }
 
   const formatDeficiencyStatus = (status) => {

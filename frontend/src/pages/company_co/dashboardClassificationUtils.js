@@ -160,11 +160,17 @@ const matchesDashboardFilters = (form, filters = {}) => {
 
   if (approvalStatus !== 'all') {
     const normalizedStatus = normalizeValue(form?.status)
-    if (approvalStatus === 'Pending') {
-      if (normalizedStatus && normalizedStatus !== 'sent for approval') {
+    const normalizedFilter = normalizeValue(approvalStatus)
+
+    if (normalizedFilter === 'pending') {
+      if (normalizedStatus) {
         return false
       }
-    } else if (normalizedStatus !== normalizeValue(approvalStatus)) {
+    } else if (normalizedFilter === 'sent for approval') {
+      if (normalizedStatus !== 'sent for approval') {
+        return false
+      }
+    } else if (normalizedStatus !== normalizedFilter) {
       return false
     }
   }

@@ -34,11 +34,13 @@ import {
   PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
-  STATUS_BADGE_PILL_SX,
   CONCLUSION_BADGE_TABLE_PILL_SX,
   CONCLUSION_TABLE_CELL_SX,
   getApprovalStatusBadgeSolidColors,
+  getApprovalStatusBadgePillSx,
   getConclusionBadgeSolidColors,
+  formatRacmApprovalStatusLabel,
+  toRacmApprovalStatusQueryParam,
   isMuiAlertCloseActionClick,
 } from '../../uiConstants'
 import { isCoordinatorAssignedRacm, isRacmAssigned } from '../../racmFormDetailFields'
@@ -287,12 +289,7 @@ function RacmManagementDashboard() {
     }
   }
 
-  const formatStatus = (status) => {
-    if (!status || status === '' || status === null) {
-      return 'Pending'
-    }
-    return status.charAt(0).toUpperCase() + status.slice(1)
-  }
+  const formatStatus = (status) => formatRacmApprovalStatusLabel(status)
 
   const formatConclusion = (value) => {
     const normalized = String(value || '').trim()
@@ -317,7 +314,8 @@ function RacmManagementDashboard() {
     }
 
     if (filterStatus !== 'all') {
-      params.set('status', filterStatus === 'Pending' ? 'pending' : filterStatus.toLowerCase())
+      const statusParam = toRacmApprovalStatusQueryParam(filterStatus)
+      if (statusParam) params.set('status', statusParam)
     }
 
     if (filterBusinessProcess !== 'all') {
@@ -1667,6 +1665,23 @@ function RacmManagementDashboard() {
         }}
       >
         <Button
+          onClick={() => navigate('/company_co/ifc-report')}
+          disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
+          variant="contained"
+          color="secondary"
+          size="small"
+          sx={{
+            ...toolbarBtnBase,
+            '&:hover': { boxShadow: 'none' },
+            '&:disabled': {
+              bgcolor: alpha(theme.palette.action.disabledBackground, 0.5),
+            },
+          }}
+        >
+          Reports
+        </Button>
+
+        <Button
           onClick={() => navigate('/company_co/racm-user-documents')}
           disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
           variant="contained"
@@ -2149,6 +2164,7 @@ function RacmManagementDashboard() {
                   <MenuItem value="Approved">Approved</MenuItem>
                   <MenuItem value="Rejected">Rejected</MenuItem>
                   <MenuItem value="Pending">Pending</MenuItem>
+                  <MenuItem value="Sent for Approval">Sent for Approval</MenuItem>
                 </Select>
               </FormControl>
               <FormControl
@@ -2681,7 +2697,7 @@ function RacmManagementDashboard() {
                           <Box
                             component="span"
                             sx={{
-                              ...STATUS_BADGE_PILL_SX,
+                              ...getApprovalStatusBadgePillSx(status),
                               ...getApprovalStatusBadgeSolidColors(status),
                             }}
                           >

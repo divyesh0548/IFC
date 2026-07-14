@@ -9,8 +9,10 @@ const pool = new Pool({
   ...getPoolConfig(),
   keepAlive: true,
   max: 20,
-  idleTimeoutMillis: 30_000,
+  // Match Prisma v6-style idle lifetime so RDS idle timeouts don't kill reused clients.
+  idleTimeoutMillis: 300_000,
   connectionTimeoutMillis: 30_000,
+  allowExitOnIdle: false,
 });
 
 pool.on('error', (error) => {
@@ -18,16 +20,21 @@ pool.on('error', (error) => {
 });
 
 function isPgConnectionError(error) {
-  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || error?.cause?.message || '').toLowerCase();
 
   return (
-    error?.code === 'ECONNRESET' ||
-    error?.code === 'ECONNREFUSED' ||
-    error?.code === 'ETIMEDOUT' ||
-    error?.code === '57P01' ||
+    code === 'ECONNRESET' ||
+    code === 'ECONNREFUSED' ||
+    code === 'ETIMEDOUT' ||
+    code === '57P01' ||
+    code === 'P1017' ||
     message.includes('econnreset') ||
     message.includes('connection timeout') ||
-    message.includes('connection terminated')
+    message.includes('connection terminated') ||
+    message.includes('server has closed the connection') ||
+    message.includes('connectionclosed') ||
+    message.includes('connection closed')
   );
 }
 

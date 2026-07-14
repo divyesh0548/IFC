@@ -5,6 +5,7 @@ const { verifyCompanyAdmin } = require('../../modules/auth/auth.middleware');
 const router = express.Router();
 
 router.get('/home-stats', verifyCompanyAdmin, controller.getHomeStats);
+router.get('/ifc-report', verifyCompanyAdmin, controller.getIfcReport);
 router.get('/users', verifyCompanyAdmin, controller.getUsers);
 router.post('/users/bulk', verifyCompanyAdmin, controller.createUsersBulk);
 router.post('/users/delete', verifyCompanyAdmin, controller.deleteUsers);

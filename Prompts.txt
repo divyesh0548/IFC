@@ -1,0 +1,12 @@
+Develop a page for IFC Report.
+In that page include these details.
+1. Number of RACMs Effective/ Not Effective/ Accepted Under Deviation.
+2. Pending / Sent for approval/ Rejected RACMs
+3. Total User / Total RACMs Per unit (For RACMs provide total of all business processes availabel in coordinator's unit)
+4. User's response timing. Means duration between RACM assignment and RACM sent for approval process. For this check the table audit_logs_racm table. Filter by each form_id and check first two actions "RACM Assignment", "Sent RACM for approval" and their timestamps. Then just take the differenrce between their timestamps. Both of these actions may appear second time, so consider second pair too (but only if both are available). Just like this take timestamps differenrce and make average of it. 
+
+Suggest me should I save this in table, and provide user option to refresh the counts or just count each time when user opens this page. Provide Reports button in coordinator's RACM Management Page. Need this same component for company admin too, but for all units of the company.
+
+
+
+In dashboards the text value "Sent for approval" needs changes in its badge like styling, because text goes out of it. Take reference of "Accepted Under Deviation" text.

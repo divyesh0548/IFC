@@ -1,6 +1,6 @@
 const crypto = require('crypto');
-const { pool } = require('../../utils/db');
-const { prisma } = require('../../lib/prisma');
+const { pool, getDatabaseUnavailableMessage } = require('../../utils/db');
+const { prisma, withPrismaRetry, isPrismaConnectionError } = require('../../lib/prisma');
 const { requestControlSummary, OLLAMA_MODEL, isOllamaReachable } = require('../../ai_summary/key_manual_summary/ollama_client');
 const { requestRiskAnalysis } = require('../../ai_summary/risk_analysis/ollama_client');
 const {
@@ -38,6 +38,7 @@ const {
   buildUnitSampleSizeConfigResponse,
 } = require('../../utils/sample_size_resolver');
 const { logAuditEvent } = require('../../utils/auditLog');
+const { buildIfcReport, emptyIfcReportPayload } = require('../../utils/ifc_report');
 const { ALL_PROCESSES_KEYWORD } = require('../../utils/racm_cc_recipients');
 const {
   coordinatorHasUnitAccess,
@@ -99,7 +100,7 @@ function parseDashboardActiveFilter(value) {
 
 function normalizeDashboardStatusFilter(value) {
   const normalized = String(value ?? '').trim().toLowerCase();
-  if (['approved', 'rejected', 'pending'].includes(normalized)) {
+  if (['approved', 'rejected', 'pending', 'sent for approval'].includes(normalized)) {
     return normalized;
   }
   return null;
@@ -308,10 +309,13 @@ function buildCoordinatorDashboardWhereClause(scope, alias = 'cf') {
     conditions.push(`LOWER(TRIM(COALESCE(${alias}.status, ''))) = 'approved'`);
   } else if (scope.filters.status === 'rejected') {
     conditions.push(`LOWER(TRIM(COALESCE(${alias}.status, ''))) = 'rejected'`);
+  } else if (scope.filters.status === 'sent for approval') {
+    conditions.push(`LOWER(TRIM(COALESCE(${alias}.status, ''))) = 'sent for approval'`);
   } else if (scope.filters.status === 'pending') {
     conditions.push(`(
       COALESCE(NULLIF(TRIM(${alias}.status), ''), '') = ''
-      OR LOWER(TRIM(COALESCE(${alias}.status, ''))) = 'sent for approval'
+      OR LOWER(TRIM(COALESCE(${alias}.status, ''))) = 'pending'
+      OR LOWER(TRIM(COALESCE(${alias}.status, ''))) = 'null'
     )`);
   }
 
@@ -2070,22 +2074,25 @@ async function getKeyManualAiInsightsRun(req, res) {
       }
     }
 
-    const runs = await prisma.keyManualAiInsightsRunTable.findMany({
-      where: {
-        companyIdentifier: scope.companyIdentifier,
-      },
-      orderBy: [
-        { createdAt: 'desc' },
-        { id: 'desc' },
-      ],
-      include: {
-        _count: {
-          select: {
-            rows: true,
+    const runs = await withPrismaRetry(
+      () => prisma.keyManualAiInsightsRunTable.findMany({
+        where: {
+          companyIdentifier: scope.companyIdentifier,
+        },
+        orderBy: [
+          { createdAt: 'desc' },
+          { id: 'desc' },
+        ],
+        include: {
+          _count: {
+            select: {
+              rows: true,
+            },
           },
         },
-      },
-    });
+      }),
+      { label: 'keyManualAiInsightsRun.findMany' }
+    );
 
     if (runs.length === 0) {
       return res.status(200).json({
@@ -2100,20 +2107,23 @@ async function getKeyManualAiInsightsRun(req, res) {
     }
 
     const selectedRunId = parsedRunId ?? runs[0].id;
-    const run = await prisma.keyManualAiInsightsRunTable.findFirst({
-      where: {
-        id: selectedRunId,
-        companyIdentifier: scope.companyIdentifier,
-      },
-      include: {
-        rows: {
-          orderBy: [
-            { businessProcess: 'asc' },
-            { controlNumber: 'asc' },
-          ],
+    const run = await withPrismaRetry(
+      () => prisma.keyManualAiInsightsRunTable.findFirst({
+        where: {
+          id: selectedRunId,
+          companyIdentifier: scope.companyIdentifier,
         },
-      },
-    });
+        include: {
+          rows: {
+            orderBy: [
+              { businessProcess: 'asc' },
+              { controlNumber: 'asc' },
+            ],
+          },
+        },
+      }),
+      { label: 'keyManualAiInsightsRun.findFirst' }
+    );
 
     if (!run) {
       return res.status(404).json({
@@ -2157,9 +2167,11 @@ async function getKeyManualAiInsightsRun(req, res) {
     });
   } catch (error) {
     console.error('Company coordinator key manual AI insights run error:', error);
-    return res.status(500).json({
+    return res.status(isPrismaConnectionError(error) ? 503 : 500).json({
       success: false,
-      message: 'Failed to fetch AI insights run',
+      message: isPrismaConnectionError(error)
+        ? getDatabaseUnavailableMessage()
+        : 'Failed to fetch AI insights run',
     });
   }
 }
@@ -4777,12 +4789,35 @@ async function previewSampleRequired(req, res) {
   }
 }
 
+async function getIfcReport(req, res) {
+  try {
+    const companyIdentifier = req.user.company_identifier;
+    const coordinatorEmail = normalizeEmail(req.user.email_id);
+
+    if (!companyIdentifier) {
+      return res.status(200).json({
+        success: true,
+        data: emptyIfcReportPayload([]),
+      });
+    }
+
+    const units = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+    const data = await buildIfcReport({ companyIdentifier, units });
+
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Company coordinator IFC report error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load IFC report' });
+  }
+}
+
 module.exports = {
   getUsers,
   getAssignedUnits,
   getApproverAssignments,
   assignRacmApprover,
   getHomeStats,
+  getIfcReport,
   getDashboardFilters,
   getDashboardSummary,
   getDashboardKeyControlStats,
