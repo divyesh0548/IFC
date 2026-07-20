@@ -107,7 +107,7 @@ function normalizeCompanyAdminEntries(companyAdminEntries, companyAdminEmails, f
 // Get all companies API endpoint
 async function getCompanies(req, res) {
   try {
-    const query = `SELECT *, ${createdAtUtcSql('created_at')} FROM companies ORDER BY created_at DESC`;
+    const query = `SELECT *, ${createdAtUtcSql('companies.created_at')} FROM companies ORDER BY companies.created_at DESC`;
     const result = await pool.query(query);
 
     res.status(200).json({

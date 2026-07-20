@@ -160,6 +160,9 @@ model ControlForm {
   controlTypeFo              String?   @map("control_type_fo") @db.VarChar(255)
   controlTypeMa              String?   @map("control_type_ma") @db.VarChar(255)
   dueDate                    DateTime? @map("due_date") @db.Date
+  approverDueDate            DateTime? @map("approver_due_date") @db.Date
+  ineffectiveDueDate         DateTime? @map("ineffective_due_date") @db.Date
+  deficiencyReviewDueDate    DateTime? @map("deficiency_review_due_date") @db.Date
   reminderFrequency          String?   @map("reminder_frequency") @db.VarChar(50)
   sentForApprovalTimestamp   DateTime? @map("sent_for_approval_timestamp") @db.Timestamp(6)
   approvalStatusChangeTs     DateTime? @map("approval_status_change_timestamp") @db.Timestamp(6)
@@ -178,6 +181,7 @@ model ControlForm {
   changeRequests             ChangeRequest[]
   controlFormHistory         ControlFormHistory[]
   deficiencyResponses        DeficiencyResponse[]
+  processOwnerDeclaration    ProcessOwnerDeclaration?
   sampleDocs                 SampleDoc[]
   racmDocs                   RacmDoc[]
   controlsReminder           ControlsReminder?
@@ -189,6 +193,19 @@ model ControlForm {
 
   @@unique([companyIdentifier, controlNumber])
   @@map("control_forms")
+}
+
+model ProcessOwnerDeclaration {
+  id                   Int      @id @default(autoincrement())
+  formId               String   @unique @map("form_id") @db.VarChar(255)
+  noFurthureSubmission Boolean? @default(false) @map("no_furthure_submission")
+  ownerComment         String?  @map("owner_comment")
+  processOwnerEmail    String?  @map("process_owner_email") @db.VarChar(255)
+  timestamp            DateTime? @default(now()) @map("timestamp") @db.Timestamp(6)
+
+  controlForm ControlForm @relation(fields: [formId], references: [formId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@map("process_owner_declaration")
 }
 
 model ControlsReminder {

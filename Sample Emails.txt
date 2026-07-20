@@ -2,7 +2,7 @@
 
 =============================== RACM submission email (to approver) ===================================
 
-Subject : RACM sent for approval - Environment, Health and Safety
+Subject : Control EHS19 - Environment, Health and Safety awaiting your approval
 
 Dear Approver,
 
@@ -10,14 +10,14 @@ A RACM has been sent for approval.
 
 RACM Details:
 - Business Process: Environment, Health and Safety
-- Standard Control Description: The annual report of biomedical waste generated and disposed is declared annually in Annual Return Form - 4. The form also includes details regarding the treatment, transportation, and disposal facilities for biomedical waste
+- Standard Control Description: Environmental Statement is submitted by the EPD department in Form V and includes details of annual water and raw material consumption, pollution discharged to the environment per unit of output, hazardous waste generated from production processes and pollution control facilities, and comparison of actual production vis-à-vis installed production capacity (in metric tons per day).
 - Financial Year: 2025-26
-- Due Date: 4th July, 2026
-- Submitted By: user1.sharp@gmail.com
+- Due Date: 15th July, 2026
+- Submitted By: vadodara.comman@gmail.com
 
 Please review the uploaded documents and Approve/Reject based on your judgement.
 
-RACM: http://localhost:5173/approver/form/QM4GTTROLFNMF84
+RACM Link: http://localhost:5173/approver/form/6ZWFHA29YQQ6A38
 
 Regards,
 Sharp and Tannan Associates
@@ -41,27 +41,30 @@ Sharp and Tannan Associates
 
 ============================== Reminder Email for RACM submission (to process_owners) ==================================
 
-Subject : Reminder: RACM pending – Environment, Health and Safety
+Subject : Reminder - Control {control number} - {Business Process} submission pending
 
 Body : 
 
 Dear Process Owner,
 
-This is a reminder that your RACM (Risk and Control Matrix) is pending.
+This is a reminder that uploading documents for (control number) control is pending. 
 
 RACM Details:
-- Business Process: Environment, Health and Safety
-- Standard Control Description: Vaccination of Hepatitis B will be given to the OHC Team as per the guidelines.
-Vaccination for Tetanus will be given to the respective person as and when required and as per guidelines.
-- Financial Year: N/A
-- Due Date: 2026-06-29
+- Business Process: -
+- Standard Control Description: -
+- Financial Year: -
+- Due Date: -
 
-Please complete and submit your evidence at your earliest convenience.
+Please upload the documents and submit at your earliest convenience.
 
-RACM: http://localhost:5173/user/form/XP8DTOA5W9G3E8H
+RACM Link: {frontendURL}/user/form/{form_id}
 
 Regards,
 Sharp and Tannan Associates
+
+
+
+
 
 
 
@@ -80,7 +83,7 @@ Sharp and Tannan Associates
 
 ==================================== Reminder email for RACM Review ========================================
 
-Subject : RACM pending approval – Environment, Health and Safety
+Subject : Reminder - Control {control number} - {Business Process} Approval pending
 
 Body : 
 
@@ -89,15 +92,15 @@ Dear Approver,
 This is a reminder that a RACM is pending your approval.
 
 RACM Details:
-- Business Process: Environment, Health and Safety
-- Standard Control Description: The annual report of biomedical waste generated and disposed is declared annually in Annual Return Form - 4. The form also includes details regarding the treatment, transportation, and disposal facilities for biomedical waste
-- Financial Year: 2025-26
-- Due Date: 2026-07-04
-- Submitted By: user1.sharp@gmail.com
+- Business Process: -
+- Standard Control Description: -
+- Financial Year: -
+- Due Date: -
+- Submitted By: -
 
 Please review the uploaded documents and Approve/Reject based on your judgement.
 
-RACM: http://localhost:5173/approver/form/QM4GTTROLFNMF84
+RACM Link: {frontendURL}/approver/form/{form_id}
 
 Regards,
 Sharp and Tannan Associates
@@ -116,7 +119,7 @@ Sharp and Tannan Associates
 
 ====================================== RACM Approval result email (rejected) ======================================
 
-Subject : Internal Financial Controls - RACM Rejected
+Subject : Control {control number} - {Business Process} is Rejected
 
 Body: 
 Dear Process Owner,
@@ -124,15 +127,15 @@ Dear Process Owner,
 Your RACM has been rejected.
 
 RACM Details:
-- Business Process: Environment, Health and Safety
-- Standard Control Description: Vaccination of Hepatitis B will be given to the OHC Team as per the guidelines.
-Vaccination for Tetanus will be given to the respective person as and when required and as per guidelines.
-- Financial Year: 2025-26
-- Reason/Comments from Approver: Testing, so please bear it.
+- Business Process: -
+- Standard Control Description: -
+- Financial Year: -
+
+Reason : Testing, so please bear it.
 
 You can review the feedback above, upload the necessary documents for it, and resubmit the RACM for approval.
 
-RACM: http://localhost:5173/user/form/XP8DTOA5W9G3E8H
+RACM Link: {frontendURL}/user/form/{form_id}
 
 Thank you for using the IFC system.
 
@@ -151,23 +154,22 @@ Sharp and Tannan Associates
 
 ====================================== RACM Approval result email (Approved - ineffective) ======================================
 
-Subject : Internal Financial Controls - RACM Approved
+Subject : Control {control number} - {Business Process} is Approved
 
 Dear Process Owner,
 
 Your RACM has been approved.
 
 RACM Details:
-- Business Process: Environment, Health and Safety
-- Standard Control Description: Vaccination of Hepatitis B will be given to the OHC Team as per the guidelines.
-Vaccination for Tetanus will be given to the respective person as and when required and as per guidelines.
-- Financial Year: 2025-26
+- Business Process: -
+- Standard Control Description: -
+- Financial Year: -
 
 Your RACM has been deemed ineffective by the approver.
 
-Action required: the Process Owner or Company Coordinator must submit a Deficiency Response for this RACM by providing either a Mitigation Plan or a Compensatory RACM.
+Action required: the Process Owner or Company Coordinator must submit a Mitigation Plan or Compensatory RACM.
 
-RACM: http://localhost:5173/user/form/XP8DTOA5W9G3E8H
+RACM Link: {frontendURL}/user/form/{form_id}
 
 Thank you for using the IFC system.
 
@@ -184,9 +186,9 @@ Sharp and Tannan Associates
 
 
 
-====================================== RACM Approval result email (Approved - Effective) ======================================
+====================================== RACM Approval result email (Approved - Effective/Accepted Under Deviation) ======================================
 
-Subject : Internal Financial Controls - RACM Approved
+Subject : Control {control number} - {Business Process} is Approved
 
 Body : 
 Dear Process Owner,
@@ -194,13 +196,15 @@ Dear Process Owner,
 Your RACM has been approved.
 
 RACM Details:
-- Business Process: Environment, Health and Safety
-- Standard Control Description: The annual report of biomedical waste generated and disposed is declared annually in Annual Return Form - 4. The form also includes details regarding the treatment, transportation, and disposal facilities for biomedical waste
-- Financial Year: 2025-26
+- Business Process: -
+- Standard Control Description: -
+- Financial Year: -
 
-No further action is required from the Process Owner or Company Coordinator for this RACM.
+Your RACM has been (deemed Effective) or (Accepted Under Deviation) by the approver.
 
-RACM: http://localhost:5173/user/form/QM4GTTROLFNMF84
+No further action is required for this RACM.
+
+RACM Link: {frontendURL}/user/form/{form_id}
 
 Thank you for using the IFC system.
 
@@ -223,31 +227,28 @@ Sharp and Tannan Associates
 
 
 
-
+Change the wordings from "Deficiency Response" to "Mitigation/Compensatory Plan"
 
 
 
 ============================================== Deficiency Response Reminder (to process owner) ==================================
 
-Subject : Reminder: Deficiency response required – Order to Cash
+Subject : Reminder: Control {control number} - {Business Process} is ineffective
 
 Body : 
 
 Dear Process Owner,
 
-This is a reminder that your RACM has been marked as Not Effective and requires a Deficiency Response.
+This is a reminder that your RACM has been marked as Not Effective and requires Mitigation/Compensatory Plan.
 
 RACM Details:
-- Business Process: Environment, Health and Safety
-- Standard Control Description: Vaccination of Hepatitis B will be given to the OHC Team as per the guidelines.
-Vaccination for Tetanus will be given to the respective person as and when required and as per guidelines.
-- Financial Year: 2025-26
-- Sub-Process: Environment (Protection) Act, 1986 and Bio-Medical Waste Management Rules, 2016
-- Deficiency Description: Not up to the standards.
+- Business Process: -
+- Standard Control Description: -
+- Financial Year: -
 
-Please submit a Deficiency Response by providing either a Mitigation Plan or a Compensatory RACM.
+Please submit a response at your earliest convenience.
 
-RACM: http://localhost:5173/user/form/XP8DTOA5W9G3E8H
+RACM Link: {frontendURL}/user/form/{form_id}
 
 Regards,
 Sharp and Tannan Associates
@@ -270,21 +271,21 @@ Sharp and Tannan Associates
 
 =============================== Deficiency Response Submission ============================
 
-Subject : Internal Financial Controls - Deficiency Response Submitted
+Subject : {Response Type} submitted for Control {control number} - {Business Process}
 
 Dear Approver,
 
-A deficiency response has been submitted for your review.
+A {response type} has been submitted for your review.
 
 Response Details:
-- Submitted By: user1.sharp@gmail.com
-- Response Type: Mitigation Plan
-- Concerned Person: Mukesh bhuriya
-- Due Date: 10 July 2026
+- Submitted By: -
+- Concerned Person: -
+- Due Date: - (Only if mitigation plan)
+- No of Documents - (only if Compensatory RACM)
 
-Please review the deficiency response in the IFC system.
+Please review the plan and mark RACM as Effective if irequirements are satisfied.
 
-RACM: http://localhost:5173/approver/form/XP8DTOA5W9G3E8H
+RACM Link : {frontendURL}/approver/form/{form_id}
 
 Best regards,
 IFC System
@@ -306,23 +307,22 @@ IFC System
 
 =============================== Deficiency Response Review Reminder (to approver) ============================
 
-Subject : Internal Financial Controls - Deficiency Response Submitted
+Subject : Reminder: Control {control number} - {Business Process} - {response type} awaiting review
 
 Body : 
 
 Dear Approver,
 
-This is a reminder that a deficiency response is pending your review.
+This is a reminder that a {response type} is pending for your review.
 
 Response Details:
-- Submitted By: user1.sharp@gmail.com
-- Response Type: Mitigation Plan
-- Concerned Person: Divyesh Parmar
-- Due Date: 2026-07-09
+- Submitted By: -
+- Concerned Person: -
+- Due Date: -
 
-Please review the deficiency response in the IFC system.
+Please review the plan and mark RACM as effective if requirements are satisfied.
 
-RACM: http://localhost:5173/approver/form/Z4USUW7T1ALX8SF
+RACM: {frontendURL}/approver/form/{form_id}
 
 Best regards,
 IFC System
@@ -340,22 +340,19 @@ IFC System
 
 ============================== Deficiency Response Result(Approved) from Approver ============================
 
-Subject = Internal Financial Controls - Deficiency Response Approved
+Subject = Control {control number} - {Business Process} - {response type} {Approved}
 
 Dear User,
 
-Your deficiency response has been approved.
+Your {response type} has been approved.
 
 Response Details:
-- Response Type: Compensatory RACM
-- Review Decision: Accepted under deviation
+- Review Decision: -
+- Approver Comment: -
 
-Approver Comment:
-Good.
+No further action is required on this.
 
-No further action is required on this deficiency response.
-
-RACM: http://localhost:5173/user/form/4X1IEVRFU2ZG3EL
+RACM: {frontendURL}/user/form/{form_id}
 
 Best regards,
 IFC System
@@ -375,24 +372,21 @@ IFC System
 
 ============================== Deficiency Response Result(Rejected) from Approver ============================
 
-Subject = Internal Financial Controls - Deficiency Response Rejected
+Subject = Control {control number} - {Business Process} - {response type} {Rejected}
 
 Body : 
 
 Dear User,
 
-Your deficiency response has been rejected.
+Your {response type} has been rejected.
 
 Response Details:
-- Response Type: Compensatory RACM
 - Review Decision: Rejected
+- Approver Comment: -
 
-Approver Comment:
-Need more proof.
+Please review the approver feedback and resubmit the Mitigation/Compensatory Plan on the IFC portal. Otherwise this RACM will remain ineffective.
 
-Please review the approver feedback and resubmit the deficiency response in the IFC system.
-
-RACM: http://localhost:5173/user/form/Z4USUW7T1ALX8SF
+RACM: {frontendURL}/user/form/{form_id}
 
 Best regards,
 IFC System

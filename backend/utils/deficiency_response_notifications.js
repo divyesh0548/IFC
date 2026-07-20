@@ -2,7 +2,6 @@ const { pool } = require('./db');
 const { sendEmail } = require('./send_email');
 const { getCcEmailsForRacm } = require('./racm_cc_recipients');
 const {
-  buildDeficiencyResponseDetailsSection,
   resolveDeficiencyResponseEmailFields,
 } = require('./racm_email_details');
 const { buildApproverFormDetailUrl, buildUserFormDetailUrl } = require('./racm_status_user_email');
@@ -145,17 +144,32 @@ async function notifyDeficiencyResponseSubmitted({
   const coordinatorEmail = await getCoordinatorEmailForUnit(form?.company_identifier, form?.unit_id);
   const racmUrl = buildApproverFormDetailUrl(form?.form_id);
   const responseFields = resolveDeficiencyResponseEmailFields(deficiencyResponse);
-  const responseDetailsBlock = buildDeficiencyResponseDetailsSection({
-    ...responseFields,
-    dueDate: formatDueDateDisplay(responseFields.dueDate),
-  });
+  const isCompensatoryRacm = String(responseFields.responseType || '').trim().toLowerCase() === 'compensatory_racm';
+  const responseTypeLabel = isCompensatoryRacm ? 'Compensatory RACM' : 'Mitigation Plan';
+
+  const responseDetailLines = ['Response Details:'];
+  responseDetailLines.push(`- Submitted By: ${String(responseFields.submittedBy || '').trim() || 'N/A'}`);
+  if (isCompensatoryRacm) {
+    const documentCount = Number.isFinite(Number(responseFields.attachmentCount))
+      ? Number(responseFields.attachmentCount)
+      : 0;
+    responseDetailLines.push(`- No of Documents: ${documentCount}`);
+  } else {
+    responseDetailLines.push(`- Concerned Person: ${String(responseFields.concernedPerson || '').trim() || 'N/A'}`);
+    responseDetailLines.push(`- Due Date: ${formatDueDateDisplay(responseFields.dueDate)}`);
+  }
+  const responseDetailsBlock = responseDetailLines.join('\n');
+
+  const controlNumberText = String(form?.control_number || '').trim() || String(form?.form_id || '').trim() || 'N/A';
+  const businessProcessText = String(form?.business_process || '').trim() || 'Business Process';
+  const emailSubject = `${responseTypeLabel} submitted for Control ${controlNumberText} - ${businessProcessText}`;
 
   let emailBody = 'Dear Approver,\n\n';
-  emailBody += 'A deficiency response has been submitted for your review.\n\n';
+  emailBody += `A ${responseTypeLabel} has been submitted for your review.\n\n`;
   emailBody += `${responseDetailsBlock}\n\n`;
-  emailBody += 'Please review the deficiency response in the IFC system.\n\n';
+  emailBody += 'Please review the plan and mark RACM as effective if requirements are satisfied.\n\n';
   if (racmUrl) {
-    emailBody += `RACM: ${racmUrl}\n\n`;
+    emailBody += `RACM Link : ${racmUrl}\n\n`;
   }
   emailBody += 'Best regards,\nIFC System';
 
@@ -167,7 +181,7 @@ async function notifyDeficiencyResponseSubmitted({
   ).filter((email) => email !== normalizeEmail(approverEmail));
   const emailSent = await sendEmail(
     approverEmail,
-    'Internal Financial Controls - Deficiency Response Submitted',
+    emailSubject,
     emailBody,
     { cc: ccEmails }
   );
@@ -203,27 +217,33 @@ async function notifyDeficiencyResponseReviewed({
 
   const normalizedDecision = String(reviewDecision || '').trim().toLowerCase();
   const isRejected = normalizedDecision === 'rejected' || normalizedDecision === 'reject';
-  const subject = `Internal Financial Controls - Deficiency Response ${isRejected ? 'Rejected' : 'Approved'}`;
+  const statusLabel = isRejected ? 'Rejected' : 'Approved';
   const racmUrl = resolveSubmitterRacmUrl(form, submittedByEmail, coordinatorEmail);
   const responseFields = resolveDeficiencyResponseEmailFields(deficiencyResponse);
-  const responseDetailsBlock = buildDeficiencyResponseDetailsSection({
-    ...responseFields,
-    dueDate: formatDueDateDisplay(responseFields.dueDate),
-    reviewDecision: String(reviewDecision || '').trim() || '-',
-  });
+  const isCompensatoryRacm = String(responseFields.responseType || '').trim().toLowerCase() === 'compensatory_racm';
+  const responseTypeLabel = isCompensatoryRacm ? 'Compensatory RACM' : 'Mitigation Plan';
+  const controlNumberText = String(form?.control_number || '').trim() || String(form?.form_id || '').trim() || 'N/A';
+  const businessProcessText = String(form?.business_process || '').trim() || 'Business Process';
+  const subject = `Control ${controlNumberText} - ${businessProcessText} - ${responseTypeLabel} ${statusLabel}`;
+  const reviewDecisionText = isRejected
+    ? 'Rejected'
+    : (String(reviewDecision || '').trim() || '-');
+  const approverCommentText = String(reviewComment || '').trim() || '-';
+
+  const responseDetailsBlock = [
+    'Response Details:',
+    `- Review Decision: ${reviewDecisionText}`,
+    `- Approver Comment: ${approverCommentText}`,
+  ].join('\n');
 
   let emailBody = 'Dear User,\n\n';
-  emailBody += `Your deficiency response has been ${isRejected ? 'rejected' : 'approved'}.\n\n`;
-  emailBody += `${responseDetailsBlock}\n`;
-
-  if (String(reviewComment || '').trim()) {
-    emailBody += `\nApprover Comment:\n${String(reviewComment).trim()}\n`;
-  }
+  emailBody += `Your ${responseTypeLabel} has been ${isRejected ? 'rejected' : 'approved'}.\n\n`;
+  emailBody += `${responseDetailsBlock}\n\n`;
 
   if (isRejected) {
-    emailBody += '\nPlease review the approver feedback and resubmit the deficiency response in the IFC system.\n\n';
+    emailBody += 'Please review the approver feedback and resubmit the Mitigation/Compensatory Plan on the IFC portal. Otherwise this RACM will remain ineffective.\n\n';
   } else {
-    emailBody += '\nNo further action is required on this deficiency response.\n\n';
+    emailBody += 'No further action is required on this.\n\n';
   }
 
   if (racmUrl) {

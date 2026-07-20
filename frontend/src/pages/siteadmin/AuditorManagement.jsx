@@ -230,20 +230,19 @@ function AuditorManagement() {
                 <TableCell>Email ID</TableCell>
                 <TableCell>Phone Number</TableCell>
                 <TableCell>Created At</TableCell>
-                <TableCell>Login Email</TableCell>
                 <TableCell>Temporary Login</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
                     <CircularProgress size={26} />
                   </TableCell>
                 </TableRow>
               ) : auditors.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
                     No auditors found.
                   </TableCell>
                 </TableRow>
@@ -254,14 +253,6 @@ function AuditorManagement() {
                     <TableCell>{auditor.email_id || '-'}</TableCell>
                     <TableCell>{auditor.mobile || '-'}</TableCell>
                     <TableCell>{formatDate(auditor.created_at)}</TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={auditor.login_email_sent ? 'Sent' : 'Pending'}
-                        color={auditor.login_email_sent ? 'success' : 'warning'}
-                        variant="outlined"
-                      />
-                    </TableCell>
                     <TableCell>
                       <Chip
                         size="small"

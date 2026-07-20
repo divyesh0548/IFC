@@ -18,6 +18,7 @@ import Alert from '@mui/material/Alert'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
 import Checkbox from '@mui/material/Checkbox'
 import { toast } from 'react-hot-toast'
@@ -37,24 +38,50 @@ import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSear
 import CompanyUserSearchAutocomplete from '../../components/company_co/CompanyUserSearchAutocomplete'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
-import { isCoordinatorAssignedRacm } from '../../racmFormDetailFields'
+import { isCoordinatorAssignedRacm, getRacmReassignmentBlockMessage, hasValidProcessOwnerAssignment } from '../../racmFormDetailFields'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import ApproverAssignmentHelpDialog from '../../components/approver/ApproverAssignmentHelpDialog'
 
-function normalizeRacmApprovalStatus(status) {
-  const normalized = String(status ?? '').trim().toLowerCase()
-  if (!normalized || normalized === 'null') return 'pending'
-  return normalized
-}
-
 function isApproverBulkAssignableRacm(form) {
-  const status = normalizeRacmApprovalStatus(form?.status)
-  return status !== 'sent for approval'
+  return !getRacmReassignmentBlockMessage(form)
 }
 
 function isApproverAssignmentStatusLocked(form) {
-  const status = normalizeRacmApprovalStatus(form?.status)
-  return status === 'sent for approval'
+  return Boolean(getRacmReassignmentBlockMessage(form))
+}
+
+function hasReminderSettingsConfigured(form) {
+  const hasDueDate = Boolean(String(form?.due_date || '').trim())
+  const hasReminderFrequency = Boolean(String(form?.reminder_frequency || '').trim())
+  return hasDueDate && hasReminderFrequency
+}
+
+function canCoordinatorSelfAssignRacm(form) {
+  if (!form) return false
+  if (isCoordinatorAssignedRacm(form)) return false
+  if (hasValidProcessOwnerAssignment(form)) return false
+  if (!hasReminderSettingsConfigured(form)) return false
+  const status = String(form?.status || '').trim().toLowerCase()
+  if (status === 'sent for approval' || status === 'approved') return false
+  return true
+}
+
+function getCoordinatorSelfAssignBlockMessage(form) {
+  if (!form) return 'RACM is not available for self-assignment.'
+  if (isCoordinatorAssignedRacm(form)) {
+    return 'This RACM is already coordinator-assigned.'
+  }
+  if (hasValidProcessOwnerAssignment(form)) {
+    return 'This RACM is already assigned to a process owner.'
+  }
+  if (!hasReminderSettingsConfigured(form)) {
+    return 'Configure due date and reminder frequency before self-assignment.'
+  }
+  const status = String(form?.status || '').trim().toLowerCase()
+  if (status === 'sent for approval' || status === 'approved') {
+    return 'This RACM cannot be self-assigned in its current approval status.'
+  }
+  return ''
 }
 
 function hasRacmSpecificApprover(form) {
@@ -87,11 +114,25 @@ function RacmAssignment() {
   const [bulkSelectedUser, setBulkSelectedUser] = useState(null)
   const [updatingAssignment, setUpdatingAssignment] = useState(false)
   const [selectedForms, setSelectedForms] = useState(new Set())
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    kind: null,
+    title: '',
+    description: '',
+    confirmLabel: 'Confirm',
+  })
+  const pendingSelfAssignEligibleRef = useRef([])
+  const pendingReplaceApproverRef = useRef(null)
   const bulkAssignmentContainerRef = useRef(null)
   const { businessProcessOptions } = useBusinessProcesses()
   useSyncGlobalLoading(loading || updatingAssignment)
   const getFormUnitId = (form) => String(form?.unit_id || '').trim()
   const isFormActive = (form) => Boolean(form?.active)
+  // A RACM can be (re-)assigned to a process owner in bulk unless it is
+  // coordinator self-assigned or locked by its approval lifecycle.
+  const isBulkAssignableProcessOwnerForm = (form) => (
+    !isCoordinatorAssignedRacm(form) && !getRacmReassignmentBlockMessage(form)
+  )
   const getFormUnitName = (form) => {
     const unitName = String(form?.unit_name || '').trim()
     if (unitName) return unitName
@@ -102,7 +143,7 @@ function RacmAssignment() {
   const selectedFormRows = forms.filter((form) => selectedForms.has(form.form_id))
   const selectedBulkUnitId = selectedFormRows.length > 0 ? getFormUnitId(selectedFormRows[0]) : ''
   const selectedBulkUnitName = selectedFormRows.length > 0 ? getFormUnitName(selectedFormRows[0]) : ''
-  const hasSelectedActiveRacm = selectedFormRows.some((form) => isFormActive(form))
+  const hasSelectedLockedRacm = selectedFormRows.some((form) => !isBulkAssignableProcessOwnerForm(form))
   const hasMultipleCoordinatorUnits = coordinatorUnits.length > 1
   const isApproverMode = assignmentTarget === 'approver'
   const assignmentSubjectLabel = isApproverMode ? 'Approver' : 'Process Owner'
@@ -111,7 +152,7 @@ function RacmAssignment() {
     ? 'Assign RACM-specific approvers and manage existing approver overrides.'
     : 'Assign RACM to Process Owners and manage existing RACM assignments.'
   const isProcessOwnerAssignmentLocked = (form) => (
-    isFormActive(form) || isCoordinatorAssignedRacm(form)
+    isCoordinatorAssignedRacm(form) || Boolean(getRacmReassignmentBlockMessage(form))
   )
   const isCurrentAssignmentLocked = (form) => (
     isApproverMode ? isApproverAssignmentStatusLocked(form) : isProcessOwnerAssignmentLocked(form)
@@ -121,22 +162,20 @@ function RacmAssignment() {
     if (!normalizedFormId) return
     window.open(`/company_co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
   }
-  const showActiveRacmSelectionToast = () => {
-    toast.error('Active RACMs cannot be selected for bulk assignment', {
+  const showLockedRacmSelectionToast = () => {
+    toast.error('This RACM cannot be re-assigned (sent for approval, approved, or no-further-submission declared).', {
       id: ACTIVE_RACM_SELECTION_TOAST_ID,
     })
   }
-  const tableForms = useMemo(() => {
-    if (isApproverMode && bulkAssignmentMode) {
-      return forms.filter(isApproverBulkAssignableRacm)
-    }
-    return forms
-  }, [forms, isApproverMode, bulkAssignmentMode])
+  const tableForms = useMemo(() => forms, [forms])
   const selectableTableForms = useMemo(() => {
-    if (!bulkAssignmentMode || isApproverMode) {
+    if (!bulkAssignmentMode) {
       return tableForms
     }
-    return tableForms.filter((form) => !isFormActive(form))
+    if (isApproverMode) {
+      return tableForms.filter((form) => isApproverBulkAssignableRacm(form))
+    }
+    return tableForms.filter((form) => isBulkAssignableProcessOwnerForm(form))
   }, [bulkAssignmentMode, isApproverMode, tableForms])
   const selectedSelectableFormCount = useMemo(
     () => selectableTableForms.filter((form) => selectedForms.has(form.form_id)).length,
@@ -469,8 +508,11 @@ function RacmAssignment() {
     const targetForm = forms.find((form) => form.form_id === formId)
     if (!targetForm) return
 
-    if (!isApproverMode && isFormActive(targetForm)) {
-      showActiveRacmSelectionToast()
+    const isTargetSelectable = isApproverMode
+      ? isApproverBulkAssignableRacm(targetForm)
+      : isBulkAssignableProcessOwnerForm(targetForm)
+    if (!isTargetSelectable) {
+      showLockedRacmSelectionToast()
       return
     }
 
@@ -486,7 +528,7 @@ function RacmAssignment() {
       } else {
         const existingForm = forms.find((form) => next.has(form.form_id))
         const existingUnitId = getFormUnitId(existingForm)
-        if (!isApproverMode && existingUnitId && targetUnitId && existingUnitId !== targetUnitId) {
+        if (existingUnitId && targetUnitId && existingUnitId !== targetUnitId) {
           toast.error('RACMs from different units cannot be selected for bulk assignment', {
             id: UNIT_MISMATCH_TOAST_ID,
           })
@@ -511,8 +553,11 @@ function RacmAssignment() {
       return
     }
 
-    if (!isApproverMode && tableForms.some((form) => isFormActive(form))) {
-      showActiveRacmSelectionToast()
+    const hasIneligibleForm = isApproverMode
+      ? tableForms.some((form) => !isApproverBulkAssignableRacm(form))
+      : tableForms.some((form) => !isBulkAssignableProcessOwnerForm(form))
+    if (hasIneligibleForm) {
+      showLockedRacmSelectionToast()
     }
 
     if (selectableTableForms.length === 0) {
@@ -520,7 +565,7 @@ function RacmAssignment() {
     }
 
     const unitIds = [...new Set(selectableTableForms.map((form) => getFormUnitId(form)).filter(Boolean))]
-    if (!isApproverMode && unitIds.length > 1) {
+    if (unitIds.length > 1) {
       toast.error('RACMs from different units cannot be selected for bulk assignment', {
         id: UNIT_MISMATCH_TOAST_ID,
       })
@@ -532,10 +577,33 @@ function RacmAssignment() {
     setSelectedForms(new Set(selectableTableForms.map((form) => form.form_id)))
   }
 
-  const handleUpdateAssignment = async () => {
+  const closeConfirmDialog = () => {
+    if (updatingAssignment) return
+    setConfirmDialog({
+      open: false,
+      kind: null,
+      title: '',
+      description: '',
+      confirmLabel: 'Confirm',
+    })
+    pendingSelfAssignEligibleRef.current = []
+    pendingReplaceApproverRef.current = null
+  }
+
+  const openConfirmDialog = ({ kind, title, description, confirmLabel = 'Confirm' }) => {
+    setConfirmDialog({
+      open: true,
+      kind,
+      title,
+      description,
+      confirmLabel,
+    })
+  }
+
+  const executeUpdateAssignment = async ({ confirmReplaceExisting = false } = {}) => {
     if (!selectedForm?.form_id || !selectedUser?.email_id) return
     if (isApproverMode && isApproverAssignmentStatusLocked(selectedForm)) {
-      toast.error('Approver assignment cannot be changed while RACM is sent for approval')
+      toast.error(getRacmReassignmentBlockMessage(selectedForm) || 'Approver assignment cannot be changed for this RACM')
       return
     }
     if (!isApproverMode && isProcessOwnerAssignmentLocked(selectedForm)) return
@@ -546,7 +614,7 @@ function RacmAssignment() {
         toast('1 RACM does not have Sample documents, Proceeding to Set Active.')
       }
 
-      const performRequest = async (confirmReplaceExisting = false) => {
+      const performRequest = async (replaceExisting = false) => {
         if (isApproverMode) {
           return fetch(`${API_BASE_URL}/api/company-co/racm-approver-assignments`, {
             method: 'POST',
@@ -557,7 +625,7 @@ function RacmAssignment() {
             body: JSON.stringify({
               approver_email_id: selectedUser.email_id,
               form_ids: [selectedForm.form_id],
-              confirm_replace_existing: confirmReplaceExisting,
+              confirm_replace_existing: replaceExisting,
             }),
           })
         }
@@ -576,7 +644,7 @@ function RacmAssignment() {
         })
       }
 
-      let response = await performRequest(false)
+      let response = await performRequest(confirmReplaceExisting)
       let data = await response.json()
 
       if (response.status === 409 && data?.code === 'RACM_APPROVER_ASSIGNMENT_LOCKED') {
@@ -584,25 +652,21 @@ function RacmAssignment() {
         return
       }
 
-      if (response.status === 409 && data?.code === 'CONFIRM_REPLACE_RACM_APPROVER') {
+      if (response.status === 409 && data?.code === 'CONFIRM_REPLACE_RACM_APPROVER' && !confirmReplaceExisting) {
         const existingAssignments = Array.isArray(data.existingAssignments) ? data.existingAssignments : []
         const affectedList = existingAssignments
           .slice(0, 5)
           .map((item) => item.control_number || item.form_id)
           .filter(Boolean)
           .join(', ')
-        const shouldReplace = window.confirm(
-          `RACM-level approver is already assigned for ${existingAssignments.length} selected RACM${existingAssignments.length === 1 ? '' : 's'}${affectedList ? ` (${affectedList})` : ''}. Replace with ${selectedUser.email_id}?`
-        )
-        if (!shouldReplace) {
-          return
-        }
-        response = await performRequest(true)
-        data = await response.json()
-        if (response.status === 409 && data?.code === 'RACM_APPROVER_ASSIGNMENT_LOCKED') {
-          toast.error(data.message || 'Approver assignment cannot be changed for RACMs that are sent for approval')
-          return
-        }
+        pendingReplaceApproverRef.current = { scope: 'single' }
+        openConfirmDialog({
+          kind: 'replace_approver',
+          title: 'Replace Approver Assignment',
+          description: `RACM-level approver is already assigned for ${existingAssignments.length} selected RACM${existingAssignments.length === 1 ? '' : 's'}${affectedList ? ` (${affectedList})` : ''}. Replace with ${selectedUser.email_id}?`,
+          confirmLabel: 'Replace Approver',
+        })
+        return
       }
 
       if (response.ok && data.success) {
@@ -639,6 +703,187 @@ function RacmAssignment() {
     }
   }
 
+  const handleUpdateAssignment = () => {
+    if (!selectedForm?.form_id || !selectedUser?.email_id) return
+    if (isApproverMode && isApproverAssignmentStatusLocked(selectedForm)) {
+      toast.error(getRacmReassignmentBlockMessage(selectedForm) || 'Approver assignment cannot be changed for this RACM')
+      return
+    }
+    if (!isApproverMode && isProcessOwnerAssignmentLocked(selectedForm)) return
+
+    if (isApproverMode) {
+      openConfirmDialog({
+        kind: 'assign_single',
+        title: 'Confirm Approver Assignment',
+        description: `Assign ${selectedUser.email_id} as the RACM-specific approver for this RACM?`,
+        confirmLabel: 'Assign Approver',
+      })
+      return
+    }
+
+    const currentOwner = String(selectedForm?.control_owner || '').trim()
+    const nextOwner = String(selectedUser.email_id || '').trim()
+    openConfirmDialog({
+      kind: 'assign_single',
+      title: 'Confirm Process Owner Assignment',
+      description: currentOwner
+        ? `Replace the current process owner (${currentOwner}) with ${nextOwner}? The RACM will be set Active, and the new process owner will be notified by email.`
+        : `Assign ${nextOwner} as the process owner for this RACM? The RACM will be set Active.`,
+      confirmLabel: 'Update Assignment',
+    })
+  }
+
+  const applySelfAssignLocalState = (formIds) => {
+    const idSet = new Set(formIds.map((id) => String(id || '').trim()).filter(Boolean))
+    setForms((prev) =>
+      prev.map((form) =>
+        idSet.has(String(form.form_id || '').trim())
+          ? {
+              ...form,
+              assigned_to_coordinator: true,
+              control_owner: null,
+              control_owner_name: null,
+              active: true,
+              has_valid_process_owner_assignment: false,
+              is_racm_assigned: true,
+            }
+          : form
+      )
+    )
+  }
+
+  const selfAssignSingleForm = async (form) => {
+    const response = await fetch(`${API_BASE_URL}/api/control-forms/${form.form_id}/self-assign`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+    const data = await response.json()
+    return { response, data, form }
+  }
+
+  const executeSelfAssignSingle = async () => {
+    if (isApproverMode || !selectedForm?.form_id) return
+
+    setUpdatingAssignment(true)
+    try {
+      const { response, data } = await selfAssignSingleForm(selectedForm)
+      if (response.ok && data.success) {
+        applySelfAssignLocalState([selectedForm.form_id])
+        handleCloseAssignmentDialog()
+        toast.success(data.message || 'RACM self-assigned successfully')
+        fetchForms()
+      } else {
+        toast.error(data.message || 'Failed to self-assign RACM')
+      }
+    } catch (error) {
+      console.error('Error self-assigning RACM:', error)
+      toast.error('Failed to self-assign RACM')
+    } finally {
+      setUpdatingAssignment(false)
+    }
+  }
+
+  const handleSelfAssignSingle = () => {
+    if (isApproverMode || !selectedForm?.form_id) return
+
+    const blockMessage = getCoordinatorSelfAssignBlockMessage(selectedForm)
+    if (blockMessage) {
+      toast.error(blockMessage)
+      return
+    }
+
+    openConfirmDialog({
+      kind: 'self_assign_single',
+      title: 'Self Assign RACM',
+      description: 'Assign this RACM to yourself for document upload and submission. Process owner assignment will be disabled after self-assignment, and the RACM will be set Active.',
+      confirmLabel: 'Self Assign',
+    })
+  }
+
+  const executeSelfAssignBulk = async () => {
+    if (isApproverMode) return
+    const eligible = pendingSelfAssignEligibleRef.current
+    if (!Array.isArray(eligible) || eligible.length === 0) return
+
+    setUpdatingAssignment(true)
+    try {
+      let successCount = 0
+      const failedMessages = []
+
+      for (const form of eligible) {
+        try {
+          const { response, data } = await selfAssignSingleForm(form)
+          if (response.ok && data.success) {
+            successCount += 1
+          } else {
+            failedMessages.push(
+              `${form.control_number || form.form_id}: ${data.message || 'Failed'}`
+            )
+          }
+        } catch (error) {
+          failedMessages.push(`${form.control_number || form.form_id}: request failed`)
+        }
+      }
+
+      if (successCount > 0) {
+        applySelfAssignLocalState(eligible.map((form) => form.form_id))
+        setSelectedForms(new Set())
+        setBulkAssignmentDialogOpen(false)
+        setBulkSelectedUser(null)
+        toast.success(`Self-assigned ${successCount} RACM${successCount === 1 ? '' : 's'} successfully`)
+        fetchForms()
+      }
+
+      if (failedMessages.length > 0) {
+        toast.error(
+          failedMessages.length === 1
+            ? failedMessages[0]
+            : `${failedMessages.length} RACM(s) could not be self-assigned`
+        )
+      }
+    } catch (error) {
+      console.error('Error bulk self-assigning RACMs:', error)
+      toast.error('Failed to self-assign selected RACMs')
+    } finally {
+      setUpdatingAssignment(false)
+      pendingSelfAssignEligibleRef.current = []
+    }
+  }
+
+  const handleSelfAssignBulk = () => {
+    if (isApproverMode || selectedForms.size === 0) return
+
+    const selectedRows = selectedFormRows
+    const withValidOwnerCount = selectedRows.filter((form) => hasValidProcessOwnerAssignment(form)).length
+    const eligible = selectedRows.filter((form) => canCoordinatorSelfAssignRacm(form))
+
+    if (eligible.length === 0) {
+      if (withValidOwnerCount > 0) {
+        toast.error(
+          `${withValidOwnerCount} selected RACM${withValidOwnerCount === 1 ? '' : 's'} already ${withValidOwnerCount === 1 ? 'has' : 'have'} a valid process owner and cannot be self-assigned.`
+        )
+        return
+      }
+      const firstBlocked = selectedRows.find((form) => getCoordinatorSelfAssignBlockMessage(form))
+      toast.error(
+        getCoordinatorSelfAssignBlockMessage(firstBlocked)
+        || 'None of the selected RACMs can be self-assigned.'
+      )
+      return
+    }
+
+    const skipped = selectedRows.length - eligible.length
+    pendingSelfAssignEligibleRef.current = eligible
+    openConfirmDialog({
+      kind: 'self_assign_bulk',
+      title: 'Self Assign Selected RACMs',
+      description: skipped > 0
+        ? `Self-assign ${eligible.length} of ${selectedRows.length} selected RACM(s)? ${skipped} will be skipped (already assigned, locked, or missing reminder settings). Eligible RACMs will be set Active.`
+        : `Self-assign ${eligible.length} selected RACM(s) to yourself? They will be set to active.`,
+      confirmLabel: 'Self Assign',
+    })
+  }
+
   const handleOpenBulkAssignmentDialog = () => {
     if (selectedForms.size === 0) {
       toast.error('Select at least one RACM')
@@ -661,13 +906,13 @@ function RacmAssignment() {
     setBulkSelectedUser(null)
   }
 
-  const handleBulkUpdateAssignment = async () => {
+  const executeBulkUpdateAssignment = async ({ confirmReplaceExisting = false } = {}) => {
     if (!bulkSelectedUser?.email_id || selectedForms.size === 0) return
     if (isApproverMode && hasSelectedApproverLockedRacm) {
       toast.error('Remove RACMs with status Sent for Approval before updating approver assignment')
       return
     }
-    if (!isApproverMode && hasSelectedActiveRacm) return
+    if (!isApproverMode && hasSelectedLockedRacm) return
 
     setUpdatingAssignment(true)
     try {
@@ -684,7 +929,7 @@ function RacmAssignment() {
       }
 
       if (isApproverMode) {
-        const performRequest = async (confirmReplaceExisting = false) =>
+        const performRequest = async (replaceExisting = false) =>
           fetch(`${API_BASE_URL}/api/company-co/racm-approver-assignments`, {
             method: 'POST',
             headers: {
@@ -694,11 +939,11 @@ function RacmAssignment() {
             body: JSON.stringify({
               approver_email_id: bulkSelectedUser.email_id,
               form_ids: targetFormIds,
-              confirm_replace_existing: confirmReplaceExisting,
+              confirm_replace_existing: replaceExisting,
             }),
           })
 
-        let response = await performRequest(false)
+        let response = await performRequest(confirmReplaceExisting)
         let data = await response.json()
 
         if (response.status === 409 && data?.code === 'RACM_APPROVER_ASSIGNMENT_LOCKED') {
@@ -706,25 +951,21 @@ function RacmAssignment() {
           return
         }
 
-        if (response.status === 409 && data?.code === 'CONFIRM_REPLACE_RACM_APPROVER') {
+        if (response.status === 409 && data?.code === 'CONFIRM_REPLACE_RACM_APPROVER' && !confirmReplaceExisting) {
           const existingAssignments = Array.isArray(data.existingAssignments) ? data.existingAssignments : []
           const affectedList = existingAssignments
             .slice(0, 8)
             .map((item) => item.control_number || item.form_id)
             .filter(Boolean)
             .join(', ')
-          const shouldReplace = window.confirm(
-            `RACM-level approver is already assigned for ${existingAssignments.length} selected RACM${existingAssignments.length === 1 ? '' : 's'}${affectedList ? ` (${affectedList})` : ''}. Replace with ${bulkSelectedUser.email_id}?`
-          )
-          if (!shouldReplace) {
-            return
-          }
-          response = await performRequest(true)
-          data = await response.json()
-          if (response.status === 409 && data?.code === 'RACM_APPROVER_ASSIGNMENT_LOCKED') {
-            toast.error(data.message || 'Approver assignment cannot be changed for RACMs that are sent for approval')
-            return
-          }
+          pendingReplaceApproverRef.current = { scope: 'bulk' }
+          openConfirmDialog({
+            kind: 'replace_approver',
+            title: 'Replace Approver Assignment',
+            description: `RACM-level approver is already assigned for ${existingAssignments.length} selected RACM${existingAssignments.length === 1 ? '' : 's'}${affectedList ? ` (${affectedList})` : ''}. Replace with ${bulkSelectedUser.email_id}?`,
+            confirmLabel: 'Replace Approver',
+          })
+          return
         }
 
         if (response.ok && data.success) {
@@ -805,6 +1046,67 @@ function RacmAssignment() {
       toast.error(`Failed to update ${isApproverMode ? 'approver' : 'RACM'} assignments`)
     } finally {
       setUpdatingAssignment(false)
+    }
+  }
+
+  const handleBulkUpdateAssignment = () => {
+    if (!bulkSelectedUser?.email_id || selectedForms.size === 0) return
+    if (isApproverMode && hasSelectedApproverLockedRacm) {
+      toast.error('Remove RACMs with status Sent for Approval before updating approver assignment')
+      return
+    }
+    if (!isApproverMode && hasSelectedLockedRacm) return
+
+    if (isApproverMode) {
+      openConfirmDialog({
+        kind: 'assign_bulk',
+        title: 'Confirm Approver Assignment',
+        description: `Assign ${bulkSelectedUser.email_id} as the RACM-specific approver for ${selectedForms.size} selected RACM${selectedForms.size === 1 ? '' : 's'}?`,
+        confirmLabel: 'Update Assignments',
+      })
+      return
+    }
+
+    openConfirmDialog({
+      kind: 'assign_bulk',
+      title: 'Confirm Process Owner Assignment',
+      description: `Assign ${bulkSelectedUser.email_id} as the process owner for ${selectedForms.size} selected RACM${selectedForms.size === 1 ? '' : 's'}? Current process owners will be replaced, RACMs will be set Active, and the new process owner will be notified by email.`,
+      confirmLabel: 'Update Assignments',
+    })
+  }
+
+  const handleConfirmDialogConfirm = async () => {
+    const kind = confirmDialog.kind
+    setConfirmDialog((prev) => ({
+      ...prev,
+      open: false,
+      kind: null,
+    }))
+
+    if (kind === 'self_assign_single') {
+      await executeSelfAssignSingle()
+      return
+    }
+    if (kind === 'self_assign_bulk') {
+      await executeSelfAssignBulk()
+      return
+    }
+    if (kind === 'assign_single') {
+      await executeUpdateAssignment()
+      return
+    }
+    if (kind === 'assign_bulk') {
+      await executeBulkUpdateAssignment()
+      return
+    }
+    if (kind === 'replace_approver') {
+      const scope = pendingReplaceApproverRef.current?.scope
+      pendingReplaceApproverRef.current = null
+      if (scope === 'bulk') {
+        await executeBulkUpdateAssignment({ confirmReplaceExisting: true })
+      } else {
+        await executeUpdateAssignment({ confirmReplaceExisting: true })
+      }
     }
   }
 
@@ -960,9 +1262,7 @@ function RacmAssignment() {
               fontSize: '0.875rem',
             }}
           >
-            {isApproverMode && bulkAssignmentMode && forms.length > 0
-              ? 'No RACMs available for bulk approver assignment (Sent for Approval RACMs are excluded).'
-              : 'No forms found.'}
+            No forms found.
           </Box>
         </Box>
       )
@@ -1416,9 +1716,9 @@ function RacmAssignment() {
           </Box>
 
           <Box sx={{ width: '100%', minWidth: 0 }}>
-            {bulkAssignmentMode && !isApproverMode && hasSelectedActiveRacm && !loading && forms.length > 0 && (
+            {bulkAssignmentMode && !isApproverMode && hasSelectedLockedRacm && !loading && forms.length > 0 && (
               <Alert severity="warning" sx={{ mb: 2 }}>
-                Active RACM assignment cannot be changed. Remove the selected active RACM(s) before bulk assignment.
+                One or more selected RACMs cannot be re-assigned (sent for approval, approved, or no-further-submission declared). Remove them before bulk assignment.
               </Alert>
             )}
             <Box
@@ -1670,7 +1970,14 @@ function RacmAssignment() {
                 )}
                 {!isApproverMode && isProcessOwnerAssignmentLocked(selectedForm) && (
                   <Alert severity="warning">
-                    This RACM is Active. Active RACM assignment cannot be changed.
+                    {isCoordinatorAssignedRacm(selectedForm)
+                      ? 'This RACM is coordinator self-assigned and cannot be assigned to a process owner.'
+                      : (getRacmReassignmentBlockMessage(selectedForm) || 'This RACM cannot be re-assigned.')}
+                  </Alert>
+                )}
+                {!isApproverMode && !isProcessOwnerAssignmentLocked(selectedForm) && Boolean(String(selectedForm?.control_owner || '').trim()) && (
+                  <Alert severity="warning">
+                    The current process owner will be replaced and will no longer be able to access this RACM. The new process owner will be notified by email.
                   </Alert>
                 )}
                 {isApproverMode && singleRacmHasSpecificApprover && (
@@ -1687,14 +1994,6 @@ function RacmAssignment() {
                 <Box sx={popupRowSx}>
                   <Typography variant="body2" component="span" sx={popupLabelSx}>Business Process:</Typography>
                   <Typography variant="body2" component="span">{popupValue(selectedForm.business_process)}</Typography>
-                </Box>
-                <Box sx={popupRowSx}>
-                  <Typography variant="body2" component="span" sx={popupLabelSx}>Sub Process:</Typography>
-                  <Typography variant="body2" component="span">{popupValue(selectedForm.sub_process)}</Typography>
-                </Box>
-                <Box sx={popupRowSx}>
-                  <Typography variant="body2" component="span" sx={popupLabelSx}>Standard Control Description:</Typography>
-                  <Typography variant="body2" component="span">{popupValue(selectedForm.standard_control_description)}</Typography>
                 </Box>
                 <Box sx={popupRowSx}>
                   <Typography variant="body2" component="span" sx={popupLabelSx}>FY:</Typography>
@@ -1739,10 +2038,23 @@ function RacmAssignment() {
               </Box>
             )}
           </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2 }}>
+          <DialogActions sx={{ px: 3, py: 2, gap: 1, flexWrap: 'wrap' }}>
             <Button onClick={handleCloseAssignmentDialog} disabled={updatingAssignment}>
               Cancel
             </Button>
+            {!isApproverMode && (
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={handleSelfAssignSingle}
+                disabled={
+                  updatingAssignment
+                  || !canCoordinatorSelfAssignRacm(selectedForm)
+                }
+              >
+                {updatingAssignment ? 'Updating...' : 'Self Assign'}
+              </Button>
+            )}
             {selectedUser?.email_id && (
               <Button
                 variant="contained"
@@ -1767,9 +2079,9 @@ function RacmAssignment() {
           </DialogTitle>
           <DialogContent dividers>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              {!isApproverMode && hasSelectedActiveRacm && (
+              {!isApproverMode && hasSelectedLockedRacm && (
                 <Alert severity="warning">
-                  Active RACM assignment cannot be changed. Remove the active RACM(s) from this selection to continue.
+                  One or more selected RACMs cannot be re-assigned (sent for approval, approved, or no-further-submission declared). Remove them from this selection to continue.
                 </Alert>
               )}
               {isApproverMode && hasSelectedApproverLockedRacm && (
@@ -1792,7 +2104,7 @@ function RacmAssignment() {
               </Box>
               {!isApproverMode ? (
                 <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-                  The selected user will overwrite the current Process Owner for all selected RACMs.
+                  The selected user will replace the current Process Owner for all selected RACMs. Replaced process owners will no longer be able to access those RACMs, and the new process owner will be notified by email.
                 </Typography>
               ) : null}
 
@@ -1811,28 +2123,87 @@ function RacmAssignment() {
                   value={bulkSelectedUser}
                   onChange={setBulkSelectedUser}
                   prefetch={bulkAssignmentDialogOpen}
-                  disabled={hasSelectedActiveRacm}
+                  disabled={hasSelectedLockedRacm}
                   helperText={selectedBulkUnitName ? `Users from ${selectedBulkUnitName} only` : ''}
                 />
               )}
             </Box>
           </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2 }}>
+          <DialogActions sx={{ px: 3, py: 2, gap: 1, flexWrap: 'wrap' }}>
             <Button onClick={handleCloseBulkAssignmentDialog} disabled={updatingAssignment}>
               Cancel
             </Button>
+            {!isApproverMode && (
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={handleSelfAssignBulk}
+                disabled={
+                  updatingAssignment
+                  || selectedForms.size === 0
+                  || hasSelectedLockedRacm
+                  || selectedFormRows.every((form) => !canCoordinatorSelfAssignRacm(form))
+                }
+              >
+                {updatingAssignment ? 'Updating...' : 'Self Assign'}
+              </Button>
+            )}
             {bulkSelectedUser?.email_id && (
               <Button
                 variant="contained"
                 color="secondary"
                 onClick={handleBulkUpdateAssignment}
-                disabled={updatingAssignment || (!isApproverMode && hasSelectedActiveRacm) || (isApproverMode && hasSelectedApproverLockedRacm)}
+                disabled={updatingAssignment || (!isApproverMode && hasSelectedLockedRacm) || (isApproverMode && hasSelectedApproverLockedRacm)}
               >
                 {updatingAssignment ? 'Updating...' : 'Update Assignments'}
               </Button>
             )}
           </DialogActions>
         </Dialog>
+
+      <Dialog
+        open={confirmDialog.open}
+        onClose={closeConfirmDialog}
+        aria-labelledby="assignment-confirm-dialog-title"
+        aria-describedby="assignment-confirm-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '90%', sm: '460px' },
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="assignment-confirm-dialog-title"
+          sx={{ py: 2, px: 2.5, fontWeight: 600, fontSize: '1.25rem' }}
+        >
+          {confirmDialog.title || 'Confirm'}
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 1, pb: 3 }}>
+          <DialogContentText
+            id="assignment-confirm-dialog-description"
+            sx={{ color: 'text.secondary', fontSize: '0.9375rem', lineHeight: 1.5, mt: 2 }}
+          >
+            {confirmDialog.description}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, gap: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button onClick={closeConfirmDialog} disabled={updatingAssignment} variant="outlined">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmDialogConfirm}
+            disabled={updatingAssignment}
+            variant="contained"
+            color="primary"
+          >
+            {updatingAssignment ? 'Working...' : (confirmDialog.confirmLabel || 'Confirm')}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <ApproverAssignmentHelpDialog
         open={assignmentHelpOpen}

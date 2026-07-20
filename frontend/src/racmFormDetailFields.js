@@ -149,6 +149,40 @@ function parseTruthyApiBoolean(value) {
   return normalized === 'true' || normalized === '1'
 }
 
+function isDeficiencyResponseSubmitted(form) {
+  const deficiencyResponseStatus = String(
+    form?.deficiency_response_status ?? form?.deficiencyResponseStatus ?? ''
+  ).trim().toLowerCase()
+  return deficiencyResponseStatus === 'submitted_for_review'
+}
+
+/**
+ * Returns a reason string when a RACM cannot be re-assigned, or '' when it can.
+ * A coordinator may re-assign an already-active/assigned RACM (replacing the
+ * current process owner), but not while it is locked by its approval lifecycle:
+ * sent for approval, approved (Effective / Accepted Under Deviation), when a
+ * deficiency response has been submitted for review, or when the process owner
+ * has declared no further submission.
+ */
+export function getRacmReassignmentBlockMessage(form) {
+  const status = String(form?.status || '').trim().toLowerCase()
+  if (status === 'sent for approval') {
+    return 'This RACM is sent for approval and cannot be re-assigned.'
+  }
+  const conclusion = String(form?.control_design_conclusion || '').trim().toLowerCase()
+  if (conclusion === 'effective' || conclusion === 'accepted under deviation') {
+    return 'This RACM has been approved (Effective / Accepted Under Deviation) and cannot be re-assigned.'
+  }
+  if (isDeficiencyResponseSubmitted(form)) {
+    return 'A deficiency response has been submitted for this RACM and it cannot be re-assigned.'
+  }
+  const declaredNoFurther = form?.no_further_submission_declared ?? form?.process_owner_declaration?.no_furthure_submission
+  if (parseTruthyApiBoolean(declaredNoFurther)) {
+    return 'The process owner has declared no further submission for this RACM, so it cannot be re-assigned.'
+  }
+  return ''
+}
+
 /** Process owner counts as assigned only when user exists in the RACM unit (not bulk-upload placeholder). */
 export function hasValidProcessOwnerAssignment(form) {
   if (!form) return false

@@ -6,6 +6,7 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Alert from '@mui/material/Alert';
 import Fab from '@mui/material/Fab';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -45,12 +46,15 @@ import {
   formatRacmApprovalStatusLabel,
 } from '../../uiConstants'
 import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
+import CompanyUserSearchAutocomplete from '../../components/company_co/CompanyUserSearchAutocomplete'
 import { fetchUnitUsers } from '../../components/company_co/unitUserSearch'
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, hasValidProcessOwnerAssignment, isCoordinatorAssignedRacm, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, hasValidProcessOwnerAssignment, isCoordinatorAssignedRacm, getRacmReassignmentBlockMessage, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
 import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistoryList'
+import ProcessOwnerDeclarationAction from '../../components/racm/ProcessOwnerDeclarationAction'
+import ProcessOwnerDeclarationBadge from '../../components/racm/ProcessOwnerDeclarationBadge'
 import { formatChangeRequestDisplayValue } from '../../lib/changeRequestHistory'
 import { formatIndianDateTime } from '../../lib/dateTime'
 import { apiUrl, API_BASE_URL } from '../../config/api'
@@ -157,6 +161,9 @@ function FormDetail() {
   const fileInputRef = useRef(null)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
+  const [approverAssignmentDialogOpen, setApproverAssignmentDialogOpen] = useState(false)
+  const [selectedApprover, setSelectedApprover] = useState(null)
+  const [assigningApprover, setAssigningApprover] = useState(false)
   const [processOwnerName, setProcessOwnerName] = useState('-')
   const [performerDisplayName, setPerformerDisplayName] = useState('-')
   const [showScrollTop, setShowScrollTop] = useState(false)
@@ -183,7 +190,6 @@ function FormDetail() {
   const [deficiencyResponseSubmitting, setDeficiencyResponseSubmitting] = useState(false)
   const [expandedDeficiencyVersions, setExpandedDeficiencyVersions] = useState({})
   const [editableDynamicValues, setEditableDynamicValues] = useState({})
-
   useSyncGlobalLoading(
     loading ||
     updating ||
@@ -735,8 +741,9 @@ function FormDetail() {
       return
     }
 
-    if (Boolean(formData?.active)) {
-      toast.error('RACM assignment cannot be changed once RACM is Active')
+    const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
+    if (reassignmentBlockMessage) {
+      toast.error(reassignmentBlockMessage)
       return
     }
 
@@ -751,13 +758,17 @@ function FormDetail() {
   }
 
   const handleUpdateAssignment = async () => {
-    if (Boolean(formData?.active)) {
-      toast.error('RACM assignment cannot be changed once RACM is Active')
+    const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
+    if (reassignmentBlockMessage) {
+      toast.error(reassignmentBlockMessage)
       return
     }
 
     if (!form_id || !selectedUser?.email_id) return
 
+    // Already-active RACMs are being re-assigned (owner swap). Do not re-send
+    // the active flag so the RACM is never toggled inactive mid-operation.
+    const alreadyActive = Boolean(formData?.active)
     const hasDueDate = Boolean((formData?.due_date || '').toString().trim())
     const hasReminderFrequency =
       formData?.reminder_frequency !== null &&
@@ -765,7 +776,7 @@ function FormDetail() {
       String(formData.reminder_frequency).trim() !== ''
     const hasReminderSettings = hasDueDate && hasReminderFrequency
     const hasSampleDoc = hasSampleDocs()
-    const canAutoActivate = hasReminderSettings
+    const canAutoActivate = !alreadyActive && hasReminderSettings
 
     setUpdating(true)
     try {
@@ -788,7 +799,7 @@ function FormDetail() {
         if (canAutoActivate && !hasSampleDoc) {
           toast('Sample document is missing. RACM was set Active.')
         }
-        if (!canAutoActivate) {
+        if (!alreadyActive && !canAutoActivate) {
           const missing = []
           if (!hasReminderSettings) missing.push('Reminder settings')
           toast.error(`RACM assigned, but could not set Active. Missing: ${missing.join(', ')}`)
@@ -1223,7 +1234,7 @@ function FormDetail() {
         })
         const uploadData = await uploadResponse.json()
         if (!uploadResponse.ok || !uploadData.success) {
-          toast.error(uploadData.message || 'Failed to upload deficiency response documents')
+          toast.error(uploadData.message || 'Failed to upload Mitigation/Compensatory Plans documents')
           return
         }
         attachments = Array.isArray(uploadData.data?.attachments) ? uploadData.data.attachments : []
@@ -1246,7 +1257,7 @@ function FormDetail() {
 
       const data = await response.json()
       if (response.ok && data.success) {
-        toast.success('Deficiency response submitted successfully')
+        toast.success('Mitigation/Compensatory Plans submitted successfully')
         setFormData((currentFormData) => ({
           ...(currentFormData || {}),
           ...(data.data || {}),
@@ -1256,11 +1267,11 @@ function FormDetail() {
         setDeficiencyResponseFiles([])
         setDeficiencyResponseForm(buildDeficiencyResponseFormState(data.data, responseType))
       } else {
-        toast.error(data.message || 'Failed to submit deficiency response')
+        toast.error(data.message || 'Failed to submit Mitigation/Compensatory Plans')
       }
     } catch (error) {
       console.error('Error submitting deficiency response:', error)
-      toast.error('Error submitting deficiency response')
+      toast.error('Error submitting Mitigation/Compensatory Plans')
     } finally {
       setDeficiencyResponseSubmitting(false)
     }
@@ -1644,6 +1655,63 @@ function FormDetail() {
 
     setMoreActionsDialogOpen(false)
     setSelfAssignConfirmDialogOpen(true)
+  }
+
+  const handleChooseApproverAssignmentFromMore = () => {
+    const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
+    if (reassignmentBlockMessage) {
+      toast.error(reassignmentBlockMessage)
+      return
+    }
+    setMoreActionsDialogOpen(false)
+    setSelectedApprover(null)
+    setApproverAssignmentDialogOpen(true)
+  }
+
+  const handleCloseApproverAssignmentDialog = () => {
+    if (assigningApprover) return
+    setApproverAssignmentDialogOpen(false)
+    setSelectedApprover(null)
+  }
+
+  const handleAssignApprover = async () => {
+    if (!form_id || !selectedApprover?.email_id) return
+
+    const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
+    if (reassignmentBlockMessage) {
+      toast.error(reassignmentBlockMessage)
+      return
+    }
+
+    setAssigningApprover(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/company-co/racm-approver-assignments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          approver_email_id: selectedApprover.email_id,
+          form_ids: [form_id],
+          confirm_replace_existing: true,
+        }),
+      })
+
+      const data = await response.json()
+      if (response.ok && data.success) {
+        toast.success('Approver assignment saved successfully')
+        handleCloseApproverAssignmentDialog()
+        fetchFormData()
+      } else {
+        toast.error(data.message || 'Failed to assign approver')
+      }
+    } catch (error) {
+      console.error('Error assigning approver:', error)
+      toast.error('Failed to assign approver')
+    } finally {
+      setAssigningApprover(false)
+    }
   }
 
   const handleSelfAssignCancel = () => {
@@ -2037,10 +2105,12 @@ function FormDetail() {
   const deficiencyAttachments = Array.isArray(deficiencyCurrentSubmission?.attachments)
     ? deficiencyCurrentSubmission.attachments
     : []
+  const processOwnerDeclaration = formData?.process_owner_declaration || null
+  const hasProcessOwnerDeclaration = Boolean(processOwnerDeclaration?.no_furthure_submission)
   const deficiencyResponseStatus = String(formData?.deficiency_response_status || '').trim()
-  const needsDeficiencyResponse = Boolean(formData?.deficiency_action_status)
+  const needsDeficiencyResponse = Boolean(formData?.deficiency_action_status) && !hasProcessOwnerDeclaration
   const showDeficiencyActionNotice = needsDeficiencyResponse
-  const canSubmitDeficiencyResponse = needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review'
+  const canSubmitDeficiencyResponse = needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review' && !hasProcessOwnerDeclaration
   const showActiveDeficiencyResponseSection = Boolean(
     deficiencyResponse && String(deficiencyResponse.status || '').trim().toLowerCase() === 'submitted'
   )
@@ -2099,13 +2169,17 @@ function FormDetail() {
 
   const isActive = Boolean(formData?.active)
   const isCoordinatorAssigned = isCoordinatorAssignedRacm(formData)
+  const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
+  const isAssignmentDisabled = isEditMode || updating || isCoordinatorAssigned || Boolean(reassignmentBlockMessage)
   const racmStatus = String(formData?.status || '').trim().toLowerCase()
   const isSentForApproval = racmStatus === 'sent for approval'
   const isApprovedRacm = racmStatus === 'approved'
   const isRejectedRacm = racmStatus === 'rejected'
+  const isApprovedNotEffective = isApprovedRacm && String(formData?.control_design_conclusion || '').trim().toLowerCase() === 'not effective'
   const hasReminderSettings = Boolean(String(formData?.due_date || '').trim()) && Boolean(String(formData?.reminder_frequency || '').trim())
   const showSelfAssignButton = !isCoordinatorAssigned && !validProcessOwnerAssigned
-  const canCoordinatorSubmit = isCoordinatorAssigned && isActive && !isSentForApproval && !isApprovedRacm
+  const canCoordinatorSubmit = isCoordinatorAssigned && isActive && !isSentForApproval && !isApprovedRacm && !hasProcessOwnerDeclaration
+  const canDeclareNoFurtherSubmission = !hasProcessOwnerDeclaration && ((isCoordinatorAssigned && isRejectedRacm) || isApprovedNotEffective)
   const showRemarksByUser = canCoordinatorSubmit || (formData?.remarks_by_user || '').trim() !== ''
   const showReasonByApprover = hasRacmFieldValue(formData?.reason_by_approver)
   const assignmentDisplayValue = isCoordinatorAssigned
@@ -2149,7 +2223,7 @@ function FormDetail() {
   return (
     <Box sx={FORM_DETAIL_ROOT_SX}>
       <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
-        {showChangeRequestHistoryButton || showSuggestedChangesButton || isEditMode ? (
+        {showChangeRequestHistoryButton || showSuggestedChangesButton || isEditMode || canDeclareNoFurtherSubmission || hasProcessOwnerDeclaration ? (
           <Box sx={FORM_DETAIL_ACTION_BAR_SX}>
             {showChangeRequestHistoryButton ? (
               <Button
@@ -2230,6 +2304,29 @@ function FormDetail() {
                 </Button>
               </>
             ) : null}
+            <ProcessOwnerDeclarationAction
+              canDeclare={canDeclareNoFurtherSubmission}
+              formId={form_id}
+              onDeclared={({ processOwnerDeclaration, deficiencyActionStatus }) => {
+                setFormData((current) => current ? ({
+                  ...current,
+                  process_owner_declaration: processOwnerDeclaration,
+                  deficiency_action_status: deficiencyActionStatus === undefined ? false : Boolean(deficiencyActionStatus),
+                }) : current)
+              }}
+              buttonSx={{
+                py: 1,
+                fontWeight: 600,
+                textTransform: 'none',
+                fontSize: '0.9375rem',
+                borderRadius: 2,
+              }}
+            />
+            <ProcessOwnerDeclarationBadge
+              declaration={processOwnerDeclaration}
+              formattedTimestamp={formatIndianDateTime(processOwnerDeclaration?.timestamp, '-')}
+              containerSx={{ width: 'auto' }}
+            />
           </Box>
         ) : null}
         {/* Top Sidebar (now full width) */}
@@ -2298,9 +2395,9 @@ function FormDetail() {
                         boxShadow: 'none',
                       },
                     }}
-                  >
-                    Audit logs
-                  </Button>
+                    >
+                      Audit logs
+                    </Button>
                   <Box
                     sx={{
                       textAlign: { xs: 'left', sm: 'right' },
@@ -2604,14 +2701,14 @@ function FormDetail() {
                   >
                     <Box
                       onClick={() => {
-                        if (!isEditMode && !updating && !isActive && !isCoordinatorAssigned) {
+                        if (!isAssignmentDisabled) {
                           handleOpenAssignmentDialog()
                         }
                       }}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
-                        if ((e.key === 'Enter' || e.key === ' ') && !isEditMode && !updating && !isActive && !isCoordinatorAssigned) {
+                        if ((e.key === 'Enter' || e.key === ' ') && !isAssignmentDisabled) {
                           e.preventDefault()
                           handleOpenAssignmentDialog()
                         }
@@ -2627,11 +2724,11 @@ function FormDetail() {
                         alignItems: 'flex-start',
                         justifyContent: 'center',
                         gap: 1,
-                        cursor: isEditMode || updating || isActive || isCoordinatorAssigned ? 'not-allowed' : 'pointer',
-                        opacity: isEditMode || updating || isActive || isCoordinatorAssigned ? 0.65 : 1,
+                        cursor: isAssignmentDisabled ? 'not-allowed' : 'pointer',
+                        opacity: isAssignmentDisabled ? 0.65 : 1,
                         transition: 'all 0.2s ease',
                         minHeight: '100%',
-                        '&:hover': isEditMode || updating || isActive || isCoordinatorAssigned ? {} : {
+                        '&:hover': isAssignmentDisabled ? {} : {
                           backgroundColor: theme.palette.mode === 'dark'
                             ? 'rgba(255, 255, 255, 0.03)'
                             : 'rgba(0, 0, 0, 0.02)',
@@ -3971,7 +4068,7 @@ function FormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  Deficiency Response History
+                  Mitigation/Compensatory Plans History
                 </Typography>
 
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -4165,7 +4262,7 @@ function FormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  Deficiency Response
+                  Mitigation/Compensatory Plans
                 </Typography>
 
                 {showDeficiencyActionNotice ? (
@@ -4565,31 +4662,38 @@ function FormDetail() {
                 </Typography>
               </Box>
 
+              {Boolean((formData?.control_owner || '').trim()) && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  The current process owner will be replaced and will no longer be able to access this RACM. The new process owner will be notified by email.
+                </Alert>
+              )}
+
               <UnitUserSearchAutocomplete
                 unitId={formData?.unit_id}
                 value={selectedUser}
                 onChange={(newValue) => {
-                  if (!isActive) setSelectedUser(newValue)
+                  setSelectedUser(newValue)
                 }}
                 excludeEmails={[formData?.control_owner]}
                 prefetch={assignmentDialogOpen}
-                disabled={isActive}
                 helperText={
                   selectedUser?.email_id ||
                   `Users from ${(formData?.unit_name || formData?.unit_id || 'this unit').toString().trim() || 'this unit'} only`
                 }
               />
-              <Typography
-                variant="caption"
-                sx={{
-                  display: 'block',
-                  mt: 0.5,
-                  color: 'text.secondary',
-                  lineHeight: 1.6,
-                }}
-              >
-                RACM will be set to Active automatically after assignment if all conditions are fulfilled.
-              </Typography>
+              {!isActive && (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: 'block',
+                    mt: 0.5,
+                    color: 'text.secondary',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  RACM will be set to Active automatically after assignment if all conditions are fulfilled.
+                </Typography>
+              )}
             </Box>
           )}
         </DialogContent>
@@ -4602,9 +4706,93 @@ function FormDetail() {
               variant="contained"
               color="secondary"
               onClick={handleUpdateAssignment}
-              disabled={updating || isActive}
+              disabled={updating}
             >
               {updating ? 'Updating...' : 'Update Assignment'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={approverAssignmentDialogOpen}
+        onClose={handleCloseApproverAssignmentDialog}
+        aria-labelledby="racm-approver-assignment-dialog-title"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minWidth: { xs: '96%', sm: '760px', md: '860px' },
+            maxWidth: '960px',
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+          },
+        }}
+      >
+        <DialogTitle
+          id="racm-approver-assignment-dialog-title"
+          sx={{
+            pb: 2.5,
+            pt: 3,
+            px: 3,
+            fontWeight: 700,
+            fontSize: '1.25rem',
+            color: theme.palette.text.primary,
+          }}
+        >
+          Approver Assignment
+        </DialogTitle>
+        <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
+          {formData && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Box sx={popupRowSx}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Business Process:</Typography>
+                <Typography variant="body2" component="span">{popupValue(formData.business_process)}</Typography>
+              </Box>
+              <Box sx={popupRowSx}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Financial Year:</Typography>
+                <Typography variant="body2" component="span">{popupValue(formData.financial_year)}</Typography>
+              </Box>
+              <Box sx={popupRowSx}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Current Approver Email:</Typography>
+                <Typography variant="body2" component="span">{popupValue(formData.approver_email_id)}</Typography>
+              </Box>
+              <Box sx={{ ...popupRowSx, mb: 2 }}>
+                <Typography variant="body2" component="span" sx={popupLabelSx}>Current Approver Name:</Typography>
+                <Typography variant="body2" component="span">
+                  {(formData?.approver_display_name || formData?.approver_name || '').trim() || '-'}
+                </Typography>
+              </Box>
+
+              {Boolean((formData?.racm_specific_approver_email_id || '').trim()) && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  This RACM already has a RACM-specific approver. Saving will replace the existing RACM-specific approver.
+                </Alert>
+              )}
+
+              <CompanyUserSearchAutocomplete
+                role="approver"
+                label="Search Approver"
+                value={selectedApprover}
+                onChange={setSelectedApprover}
+                prefetch={approverAssignmentDialogOpen}
+                helperText="All approvers in this company are available"
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={handleCloseApproverAssignmentDialog} disabled={assigningApprover}>
+            Cancel
+          </Button>
+          {selectedApprover?.email_id && (
+            <Button
+              variant="contained"
+              color="secondary"
+              onClick={handleAssignApprover}
+              disabled={assigningApprover}
+            >
+              {assigningApprover ? 'Assigning...' : 'Assign Approver'}
             </Button>
           )}
         </DialogActions>
@@ -4804,7 +4992,7 @@ function FormDetail() {
                 Delete
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                This RACM will be removed permanently, including all sample documents, user-uploaded documents, deficiency response attachments, and related database rows.
+                This RACM will be removed permanently, including all sample documents, user-uploaded documents, Mitigation/Compensatory Plans attachments, and related database rows.
               </Typography>
             </Box>
             <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
@@ -4813,6 +5001,14 @@ function FormDetail() {
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 A duplicate RACM with the same structure and details will be generated.
+              </Typography>
+            </Box>
+            <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                Approver Assignment
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Assign a RACM-specific approver for this control. This overrides any unit-level or process-level approver for this RACM only.
               </Typography>
             </Box>
           </Box>
@@ -4826,6 +5022,9 @@ function FormDetail() {
               Self Assign
             </Button>
           ) : null}
+          <Button onClick={handleChooseApproverAssignmentFromMore} variant="outlined" color="primary">
+            Approver Assignment
+          </Button>
           <Button onClick={handleChooseDeleteFromMore} variant="outlined" color="error">
             Delete
           </Button>
@@ -5188,7 +5387,7 @@ function FormDetail() {
               mt: 2,
             }}
           >
-            Are you sure you want to delete this RACM? This action cannot be undone. The form, all sample documents, all user-uploaded documents, deficiency response attachments, and their database rows will be removed permanently.
+            Are you sure you want to delete this RACM? This action cannot be undone. The form, all sample documents, all user-uploaded documents, Mitigation/Compensatory Plans attachments, and their database rows will be removed permanently.
           </DialogContentText>
         </DialogContent>
         <DialogActions

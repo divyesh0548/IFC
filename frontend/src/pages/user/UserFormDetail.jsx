@@ -45,6 +45,8 @@ import {
 import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments, normalizeSampleDocuments } from '../../lib/racmUserDocuments'
 import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistoryList'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
+import ProcessOwnerDeclarationAction from '../../components/racm/ProcessOwnerDeclarationAction'
+import ProcessOwnerDeclarationBadge from '../../components/racm/ProcessOwnerDeclarationBadge'
 import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatIndianDateTime, formatDateOnly, toDateOnlyString } from '../../lib/dateTime'
@@ -192,7 +194,6 @@ function UserFormDetail() {
   })
   const [deficiencyResponseFiles, setDeficiencyResponseFiles] = useState([])
   const [deficiencyResponseSubmitting, setDeficiencyResponseSubmitting] = useState(false)
-
   useSyncGlobalLoading(loading || saving || uploadingUserDocuments || requestChangeSaving || changeRequestHistoryLoading || deficiencyResponseSubmitting)
 
   // Removed editableFields state - users can only edit remarks_by_user
@@ -913,7 +914,7 @@ function UserFormDetail() {
         })
         const uploadData = await uploadResponse.json()
         if (!uploadResponse.ok || !uploadData.success) {
-          toast.error(uploadData.message || 'Failed to upload deficiency response documents')
+          toast.error(uploadData.message || 'Failed to upload Mitigation/Compensatory Plans documents')
           return
         }
         attachments = Array.isArray(uploadData.data?.attachments) ? uploadData.data.attachments : []
@@ -936,7 +937,7 @@ function UserFormDetail() {
 
       const data = await response.json()
       if (response.ok && data.success) {
-        toast.success('Deficiency response submitted successfully')
+        toast.success('Mitigation/Compensatory Plans submitted successfully')
         setFormData((currentFormData) => ({
           ...(currentFormData || {}),
           ...(data.data || {}),
@@ -946,11 +947,11 @@ function UserFormDetail() {
         setDeficiencyResponseFiles([])
         setDeficiencyResponseForm(buildDeficiencyResponseFormState(data.data, responseType))
       } else {
-        toast.error(data.message || 'Failed to submit deficiency response')
+        toast.error(data.message || 'Failed to submit Mitigation/Compensatory Plans')
       }
     } catch (error) {
       console.error('Error submitting deficiency response:', error)
-      toast.error('Error submitting deficiency response')
+      toast.error('Error submitting Mitigation/Compensatory Plans')
     } finally {
       setDeficiencyResponseSubmitting(false)
     }
@@ -1134,12 +1135,16 @@ function UserFormDetail() {
   const isSentForApproval = formData?.status === 'sent for approval'
   const isApproved = formData?.status === 'Approved'
   const isRejected = formData?.status === 'Rejected'
+  const processOwnerDeclaration = formData?.process_owner_declaration || null
+  const hasProcessOwnerDeclaration = Boolean(processOwnerDeclaration?.no_furthure_submission)
+  const isApprovedNotEffective = formData?.status === 'Approved'
+    && String(formData?.control_design_conclusion || '').trim().toLowerCase() === 'not effective'
   const hasPendingChanges = Boolean(formData?.pending_changes)
   // Form is editable if status is not 'sent for approval' or 'Approved'
   // If status is 'Rejected', user can edit and resubmit
   const isEditable = !isSentForApproval && !isApproved
-  const canModifySubmissionDetails = isEditable && !isRequestChangeMode
-  const canRequestChange = isEditable && !hasPendingChanges && !isRequestChangeMode
+  const canModifySubmissionDetails = isEditable && !isRequestChangeMode && !hasProcessOwnerDeclaration
+  const canRequestChange = isEditable && !hasPendingChanges && !isRequestChangeMode && !hasProcessOwnerDeclaration
   const extraRequestChangeFields = getExtraRequestChangeFields(formData?.field_definitions)
   const hasAnyRequestChange =
     REQUEST_CHANGE_FIELD_KEYS.some((fieldKey) => hasRequestChangeFieldChanged(fieldKey)) ||
@@ -1224,9 +1229,10 @@ function UserFormDetail() {
     ? deficiencyCurrentSubmission.attachments
     : []
   const deficiencyResponseStatus = String(formData?.deficiency_response_status || '').trim()
-  const needsDeficiencyResponse = Boolean(formData?.deficiency_action_status)
+  const needsDeficiencyResponse = Boolean(formData?.deficiency_action_status) && !hasProcessOwnerDeclaration
   const showDeficiencyActionNotice = needsDeficiencyResponse
-  const canSubmitDeficiencyResponse = needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review'
+  const canSubmitDeficiencyResponse = needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review' && !hasProcessOwnerDeclaration
+  const canDeclareNoFurtherSubmission = !hasProcessOwnerDeclaration && (isRejected || isApprovedNotEffective)
   const showActiveDeficiencyResponseSection = Boolean(
     deficiencyResponse && String(deficiencyResponse.status || '').trim().toLowerCase() === 'submitted'
   )
@@ -1423,6 +1429,23 @@ function UserFormDetail() {
                     Request Change
                   </Button>
                 )}
+                <ProcessOwnerDeclarationAction
+                  canDeclare={canDeclareNoFurtherSubmission}
+                  formId={form_id}
+                  onDeclared={({ processOwnerDeclaration, deficiencyActionStatus }) => {
+                    setFormData((current) => current ? ({
+                      ...current,
+                      process_owner_declaration: processOwnerDeclaration,
+                      deficiency_action_status: deficiencyActionStatus === undefined ? false : Boolean(deficiencyActionStatus),
+                    }) : current)
+                  }}
+                  buttonSx={{}}
+                />
+                <ProcessOwnerDeclarationBadge
+                  declaration={processOwnerDeclaration}
+                  formattedTimestamp={formatIndianDateTime(processOwnerDeclaration?.timestamp, '-')}
+                  containerSx={{ width: 'auto' }}
+                />
               </>
             )}
           </Box>
@@ -1870,7 +1893,6 @@ function UserFormDetail() {
                     values={requestChangeDynamicValues}
                     isEditMode={isRequestChangeMode}
                     onChange={handleRequestChangeFieldUpdate}
-                    showCustomColumnIndicator
                     requestChangeMode={isRequestChangeMode}
                     isFieldChanged={hasRequestChangeFieldChanged}
                   />
@@ -1885,7 +1907,6 @@ function UserFormDetail() {
               values={requestChangeDynamicValues}
               isEditMode={isRequestChangeMode}
               onChange={handleRequestChangeFieldUpdate}
-              showCustomColumnIndicator
               requestChangeMode={isRequestChangeMode}
               isFieldChanged={hasRequestChangeFieldChanged}
             />
@@ -2018,7 +2039,6 @@ function UserFormDetail() {
                     values={requestChangeDynamicValues}
                     isEditMode={isRequestChangeMode}
                     onChange={handleRequestChangeFieldUpdate}
-                    showCustomColumnIndicator
                     requestChangeMode={isRequestChangeMode}
                     isFieldChanged={hasRequestChangeFieldChanged}
                   />
@@ -2033,7 +2053,6 @@ function UserFormDetail() {
               values={requestChangeDynamicValues}
               isEditMode={isRequestChangeMode}
               onChange={handleRequestChangeFieldUpdate}
-              showCustomColumnIndicator
               requestChangeMode={isRequestChangeMode}
               isFieldChanged={hasRequestChangeFieldChanged}
             />
@@ -2601,7 +2620,7 @@ function UserFormDetail() {
                       borderColor: 'divider',
                     }}
                   >
-                    Deficiency Response History
+                    Mitigation/Compensatory Plans History
                   </Typography>
 
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -2800,7 +2819,7 @@ function UserFormDetail() {
                       borderColor: 'divider',
                     }}
                   >
-                    Deficiency Response
+                    Mitigation/Compensatory Plans
                   </Typography>
 
                   {showDeficiencyActionNotice ? (

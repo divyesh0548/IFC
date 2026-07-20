@@ -55,7 +55,6 @@ function buildRacmActiveUserEmail({
   formId,
 }) {
   const recipientName = processOwnerName || 'Process Owner';
-  const coordinatorDisplayName = resolveCoordinatorDisplayName(coordinatorName);
   const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
   const formattedDueDate = formatDueDateDisplay(dueDate);
   const formUrl = buildUserFormDetailUrl(formId);
@@ -88,7 +87,6 @@ ${formUrl ? `\nRACM: ${formUrl}` : (portalUrl ? `\nRACM: ${portalUrl}` : '')}
 Thanks for cooperating.
 
 Regards,
-${coordinatorDisplayName}
 ${coordinatorCompanyDisplayName}
 `,
   };

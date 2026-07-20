@@ -36,6 +36,7 @@ const ignoredControlFormImportColumns = new Set([
   'reminder_datetime',
   'reminder_to_approver_datetime',
   'ineffective_reminder_datetime',
+  'ineffective_due_date',
   'deficiency_review_reminder_datetime',
   'approval_status_change_timestamp',
   'financial_year',

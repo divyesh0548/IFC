@@ -8,7 +8,7 @@ const { uploadFileToS3, deleteFileFromS3 } = require('../utils/s3Upload');
 const { normalizeDateOnlyValue } = require('../utils/dateOnly');
 const { sendEmail } = require('../utils/send_email');
 const { getCcEmailsForRacm } = require('../utils/racm_cc_recipients');
-const { buildRacmInactiveUserEmail, buildApproverFormDetailUrl, buildUserFormDetailUrl } = require('../utils/racm_status_user_email');
+const { buildApproverFormDetailUrl } = require('../utils/racm_status_user_email');
 const { validateRejectedRacmResubmit } = require('../utils/racm_rejected_resubmit');
 const { decryptToken } = require('../utils/auth_utility');
 const { verifyUserAuth } = require('../modules/auth/auth.middleware');
@@ -19,6 +19,11 @@ const {
   getDeficiencyResponseByFormId,
   validateMitigationPlanDueDate,
 } = require('../utils/deficiency_response');
+const {
+  buildNoFurtherSubmissionEmail,
+  getProcessOwnerDeclarationByFormId,
+  hasProcessOwnerDeclaration,
+} = require('../utils/process_owner_declaration');
 const { getBusinessProcessCodeForCompany } = require('../utils/business_process_master');
 const {
   notifyDeficiencyResponseSubmitted,
@@ -85,6 +90,7 @@ const {
   resetReminderDatetimeForForms,
   seedReminderToApproverDatetime,
   seedDeficiencyReviewReminderDatetime,
+  resetIneffectiveReminderDatetime,
   mapControlsReminderToApi,
 } = require('../utils/controls_reminder');
 const {
@@ -101,6 +107,7 @@ const {
   VALID_RACM_ASSIGNMENT_EXISTS_SQL,
   RACM_ASSIGNMENT_COMPUTED_SELECT_SQL,
   isCoordinatorAssignedRacm,
+  isTruthyFlag,
   hasCoordinatorScheduleConfigured,
   getControlFormCoordinatorContext,
   assertCoordinatorAssignedRacmAccess,
@@ -254,7 +261,7 @@ const CONTROL_FORMS_LIST_FROM = `
    AND u.company_identifier = cf.company_identifier
    AND u.role = 'user'
   LEFT JOIN LATERAL (
-    SELECT aa.approver_email_id
+    SELECT aa.approver_email_id, aa.assignment_scope
     FROM approver_assignments aa
     WHERE aa.company_identifier = cf.company_identifier
       AND (
@@ -289,6 +296,9 @@ const CONTROL_FORMS_LIST_FROM = `
     ON LOWER(TRIM(approver_user.email_id)) = LOWER(TRIM(COALESCE(approver_map.approver_email_id, '')))
    AND approver_user.company_identifier = cf.company_identifier
    AND approver_user.role = 'approver'
+  LEFT JOIN process_owner_declaration pod
+    ON pod.form_id = cf.form_id
+   AND COALESCE(pod.no_furthure_submission, FALSE) = TRUE
   LEFT JOIN user_unit_memberships owner_membership
     ON owner_membership.company_identifier = cf.company_identifier
    AND owner_membership.unit_id = cf.unit_id
@@ -298,6 +308,11 @@ const CONTROL_FORMS_LIST_FROM = `
 const CONTROL_FORMS_LIST_SELECT = `
   SELECT
     cf.*,
+    CASE
+      WHEN pod.form_id IS NOT NULL THEN FALSE
+      ELSE COALESCE(cf.deficiency_action_status, FALSE)
+    END AS deficiency_action_status,
+    (pod.form_id IS NOT NULL) AS no_further_submission_declared,
     ${controlFormsUtcOverridesSql('cf')},
     ${CONTROLS_REMINDER_SELECT_SQL},
     NULLIF(TRIM(cum.unit_name), '') AS unit_name,
@@ -305,6 +320,7 @@ const CONTROL_FORMS_LIST_SELECT = `
     NULLIF(TRIM(approver_map.approver_email_id), '') AS approver_email_id,
     NULLIF(TRIM(approver_user.emp_name), '') AS approver_name,
     NULLIF(TRIM(approver_user.emp_name), '') AS approver_display_name,
+    NULLIF(TRIM(approver_map.assignment_scope), '') AS approver_assignment_scope,
     NULLIF(TRIM(racm_specific_approver_map.approver_email_id), '') AS racm_specific_approver_email_id,
     ${RACM_ASSIGNMENT_COMPUTED_SELECT_SQL}
 `;
@@ -376,8 +392,8 @@ function appendControlFormsListFilters(req, options, queryParts) {
   }
 
   if (control_number) {
-    whereClause += ` AND LOWER(TRIM(COALESCE(cf.control_number, ''))) LIKE $${paramIndex}`;
-    queryParams.push(`%${String(control_number).trim().toLowerCase()}%`);
+    whereClause += ` AND LOWER(TRIM(COALESCE(cf.control_number, ''))) = $${paramIndex}`;
+    queryParams.push(String(control_number).trim().toLowerCase());
     paramIndex += 1;
   }
 
@@ -464,9 +480,9 @@ function appendControlFormsListFilters(req, options, queryParts) {
   if (deficiency_action_status !== undefined) {
     const deficiencyActionFilter = parseActiveFilter(deficiency_action_status);
     if (deficiencyActionFilter === true) {
-      whereClause += ' AND COALESCE(cf.deficiency_action_status, FALSE) = TRUE';
+      whereClause += ' AND COALESCE(cf.deficiency_action_status, FALSE) = TRUE AND pod.form_id IS NULL';
     } else if (deficiencyActionFilter === false) {
-      whereClause += ' AND COALESCE(cf.deficiency_action_status, FALSE) = FALSE';
+      whereClause += ' AND (COALESCE(cf.deficiency_action_status, FALSE) = FALSE OR pod.form_id IS NOT NULL)';
     }
   }
 
@@ -532,7 +548,7 @@ async function getControlFormsForList(req, options = {}) {
   const countQuery = `SELECT COUNT(*)::int AS total${CONTROL_FORMS_LIST_FROM}${whereClause}`;
   const summaryQuery = `
     SELECT
-      COUNT(*) FILTER (WHERE COALESCE(cf.deficiency_action_status, FALSE) = TRUE)::int AS action_required_count,
+      COUNT(*) FILTER (WHERE COALESCE(cf.deficiency_action_status, FALSE) = TRUE AND pod.form_id IS NULL)::int AS action_required_count,
       COUNT(*) FILTER (WHERE COALESCE(cf.pending_changes, FALSE) = TRUE)::int AS pending_change_request_count
     ${CONTROL_FORMS_LIST_FROM}${whereClause}
   `;
@@ -577,64 +593,11 @@ async function getControlFormsForList(req, options = {}) {
   };
 }
 
-function buildControlFormStatusEmail(status, businessProcess, processOwnerName, coordinatorName, coordinatorCompanyName, dueDate, formId) {
-  const recipientName = processOwnerName || 'Process Owner';
-  const coordinatorDisplayName = coordinatorName || 'Company Coordinator';
-  const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
-  const formattedDueDate = formatDueDateDisplay(dueDate);
-  const formUrl = buildUserFormDetailUrl(formId);
-  switch (status) {
-    case 'Active':
-      return {
-        shouldSend: true,
-        subject: 'Your IFC testing for ' + businessProcess + ' is ready',
-        text: `Hi ${recipientName},
-
-Hope you're having a good week!
-
-I'm reaching out because your Internal Financial Controls assignment for ${businessProcess} is now ready in the system. Nothing complicated; we just need your help to keep things moving.
-
-Here's what we need from you:
-
-1. You'll see the risk and control matrix from last year. Take a quick look through from here (View of the Risk & Control key issues) especially the risks we identified and the controls we put in place. You'll also spot the evidence that was submitted last year, which should give you a good sense of what we're looking for. (You will be able to download the evidence that was submitted last year.)
-
-2. Upload the evidence for this year's testing against each control. The period and the amount of samples can be viewed in the RACM detail page. 
-
-What happens next?
-
-Once you submit your evidence, our tester will review it to check if the control is operating effectively. They'll either pass or fail the control based on what they see. So the clearer your evidence, the smoother that review goes!
-
-Deadline: ${formattedDueDate}
-
-Just shout if you hit any snags or have questions or you have any feedback on the performance of the controls or have noted any significant breaches; I'm happy to help.
-${formUrl ? `\nRACM: ${formUrl}` : ''}
-
-Thanks for cooperating.
-
-Regards,
-${coordinatorDisplayName}
-${coordinatorCompanyDisplayName}
-        `
-      };
-    case 'Inactive':
-      return buildRacmInactiveUserEmail({
-        businessProcess,
-        processOwnerName: recipientName,
-        coordinatorName: coordinatorDisplayName,
-        coordinatorCompanyName: coordinatorCompanyDisplayName,
-        formId,
-      });
-    default:
-      return {
-        shouldSend: false
-      };
-  }
-}
-
 function buildSentForApprovalEmail({
   approverName,
   userDisplayName,
   formId,
+  controlNumber,
   businessProcess,
   financialYear,
   standardControlDescription,
@@ -644,7 +607,8 @@ function buildSentForApprovalEmail({
   const reviewerName = String(approverName || '').trim() || 'Approver';
   const submittedBy = String(userDisplayName || '').trim() || 'User';
   const companyDisplayName = String(companyName || '').trim() || 'Sharp and Tannan Associates';
-  const bp = String(businessProcess || '').trim();
+  const controlNumberText = String(controlNumber || '').trim() || String(formId || '').trim() || 'N/A';
+  const bp = String(businessProcess || '').trim() || 'Business Process';
   const dueDateText = dueDate ? formatDueDateDisplay(dueDate) : '';
   const racmUrl = buildApproverFormDetailUrl(formId);
   const detailsBlock = buildPendingApprovalRacmDetailsSection(
@@ -658,10 +622,9 @@ function buildSentForApprovalEmail({
       submittedBy,
     }
   );
-  const subjectSuffix = bp || String(formId || '').trim() || 'RACM';
 
   return {
-    subject: `RACM sent for approval - ${subjectSuffix}`,
+    subject: `Control ${controlNumberText} - ${bp} awaiting your approval`,
     text: `Dear ${reviewerName},
 
 A RACM has been sent for approval.
@@ -669,7 +632,7 @@ A RACM has been sent for approval.
 ${detailsBlock}
 
 Please review the uploaded documents and Approve/Reject based on your judgement.
-${racmUrl ? `\nRACM: ${racmUrl}` : ''}
+${racmUrl ? `\nRACM Link: ${racmUrl}` : ''}
 
 Regards,
 ${companyDisplayName}`,
@@ -1190,6 +1153,17 @@ function isDeficiencyResponseEditable(status) {
   return normalized === 'rejected' || normalized === 'resubmission_required';
 }
 
+function isNotEffectiveApprovedRacm(form) {
+  const status = String(form?.status || '').trim().toLowerCase();
+  const designConclusion = String(form?.control_design_conclusion || '').trim().toLowerCase();
+  return status === 'approved' && designConclusion === 'not effective';
+}
+
+function isRejectedOrNotEffectiveRacm(form) {
+  const status = String(form?.status || '').trim().toLowerCase();
+  return status === 'rejected' || isNotEffectiveApprovedRacm(form);
+}
+
 async function getAuthorizedControlFormForDeficiency(clientOrPool, formId, user) {
   const result = await clientOrPool.query(
     `
@@ -1224,6 +1198,77 @@ async function getAuthorizedControlFormForDeficiency(clientOrPool, formId, user)
   }
 
   return { form };
+}
+
+async function getAuthorizedControlFormForNoFurtherSubmission(clientOrPool, formId, user) {
+  const result = await clientOrPool.query(
+    `
+      SELECT
+        form_id,
+        company_identifier,
+        unit_id,
+        control_owner,
+        assigned_to_coordinator,
+        coordinator_assigned_by,
+        status,
+        control_design_conclusion,
+        business_process,
+        financial_year,
+        standard_control_description,
+        sub_process,
+        due_date
+      FROM control_forms
+      WHERE form_id = $1
+      LIMIT 1
+    `,
+    [formId]
+  );
+
+  if (result.rows.length === 0) {
+    return { error: { status: 404, message: 'RACM not found' } };
+  }
+
+  const form = result.rows[0];
+  const userRole = String(user?.role || '').trim().toLowerCase();
+  const userEmail = String(user?.email_id || '').trim().toLowerCase();
+  const formOwnerEmail = String(form.control_owner || '').trim().toLowerCase();
+  const isIneffectiveRacm = isNotEffectiveApprovedRacm(form);
+
+  if (!isRejectedOrNotEffectiveRacm(form)) {
+    return { error: { status: 400, message: 'No further submission can only be declared for Rejected or Not Effective RACMs.' } };
+  }
+
+  if (await hasProcessOwnerDeclaration(clientOrPool, formId)) {
+    return { error: { status: 409, message: 'No further submission has already been declared for this RACM.' } };
+  }
+
+  if (userRole === 'user') {
+    if (formOwnerEmail !== userEmail) {
+      return { error: { status: 403, message: 'Access denied. You are not authorized to declare no further submission for this RACM.' } };
+    }
+    return { form };
+  }
+
+  if (userRole === 'company_co') {
+    if (isIneffectiveRacm) {
+      const coordinatorAccessError = await getCoordinatorUnitAccessError(clientOrPool, form, user);
+      if (coordinatorAccessError) {
+        return { error: coordinatorAccessError };
+      }
+      return { form };
+    }
+
+    if (!isCoordinatorAssignedRacm(form)) {
+      return { error: { status: 403, message: 'Only the process owner can declare no further submission for this RACM.' } };
+    }
+    const coordinatorAccess = await assertCoordinatorAssignedRacmAccess(form, user);
+    if (!coordinatorAccess.ok) {
+      return { error: { status: coordinatorAccess.status, message: coordinatorAccess.message } };
+    }
+    return { form };
+  }
+
+  return { error: { status: 403, message: 'Only the process owner can declare no further submission for this RACM.' } };
 }
 
 async function queryAuthenticatedUser(emailId) {
@@ -1793,6 +1838,10 @@ router.get('/:form_id', verifyAuth, async (req, res) => {
     const formData = result.rows[0];
     await attachControlFormDocuments(pool, [formData]);
     formData.deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
+    formData.process_owner_declaration = await getProcessOwnerDeclarationByFormId(pool, form_id);
+    if (formData.process_owner_declaration?.no_furthure_submission) {
+      formData.deficiency_action_status = false;
+    }
     
     // Authorization check: For users with role 'user', verify they are the control_owner
     // company_co and approver roles can still access (existing behavior)
@@ -1887,6 +1936,8 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     return res.status(404).json({ success: false, message: 'RACM not found' });
   }
 
+  const hasNoFurtherSubmissionDeclaration = await hasProcessOwnerDeclaration(pool, normalizedFormId);
+
   const coordinatorAccessError = await getCoordinatorUnitAccessError(pool, currentForm, req.user);
   if (coordinatorAccessError) {
     return res.status(coordinatorAccessError.status).json({
@@ -1945,13 +1996,46 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
   const isReminderSettingsUpdate = Boolean(
     dueDateChanged || reminderFrequencyChanged || dueDateInChangesArray || reminderInChangesArray || dueDateInFieldsArray || reminderInFieldsArray
   );
-  if (req.user?.role === 'company_co' && currentActiveStatus && (isRacmAssignmentOperation || isReminderSettingsUpdate)) {
+  if (req.user?.role === 'company_co' && currentActiveStatus && isReminderSettingsUpdate) {
     return res.status(400).json({
       success: false,
-      message: isRacmAssignmentOperation
-        ? 'RACM assignment cannot be changed once RACM is Active'
-        : 'Reminder settings cannot be changed once RACM is Active',
+      message: 'Reminder settings cannot be changed once RACM is Active',
     });
+  }
+
+  // Re-assignment is allowed even when a RACM is already Active/assigned (the
+  // current process owner is simply replaced). It is only blocked while the RACM
+  // is locked by its approval lifecycle. Enforced explicitly at API level.
+  if (isRacmAssignmentOperation) {
+    const normalizedCurrentStatus = String(currentForm.status || '').trim().toLowerCase();
+    if (normalizedCurrentStatus === 'sent for approval') {
+      return res.status(400).json({
+        success: false,
+        message: 'This RACM is sent for approval and cannot be re-assigned.',
+      });
+    }
+    const normalizedCurrentConclusion = String(currentForm.controlDesignConclusion || '').trim().toLowerCase();
+    if (normalizedCurrentConclusion === 'effective' || normalizedCurrentConclusion === 'accepted under deviation') {
+      return res.status(400).json({
+        success: false,
+        message: 'This RACM has been approved (Effective / Accepted Under Deviation) and cannot be re-assigned.',
+      });
+    }
+    const normalizedDeficiencyResponseStatus = String(currentForm.deficiencyResponseStatus || '')
+      .trim()
+      .toLowerCase();
+    if (normalizedDeficiencyResponseStatus === 'submitted_for_review') {
+      return res.status(400).json({
+        success: false,
+        message: 'A deficiency response has been submitted for this RACM and it cannot be re-assigned.',
+      });
+    }
+    if (hasNoFurtherSubmissionDeclaration) {
+      return res.status(400).json({
+        success: false,
+        message: 'The process owner has declared no further submission for this RACM, so it cannot be re-assigned.',
+      });
+    }
   }
 
   const racmUnitId = String(currentForm.unitId || '').trim();
@@ -2140,6 +2224,13 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     return res.status(400).json({
       success: false,
       message: 'This RACM has a pending change request and cannot be sent for approval until it is resolved.',
+    });
+  }
+
+  if (hasNoFurtherSubmissionDeclaration && isNowSentForApprovalRequest) {
+    return res.status(400).json({
+      success: false,
+      message: 'No further submission has already been declared for this RACM.',
     });
   }
 
@@ -2374,7 +2465,10 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
         }
       }
     }
-    if (!isRacmAssignmentOperation && active !== undefined && req.user && req.user.email_id) {
+    // Log active-status changes for every update path (including RACM assignment,
+    // which also activates the RACM). "RACM Assignment" is logged above first, so
+    // the audit trail reads: RACM Assignment -> Set RACM Active.
+    if (active !== undefined && req.user && req.user.email_id) {
       const newActiveStatus = normalizeActiveInput(active);
       if (newActiveStatus !== currentActiveStatus) {
         await logAuditEvent(newActiveStatus === true ? 'Set RACM Active' : 'Set RACM Inactive', req.user.email_id, form_id);
@@ -2434,6 +2528,9 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
       control_type_fo: form.controlTypeFo,
       control_type_ma: form.controlTypeMa,
       due_date: form.dueDate,
+      approver_due_date: form.approverDueDate,
+      ineffective_due_date: form.ineffectiveDueDate,
+      deficiency_review_due_date: form.deficiencyReviewDueDate,
       reminder_frequency: form.reminderFrequency,
       assigned_to_coordinator: form.assignedToCoordinator,
       coordinator_assigned_by: form.coordinatorAssignedBy,
@@ -2488,11 +2585,12 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
             approverName: approverUser?.empName,
             userDisplayName: submitterName,
             formId: updatedRow.form_id,
+            controlNumber: updatedRow.control_number,
             businessProcess: updatedRow.business_process,
             financialYear: updatedRow.financial_year,
             standardControlDescription: updatedRow.standard_control_description,
             subProcess: updatedRow.sub_process,
-            dueDate: updatedRow.due_date,
+            dueDate: updatedRow.approver_due_date || updatedRow.due_date,
             companyName: company?.companyName,
           });
           const [communicationMatrixCcEmails, coordinatorEmail] = await Promise.all([
@@ -2522,6 +2620,10 @@ router.put('/:form_id', verifyAuth, async (req, res) => {
     }
 
     updatedRow.deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
+    updatedRow.process_owner_declaration = await getProcessOwnerDeclarationByFormId(pool, form_id);
+    if (updatedRow.process_owner_declaration?.no_furthure_submission) {
+      updatedRow.deficiency_action_status = false;
+    }
     if (await isRacmTemplateSchemaReady(pool)) {
       const templateId = updatedRow.template_id || form.templateId;
       if (templateId) {
@@ -2589,6 +2691,13 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
     }
 
     const currentForm = authorized.form;
+    if (await hasProcessOwnerDeclaration(client, normalizedFormId)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'No further submission has already been declared for this RACM.',
+      });
+    }
     if (!currentForm.deficiency_action_status) {
       await client.query('ROLLBACK');
       return res.status(400).json({
@@ -2638,12 +2747,14 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
       [normalizedFormId, saved.response_id]
     );
 
+    await resetIneffectiveReminderDatetime(client, normalizedFormId);
     await seedDeficiencyReviewReminderDatetime(client, normalizedFormId);
 
     await client.query('COMMIT');
 
+    const auditResponseTypeLabel = responseType === 'compensatory_racm' ? 'Compensatory RACM' : 'Mitigation Plan';
     await logAuditEvent(
-      'Deficiency Response Submitted',
+      `${auditResponseTypeLabel} Submitted`,
       submittedByEmail,
       normalizedFormId,
       `Version ${saved.version_no}`
@@ -2700,6 +2811,10 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
     const updatedForm = formResult.rows[0];
     await attachControlFormDocuments(pool, [updatedForm]);
     updatedForm.deficiency_response = await getDeficiencyResponseByFormId(pool, normalizedFormId);
+    updatedForm.process_owner_declaration = await getProcessOwnerDeclarationByFormId(pool, normalizedFormId);
+    if (updatedForm.process_owner_declaration?.no_furthure_submission) {
+      updatedForm.deficiency_action_status = false;
+    }
     try {
       await notifyDeficiencyResponseSubmitted({
         form: updatedForm,
@@ -2727,6 +2842,146 @@ router.post('/:form_id/deficiency-response', verifyAuth, async (req, res) => {
       message: 'Failed to submit deficiency response',
       error: error.message,
     });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/:form_id/process-owner-declaration', verifyAuth, async (req, res) => {
+  const normalizedFormId = String(req.params.form_id || '').trim();
+  const noFurthureSubmission = req.body?.no_furthure_submission === true;
+  const ownerComment = req.body?.owner_comment != null ? String(req.body.owner_comment).trim() : '';
+  const processOwnerEmail = String(req.user?.email_id || '').trim();
+
+  if (!normalizedFormId) {
+    return res.status(400).json({ success: false, message: 'Form id is required' });
+  }
+
+  if (!noFurthureSubmission) {
+    return res.status(400).json({ success: false, message: 'no_furthure_submission must be true' });
+  }
+
+  if (!ownerComment) {
+    return res.status(400).json({ success: false, message: 'Comment is required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const authorized = await getAuthorizedControlFormForNoFurtherSubmission(client, normalizedFormId, req.user);
+    if (authorized.error) {
+      await client.query('ROLLBACK');
+      return res.status(authorized.error.status).json({ success: false, message: authorized.error.message });
+    }
+
+    const form = authorized.form;
+    await client.query(
+      `
+        INSERT INTO process_owner_declaration (
+          form_id,
+          no_furthure_submission,
+          owner_comment,
+          process_owner_email,
+          "timestamp"
+        )
+        VALUES ($1, TRUE, $2, $3, (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))
+        RETURNING
+          form_id,
+          no_furthure_submission,
+          owner_comment,
+          process_owner_email,
+          "timestamp" AT TIME ZONE 'UTC' AS "timestamp"
+      `,
+      [normalizedFormId, ownerComment || null, processOwnerEmail || null]
+    );
+
+    await client.query(
+      `
+        UPDATE control_forms
+        SET deficiency_action_status = FALSE
+        WHERE form_id = $1
+      `,
+      [normalizedFormId]
+    );
+
+    await client.query('COMMIT');
+
+    const declarationPayload = await getProcessOwnerDeclarationByFormId(pool, normalizedFormId);
+
+    await logAuditEvent('No Further Submission Declared', processOwnerEmail, normalizedFormId, null);
+
+    try {
+      const resolvedApprover = await resolveApproverForRacm(pool, {
+        companyIdentifier: form.company_identifier,
+        unitId: form.unit_id,
+        businessProcess: form.business_process,
+        formId: form.form_id,
+      });
+      const approverEmail = String(resolvedApprover?.approver_email_id || '').trim();
+
+      if (approverEmail) {
+        const [declarerUser, company, communicationMatrixCcEmails, coordinatorEmail] = await Promise.all([
+          prisma.ifcUser.findFirst({
+            where: { emailId: { equals: processOwnerEmail, mode: 'insensitive' } },
+            select: { empName: true, emailId: true },
+          }),
+          form.company_identifier
+            ? prisma.company.findUnique({
+                where: { companyIdentifier: form.company_identifier },
+                select: { companyName: true },
+              })
+            : Promise.resolve(null),
+          getCcEmailsForRacm({
+            companyIdentifier: form.company_identifier,
+            businessProcess: form.business_process,
+            unitId: form.unit_id,
+            excludeEmail: approverEmail,
+          }),
+          getCoordinatorEmailForUnit(form.company_identifier, form.unit_id),
+        ]);
+
+        const payload = buildNoFurtherSubmissionEmail({
+          form,
+          declaredByName: declarerUser?.empName,
+          declaredByEmail: declarerUser?.emailId || processOwnerEmail,
+          companyName: company?.companyName,
+          ownerComment,
+        });
+
+        const ccEmails = Array.from(
+          new Set(
+            [
+              ...communicationMatrixCcEmails,
+              coordinatorEmail,
+            ]
+              .map((email) => String(email || '').trim().toLowerCase())
+              .filter((email) => email && email !== approverEmail.toLowerCase())
+          )
+        );
+
+        await sendEmail(approverEmail, payload.subject, payload.text, ccEmails.length ? { cc: ccEmails } : undefined);
+      }
+    } catch (notifyError) {
+      console.error('Error sending no further submission declaration email:', notifyError);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'No further submission declared successfully',
+      data: {
+        process_owner_declaration: declarationPayload,
+        deficiency_action_status: false,
+      },
+    });
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Process owner declaration rollback error:', rollbackError);
+    }
+    console.error('Process owner declaration error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to declare no further submission' });
   } finally {
     client.release();
   }
@@ -2760,6 +3015,13 @@ router.post(
     }
 
     try {
+      if (await hasProcessOwnerDeclaration(pool, normalizedFormId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'No further submission has already been declared for this RACM.',
+        });
+      }
+
       const authorized = await getAuthorizedControlFormForDeficiency(pool, normalizedFormId, req.user);
       if (authorized.error) {
         return res.status(authorized.error.status).json({ success: false, message: authorized.error.message });
@@ -4686,6 +4948,8 @@ router.post(
         });
       }
 
+      const wasActiveBeforeSelfAssign = isTruthyFlag(form.active);
+
       const updated = await prisma.controlForm.update({
         where: { formId: String(form_id).trim() },
         data: {
@@ -4699,6 +4963,9 @@ router.post(
       });
 
       await logAuditEvent('Coordinator Self-Assignment', req.user.email_id, form_id);
+      if (!wasActiveBeforeSelfAssign) {
+        await logAuditEvent('Set RACM Active', req.user.email_id, form_id);
+      }
 
       return res.status(200).json({
         success: true,
@@ -4742,6 +5009,13 @@ router.post(
   }
 
   try {
+    if (await hasProcessOwnerDeclaration(pool, form_id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'No further submission has already been declared for this RACM.',
+      });
+    }
+
     const coordinatorForm = await getControlFormCoordinatorContext(pool, form_id);
     const isCoordinatorAssigned = isCoordinatorAssignedRacm(coordinatorForm);
 

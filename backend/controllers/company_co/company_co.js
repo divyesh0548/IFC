@@ -1336,8 +1336,14 @@ async function assignRacmApprover(req, res) {
           cf.unit_id,
           cf.control_number,
           cf.standard_control_description,
-          cf.status
+          cf.status,
+          cf.control_design_conclusion,
+          cf.deficiency_response_status,
+          (pod.form_id IS NOT NULL) AS no_further_submission_declared
         FROM control_forms cf
+        LEFT JOIN process_owner_declaration pod
+          ON pod.form_id = cf.form_id
+         AND COALESCE(pod.no_furthure_submission, FALSE) = TRUE
         WHERE cf.company_identifier = $1
           AND cf.form_id = ANY($2::text[])
           AND cf.unit_id = ANY($3::text[])
@@ -1357,20 +1363,45 @@ async function assignRacmApprover(req, res) {
       });
     }
 
-    const approvalLockedForms = accessibleForms.filter((row) =>
-      lockedApprovalStatuses.has(String(row?.status || '').trim().toLowerCase())
-    );
+    const getApproverAssignmentBlockReason = (row) => {
+      const normalizedStatus = String(row?.status || '').trim().toLowerCase();
+      if (lockedApprovalStatuses.has(normalizedStatus)) {
+        return 'sent for approval';
+      }
+      const normalizedConclusion = String(row?.control_design_conclusion || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, ' ');
+      if (normalizedConclusion === 'effective' || normalizedConclusion === 'accepted under deviation') {
+        return 'approved (Effective / Accepted Under Deviation)';
+      }
+      const normalizedDeficiencyResponseStatus = String(row?.deficiency_response_status || '')
+        .trim()
+        .toLowerCase();
+      if (normalizedDeficiencyResponseStatus === 'submitted_for_review') {
+        return 'deficiency response submitted for review';
+      }
+      if (row?.no_further_submission_declared) {
+        return 'no further submission declared';
+      }
+      return null;
+    };
+
+    const approvalLockedForms = accessibleForms
+      .map((row) => ({ row, reason: getApproverAssignmentBlockReason(row) }))
+      .filter((entry) => entry.reason);
     if (approvalLockedForms.length > 0) {
       await client.query('ROLLBACK');
       return res.status(409).json({
         success: false,
         code: 'RACM_APPROVER_ASSIGNMENT_LOCKED',
-        message: 'Approver assignment cannot be changed for RACMs that are sent for approval',
-        lockedForms: approvalLockedForms.map((row) => ({
+        message: 'Approver assignment cannot be changed for RACMs that are sent for approval, approved (Effective / Accepted Under Deviation), have a deficiency response submitted for review, or have a no further submission declaration',
+        lockedForms: approvalLockedForms.map(({ row, reason }) => ({
           form_id: row.form_id,
           control_number: row.control_number,
           standard_control_description: row.standard_control_description,
           status: row.status,
+          reason,
         })),
       });
     }

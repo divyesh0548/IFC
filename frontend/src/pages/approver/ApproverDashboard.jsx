@@ -315,9 +315,9 @@ function ApproverDashboard() {
     }
 
     if (controlNumberFilter) {
-      const needle = controlNumberFilter.toLowerCase()
+      const needle = controlNumberFilter.trim().toLowerCase()
       const controlNumber = String(form.control_number || form.form_id || '').trim().toLowerCase()
-      if (!controlNumber.includes(needle)) {
+      if (controlNumber !== needle) {
         return false
       }
     }
@@ -466,7 +466,7 @@ function ApproverDashboard() {
             }}
           >
             <Typography sx={{ fontWeight: 700 }}>
-              Action Required - {approverActionRequiredCount} RACMs are awaiting deficiency response review
+              Action Required - {approverActionRequiredCount} RACMs are awaiting Mitigation/Compensatory Plans review
             </Typography>
             {/* <Typography variant="body2">
               Click to view control numbers.
@@ -1116,7 +1116,7 @@ function ApproverDashboard() {
               color: theme.palette.text.primary,
             }}
           >
-            Deficiency Response Review Required
+            Mitigation/Compensatory Plans Review Required
           </DialogTitle>
           <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
             <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mb: 2 }}>

@@ -10,9 +10,11 @@ const {
   getCoordinatorEmailForUnit,
   notifyDeficiencyResponseReviewed,
 } = require('../../utils/deficiency_response_notifications');
+const { getProcessOwnerDeclarationByFormId } = require('../../utils/process_owner_declaration');
 const {
   seedIneffectiveReminderDatetime,
   isNotEffectiveConclusion,
+  resetIneffectiveReminderDatetime,
   resetDeficiencyReviewReminderDatetime,
 } = require('../../utils/controls_reminder');
 const { buildRacmDetailsSection } = require('../../utils/racm_email_details');
@@ -141,7 +143,9 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   }
 
   const statusText = status === 'Approved' ? 'approved' : 'rejected';
-  const emailSubject = `Internal Financial Controls - RACM ${status}`;
+  const controlNumberText = String(updatedForm?.control_number || '').trim() || String(form_id || '').trim() || 'N/A';
+  const businessProcessText = String(updatedForm?.business_process || '').trim() || 'Business Process';
+  const emailSubject = `Control ${controlNumberText} - ${businessProcessText} is ${status}`;
   const racmUrl = isCoordinatorAssignedRacm(updatedForm)
     ? buildCoordinatorFormDetailUrl(form_id)
     : buildUserFormDetailUrl(form_id);
@@ -186,29 +190,29 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
 
   const normalizedConclusion = normalizeConclusion(updatedForm.control_design_conclusion);
 
-  if (reason_by_approver) {
-    emailBody += buildRacmDetailsSection(updatedForm, [
-      ['Reason/Comments from Approver', reason_by_approver],
-    ], 'RACM Details:');
-    emailBody += '\n\n';
-  } else {
-    emailBody += buildRacmDetailsSection(updatedForm, [], 'RACM Details:');
-    emailBody += '\n\n';
-  }
+  emailBody += buildRacmDetailsSection(updatedForm, [], 'RACM Details:');
+  emailBody += '\n\n';
 
-  if (status === 'Approved') {
-    if (normalizedConclusion === 'effective' || normalizedConclusion === 'accepted under deviation') {
-      emailBody += 'No further action is required from the Process Owner or Company Coordinator for this RACM.\n\n';
+  if (status === 'Rejected') {
+    if (reason_by_approver) {
+      emailBody += `Reason: ${reason_by_approver}\n\n`;
+    }
+    emailBody += 'You can review the feedback above, upload the necessary documents for it, and resubmit the RACM for approval.\n\n';
+  } else if (status === 'Approved') {
+    if (normalizedConclusion === 'effective') {
+      emailBody += 'Your RACM has been deemed Effective by the approver.\n\n';
+      emailBody += 'No further action is required for this RACM.\n\n';
+    } else if (normalizedConclusion === 'accepted under deviation') {
+      emailBody += 'Your RACM has been Accepted Under Deviation by the approver.\n\n';
+      emailBody += 'No further action is required for this RACM.\n\n';
     } else if (normalizedConclusion === 'not effective') {
       emailBody += 'Your RACM has been deemed ineffective by the approver.\n\n';
-      emailBody += 'Action required: the Process Owner or Company Coordinator must submit a Deficiency Response for this RACM by providing either a Mitigation Plan or a Compensatory RACM.\n\n';
+      emailBody += 'Action required: Process Owner or Company Coordinator must submit a Mitigation Plan or Compensatory RACM.\n\n';
     }
-  } else if (status === 'Rejected') {
-    emailBody += 'You can review the feedback above, upload the necessary documents for it, and resubmit the RACM for approval.\n\n';
   }
 
   if (racmUrl) {
-    emailBody += `RACM: ${racmUrl}\n\n`;
+    emailBody += `RACM Link: ${racmUrl}\n\n`;
   }
   emailBody += 'Thank you for using the IFC system.\n\n';
   emailBody += `Best regards,\n${companyName}`;
@@ -534,6 +538,8 @@ async function approveForm(req, res) {
 
       if (status === 'Approved' && isNotEffectiveConclusion(designConclusion)) {
         await seedIneffectiveReminderDatetime(client, form_id);
+      } else {
+        await resetIneffectiveReminderDatetime(client, form_id);
       }
 
       updateValues.push(form_id);
@@ -929,6 +935,10 @@ async function getControlFormById(req, res) {
     await attachControlFormDocuments(pool, [result.rows[0]]);
     const dataForClient = result.rows[0];
     dataForClient.deficiency_response = await getDeficiencyResponseByFormId(pool, form_id);
+    dataForClient.process_owner_declaration = await getProcessOwnerDeclarationByFormId(pool, form_id);
+    if (dataForClient.process_owner_declaration?.no_furthure_submission) {
+      dataForClient.deficiency_action_status = false;
+    }
 
     if (await isRacmTemplateSchemaReady(pool)) {
       const templateId = dataForClient.template_id;
@@ -1219,6 +1229,7 @@ async function reviewDeficiencyResponse(req, res) {
           `,
           [form_id, reviewDecision]
         );
+        await resetIneffectiveReminderDatetime(client, form_id);
       } else {
         await seedIneffectiveReminderDatetime(client, form_id);
         await client.query(
@@ -1283,8 +1294,14 @@ async function reviewDeficiencyResponse(req, res) {
       console.error('Error sending deficiency response reviewed email:', notifyError);
     }
 
+    const auditResponseType = String(
+      updatedForm?.deficiency_response?.current_submission?.submission_type
+        || updatedForm?.deficiency_response?.response_type
+        || ''
+    ).trim().toLowerCase();
+    const auditResponseTypeLabel = auditResponseType === 'compensatory_racm' ? 'Compensatory RACM' : 'Mitigation Plan';
     await logAuditEvent(
-      normalizedReviewDecision === 'reject' ? 'Deficiency Response Rejected' : 'Deficiency Response Approved',
+      `${auditResponseTypeLabel} ${normalizedReviewDecision === 'reject' ? 'Rejected' : 'Approved'}`,
       approverEmail,
       form_id,
       updatedForm?.deficiency_response?.current_submission?.version_no != null

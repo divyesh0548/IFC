@@ -212,9 +212,10 @@ export function getApprovalStatusBadgeSolidColors(label) {
 /** Pill layout for approval labels — wrap long text the same way as conclusion badges. */
 export function getApprovalStatusBadgePillSx(label) {
   const normalized = String(label || '').trim().toLowerCase()
-  if (normalized === 'sent for approval' || normalized.length > 12) {
-    return CONCLUSION_BADGE_PILL_SX
-  }
+  // "Sent for approval" tends to overflow in dashboard table layouts.
+  // Use the same table-cell ellipsis styling as "Accepted Under Deviation".
+  if (normalized === 'sent for approval') return CONCLUSION_BADGE_TABLE_PILL_SX
+  if (normalized.length > 12) return CONCLUSION_BADGE_PILL_SX
   return STATUS_BADGE_PILL_SX
 }
 

@@ -1,4 +1,6 @@
 Mayank sir suggested to implement dynamic User controls. Curently each user role is fixed and can't be changed. But it should be dynamic and adjusted by siteadmin or coordinator.
 
-Approver/auditor should be notified via mail if process_owner submits any documents.
 
+
+Change the documentation according to new changes.
+Should I remove max limit of smaple size for each control frequency?

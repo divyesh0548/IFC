@@ -73,6 +73,7 @@ async function fetchFormsDueForReminder(client) {
       cf.coordinator_assigned_by,
       owner_u.emp_name AS control_owner_emp_name,
       coordinator_u.emp_name AS coordinator_emp_name,
+      cf.control_number,
       cf.standard_control_description,
       cf.business_process,
       cf.due_date,
@@ -90,8 +91,11 @@ async function fetchFormsDueForReminder(client) {
      AND LOWER(TRIM(COALESCE(coordinator_u.email_id, ''))) = LOWER(TRIM(COALESCE(cf.coordinator_assigned_by, '')))
     LEFT JOIN companies c
       ON c.company_identifier = cf.company_identifier
+    LEFT JOIN process_owner_declaration pod
+      ON pod.form_id = cf.form_id
     WHERE active = TRUE
       AND (status IS NULL OR TRIM(status) = '' OR status != 'Approved')
+      AND COALESCE(pod.no_furthure_submission, FALSE) = FALSE
       AND due_date IS NOT NULL
       AND ${IST_CURRENT_DATE_SQL} >= due_date
       AND (
@@ -111,7 +115,8 @@ async function fetchFormsDueForReminder(client) {
  */
 function buildReminderEmailBody(form) {
   const dueStr = formatDueDateForEmail(form.due_date);
-  const companyName = String(form.company_name || '').trim() || 'IFC';
+  const companyName = String(form.company_name || '').trim();
+  const controlNumberText = String(form.control_number || '').trim() || String(form.form_id || '').trim() || 'N/A';
   const isCoordinatorAssigned = isCoordinatorAssignedRacm(form);
   const ownerSalutation = isCoordinatorAssigned
     ? (String(form.coordinator_emp_name || '').trim() || 'Coordinator')
@@ -121,13 +126,13 @@ function buildReminderEmailBody(form) {
     : buildUserFormDetailUrl(form.form_id);
   return `Dear ${ownerSalutation},
 
-This is a reminder that your RACM (Risk and Control Matrix) is pending.
+This is a reminder that uploading documents for ${controlNumberText} control is pending.
 
 ${buildRacmDetailsSection(form, [
   ['Due Date', dueStr],
 ])}
 
-Please complete and submit your evidence at your earliest convenience.
+Please upload the documents and submit at your earliest convenience.
 ${formUrl ? `\nRACM: ${formUrl}` : ''}
 
 Regards,
@@ -161,7 +166,9 @@ async function runReminderEmails() {
         continue;
       }
 
-      const subject = 'Reminder: RACM pending – ' + (form.business_process || 'IFC');
+      const controlNumberText = String(form.control_number || '').trim() || String(form.form_id || '').trim() || 'N/A';
+      const businessProcessText = String(form.business_process || '').trim() || 'Business Process';
+      const subject = `Reminder - Control ${controlNumberText} - ${businessProcessText} submission pending`;
       const text = buildReminderEmailBody(form);
 
       const sent = await sendEmail(to, subject, text);

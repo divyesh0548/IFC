@@ -42,6 +42,7 @@ import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS,
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext';
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields';
+import ProcessOwnerDeclarationBadge from '../../components/racm/ProcessOwnerDeclarationBadge'
 import { apiUrl } from '../../config/api';
 import { formatIndianDateTime, formatDateOnly as formatDateOnlyShared } from '../../lib/dateTime';
 import { formatRacmUserDocumentSubtitle, normalizeSampleDocuments } from '../../lib/racmUserDocuments';
@@ -324,7 +325,7 @@ function ApproverFormDetail() {
     }
 
     if (selectedDecision === 'Reject' && !String(deficiencyReviewComment || '').trim()) {
-      toast.error('Reason is required when rejecting deficiency response')
+      toast.error('Reason is required when rejecting Mitigation/Compensatory Plans')
       return
     }
 
@@ -346,18 +347,18 @@ function ApproverFormDetail() {
       if (response.ok && data.success) {
         toast.success(
           selectedDecision === 'Reject'
-            ? 'Deficiency response rejected successfully'
-            : 'Deficiency response approved successfully'
+            ? 'Mitigation/Compensatory Plans rejected successfully'
+            : 'Mitigation/Compensatory Plans approved successfully'
         )
         setFormData(data.data)
         setDeficiencyReviewDecision('')
         setDeficiencyReviewComment('')
       } else {
-        toast.error(data.message || 'Failed to review deficiency response')
+        toast.error(data.message || 'Failed to review Mitigation/Compensatory Plans')
       }
     } catch (error) {
       console.error('Error reviewing deficiency response:', error)
-      toast.error('Error reviewing deficiency response')
+      toast.error('Error reviewing Mitigation/Compensatory Plans')
     } finally {
       setDeficiencyReviewing(false)
     }
@@ -715,6 +716,8 @@ function ApproverFormDetail() {
     && String(deficiencyResponse.status || '').trim() === 'submitted'
     && String(formData?.deficiency_response_status || '').trim().toLowerCase() === 'submitted_for_review'
   )
+  const processOwnerDeclaration = formData?.process_owner_declaration || null
+  const hasProcessOwnerDeclaration = Boolean(processOwnerDeclaration?.no_furthure_submission)
   const showActiveDeficiencyResponseSection = Boolean(
     deficiencyResponse && String(deficiencyResponse.status || '').trim().toLowerCase() === 'submitted'
   )
@@ -743,6 +746,10 @@ function ApproverFormDetail() {
   return (
     <Box sx={FORM_DETAIL_ROOT_SX}>
       <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
+          <ProcessOwnerDeclarationBadge
+            declaration={processOwnerDeclaration}
+            formattedTimestamp={formatDateTime(processOwnerDeclaration?.timestamp)}
+          />
           {/* Top summary card (matches coordinator design) */}
           <Box sx={{ width: '100%' }}>
             <Card
@@ -1170,9 +1177,9 @@ function ApproverFormDetail() {
             </Card>
           </Box>
 
-          {/* Main content – matches coordinator card styling */}
-          <Box sx={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {/* Process and risk section */}
+        {/* Main content – matches coordinator card styling */}
+        <Box sx={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {/* Process and risk section */}
             <Card
               sx={{
                 borderRadius: 3,
@@ -1906,48 +1913,50 @@ function ApproverFormDetail() {
                     </Box>
                   )}
 
-                  <Box
-                    sx={{
-                      p: 2.5,
-                      borderRadius: 2,
-                      backgroundColor: theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.03)'
-                        : 'rgba(0, 0, 0, 0.02)',
-                      border: '1px solid',
-                      borderColor: theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(0, 0, 0, 0.06)',
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      component="dt"
+                  {hasRacmFieldValue(formData?.reason_by_approver) ? (
+                    <Box
                       sx={{
-                        display: 'block',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        mb: 1.5,
-                        color: 'text.primary',
-                        fontSize: theme.typography.customSizes.small,
+                        p: 2.5,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.03)'
+                          : 'rgba(0, 0, 0, 0.02)',
+                        border: '1px solid',
+                        borderColor: theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
                       }}
                     >
-                      {fieldLabels.reason_by_approver}
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      component="dd"
-                      sx={{
-                        color: hasRacmFieldValue(formData?.reason_by_approver) ? 'text.secondary' : 'text.disabled',
-                        wordBreak: 'break-word',
-                        lineHeight: 1.6,
-                        fontSize: theme.typography.customSizes.medium,
-                        whiteSpace: 'pre-wrap',
-                      }}
-                    >
-                      {hasRacmFieldValue(formData?.reason_by_approver) ? String(formData.reason_by_approver) : '-'}
-                    </Typography>
-                  </Box>
+                      <Typography
+                        variant="caption"
+                        component="dt"
+                        sx={{
+                          display: 'block',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          mb: 1.5,
+                          color: 'text.primary',
+                          fontSize: theme.typography.customSizes.small,
+                        }}
+                      >
+                        {fieldLabels.reason_by_approver}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        component="dd"
+                        sx={{
+                          color: 'text.secondary',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.6,
+                          fontSize: theme.typography.customSizes.medium,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {String(formData.reason_by_approver)}
+                      </Typography>
+                    </Box>
+                  ) : null}
                   </Box>
 
                 </Box>
@@ -1982,7 +1991,7 @@ function ApproverFormDetail() {
                     borderColor: 'divider',
                   }}
                 >
-                  Approval Details
+                  Approver Review
                 </Typography>
                 <Box
                   sx={{
@@ -2195,7 +2204,7 @@ function ApproverFormDetail() {
                       borderColor: 'divider',
                     }}
                   >
-                    Deficiency Response History
+                    Mitigation/Compensatory Plans History
                   </Typography>
 
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -2392,7 +2401,7 @@ function ApproverFormDetail() {
                       borderColor: 'divider',
                     }}
                   >
-                    Deficiency Response
+                    Mitigation/Compensatory Plans
                   </Typography>
 
                   {deficiencyResponse ? (
@@ -2524,7 +2533,7 @@ function ApproverFormDetail() {
                     </Box>
                   ) : (
                     <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                      No deficiency response submitted yet.
+                      No Mitigation/Compensatory Plans submitted yet.
                     </Typography>
                   )}
                 </CardContent>
@@ -2541,9 +2550,9 @@ function ApproverFormDetail() {
           rows={auditLogRows}
         />
 
-        <Dialog
-          open={sampleDocsDialogOpen}
-          onClose={handleCloseSampleDocsDialog}
+      <Dialog
+        open={sampleDocsDialogOpen}
+        onClose={handleCloseSampleDocsDialog}
           aria-labelledby="approver-sample-documents-dialog-title"
           PaperProps={{
             sx: {

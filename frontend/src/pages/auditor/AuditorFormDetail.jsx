@@ -39,6 +39,7 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments, normalizeSampleDocuments } from '../../lib/racmUserDocuments'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
+import ProcessOwnerDeclarationBadge from '../../components/racm/ProcessOwnerDeclarationBadge'
 import { formatIndianDateTime, formatDateOnly as formatDateOnlyShared } from '../../lib/dateTime'
 
 function formatDateTime(dateString) {
@@ -350,6 +351,8 @@ function AuditorFormDetail() {
   const userDocs = getUserDocs()
   const userDocCount = userDocs.length
   const isActive = getIsActive(formData?.active)
+  const processOwnerDeclaration = formData?.process_owner_declaration || null
+  const hasProcessOwnerDeclaration = Boolean(processOwnerDeclaration?.no_furthure_submission)
   const topSummaryCardSx = isCompanyAdminView
     ? {
         p: 2,
@@ -401,6 +404,10 @@ function AuditorFormDetail() {
   return (
     <Box sx={FORM_DETAIL_ROOT_SX}>
       <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
+        <ProcessOwnerDeclarationBadge
+          declaration={processOwnerDeclaration}
+          formattedTimestamp={formatDateTime(processOwnerDeclaration?.timestamp)}
+        />
         <Box sx={{ width: '100%' }}>
           <Card
             sx={{

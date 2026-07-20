@@ -1,27 +1,32 @@
 /**
  * Reminder emails for approvers on deficiency responses pending review.
- * Runs every 1 minute. Fixed reminder interval: 2 days.
+ * Runs every 1 minute.
  *
- * Send conditions:
+ * Send conditions (RACM/deficiency state unchanged):
  * - deficiency_response_status = 'submitted_for_review'
- * - deficiency_review_reminder_datetime is set and current UTC datetime has reached it
+ * - no further submission declaration is false
+ * - deficiency_review_due_date is set and IST current date >= deficiency_review_due_date
+ * - deficiency_review_reminder_datetime is NULL (never reminded), OR
+ *   UTC now >= last reminder + DEFICIENCY_REVIEW_REMINDER_INTERVAL_DAYS (env)
  *
- * deficiency_review_reminder_datetime is seeded to UTC now + 2 days when a deficiency
- * response is submitted. After sending, it is updated to UTC now + 2 days.
+ * On deficiency response submit:
+ * - control_forms.deficiency_review_due_date = IST today + DEFICIENCY_REVIEW_DUE_DAYS (env)
+ * - controls_reminder.deficiency_review_reminder_datetime cleared (last-sent)
+ *
+ * After sending, deficiency_review_reminder_datetime is set to UTC now (last triggered).
  */
 
 const { pool } = require('../../utils/db');
 const { sendEmail } = require('../../utils/send_email');
 const {
   updateDeficiencyReviewReminderDatetime,
-  DEFICIENCY_REVIEW_REMINDER_DATETIME_DUE_SQL,
+  buildDeficiencyReviewReminderDatetimeDueSql,
+  IST_CURRENT_DATE_SQL,
   formatReminderTimestampForLog,
   formatDueDateForEmail,
+  getDeficiencyReviewReminderIntervalDays,
 } = require('../../utils/controls_reminder');
 const { utcTs } = require('../../utils/sqlUtcTimestamps');
-const {
-  buildDeficiencyResponseDetailsSection,
-} = require('../../utils/racm_email_details');
 const { buildApproverFormDetailUrl } = require('../../utils/racm_status_user_email');
 
 function isValidEmail(value) {
@@ -32,13 +37,16 @@ function isValidEmail(value) {
 }
 
 async function fetchFormsDueForDeficiencyReviewReminder(client) {
+  const reminderDueSql = buildDeficiencyReviewReminderDatetimeDueSql();
   const query = `
     SELECT
       cf.form_id,
+      cf.control_number,
       cf.standard_control_description,
       cf.business_process,
       cf.financial_year,
       cf.due_date,
+      cf.deficiency_review_due_date,
       ${utcTs('cr.deficiency_review_reminder_datetime')},
       approver_map.approver_email_id AS approver_email_id,
       NULLIF(TRIM(approver.emp_name), '') AS approver_name,
@@ -83,35 +91,51 @@ async function fetchFormsDueForDeficiencyReviewReminder(client) {
     ) approver_map ON TRUE
     LEFT JOIN ifc_users approver
       ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.approver_email_id, '')))
+    LEFT JOIN process_owner_declaration pod
+      ON pod.form_id = cf.form_id
     WHERE LOWER(TRIM(COALESCE(cf.deficiency_response_status, ''))) = 'submitted_for_review'
-      AND cr.deficiency_review_reminder_datetime IS NOT NULL
-      AND ${DEFICIENCY_REVIEW_REMINDER_DATETIME_DUE_SQL}
+      AND COALESCE(pod.no_furthure_submission, FALSE) = FALSE
+      AND cf.deficiency_review_due_date IS NOT NULL
+      AND ${IST_CURRENT_DATE_SQL} >= cf.deficiency_review_due_date
+      AND ${reminderDueSql}
   `;
   const result = await client.query(query);
   return result.rows;
 }
 
+function getResponseTypeLabel(responseType) {
+  return String(responseType || '').trim().toLowerCase() === 'compensatory_racm'
+    ? 'Compensatory RACM'
+    : 'Mitigation Plan';
+}
+
 function buildDeficiencyReviewReminderEmailBody(form) {
   const approverSalutation = String(form.approver_name || '').trim() || 'Approver';
   const racmUrl = buildApproverFormDetailUrl(form.form_id);
-  const responseDetailsBlock = buildDeficiencyResponseDetailsSection({
-    responseType: form.response_type,
-    submittedBy: form.submitted_by_email,
-    concernedPerson: form.concerned_person,
-    dueDate: formatDueDateForEmail(form.deficiency_due_date),
-    attachmentCount: form.attachment_count,
-  });
+  const isCompensatoryRacm = String(form.response_type || '').trim().toLowerCase() === 'compensatory_racm';
+  const responseTypeLabel = getResponseTypeLabel(form.response_type);
+
+  const responseDetailLines = ['Response Details:'];
+  responseDetailLines.push(`- Submitted By: ${String(form.submitted_by_email || '').trim() || 'N/A'}`);
+  if (isCompensatoryRacm) {
+    const documentCount = Number.isFinite(Number(form.attachment_count)) ? Number(form.attachment_count) : 0;
+    responseDetailLines.push(`- No of Documents: ${documentCount}`);
+  } else {
+    responseDetailLines.push(`- Concerned Person: ${String(form.concerned_person || '').trim() || 'N/A'}`);
+    responseDetailLines.push(`- Due Date: ${formatDueDateForEmail(form.deficiency_due_date)}`);
+  }
+  const responseDetailsBlock = responseDetailLines.join('\n');
 
   return `Dear ${approverSalutation},
 
-This is a reminder that a deficiency response is pending your review.
+This is a reminder that a ${responseTypeLabel} is pending for your review.
 
 ${responseDetailsBlock}
 
-Please review the deficiency response in the IFC system.
+Please review the plan and mark RACM as Effective if requirements are satisfied.
 ${racmUrl ? `\nRACM: ${racmUrl}` : ''}
 
-Regards,
+Best regards,
 IFC System
 `;
 }
@@ -122,29 +146,34 @@ async function runDeficiencyReviewReminderEmails() {
     const forms = await fetchFormsDueForDeficiencyReviewReminder(client);
     if (forms.length === 0) return;
 
+    const intervalDays = getDeficiencyReviewReminderIntervalDays();
+
     for (const form of forms) {
       const to = String(form.approver_email_id || '').trim();
 
       if (!isValidEmail(to)) {
         const updatedAt = await updateDeficiencyReviewReminderDatetime(client, form.form_id);
         console.warn(
-          `[deficiency_review_reminder_emails] form_id=${form.form_id} has invalid/empty approver_email_id "${to}", skipped email, updated deficiency_review_reminder_datetime to ${
+          `[deficiency_review_reminder_emails] form_id=${form.form_id} has invalid/empty approver_email_id "${to}", skipped email, updated last deficiency_review_reminder_datetime to ${
             formatReminderTimestampForLog(updatedAt) || 'null'
-          }`
+          } (interval=${intervalDays}d)`
         );
         continue;
       }
 
-      const subject = 'Reminder: Deficiency response pending review – ' + (form.business_process || 'IFC');
+      const controlNumberText = String(form.control_number || '').trim() || String(form.form_id || '').trim() || 'N/A';
+      const businessProcessText = String(form.business_process || '').trim() || 'Business Process';
+      const responseTypeLabel = getResponseTypeLabel(form.response_type);
+      const subject = `Reminder: Control ${controlNumberText} - ${businessProcessText} - ${responseTypeLabel} awaiting review`;
       const text = buildDeficiencyReviewReminderEmailBody(form);
 
       const sent = await sendEmail(to, subject, text);
       if (sent) {
         const updatedAt = await updateDeficiencyReviewReminderDatetime(client, form.form_id);
         console.log(
-          `[deficiency_review_reminder_emails] Sent reminder to ${to} for form_id=${form.form_id}, updated deficiency_review_reminder_datetime to ${
+          `[deficiency_review_reminder_emails] Sent reminder to ${to} for form_id=${form.form_id}, last deficiency_review_reminder_datetime=${
             formatReminderTimestampForLog(updatedAt) || 'null'
-          }`
+          } (interval=${intervalDays}d)`
         );
       }
     }
@@ -156,3 +185,4 @@ async function runDeficiencyReviewReminderEmails() {
 }
 
 module.exports = { runDeficiencyReviewReminderEmails };
+

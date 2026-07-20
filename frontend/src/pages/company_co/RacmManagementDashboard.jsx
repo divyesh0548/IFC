@@ -1579,10 +1579,9 @@ function RacmManagementDashboard() {
   const MGMT_TABLE_COL_PX = {
     checkbox: 44,
     controlNumber: 100,
-    businessProcess: 130,
+    businessProcess: 150,
     subProcess: 140,
     description: 190,
-    financialYear: 85,
     unit: 110,
     activity: 85,
     approval: 85,
@@ -1595,7 +1594,6 @@ function RacmManagementDashboard() {
     MGMT_TABLE_COL_PX.businessProcess,
     MGMT_TABLE_COL_PX.subProcess,
     MGMT_TABLE_COL_PX.description,
-    MGMT_TABLE_COL_PX.financialYear,
     ...(showUnitColumn ? [MGMT_TABLE_COL_PX.unit] : []),
     MGMT_TABLE_COL_PX.activity,
     MGMT_TABLE_COL_PX.approval,
@@ -2379,7 +2377,7 @@ function RacmManagementDashboard() {
                         ...pctColSx(MGMT_TABLE_COL_PX.businessProcess),
                       }}
                     >
-                      Business Process
+                      Business Process / FY
                     </Box>
                     <Box
                       component="th"
@@ -2412,22 +2410,6 @@ function RacmManagementDashboard() {
                       }}
                     >
                       Standard Control Description
-                    </Box>
-                    <Box
-                      component="th"
-                      sx={{
-                        px: 3,
-                        py: 1.5,
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: theme.palette.text.secondary,
-                        ...pctColSx(MGMT_TABLE_COL_PX.financialYear),
-                      }}
-                    >
-                      Financial Year
                     </Box>
                     {showUnitColumn && (
                       <Box
@@ -2597,8 +2579,16 @@ function RacmManagementDashboard() {
                             ...pctColSx(MGMT_TABLE_COL_PX.businessProcess),
                           })}
                         >
-                          <Box component="span" sx={dataCellTextSx}>
-                            {form.business_process || 'N/A'}
+                          <Tooltip title={form.business_process || 'N/A'} arrow slotProps={{ tooltip: { sx: tooltipSx } }}>
+                            <Box component="span" sx={dataCellTextSx}>
+                              {form.business_process || 'N/A'}
+                            </Box>
+                          </Tooltip>
+                          <Box
+                            component="span"
+                            sx={{ display: 'block', mt: 0.25, fontSize: '0.75rem', color: theme.palette.text.secondary }}
+                          >
+                            {form.financial_year || 'N/A'}
                           </Box>
                         </Box>
                         <Box
@@ -2636,23 +2626,6 @@ function RacmManagementDashboard() {
                               {form.standard_control_description || 'N/A'}
                             </Box>
                           </Tooltip>
-                        </Box>
-                        <Box
-                          component="td"
-                          sx={{
-                            px: 3,
-                            py: 2,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            fontSize: '0.875rem',
-                            color: theme.palette.text.primary,
-                            ...pctColSx(MGMT_TABLE_COL_PX.financialYear),
-                          }}
-                        >
-                          <Box component="span" sx={truncatedTextSx}>
-                            {form.financial_year || 'N/A'}
-                          </Box>
                         </Box>
                         {showUnitColumn && (
                           <Box
