@@ -13,8 +13,17 @@ async function releaseGlobalAiModelLock(client) {
   await client.query('SELECT pg_advisory_unlock($1)', [GLOBAL_AI_MODEL_LOCK_ID]);
 }
 
+async function isGlobalAiModelBusy(client) {
+  const locked = await tryAcquireGlobalAiModelLock(client);
+  if (locked) {
+    await releaseGlobalAiModelLock(client);
+  }
+  return !locked;
+}
+
 module.exports = {
   GLOBAL_AI_MODEL_LOCK_ID,
   tryAcquireGlobalAiModelLock,
   releaseGlobalAiModelLock,
+  isGlobalAiModelBusy,
 };

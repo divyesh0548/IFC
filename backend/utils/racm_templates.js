@@ -5,6 +5,7 @@ const RACM_TEMPLATE_SECTIONS = {
   PROCESS_AND_RISK: 'process_and_risk',
   ASSERTIONS: 'assertions',
   CONTROL_DETAILS: 'control_details',
+  DESIGN_IMPLEMENTATION: 'design_implementation',
   OTHERS: 'others',
 };
 
@@ -12,6 +13,7 @@ const RACM_SECTION_LABELS = {
   process_and_risk: 'Process and Risk',
   assertions: 'Assertions',
   control_details: 'Control Details',
+  design_implementation: 'Design and Implementation',
   others: 'Others',
 };
 
@@ -43,9 +45,13 @@ const RESERVED_EXTRA_FIELD_KEYS = new Set([
   'application_name',
   'audit_evidence_accuracy',
   'whether_fraud_risks_exist',
+  'control_design_procs',
+  'control_design_conclusion',
+  'design_deficiency_desc',
 ]);
 
 const DEFAULT_EXCEL_KEYWORDS_BY_FIELD = {
+  control_number: ['control number', 'control no'],
   sub_process: ['sub process', 'sub-process', 'subprocess'],
   risk_description: ['risk description', 'risk desc'],
   risk_heat: ['risk heat', 'heat'],
@@ -59,22 +65,35 @@ const DEFAULT_EXCEL_KEYWORDS_BY_FIELD = {
   application_name: ['application name', 'application'],
   audit_evidence_accuracy: ['control evidence', 'audit evidence'],
   whether_fraud_risks_exist: ['fraud risk', 'whether fraud'],
+  control_frequency: ['control frequency', 'frequency'],
+  control_performer: ['control performer', 'performer'],
+  control_owner: ['control owner', 'process owner', 'owner'],
+  control_design_procs: ['design implementation procedures', 'procedures evaluate design'],
+  control_design_conclusion: ['design conclusion', 'conclusion design control'],
+  design_deficiency_desc: ['design deficiency', 'deficiency control design'],
 };
 
 const RACM_FIXED_TEMPLATE_FIELDS = [
   { fieldKey: 'sub_process', label: 'Sub-Process', sectionKey: 'process_and_risk', displayOrder: 1 },
   { fieldKey: 'risk_description', label: 'Risk Description', sectionKey: 'process_and_risk', displayOrder: 2 },
   { fieldKey: 'risk_heat', label: 'Risk Heat', sectionKey: 'process_and_risk', displayOrder: 3 },
-  { fieldKey: 'control_objective', label: 'Control Objective', sectionKey: 'control_details', displayOrder: 4 },
-  { fieldKey: 'standard_control_description', label: 'Standard Control Description', sectionKey: 'control_details', displayOrder: 5 },
-  { fieldKey: 'control_type_ma', label: 'Control type (Manual/Automated)', sectionKey: 'control_details', displayOrder: 6 },
-  { fieldKey: 'control_type_fo', label: 'Control type (Financial/Operational)', sectionKey: 'control_details', displayOrder: 7 },
-  { fieldKey: 'nature_of_control', label: 'Nature of Control (Preventive/Detective)', sectionKey: 'control_details', displayOrder: 8 },
-  { fieldKey: 'process_walkthrough', label: 'Process Activity and Walkthrough details', sectionKey: 'control_details', displayOrder: 9 },
-  { fieldKey: 'key_control', label: 'Key Control', sectionKey: 'control_details', displayOrder: 10 },
-  { fieldKey: 'application_name', label: 'Application name', sectionKey: 'control_details', displayOrder: 11 },
-  { fieldKey: 'audit_evidence_accuracy', label: 'Control Evidence to be obtained', sectionKey: 'control_details', displayOrder: 12 },
-  { fieldKey: 'whether_fraud_risks_exist', label: 'Whether fraud risk exists? (Yes/No)', sectionKey: 'control_details', displayOrder: 13 },
+  { fieldKey: 'control_number', label: 'Control Number', sectionKey: 'control_details', displayOrder: 1 },
+  { fieldKey: 'control_objective', label: 'Control Objective', sectionKey: 'control_details', displayOrder: 2 },
+  { fieldKey: 'standard_control_description', label: 'Standard Control Description', sectionKey: 'control_details', displayOrder: 3 },
+  { fieldKey: 'control_type_ma', label: 'Control type (Manual/Automated)', sectionKey: 'control_details', displayOrder: 4 },
+  { fieldKey: 'control_type_fo', label: 'Control type (Financial/Operational)', sectionKey: 'control_details', displayOrder: 5 },
+  { fieldKey: 'nature_of_control', label: 'Nature of Control (Preventive/Detective)', sectionKey: 'control_details', displayOrder: 6 },
+  { fieldKey: 'process_walkthrough', label: 'Process Activity and Walkthrough details', sectionKey: 'control_details', displayOrder: 7 },
+  { fieldKey: 'key_control', label: 'Key Control', sectionKey: 'control_details', displayOrder: 8 },
+  { fieldKey: 'application_name', label: 'Application name', sectionKey: 'control_details', displayOrder: 9 },
+  { fieldKey: 'audit_evidence_accuracy', label: 'Control Evidence to be obtained', sectionKey: 'control_details', displayOrder: 10 },
+  { fieldKey: 'whether_fraud_risks_exist', label: 'Whether fraud risk exists? (Yes/No)', sectionKey: 'control_details', displayOrder: 11 },
+  { fieldKey: 'control_frequency', label: 'Control Frequency', sectionKey: 'control_details', displayOrder: 12 },
+  { fieldKey: 'control_performer', label: 'Control Performer', sectionKey: 'control_details', displayOrder: 13 },
+  { fieldKey: 'control_owner', label: 'Process Owner', sectionKey: 'control_details', displayOrder: 14 },
+  { fieldKey: 'control_design_procs', label: 'Procedures to Evaluate Design and Implementation', sectionKey: 'design_implementation', displayOrder: 1 },
+  { fieldKey: 'control_design_conclusion', label: 'Conclusion on Design of Control', sectionKey: 'design_implementation', displayOrder: 2 },
+  { fieldKey: 'design_deficiency_desc', label: 'Description of Deficiency in Control Design', sectionKey: 'design_implementation', displayOrder: 3 },
 ];
 
 const MAX_EXTRA_FIELDS = Number.parseInt(process.env.RACM_MAX_EXTRA_FIELDS || '30', 10);
@@ -175,6 +194,14 @@ async function insertFixedTemplateFields(client, templateId, { includeDefaultKey
           is_fixed, is_locked, display_order, excel_keywords
         )
         VALUES ($1, $2, $3, $4, TRUE, TRUE, $5, $6::jsonb)
+        ON CONFLICT (template_id, field_key)
+        DO UPDATE SET
+          label = EXCLUDED.label,
+          section_key = EXCLUDED.section_key,
+          is_fixed = TRUE,
+          is_locked = TRUE,
+          display_order = EXCLUDED.display_order,
+          excel_keywords = EXCLUDED.excel_keywords
       `,
       [
         templateId,
@@ -313,6 +340,7 @@ async function getActiveTemplateWithFields(client, companyIdentifier, unitId) {
   });
   if (!ensured.ok) return ensured;
 
+  await insertFixedTemplateFields(client, ensured.template.id, { includeDefaultKeywords: true });
   const fields = await getTemplateFields(client, ensured.template.id);
   const activeRow = await client.query(
     `SELECT *, ${createdAtUtcSql('created_at')} FROM racm_templates WHERE id = $1 LIMIT 1`,
@@ -343,6 +371,7 @@ async function getTemplateWithFieldsById(client, templateId) {
     return { ok: false, message: 'Template not found' };
   }
 
+  await insertFixedTemplateFields(client, template.id, { includeDefaultKeywords: true });
   const fields = await getTemplateFields(client, template.id);
   const templateWithCount = await enrichTemplateRowWithLinkedCount(client, template);
   return {
@@ -501,6 +530,7 @@ async function createTemplateVersion(client, {
 
   if (sourceTemplateId) {
     await cloneTemplateFields(client, sourceTemplateId, template.id);
+    await insertFixedTemplateFields(client, template.id, { includeDefaultKeywords: true });
     const currentExtras = (await getTemplateFields(client, template.id)).filter((field) => !field.is_fixed);
     for (const existing of currentExtras) {
       await client.query(`DELETE FROM racm_template_fields WHERE id = $1`, [existing.id]);
@@ -828,6 +858,7 @@ async function createFreshTemplate(client, {
     unitId,
     createdBy,
   });
+  await archiveActiveTemplatesForUnit(client, companyIdentifier, unitId);
 
   const nextVersion = await getNextVersionForTemplateName(
     client,
@@ -841,7 +872,7 @@ async function createFreshTemplate(client, {
     unitId,
     templateName: name,
     version: nextVersion,
-    status: 'archived',
+    status: 'active',
     isDefault: false,
     copiedFromTemplateId: null,
     createdBy,

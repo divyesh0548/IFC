@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
@@ -20,6 +20,7 @@ import PsychologyAltRoundedIcon from '@mui/icons-material/PsychologyAltRounded'
 import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
@@ -97,12 +98,20 @@ function formatRunSummaryFieldLabel(label) {
   return `${label}:`
 }
 
+function isInProgressStatus(status) {
+  const normalizedStatus = String(status || '').trim().toLowerCase()
+  return normalizedStatus === 'in_progress' || normalizedStatus === 'in progress'
+}
+
 function KeyManualAiInsightsSummary() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
+  const generatingRef = useRef(false)
+  const [llmBusy, setLlmBusy] = useState(false)
+  const [refreshingRuns, setRefreshingRuns] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [runs, setRuns] = useState([])
   const [run, setRun] = useState(null)
@@ -112,52 +121,101 @@ function KeyManualAiInsightsSummary() {
   const [errorMessage, setErrorMessage] = useState('')
   useSyncGlobalLoading(loading)
 
+  const fetchRun = useCallback(async (runIdOverride, { shouldApply = () => true } = {}) => {
+    setLoading(true)
+    setErrorMessage('')
+    try {
+      const requestedRunId = typeof runIdOverride === 'string'
+        ? runIdOverride.trim()
+        : String(searchParams.get('run_id') || '').trim()
+      const suffix = requestedRunId ? `?run_id=${encodeURIComponent(requestedRunId)}` : ''
+      const response = await fetch(apiUrl(`/api/company-co/ai-insights/key-manual-summary${suffix}`), {
+        credentials: 'include',
+      })
+      const data = await response.json()
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Failed to fetch AI insights summary')
+      }
+
+      if (shouldApply()) {
+        setRuns(Array.isArray(data.data?.runs) ? data.data.runs : [])
+        setRun(data.data?.run || null)
+        setRows(Array.isArray(data.data?.rows) ? data.data.rows : [])
+        setExcludedEntityLevelCount(Number(data.data?.excluded_entity_level_count || 0))
+      }
+
+      return data.data || null
+    } catch (error) {
+      console.error('Error fetching key manual AI insights summary:', error)
+      if (shouldApply()) {
+        setRuns([])
+        setRun(null)
+        setRows([])
+        setExcludedEntityLevelCount(0)
+        setErrorMessage(error.message || 'Failed to fetch AI insights summary')
+      }
+      return null
+    } finally {
+      if (shouldApply()) {
+        setLoading(false)
+      }
+    }
+  }, [searchParams])
+
+  const fetchAiAvailability = useCallback(async ({ showUnavailableToast = false } = {}) => {
+    try {
+      const availabilityResponse = await fetch(apiUrl('/api/company-co/ai-insights/key-manual-summary/availability'), {
+        credentials: 'include',
+      })
+      const availabilityData = await availabilityResponse.json()
+      const reachable = Boolean(availabilityData?.data?.reachable)
+      const busy = Boolean(availabilityData?.data?.llm_busy)
+
+      if (!availabilityResponse.ok || !availabilityData?.success || !reachable) {
+        setLlmBusy(false)
+        if (showUnavailableToast) toast('This feature is under development')
+        return { reachable: false, busy: false }
+      }
+
+      setLlmBusy(busy)
+      return { reachable, busy }
+    } catch (availabilityError) {
+      console.error('Error checking AI summary availability:', availabilityError)
+      setLlmBusy(false)
+      if (showUnavailableToast) toast('This feature is under development')
+      return { reachable: false, busy: false }
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
 
-    const fetchRun = async () => {
-      setLoading(true)
-      setErrorMessage('')
-      try {
-        const runId = String(searchParams.get('run_id') || '').trim()
-        const suffix = runId ? `?run_id=${encodeURIComponent(runId)}` : ''
-        const response = await fetch(apiUrl(`/api/company-co/ai-insights/key-manual-summary${suffix}`), {
-          credentials: 'include',
-        })
-        const data = await response.json()
-
-        if (!response.ok || !data?.success) {
-          throw new Error(data?.message || 'Failed to fetch AI insights summary')
-        }
-
-        if (!cancelled) {
-          setRuns(Array.isArray(data.data?.runs) ? data.data.runs : [])
-          setRun(data.data?.run || null)
-          setRows(Array.isArray(data.data?.rows) ? data.data.rows : [])
-          setExcludedEntityLevelCount(Number(data.data?.excluded_entity_level_count || 0))
-        }
-      } catch (error) {
-        console.error('Error fetching key manual AI insights summary:', error)
-        if (!cancelled) {
-          setRuns([])
-          setRun(null)
-          setRows([])
-          setExcludedEntityLevelCount(0)
-          setErrorMessage(error.message || 'Failed to fetch AI insights summary')
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    fetchRun()
+    fetchRun(undefined, { shouldApply: () => !cancelled })
 
     return () => {
       cancelled = true
     }
-  }, [searchParams])
+  }, [fetchRun])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const refreshAvailability = async () => {
+      const availability = await fetchAiAvailability()
+      if (!cancelled) {
+        setLlmBusy(Boolean(availability.busy))
+      }
+    }
+
+    refreshAvailability()
+    const intervalId = window.setInterval(refreshAvailability, 5000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [fetchAiAvailability])
 
   const handleRunChange = (event) => {
     const nextRunId = String(event.target.value || '').trim()
@@ -173,23 +231,20 @@ function KeyManualAiInsightsSummary() {
   }
 
   const handleGenerateAiSummary = async () => {
+    if (generatingRef.current || generating || llmBusy) {
+      toast('LLM Server is busy, Try again after some moments')
+      return
+    }
+
+    generatingRef.current = true
     setGenerating(true)
     try {
-      let availabilityData = null
-
-      try {
-        const availabilityResponse = await fetch(apiUrl('/api/company-co/ai-insights/key-manual-summary/availability'), {
-          credentials: 'include',
-        })
-        availabilityData = await availabilityResponse.json()
-
-        if (!availabilityResponse.ok || !availabilityData?.success || !availabilityData?.data?.reachable) {
-          toast('This feature is under development')
-          return
-        }
-      } catch (availabilityError) {
-        console.error('Error checking AI summary availability:', availabilityError)
-        toast('This feature is under development')
+      const availability = await fetchAiAvailability({ showUnavailableToast: true })
+      if (!availability.reachable) {
+        return
+      }
+      if (availability.busy) {
+        toast('LLM Server is busy, Try again after some moments')
         return
       }
 
@@ -205,26 +260,57 @@ function KeyManualAiInsightsSummary() {
       if (!response.ok || !data?.success) {
         const error = new Error(data?.message || 'Failed to generate AI summary')
         error.serverCode = String(data?.code || '').trim()
+        error.status = response.status
         throw error
       }
 
-      const updatedParams = new URLSearchParams(searchParams)
-      updatedParams.set('run_id', String(data.data?.run_id || '').trim())
-      setSearchParams(updatedParams)
+      const generatedRunId = String(data.data?.run_id || '').trim()
+      if (generatedRunId) {
+        const updatedParams = new URLSearchParams(searchParams)
+        updatedParams.set('run_id', generatedRunId)
+        setSearchParams(updatedParams)
+        await fetchRun(generatedRunId)
+      }
       toast.success(
         `AI summary generated for ${Number(data.data?.control_count || 0)} controls using ${data.data?.model_name || 'the configured model'}. Excluded Entity Level Controls: ${Number(data.data?.excluded_entity_level_count || 0)}.`
       )
     } catch (error) {
       console.error('Error generating AI summary:', error)
-      toast.error(formatServerErrorToast(error?.serverCode))
+      if (error?.status === 409 || error?.serverCode === 'AI_MODEL_BUSY') {
+        setLlmBusy(true)
+        toast('LLM Server is busy, Try again after some moments')
+      } else {
+        toast.error(formatServerErrorToast(error?.serverCode))
+      }
     } finally {
+      generatingRef.current = false
       setGenerating(false)
+      fetchAiAvailability()
+    }
+  }
+
+  const handleRefreshRuns = async () => {
+    setRefreshingRuns(true)
+    try {
+      await Promise.all([
+        fetchRun(),
+        fetchAiAvailability(),
+      ])
+      toast.success('AI insights runs refreshed.')
+    } finally {
+      setRefreshingRuns(false)
     }
   }
 
   const handleDeleteRun = async () => {
     const currentRunId = String(run?.id || '').trim()
     if (!currentRunId) return
+
+    if (isInProgressStatus(run?.status)) {
+      toast('In-progress AI insights runs cannot be deleted. Try again after generation completes.')
+      setDeleteDialogOpen(false)
+      return
+    }
 
     setDeleting(true)
     try {
@@ -235,7 +321,10 @@ function KeyManualAiInsightsSummary() {
       const data = await response.json()
 
       if (!response.ok || !data?.success) {
-        throw new Error(data?.message || 'Failed to delete AI insights run')
+        const error = new Error(data?.message || 'Failed to delete AI insights run')
+        error.serverCode = String(data?.code || '').trim()
+        error.status = response.status
+        throw error
       }
 
       const remainingRuns = runs.filter((item) => item.id !== currentRunId)
@@ -251,7 +340,11 @@ function KeyManualAiInsightsSummary() {
       toast.success('AI insights run deleted successfully.')
     } catch (error) {
       console.error('Error deleting AI insights run:', error)
-      toast.error(error.message || 'Failed to delete AI insights run')
+      if (error?.status === 409 || error?.serverCode === 'AI_RUN_IN_PROGRESS') {
+        toast('In-progress AI insights runs cannot be deleted. Try again after generation completes.')
+      } else {
+        toast.error(error.message || 'Failed to delete AI insights run')
+      }
     } finally {
       setDeleting(false)
       setDeleteDialogOpen(false)
@@ -319,7 +412,7 @@ function KeyManualAiInsightsSummary() {
             onClick={handleGenerateAiSummary}
             disabled={generating}
           >
-            {generating ? 'Generating…' : 'Generate AI Summary'}
+            {generating ? 'Generating AI Summary...' : 'Generate AI Summary'}
           </Button>
           <Button variant="contained" onClick={() => navigate('/company_co/dashboard')}>
             Back To Dashboard
@@ -463,9 +556,24 @@ function KeyManualAiInsightsSummary() {
           </FormControl>
           <Button
             variant="outlined"
+            startIcon={<RefreshRoundedIcon />}
+            onClick={handleRefreshRuns}
+            disabled={refreshingRuns}
+            sx={{ minWidth: { xs: '100%', sm: 132 }, whiteSpace: 'nowrap' }}
+          >
+            {refreshingRuns ? 'Refreshing...' : 'Refresh Runs'}
+          </Button>
+          <Button
+            variant="outlined"
             color="error"
             startIcon={<DeleteOutlineRoundedIcon />}
-            onClick={() => setDeleteDialogOpen(true)}
+            onClick={() => {
+              if (isInProgressStatus(run?.status)) {
+                toast('In-progress AI insights runs cannot be deleted. Try again after generation completes.')
+                return
+              }
+              setDeleteDialogOpen(true)
+            }}
             disabled={!run || deleting}
             sx={{ minWidth: { xs: '100%', sm: 140 }, whiteSpace: 'nowrap' }}
           >
@@ -494,7 +602,9 @@ function KeyManualAiInsightsSummary() {
         </DialogTitle>
         <DialogContent sx={{ pt: '8px !important' }}>
           <Typography variant="body2" sx={{ mb: 2, color: theme.palette.text.secondary }}>
-            This will permanently remove the selected run and all stored insight rows linked to it.
+            {isInProgressStatus(run?.status)
+              ? 'This run is still being generated and cannot be deleted until processing completes.'
+              : 'This will permanently remove the selected run and all stored insight rows linked to it.'}
           </Typography>
 
           {run ? (
@@ -554,7 +664,7 @@ function KeyManualAiInsightsSummary() {
           </Button>
           <Button
             onClick={handleDeleteRun}
-            disabled={!run || deleting}
+            disabled={!run || deleting || isInProgressStatus(run?.status)}
             variant="contained"
             color="error"
             startIcon={<DeleteOutlineRoundedIcon />}

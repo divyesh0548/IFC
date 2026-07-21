@@ -18,6 +18,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
+import CircularProgress from '@mui/material/CircularProgress'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
@@ -49,6 +50,15 @@ const DUPLICATE_CONTROL_NUMBER_MESSAGE = 'Duplicate Control Number already exist
 const DUPLICATE_CONTROL_NUMBER_NOTICE =
   'Change the control number and re-upload the excel or do not import control number'
 
+function getUnitFilterLabel(unit) {
+  if (!unit) return ''
+  const unitName = String(unit.unit_name || unit.unit_id || '').trim()
+  const templateName = String(
+    unit.active_template_name || unit.activeTemplateName || unit.template_name || ''
+  ).trim()
+  return templateName ? `${unitName} (${templateName})` : unitName
+}
+
 function ExcelUpload() {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -67,6 +77,7 @@ function ExcelUpload() {
   const [headerRowNumber, setHeaderRowNumber] = useState('')
   const [mappingDialogOpen, setMappingDialogOpen] = useState(false)
   const [pendingImport, setPendingImport] = useState(null)
+  const [longImportDialogOpen, setLongImportDialogOpen] = useState(false)
   const [duplicateControlNumberNotice, setDuplicateControlNumberNotice] = useState('')
   const { businessProcessOptions, loading: businessProcessesLoading } = useBusinessProcesses()
   const { controlFrequencyOptions, loading: controlFrequencyOptionsLoading } = useControlFrequencyOptions()
@@ -276,7 +287,11 @@ function ExcelUpload() {
     } = ctx
 
     setLoading(true)
+    setLongImportDialogOpen(false)
     setDuplicateControlNumberNotice('')
+    const longImportTimer = window.setTimeout(() => {
+      setLongImportDialogOpen(true)
+    }, 10000)
     try {
       const payload = {
         businessProcess: bp,
@@ -333,6 +348,8 @@ function ExcelUpload() {
       console.error('Import error:', err)
       toast.error('Network error. Please try again.')
     } finally {
+      window.clearTimeout(longImportTimer)
+      setLongImportDialogOpen(false)
       setLoading(false)
     }
   }
@@ -927,10 +944,14 @@ function ExcelUpload() {
                     value={unitId}
                     label="Unit"
                     onChange={(e) => setUnitId(e.target.value)}
+                    renderValue={(selected) => {
+                      const selectedUnit = unitOptions.find((unit) => String(unit.unit_id) === String(selected))
+                      return getUnitFilterLabel(selectedUnit) || selected
+                    }}
                   >
                     {unitOptions.map((unit) => (
                       <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
-                        {unit.unit_name || unit.unit_id}
+                        {getUnitFilterLabel(unit)}
                       </MenuItem>
                     ))}
                   </Select>
@@ -1319,6 +1340,36 @@ function ExcelUpload() {
             Adjust column mapping
           </Button>
         </DialogActions>
+      </Dialog>
+      <Dialog
+        open={longImportDialogOpen}
+        aria-labelledby="bulk-import-progress-dialog-title"
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            p: 0.5,
+          },
+        }}
+      >
+        <DialogContent
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            px: 3,
+            py: 2.5,
+          }}
+        >
+          <CircularProgress size={28} thickness={4} />
+          <Typography
+            id="bulk-import-progress-dialog-title"
+            sx={{ fontSize: '1rem', fontWeight: 800, color: theme.palette.text.primary }}
+          >
+            Hold on controls are being inserted
+          </Typography>
+        </DialogContent>
       </Dialog>
       <ControlFrequencyValueMapDialog
         open={controlFrequencyMappingDialogState.open}

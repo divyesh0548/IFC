@@ -41,6 +41,7 @@ const SECTION_OPTIONS = [
   { key: 'process_and_risk', label: 'Process and Risk' },
   { key: 'assertions', label: 'Assertions' },
   { key: 'control_details', label: 'Control Details' },
+  { key: 'design_implementation', label: 'Design and Implementation' },
   { key: 'others', label: 'Others' },
 ]
 
@@ -1537,7 +1538,7 @@ function RacmTemplates() {
         <DialogTitle>Create new template</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2, pt: 0.5 }}>
-            Creates a template with fixed columns only. Make it active to add custom columns.
+            Creates an active template with fixed columns only so you can start editing custom columns immediately.
           </Typography>
           <TextField
             label="Template name"

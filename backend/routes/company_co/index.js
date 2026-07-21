@@ -13,6 +13,7 @@ router.get('/dashboard/nature-of-control', verifyCompanyCoordinator, controller.
 router.get('/dashboard/control-type', verifyCompanyCoordinator, controller.getDashboardControlTypeStats);
 router.get('/dashboard/racms', verifyCompanyCoordinator, controller.getDashboardRacms);
 router.get('/risk-analysis/availability', verifyCompanyCoordinator, controller.getRiskAnalysisAvailability);
+router.get('/risk-analysis/controls', verifyCompanyCoordinator, controller.listRiskAnalysisControls);
 router.get('/risk-analysis/control/:control_number', verifyCompanyCoordinator, controller.getRiskAnalysisByControl);
 router.post('/risk-analysis/control/:control_number/generate', verifyCompanyCoordinator, controller.generateRiskAnalysisByControl);
 router.get('/ai-insights/key-manual-summary/availability', verifyCompanyCoordinator, controller.getKeyManualAiInsightsAvailability);

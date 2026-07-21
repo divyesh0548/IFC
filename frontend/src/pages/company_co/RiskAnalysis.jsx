@@ -9,16 +9,19 @@ import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Alert from '@mui/material/Alert'
+import Checkbox from '@mui/material/Checkbox'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
+import ListItemText from '@mui/material/ListItemText'
+import TablePagination from '@mui/material/TablePagination'
 import Tooltip from '@mui/material/Tooltip'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { useTheme } from '@mui/material/styles'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX, FILTER_DROPDOWN_MIN_WIDTH_SM } from '../../uiConstants'
+import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { getFieldValue } from './dashboardClassificationUtils'
 import { toast } from 'react-hot-toast'
 
@@ -44,23 +47,76 @@ const INSIGHT_CARD_LABEL_SX = {
   mb: 0.75,
 }
 
-const TABLE_GRID_COLUMNS = '220px 300px minmax(340px, 1fr)'
+const TABLE_GRID_COLUMNS = '56px 160px 180px 220px 140px 240px minmax(340px, 1fr)'
+
+function getSelectedFilterLabel(selected, options, getLabel = (value) => value) {
+  if (!Array.isArray(selected) || selected.length === 0) return 'All'
+  if (selected.length === 1) return getLabel(selected[0])
+  return `${selected.length} selected`
+}
+
+const FILTER_SELECT_SX = {
+  minWidth: { xs: '100%', sm: 220 },
+  maxWidth: { xs: '100%', sm: 260 },
+  '& .MuiSelect-select': {
+    display: 'flex',
+    alignItems: 'center',
+    minHeight: '1.4375em',
+  },
+}
+
+function renderFilterValue(label) {
+  return (
+    <Typography
+      component="span"
+      variant="body2"
+      sx={{
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </Typography>
+  )
+}
+
+function formatRiskAnalysisTimestamp(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
 
 function RiskAnalysis() {
   const theme = useTheme()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
+  const [unitOptions, setUnitOptions] = useState([])
+  const [businessProcessOptions, setBusinessProcessOptions] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
-  const [filterBusinessProcess, setFilterBusinessProcess] = useState('all')
-  const [filterFinancialYear, setFilterFinancialYear] = useState('all')
+  const [filterUnits, setFilterUnits] = useState([])
+  const [filterBusinessProcesses, setFilterBusinessProcesses] = useState([])
+  const [filterFinancialYears, setFilterFinancialYears] = useState([])
+  const [page, setPage] = useState(0)
+  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [totalCount, setTotalCount] = useState(0)
+  const [selectedControlNumbers, setSelectedControlNumbers] = useState(new Set())
   const [errorMessage, setErrorMessage] = useState('')
   const [selectedControl, setSelectedControl] = useState(null)
   const [analysisDialogOpen, setAnalysisDialogOpen] = useState(false)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [analysisGenerating, setAnalysisGenerating] = useState(false)
+  const [batchGenerating, setBatchGenerating] = useState(false)
   const [analysisData, setAnalysisData] = useState(null)
-  useSyncGlobalLoading(loading)
+  useSyncGlobalLoading(loading || batchGenerating)
 
   useEffect(() => {
     let cancelled = false
@@ -70,37 +126,39 @@ function RiskAnalysis() {
       setErrorMessage('')
 
       try {
-        const [filtersResponse, racmsResponse] = await Promise.all([
-          fetch(apiUrl('/api/company-co/dashboard/filters'), {
-            credentials: 'include',
-          }),
-          fetch(apiUrl('/api/company-co/dashboard/racms'), {
-            credentials: 'include',
-          }),
-        ])
+        const params = new URLSearchParams({
+          page: String(page + 1),
+          page_size: String(rowsPerPage),
+        })
 
-        const [filtersData, racmsData] = await Promise.all([
-          filtersResponse.json(),
-          racmsResponse.json(),
-        ])
+        filterUnits.forEach((unitId) => params.append('unit_ids', unitId))
+        filterBusinessProcesses.forEach((businessProcess) => params.append('business_processes', businessProcess))
+        filterFinancialYears.forEach((financialYear) => params.append('financial_years', financialYear))
 
-        if (!filtersResponse.ok || !filtersData?.success) {
-          throw new Error(filtersData?.message || 'Failed to fetch risk-analysis filters')
-        }
+        const response = await fetch(apiUrl(`/api/company-co/risk-analysis/controls?${params.toString()}`), {
+          credentials: 'include',
+        })
+        const data = await response.json()
 
-        if (!racmsResponse.ok || !racmsData?.success) {
-          throw new Error(racmsData?.message || 'Failed to fetch risk-analysis controls')
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.message || 'Failed to fetch risk-analysis controls')
         }
 
         if (!cancelled) {
-          setFinancialYearOptions(Array.isArray(filtersData.data?.financialYears) ? filtersData.data.financialYears : [])
-          setRows(Array.isArray(racmsData.data) ? racmsData.data : [])
+          setRows(Array.isArray(data.data) ? data.data : [])
+          setTotalCount(Number(data.count || 0))
+          setUnitOptions(Array.isArray(data.filters?.units) ? data.filters.units : [])
+          setBusinessProcessOptions(Array.isArray(data.filters?.business_processes) ? data.filters.business_processes : [])
+          setFinancialYearOptions(Array.isArray(data.filters?.financial_years) ? data.filters.financial_years : [])
         }
       } catch (error) {
         console.error('Error fetching risk analysis data:', error)
         if (!cancelled) {
+          setUnitOptions([])
+          setBusinessProcessOptions([])
           setFinancialYearOptions([])
           setRows([])
+          setTotalCount(0)
           setErrorMessage(error.message || 'Failed to load risk analysis data')
         }
       } finally {
@@ -115,32 +173,53 @@ function RiskAnalysis() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [filterBusinessProcesses, filterFinancialYears, filterUnits, page, rowsPerPage])
 
-  const businessProcessOptions = useMemo(() => (
-    [...new Set(
-      (rows || [])
-        .map((row) => String(getFieldValue(row, 'business_process', 'businessProcess') || '').trim())
-        .filter(Boolean)
-    )].sort((left, right) => left.localeCompare(right))
-  ), [rows])
+  const selectedControlsOnPage = useMemo(() => (
+    rows.filter((row) => selectedControlNumbers.has(String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim()))
+  ), [rows, selectedControlNumbers])
 
-  const filteredRows = useMemo(() => (
-    (rows || []).filter((row) => {
-      const businessProcess = String(getFieldValue(row, 'business_process', 'businessProcess') || '').trim()
-      const financialYear = String(getFieldValue(row, 'financial_year', 'financialYear') || '').trim()
+  const allPageControlsSelected = rows.length > 0 && selectedControlsOnPage.length === rows.length
+  const somePageControlsSelected = selectedControlsOnPage.length > 0 && selectedControlsOnPage.length < rows.length
 
-      if (filterBusinessProcess !== 'all' && businessProcess !== filterBusinessProcess) {
-        return false
+  const resetPageForFilterChange = (setter) => (event) => {
+    const value = event.target.value
+    setter(typeof value === 'string' ? value.split(',').filter(Boolean) : value)
+    setPage(0)
+    setSelectedControlNumbers(new Set())
+  }
+
+  const toggleControlSelection = (controlNumber) => {
+    const normalizedControlNumber = String(controlNumber || '').trim()
+    if (!normalizedControlNumber) return
+
+    setSelectedControlNumbers((current) => {
+      const next = new Set(current)
+      if (next.has(normalizedControlNumber)) {
+        next.delete(normalizedControlNumber)
+      } else {
+        next.add(normalizedControlNumber)
       }
-
-      if (filterFinancialYear !== 'all' && financialYear !== filterFinancialYear) {
-        return false
-      }
-
-      return true
+      return next
     })
-  ), [filterBusinessProcess, filterFinancialYear, rows])
+  }
+
+  const togglePageSelection = () => {
+    setSelectedControlNumbers((current) => {
+      const next = new Set(current)
+      const pageControlNumbers = rows
+        .map((row) => String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim())
+        .filter(Boolean)
+
+      if (pageControlNumbers.every((controlNumber) => next.has(controlNumber))) {
+        pageControlNumbers.forEach((controlNumber) => next.delete(controlNumber))
+      } else {
+        pageControlNumbers.forEach((controlNumber) => next.add(controlNumber))
+      }
+
+      return next
+    })
+  }
 
   const handleOpenAnalysisDialog = async (row) => {
     const controlNumber = String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim()
@@ -207,6 +286,54 @@ function RiskAnalysis() {
       toast.error(formatServerErrorToast(error?.serverCode))
     } finally {
       setAnalysisGenerating(false)
+    }
+  }
+
+  const handleGenerateSelectedAnalyses = async () => {
+    const controlNumbers = [...selectedControlNumbers]
+    if (controlNumbers.length === 0) {
+      toast('Select at least one RACM for risk analysis.')
+      return
+    }
+
+    setBatchGenerating(true)
+    let generatedCount = 0
+    let failedCount = 0
+
+    try {
+      for (const controlNumber of controlNumbers) {
+        try {
+          const response = await fetch(apiUrl(`/api/company-co/risk-analysis/control/${encodeURIComponent(controlNumber)}/generate`), {
+            method: 'POST',
+            credentials: 'include',
+          })
+          const data = await response.json()
+
+          if (!response.ok || !data?.success) {
+            failedCount += 1
+            if (response.status === 409 || String(data?.code || '').trim() === 'AI_MODEL_BUSY') {
+              toast('LLM Server is busy, Try again after some moments')
+              break
+            }
+          } else {
+            generatedCount += 1
+          }
+        } catch (error) {
+          console.error('Error generating selected risk analysis:', error)
+          failedCount += 1
+        }
+      }
+
+      if (generatedCount > 0) {
+        toast.success(`Risk analysis generated for ${generatedCount} RACM${generatedCount === 1 ? '' : 's'}.`)
+        setSelectedControlNumbers(new Set())
+      }
+
+      if (failedCount > 0 && generatedCount === 0) {
+        toast.error('Risk analysis generation failed for the selected RACMs.')
+      }
+    } finally {
+      setBatchGenerating(false)
     }
   }
 
@@ -314,6 +441,10 @@ function RiskAnalysis() {
     )
   }
 
+  const analysisGeneratedAt = formatRiskAnalysisTimestamp(
+    analysisData?.analysis?.updated_at || analysisData?.analysis?.created_at
+  )
+
   return (
     <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Box
@@ -388,43 +519,87 @@ function RiskAnalysis() {
                 ml: { xs: 0, sm: 'auto' },
               }}
             >
-              <FormControl size="small" variant="outlined" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_SM }}>
-                <InputLabel id="risk-analysis-business-process-label">Business Process</InputLabel>
+              <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+                <InputLabel id="risk-analysis-unit-label" shrink>Unit</InputLabel>
                 <Select
-                  labelId="risk-analysis-business-process-label"
-                  value={filterBusinessProcess}
-                  label="Business Process"
-                  onChange={(event) => setFilterBusinessProcess(event.target.value)}
+                  labelId="risk-analysis-unit-label"
+                  multiple
+                  value={filterUnits}
+                  label="Unit"
+                  displayEmpty
+                  notched
+                  onChange={resetPageForFilterChange(setFilterUnits)}
+                  renderValue={(selected) => renderFilterValue(
+                    getSelectedFilterLabel(
+                      selected,
+                      unitOptions,
+                      (unitId) => unitOptions.find((unit) => String(unit.unit_id) === String(unitId))?.unit_name || unitId
+                    )
+                  )}
                 >
-                  <MenuItem value="all">All</MenuItem>
-                  {businessProcessOptions.map((option) => (
-                    <MenuItem key={option} value={option}>
-                      {option}
+                  {unitOptions.map((unit) => (
+                    <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                      <Checkbox checked={filterUnits.includes(unit.unit_id)} size="small" />
+                      <ListItemText primary={unit.unit_name || unit.unit_id} />
                     </MenuItem>
                   ))}
                 </Select>
               </FormControl>
 
-              <FormControl size="small" variant="outlined" sx={{ minWidth: FILTER_DROPDOWN_MIN_WIDTH_SM }}>
-                <InputLabel id="risk-analysis-financial-year-label">Financial Year</InputLabel>
+              <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+                <InputLabel id="risk-analysis-business-process-label" shrink>Business Process</InputLabel>
                 <Select
-                  labelId="risk-analysis-financial-year-label"
-                  value={filterFinancialYear}
-                  label="Financial Year"
-                  onChange={(event) => setFilterFinancialYear(event.target.value)}
+                  labelId="risk-analysis-business-process-label"
+                  multiple
+                  value={filterBusinessProcesses}
+                  label="Business Process"
+                  displayEmpty
+                  notched
+                  onChange={resetPageForFilterChange(setFilterBusinessProcesses)}
+                  renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected, businessProcessOptions))}
                 >
-                  <MenuItem value="all">All</MenuItem>
-                  {financialYearOptions.map((option) => (
+                  {businessProcessOptions.map((option) => (
                     <MenuItem key={option} value={option}>
-                      {option}
+                      <Checkbox checked={filterBusinessProcesses.includes(option)} size="small" />
+                      <ListItemText primary={option} />
                     </MenuItem>
                   ))}
                 </Select>
               </FormControl>
+
+              <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+                <InputLabel id="risk-analysis-financial-year-label" shrink>Financial Year</InputLabel>
+                <Select
+                  labelId="risk-analysis-financial-year-label"
+                  multiple
+                  value={filterFinancialYears}
+                  label="Financial Year"
+                  displayEmpty
+                  notched
+                  onChange={resetPageForFilterChange(setFilterFinancialYears)}
+                  renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected, financialYearOptions))}
+                >
+                  {financialYearOptions.map((option) => (
+                    <MenuItem key={option} value={option}>
+                      <Checkbox checked={filterFinancialYears.includes(option)} size="small" />
+                      <ListItemText primary={option} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Button
+                variant="contained"
+                color="secondary"
+                onClick={handleGenerateSelectedAnalyses}
+                disabled={batchGenerating || selectedControlNumbers.size === 0}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                {batchGenerating ? 'Generating...' : `Generate Selected (${selectedControlNumbers.size})`}
+              </Button>
             </Box>
           </Box>
           <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
-            Showing {filteredRows.length} controls for the selected filters.
+            Showing {rows.length} of {totalCount} assigned-unit controls for the selected filters.
           </Typography>
         </Box>
 
@@ -438,7 +613,7 @@ function RiskAnalysis() {
                 backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : theme.palette.grey[100],
               }}
             >
-              {['Control Number', 'Sub Process', 'Risk Description'].map((column) => (
+              {['', 'Control Number', 'Unit', 'Business Process', 'Financial Year', 'Sub Process', 'Risk Description'].map((column, index) => (
                 <Box
                   key={column}
                   sx={{
@@ -450,9 +625,18 @@ function RiskAnalysis() {
                     },
                   }}
                 >
-                  <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-                    {column}
-                  </Typography>
+                  {index === 0 ? (
+                    <Checkbox
+                      size="small"
+                      checked={allPageControlsSelected}
+                      indeterminate={somePageControlsSelected}
+                      onChange={togglePageSelection}
+                    />
+                  ) : (
+                    <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+                      {column}
+                    </Typography>
+                  )}
                 </Box>
               ))}
             </Box>
@@ -463,14 +647,18 @@ function RiskAnalysis() {
                   Loading risk analysis controls...
                 </Typography>
               </Box>
-            ) : filteredRows.length === 0 ? (
+            ) : rows.length === 0 ? (
               <Box sx={{ px: 3, py: 4 }}>
                 <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
-                  No controls found for the selected business process and financial year.
+                  No controls found for the selected filters.
                 </Typography>
               </Box>
             ) : (
-              filteredRows.map((row, index) => (
+              rows.map((row, index) => {
+                const controlNumber = String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim()
+                const isSelected = selectedControlNumbers.has(controlNumber)
+
+                return (
                 <Box
                   key={String(getFieldValue(row, 'form_id', 'formId') || getFieldValue(row, 'control_number', 'controlNumber') || index)}
                   component="button"
@@ -479,7 +667,7 @@ function RiskAnalysis() {
                   sx={{
                     display: 'grid',
                     gridTemplateColumns: TABLE_GRID_COLUMNS,
-                    borderBottom: index === filteredRows.length - 1 ? 'none' : `1px solid ${theme.palette.divider}`,
+                    borderBottom: index === rows.length - 1 ? 'none' : `1px solid ${theme.palette.divider}`,
                     backgroundColor: index % 2 === 0
                       ? 'transparent'
                       : theme.palette.mode === 'dark'
@@ -497,6 +685,15 @@ function RiskAnalysis() {
                     },
                   }}
                 >
+                  <Box sx={{ px: 1, py: 1.25, borderRight: `1px solid ${theme.palette.divider}` }}>
+                    <Checkbox
+                      size="small"
+                      checked={isSelected}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => toggleControlSelection(controlNumber)}
+                      disabled={!controlNumber || batchGenerating}
+                    />
+                  </Box>
                   <Box sx={{ px: 2, py: 1.75, borderRight: `1px solid ${theme.palette.divider}` }}>
                     <Tooltip
                       title={String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim() || 'Unassigned'}
@@ -507,6 +704,27 @@ function RiskAnalysis() {
                         sx={{ color: theme.palette.text.primary, fontWeight: 600, ...TABLE_TEXT_TRUNCATE_SX }}
                       >
                         {String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim() || 'Unassigned'}
+                      </Typography>
+                    </Tooltip>
+                  </Box>
+                  <Box sx={{ px: 2, py: 1.75, borderRight: `1px solid ${theme.palette.divider}` }}>
+                    <Tooltip title={String(getFieldValue(row, 'unit_name', 'unitName') || getFieldValue(row, 'unit_id', 'unitId') || '').trim() || 'Unassigned'} arrow>
+                      <Typography variant="body2" sx={{ color: theme.palette.text.primary, fontWeight: 500, ...TABLE_TEXT_TRUNCATE_SX }}>
+                        {String(getFieldValue(row, 'unit_name', 'unitName') || getFieldValue(row, 'unit_id', 'unitId') || '').trim() || 'Unassigned'}
+                      </Typography>
+                    </Tooltip>
+                  </Box>
+                  <Box sx={{ px: 2, py: 1.75, borderRight: `1px solid ${theme.palette.divider}` }}>
+                    <Tooltip title={String(getFieldValue(row, 'business_process', 'businessProcess') || '').trim() || 'Unassigned'} arrow>
+                      <Typography variant="body2" sx={{ color: theme.palette.text.primary, fontWeight: 500, ...TABLE_TEXT_TRUNCATE_SX }}>
+                        {String(getFieldValue(row, 'business_process', 'businessProcess') || '').trim() || 'Unassigned'}
+                      </Typography>
+                    </Tooltip>
+                  </Box>
+                  <Box sx={{ px: 2, py: 1.75, borderRight: `1px solid ${theme.palette.divider}` }}>
+                    <Tooltip title={String(getFieldValue(row, 'financial_year', 'financialYear') || '').trim() || 'Unassigned'} arrow>
+                      <Typography variant="body2" sx={{ color: theme.palette.text.primary, fontWeight: 500, ...TABLE_TEXT_TRUNCATE_SX }}>
+                        {String(getFieldValue(row, 'financial_year', 'financialYear') || '').trim() || 'Unassigned'}
                       </Typography>
                     </Tooltip>
                   </Box>
@@ -537,10 +755,23 @@ function RiskAnalysis() {
                     </Tooltip>
                   </Box>
                 </Box>
-              ))
+              )})
             )}
           </Box>
         </Box>
+        <TablePagination
+          component="div"
+          count={totalCount}
+          page={page}
+          onPageChange={(event, nextPage) => setPage(nextPage)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(event) => {
+            setRowsPerPage(Number.parseInt(event.target.value, 10))
+            setPage(0)
+            setSelectedControlNumbers(new Set())
+          }}
+          rowsPerPageOptions={[10, 25, 50]}
+        />
       </Paper>
 
       <Dialog
@@ -584,14 +815,18 @@ function RiskAnalysis() {
                 flexDirection: { xs: 'column', sm: 'row' },
               }}
             >
-              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-                AI Generated Insights
-              </Typography>
-              {analysisData?.analysis?.response_json ? (
+              {analysisGeneratedAt ? (
                 <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
-                  Confidence: {analysisData.analysis.response_json.matchConfidence || 'N/A'}
+                  Last generated: {analysisGeneratedAt}
                 </Typography>
-              ) : null}
+              ) : <Box />}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                {analysisData?.analysis?.response_json ? (
+                  <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                    Confidence: {analysisData.analysis.response_json.matchConfidence || 'N/A'}
+                  </Typography>
+                ) : null}
+              </Box>
             </Box>
             <Box
               sx={{

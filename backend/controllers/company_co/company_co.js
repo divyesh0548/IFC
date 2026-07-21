@@ -22,13 +22,13 @@ const {
 const {
   tryAcquireGlobalAiModelLock,
   releaseGlobalAiModelLock,
+  isGlobalAiModelBusy,
 } = require('../../utils/ai_model_lock');
 const {
   getMobileValidationError,
   normalizeMobileDigits,
 } = require('../../utils/mobile_validation');
 const {
-  UNIT_RESPONSIBILITY_TYPES,
   getUnitResponsibilityConfig,
 } = require('../../utils/unit_responsibilities');
 const {
@@ -111,20 +111,67 @@ function normalizeDashboardDistinctValue(value) {
   return trimmed || DASHBOARD_EMPTY_VALUE_LABEL;
 }
 
+function getQueryArray(value) {
+  const rawValues = Array.isArray(value) ? value : [value];
+  return [...new Set(
+    rawValues
+      .flatMap((item) => String(item ?? '').split(','))
+      .map((item) => item.trim())
+      .filter(Boolean)
+  )];
+}
+
+function parsePositiveInteger(value, fallback, { min = 1, max = 100 } = {}) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed) || parsed < min) return fallback;
+  return Math.min(parsed, max);
+}
+
 async function getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail) {
   if (!companyIdentifier || !coordinatorEmail) {
     return [];
   }
+
+  const templateSchemaResult = await pool.query(`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'racm_templates'
+    ) AS ready
+  `);
+  const hasRacmTemplates = Boolean(templateSchemaResult.rows[0]?.ready);
+  const templateSelectSql = hasRacmTemplates
+    ? `,
+        active_template.template_name AS active_template_name,
+        active_template.version AS active_template_version`
+    : `,
+        NULL::text AS active_template_name,
+        NULL::integer AS active_template_version`;
+  const templateJoinSql = hasRacmTemplates
+    ? `
+      LEFT JOIN LATERAL (
+        SELECT rt.template_name, rt.version
+        FROM racm_templates rt
+        WHERE rt.company_identifier = cum.company_identifier
+          AND rt.unit_id = cum.unit_id
+          AND rt.status = 'active'
+        ORDER BY rt.id DESC
+        LIMIT 1
+      ) active_template ON TRUE`
+    : '';
 
   const result = await pool.query(
     `
       SELECT DISTINCT
         NULLIF(TRIM(cum.unit_id), '') AS unit_id,
         NULLIF(TRIM(cum.unit_name), '') AS unit_name
+        ${templateSelectSql}
       FROM company_unit_master cum
       INNER JOIN coordinator_unit_assignments cua
         ON cua.company_identifier = cum.company_identifier
        AND cua.unit_id = cum.unit_id
+      ${templateJoinSql}
       WHERE cum.company_identifier = $1
         AND LOWER(TRIM(cua.coordinator_email_id)) = $2
         AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
@@ -272,6 +319,36 @@ async function getCoordinatorDashboardScope(req) {
   };
 }
 
+async function getCoordinatorAssignedDashboardScope(req) {
+  const companyIdentifier = String(req.user?.company_identifier || '').trim() || null;
+  const coordinatorEmail = normalizeEmail(req.user?.email_id);
+  const companyUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+  const allowedUnitIds = companyUnits
+    .map((row) => String(row.unit_id || '').trim())
+    .filter(Boolean);
+
+  const selectedUnitId = normalizeDashboardFilterValue(req.query?.unit_id);
+  if (selectedUnitId && !allowedUnitIds.includes(selectedUnitId)) {
+    const error = new Error('Selected unit is not assigned to this coordinator');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return {
+    companyIdentifier,
+    companyUnits,
+    allowedUnitIds,
+    selectedUnitId,
+    filters: {
+      active: parseDashboardActiveFilter(req.query?.active),
+      businessProcess: normalizeDashboardFilterValue(req.query?.business_process),
+      financialYear: normalizeDashboardFilterValue(req.query?.financial_year),
+      status: normalizeDashboardStatusFilter(req.query?.status),
+      conclusion: normalizeDashboardFilterValue(req.query?.conclusion),
+    },
+  };
+}
+
 function buildCoordinatorDashboardWhereClause(scope, alias = 'cf') {
   const params = [];
   const conditions = [];
@@ -285,6 +362,14 @@ function buildCoordinatorDashboardWhereClause(scope, alias = 'cf') {
     conditions.push(`TRIM(COALESCE(${alias}.unit_id, '')) = $${paramIndex}`);
     params.push(scope.selectedUnitId);
     paramIndex += 1;
+  } else if (Array.isArray(scope.allowedUnitIds)) {
+    if (scope.allowedUnitIds.length === 0) {
+      conditions.push('1 = 0');
+    } else {
+      conditions.push(`TRIM(COALESCE(${alias}.unit_id, '')) = ANY($${paramIndex}::text[])`);
+      params.push(scope.allowedUnitIds);
+      paramIndex += 1;
+    }
   }
 
   if (scope.filters.active === true) {
@@ -503,6 +588,40 @@ function shapeControlForRiskAnalysis(row) {
   };
 }
 
+function normalizeRiskAnalysisSubProcessName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getRiskAnalysisCandidateSubProcesses(businessProcess) {
+  const { master } = loadRiskAnalysisMasterByBusinessProcess(businessProcess);
+  return (Array.isArray(master?.sub_processes) ? master.sub_processes : [])
+    .map((entry) => ({
+      subProcess: String(entry?.sub_process || '').trim(),
+      risks: Array.isArray(entry?.risks) ? entry.risks.map((risk) => String(risk || '').trim()).filter(Boolean) : [],
+    }))
+    .filter((entry) => entry.subProcess && entry.risks.length > 0);
+}
+
+function isStoredRiskAnalysisMatchedSubProcessValid(storedAnalysis) {
+  if (!storedAnalysis) return true;
+
+  const businessProcess = String(storedAnalysis.business_process || '').trim();
+  const matchedSubProcess = String(
+    storedAnalysis.matched_sub_process || storedAnalysis.response_json?.matchedSubProcess || ''
+  ).trim();
+  if (!businessProcess || !matchedSubProcess) return false;
+
+  try {
+    const candidateSubProcesses = getRiskAnalysisCandidateSubProcesses(businessProcess);
+    const normalizedMatchedSubProcess = normalizeRiskAnalysisSubProcessName(matchedSubProcess);
+    return candidateSubProcesses.some(
+      (candidate) => normalizeRiskAnalysisSubProcessName(candidate.subProcess) === normalizedMatchedSubProcess
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function getRiskAnalysisControlRow(companyIdentifier, controlNumber, coordinatorEmail) {
   const normalizedCompanyIdentifier = String(companyIdentifier || '').trim();
   const normalizedControlNumber = String(controlNumber || '').trim();
@@ -516,22 +635,27 @@ async function getRiskAnalysisControlRow(companyIdentifier, controlNumber, coord
       SELECT
         cf.form_id,
         cf.company_identifier,
+        cf.unit_id,
+        COALESCE(NULLIF(TRIM(cum.unit_name), ''), cf.unit_id) AS unit_name,
         cf.business_process,
+        cf.financial_year,
         cf.sub_process,
         cf.risk_description,
         cf.control_objective,
         cf.standard_control_description,
         cf.control_number
       FROM control_forms cf
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = cf.company_identifier
+       AND cum.unit_id = cf.unit_id
       WHERE cf.company_identifier = $1
         AND cf.control_number = $2
         AND EXISTS (
           SELECT 1
-          FROM company_unit_responsibilities cur
-          WHERE cur.company_identifier = cf.company_identifier
-            AND cur.unit_id = cf.unit_id
-            AND cur.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-            AND LOWER(TRIM(cur.user_email_id)) = $3
+          FROM coordinator_unit_assignments cua
+          WHERE cua.company_identifier = cf.company_identifier
+            AND cua.unit_id = cf.unit_id
+            AND LOWER(TRIM(cua.coordinator_email_id)) = $3
         )
       LIMIT 1
     `,
@@ -539,6 +663,157 @@ async function getRiskAnalysisControlRow(companyIdentifier, controlNumber, coord
   );
 
   return result.rows[0] || null;
+}
+
+async function listRiskAnalysisControls(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is required',
+      });
+    }
+
+    const assignedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+    const assignedUnitIds = assignedUnits
+      .map((unit) => String(unit.unit_id || '').trim())
+      .filter(Boolean);
+    const selectedUnitIds = getQueryArray(req.query?.unit_ids || req.query?.unit_id);
+    const selectedBusinessProcesses = getQueryArray(req.query?.business_processes || req.query?.business_process);
+    const selectedFinancialYears = getQueryArray(req.query?.financial_years || req.query?.financial_year);
+    const page = parsePositiveInteger(req.query?.page, 1, { min: 1, max: 100000 });
+    const pageSize = parsePositiveInteger(req.query?.page_size, 10, { min: 1, max: 100 });
+
+    const invalidUnitIds = selectedUnitIds.filter((unitId) => !assignedUnitIds.includes(unitId));
+    if (invalidUnitIds.length > 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'One or more selected units are not assigned to this coordinator',
+      });
+    }
+
+    if (assignedUnitIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        count: 0,
+        pagination: {
+          page,
+          page_size: pageSize,
+          total_pages: 0,
+        },
+        filters: {
+          units: [],
+          business_processes: [],
+          financial_years: [],
+        },
+      });
+    }
+
+    const optionResult = await pool.query(
+      `
+        SELECT DISTINCT
+          NULLIF(TRIM(cf.business_process), '') AS business_process,
+          NULLIF(TRIM(cf.financial_year), '') AS financial_year
+        FROM control_forms cf
+        WHERE cf.company_identifier = $1
+          AND TRIM(COALESCE(cf.unit_id, '')) = ANY($2::text[])
+        ORDER BY business_process ASC, financial_year ASC
+      `,
+      [companyIdentifier, assignedUnitIds]
+    );
+
+    const conditions = [
+      'cf.company_identifier = $1',
+      'TRIM(COALESCE(cf.unit_id, \'\')) = ANY($2::text[])',
+    ];
+    const params = [companyIdentifier, assignedUnitIds];
+    let paramIndex = 3;
+
+    if (selectedUnitIds.length > 0) {
+      conditions.push(`TRIM(COALESCE(cf.unit_id, '')) = ANY($${paramIndex}::text[])`);
+      params.push(selectedUnitIds);
+      paramIndex += 1;
+    }
+
+    if (selectedBusinessProcesses.length > 0) {
+      conditions.push(`LOWER(TRIM(COALESCE(cf.business_process, ''))) = ANY($${paramIndex}::text[])`);
+      params.push(selectedBusinessProcesses.map((value) => value.toLowerCase()));
+      paramIndex += 1;
+    }
+
+    if (selectedFinancialYears.length > 0) {
+      conditions.push(`TRIM(COALESCE(cf.financial_year, '')) = ANY($${paramIndex}::text[])`);
+      params.push(selectedFinancialYears);
+      paramIndex += 1;
+    }
+
+    const whereClause = conditions.join('\n          AND ');
+    const countResult = await pool.query(
+      `
+        SELECT COUNT(*)::int AS total_count
+        FROM control_forms cf
+        WHERE ${whereClause}
+      `,
+      params
+    );
+
+    const totalCount = Number(countResult.rows[0]?.total_count || 0);
+    const offset = (page - 1) * pageSize;
+    const rowsResult = await pool.query(
+      `
+        SELECT
+          cf.form_id,
+          cf.company_identifier,
+          cf.unit_id,
+          COALESCE(NULLIF(TRIM(cum.unit_name), ''), cf.unit_id) AS unit_name,
+          cf.business_process,
+          cf.financial_year,
+          cf.sub_process,
+          cf.risk_description,
+          cf.control_objective,
+          cf.standard_control_description,
+          cf.control_number
+        FROM control_forms cf
+        LEFT JOIN company_unit_master cum
+          ON cum.company_identifier = cf.company_identifier
+         AND cum.unit_id = cf.unit_id
+        WHERE ${whereClause}
+        ORDER BY
+          LOWER(TRIM(COALESCE(cf.business_process, ''))) ASC,
+          LOWER(TRIM(COALESCE(cf.sub_process, ''))) ASC,
+          cf.id ASC
+        LIMIT $${paramIndex}
+        OFFSET $${paramIndex + 1}
+      `,
+      [...params, pageSize, offset]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: rowsResult.rows,
+      count: totalCount,
+      pagination: {
+        page,
+        page_size: pageSize,
+        total_pages: totalCount > 0 ? Math.ceil(totalCount / pageSize) : 0,
+      },
+      filters: {
+        units: assignedUnits,
+        business_processes: [...new Set(optionResult.rows.map((row) => row.business_process).filter(Boolean))],
+        financial_years: [...new Set(optionResult.rows.map((row) => row.financial_year).filter(Boolean))],
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator risk analysis controls error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to fetch risk analysis controls',
+    });
+  }
 }
 
 async function getStoredRiskAnalysis(companyIdentifier, formId) {
@@ -644,6 +919,9 @@ async function getRiskAnalysisByControl(req, res) {
     }
 
     const storedAnalysis = await getStoredRiskAnalysis(companyIdentifier, controlRow.form_id);
+    const validStoredAnalysis = isStoredRiskAnalysisMatchedSubProcessValid(storedAnalysis)
+      ? storedAnalysis
+      : null;
 
     return res.status(200).json({
       success: true,
@@ -658,7 +936,7 @@ async function getRiskAnalysisByControl(req, res) {
           standard_control_description: controlRow.standard_control_description,
           control_number: controlRow.control_number,
         },
-        analysis: serializeRiskAnalysisRow(storedAnalysis),
+        analysis: serializeRiskAnalysisRow(validStoredAnalysis),
       },
     });
   } catch (error) {
@@ -679,6 +957,7 @@ async function generateRiskAnalysisByControl(req, res) {
       return res.status(409).json({
         success: false,
         message: 'Model is busy, try after some moments',
+        code: 'AI_MODEL_BUSY',
       });
     }
 
@@ -715,13 +994,7 @@ async function generateRiskAnalysisByControl(req, res) {
       });
     }
 
-    const { master } = loadRiskAnalysisMasterByBusinessProcess(businessProcess);
-    const candidateSubProcesses = (Array.isArray(master?.sub_processes) ? master.sub_processes : [])
-      .map((entry) => ({
-        subProcess: String(entry?.sub_process || '').trim(),
-        risks: Array.isArray(entry?.risks) ? entry.risks.map((risk) => String(risk || '').trim()).filter(Boolean) : [],
-      }))
-      .filter((entry) => entry.subProcess && entry.risks.length > 0);
+    const candidateSubProcesses = getRiskAnalysisCandidateSubProcesses(businessProcess);
 
     if (candidateSubProcesses.length === 0) {
       return res.status(400).json({
@@ -731,7 +1004,6 @@ async function generateRiskAnalysisByControl(req, res) {
     }
 
     const llmResult = await requestRiskAnalysis({
-      companyIdentifier,
       businessProcess,
       control: shapeControlForRiskAnalysis({
         control_number: controlRow.control_number,
@@ -1937,7 +2209,7 @@ async function generateKeyManualAiInsightsRun(req, res) {
       });
     }
 
-    const scope = await getCoordinatorDashboardScope(req);
+    const scope = await getCoordinatorAssignedDashboardScope(req);
     if (!scope.companyIdentifier) {
       return res.status(400).json({
         success: false,
@@ -2058,13 +2330,18 @@ async function generateKeyManualAiInsightsRun(req, res) {
 }
 
 async function getKeyManualAiInsightsAvailability(req, res) {
+  const lockClient = await pool.connect();
   try {
-    const reachable = await isOllamaReachable();
+    const [reachable, llmBusy] = await Promise.all([
+      isOllamaReachable(),
+      isGlobalAiModelBusy(lockClient),
+    ]);
 
     return res.status(200).json({
       success: true,
       data: {
         reachable,
+        llm_busy: llmBusy,
       },
     });
   } catch (error) {
@@ -2073,14 +2350,17 @@ async function getKeyManualAiInsightsAvailability(req, res) {
       success: true,
       data: {
         reachable: false,
+        llm_busy: false,
       },
     });
+  } finally {
+    lockClient.release();
   }
 }
 
 async function getKeyManualAiInsightsRun(req, res) {
   try {
-    const scope = await getCoordinatorDashboardScope(req);
+    const scope = await getCoordinatorAssignedDashboardScope(req);
     if (!scope.companyIdentifier) {
       return res.status(400).json({
         success: false,
@@ -2105,25 +2385,44 @@ async function getKeyManualAiInsightsRun(req, res) {
       }
     }
 
-    const runs = await withPrismaRetry(
-      () => prisma.keyManualAiInsightsRunTable.findMany({
-        where: {
-          companyIdentifier: scope.companyIdentifier,
+    const allowedUnitIds = Array.isArray(scope.allowedUnitIds) ? scope.allowedUnitIds : [];
+    if (allowedUnitIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          runs: [],
+          run: null,
+          rows: [],
+          excluded_entity_level_count: excludedEntityLevelCount,
         },
-        orderBy: [
-          { createdAt: 'desc' },
-          { id: 'desc' },
-        ],
-        include: {
-          _count: {
-            select: {
-              rows: true,
-            },
-          },
-        },
-      }),
-      { label: 'keyManualAiInsightsRun.findMany' }
+      });
+    }
+
+    const runsResult = await pool.query(
+      `
+        SELECT
+          r.id,
+          r.company_identifier,
+          r.model_name,
+          r.status,
+          r.created_at,
+          COUNT(cf.form_id)::int AS row_count
+        FROM key_manual_ai_insights_run_table r
+        LEFT JOIN key_manual_ai_insights_row_data rad
+          ON rad.run_id = r.id
+         AND rad.company_identifier = r.company_identifier
+        LEFT JOIN control_forms cf
+          ON cf.company_identifier = rad.company_identifier
+         AND cf.form_id = rad.form_id
+         AND TRIM(COALESCE(cf.unit_id, '')) = ANY($2::text[])
+        WHERE r.company_identifier = $1
+        GROUP BY r.id, r.company_identifier, r.model_name, r.status, r.created_at
+        ORDER BY r.created_at DESC NULLS LAST, r.id DESC
+      `,
+      [scope.companyIdentifier, allowedUnitIds]
     );
+
+    const runs = runsResult.rows;
 
     if (runs.length === 0) {
       return res.status(200).json({
@@ -2137,24 +2436,23 @@ async function getKeyManualAiInsightsRun(req, res) {
       });
     }
 
-    const selectedRunId = parsedRunId ?? runs[0].id;
-    const run = await withPrismaRetry(
-      () => prisma.keyManualAiInsightsRunTable.findFirst({
-        where: {
-          id: selectedRunId,
-          companyIdentifier: scope.companyIdentifier,
-        },
-        include: {
-          rows: {
-            orderBy: [
-              { businessProcess: 'asc' },
-              { controlNumber: 'asc' },
-            ],
-          },
-        },
-      }),
-      { label: 'keyManualAiInsightsRun.findFirst' }
+    const selectedRunId = String(parsedRunId ?? runs[0].id);
+    const runResult = await pool.query(
+      `
+        SELECT
+          id,
+          company_identifier,
+          model_name,
+          status,
+          created_at
+        FROM key_manual_ai_insights_run_table
+        WHERE company_identifier = $1
+          AND id = $2
+        LIMIT 1
+      `,
+      [scope.companyIdentifier, selectedRunId]
     );
+    const run = runResult.rows[0] || null;
 
     if (!run) {
       return res.status(404).json({
@@ -2163,36 +2461,63 @@ async function getKeyManualAiInsightsRun(req, res) {
       });
     }
 
+    const rowsResult = await pool.query(
+      `
+        SELECT
+          rad.id,
+          rad.run_id,
+          rad.company_identifier,
+          rad.form_id,
+          rad.control_number,
+          rad.business_process,
+          rad.rationalisation_opportunity,
+          rad.created_at,
+          rad.updated_at
+        FROM key_manual_ai_insights_row_data rad
+        INNER JOIN control_forms cf
+          ON cf.company_identifier = rad.company_identifier
+         AND cf.form_id = rad.form_id
+        WHERE rad.company_identifier = $1
+          AND rad.run_id = $2
+          AND TRIM(COALESCE(cf.unit_id, '')) = ANY($3::text[])
+        ORDER BY
+          LOWER(TRIM(COALESCE(rad.business_process, ''))) ASC,
+          LOWER(TRIM(COALESCE(rad.control_number, ''))) ASC
+      `,
+      [scope.companyIdentifier, selectedRunId, allowedUnitIds]
+    );
+    const scopedRows = rowsResult.rows;
+
     return res.status(200).json({
       success: true,
       data: {
         runs: runs.map((item) => ({
           id: String(item.id),
-          company_identifier: item.companyIdentifier,
-          model_name: item.modelName,
+          company_identifier: item.company_identifier,
+          model_name: item.model_name,
           status: item.status,
-          created_at: item.createdAt,
-          row_count: item._count.rows,
+          created_at: item.created_at,
+          row_count: Number(item.row_count || 0),
         })),
         run: {
           id: String(run.id),
-          company_identifier: run.companyIdentifier,
-          model_name: run.modelName,
+          company_identifier: run.company_identifier,
+          model_name: run.model_name,
           status: run.status,
-          created_at: run.createdAt,
-          row_count: run.rows.length,
+          created_at: run.created_at,
+          row_count: scopedRows.length,
         },
         excluded_entity_level_count: excludedEntityLevelCount,
-        rows: run.rows.map((row) => ({
+        rows: scopedRows.map((row) => ({
           id: String(row.id),
-          run_id: String(row.runId),
-          company_identifier: row.companyIdentifier,
-          form_id: row.formId,
-          control_number: row.controlNumber,
-          business_process: row.businessProcess,
-          rationalisation_opportunity: row.rationalisationOpportunity,
-          created_at: row.createdAt,
-          updated_at: row.updatedAt,
+          run_id: String(row.run_id),
+          company_identifier: row.company_identifier,
+          form_id: row.form_id,
+          control_number: row.control_number,
+          business_process: row.business_process,
+          rationalisation_opportunity: row.rationalisation_opportunity,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
         })),
       },
     });
@@ -2242,6 +2567,7 @@ async function deleteKeyManualAiInsightsRun(req, res) {
       },
       select: {
         id: true,
+        status: true,
       },
     });
 
@@ -2249,6 +2575,14 @@ async function deleteKeyManualAiInsightsRun(req, res) {
       return res.status(404).json({
         success: false,
         message: 'AI insights run not found for this company',
+      });
+    }
+
+    if (String(existingRun.status || '').trim().toLowerCase() === 'in_progress') {
+      return res.status(409).json({
+        success: false,
+        message: 'In-progress AI insights runs cannot be deleted. Try again after generation completes.',
+        code: 'AI_RUN_IN_PROGRESS',
       });
     }
 
@@ -4856,6 +5190,7 @@ module.exports = {
   getDashboardControlTypeStats,
   getDashboardRacms,
   getRiskAnalysisAvailability,
+  listRiskAnalysisControls,
   getRiskAnalysisByControl,
   generateRiskAnalysisByControl,
   getKeyManualAiInsightsAvailability,

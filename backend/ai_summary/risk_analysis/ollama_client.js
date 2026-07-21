@@ -20,28 +20,102 @@ const OLLAMA_MODEL_OPTIONS = {
   top_p: 0.9,
 };
 
-function buildRiskAnalysisPrompt({ companyIdentifier, businessProcess, control, candidateSubProcesses }) {
+function normalizeSubProcessName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function resolveMatchedCandidateSubProcess(matchedSubProcess, candidateSubProcesses) {
+  const normalizedMatchedSubProcess = normalizeSubProcessName(matchedSubProcess);
+  const matchedCandidate = (Array.isArray(candidateSubProcesses) ? candidateSubProcesses : []).find(
+    (candidate) => normalizeSubProcessName(candidate?.subProcess) === normalizedMatchedSubProcess
+  );
+
+  if (!matchedCandidate) {
+    const error = createOllamaError(
+      'Ollama returned a matched sub-process that is not present in the risk analysis master file.',
+      'OLLAMA_INVALID_CANDIDATE_SUB_PROCESS'
+    );
+    error.statusCode = 502;
+    throw error;
+  }
+
+  return String(matchedCandidate.subProcess || '').trim();
+}
+
+function buildRiskAnalysisPrompt({ businessProcess, control, candidateSubProcesses }) {
+  const candidateSubProcessNames = (Array.isArray(candidateSubProcesses) ? candidateSubProcesses : [])
+    .map((candidate) => String(candidate?.subProcess || '').trim())
+    .filter(Boolean);
+
   return [
-    `You are reviewing one RACM for company_identifier=${companyIdentifier}.`,
-    `The business process cycle is "${businessProcess}".`,
-    'Your job has two steps:',
-    '1. Select the most appropriate candidate sub-process from the provided list by comparing it with the control sub-process.',
-    '2. Compare the control risk coverage against the risks listed for the selected candidate sub-process.',
-    'Use only the control data and candidate list provided below.',
-    'Do not invent risks, sub-processes, or control details that are not present in the input.',
-    'Return strictly valid JSON matching the schema below.',
-    'If the control does not test a listed risk, include that risk in missingRisks and add one concise pointer in missingRiskPointers.',
-    'Use short, factual pointers that explain what aspect is not being tested by the RACM.',
-    'Rephrase every pointer into simple business language. Do not copy exact sentences, exact phrases, or long wording from the input control or candidate risks.',
-    'Each pointer must describe a distinct gap. Do not repeat the same point with small wording changes.',
-    'STRICT WARNING: missingRiskPointers must not contain duplicate or near-duplicate pointers. If two risks lead to the same gap, combine them into one clear pointer instead of repeating it.',
-    'Keep each pointer specific, plain, and easy to read.',
-    'Do not return the input control number, control sub-process, covered risks, or general notes.',
-    '',
-    `Schema: ${JSON.stringify(riskAnalysisResponseSchema)}`,
-    '',
-    `Input control: ${JSON.stringify(control)}`,
-    `Candidate sub-processes: ${JSON.stringify(candidateSubProcesses)}`,
+    [
+      'You are reviewing one RACM control for risk coverage analysis.',
+      `The business process cycle is "${businessProcess}".`,
+      
+      '',
+      'Your task has two steps:',
+      '1. Match the input control to the most appropriate candidate sub-process.',
+      '2. For the matched candidate sub-process, compare the control risk coverage with the listed candidate risks and identify which listed risks are not addressed by the control.',
+      
+      '',
+      'Use only the information provided in the input control and candidate sub-process list.',
+      'Do not use external knowledge, assumptions, industry examples, or inferred control details.',
+      'Do not invent risks, sub-processes, control activities, or evidence requirements.',
+      
+      '',
+      'Sub-process matching rules:',
+      'matchedSubProcess must be copied exactly from one of the Candidate sub-process names.',
+      'Select the candidate sub-process that is closest in meaning to the control sub-process and control description.',
+      'Do not return the input control sub-process as matchedSubProcess unless it exactly exists in Candidate sub-process names.',
+      'If multiple candidate sub-processes appear similar, select the one whose listed risks are most closely connected to the input control.',
+      'Do not create, rename, shorten, expand, or paraphrase the candidate sub-process name.',
+      
+      '',
+      'Risk coverage comparison rules:',
+      'After selecting matchedSubProcess, review only the risks listed under that matched candidate sub-process.',
+      'Compare each listed candidate risk against the input control objective, control description, risk, and other available control fields.',
+      'Treat a candidate risk as covered only when the input control clearly addresses that risk.',
+      'If the control does not clearly test or mitigate a listed candidate risk, include that risk in missingRisks.',
+      'Do not mark a risk as covered merely because the wording is generally related to the same process.',
+      'If coverage is unclear or only indirectly implied, treat the risk as missing.',
+      
+      '',
+      'missingRisks rules:',
+      'missingRisks must contain only risks from the selected candidate sub-process.',
+      'Copy missingRisks exactly as written in the candidate sub-process risk list.',
+      'Do not add new risks to missingRisks.',
+      'Do not include risks from other candidate sub-processes.',
+      
+      '',
+      'missingRiskPointers rules:',
+      'For every meaningful missing risk area, add one concise pointer explaining what aspect is not addressed by the RACM.',
+      'Use short, factual pointers in simple business language.',
+      'Each pointer should explain the practical coverage gap, not repeat the risk sentence.',
+      'Rephrase every pointer. Do not copy exact sentences, exact phrases, or long wording from the input control or candidate risks.',
+      'Each pointer must describe a distinct gap.',
+      'Do not repeat the same point with small wording changes.',
+      'If two or more missing risks lead to the same practical gap, combine them into one clear pointer.',
+      'STRICT WARNING: missingRiskPointers must not contain duplicate or near-duplicate pointers.',
+      'Keep each pointer specific, plain, and easy to read.',
+      'Do not include generic statements such as "control is inadequate" unless the specific missing aspect is also stated.',
+      
+      '',
+      'Output restrictions:',
+      'Return strictly valid JSON matching the schema below.',
+      'Do not include markdown, comments, explanation, or extra text outside JSON.',
+      'Do not return the input control number, control sub-process, covered risks, or general notes.',
+      'Do not include fields that are not present in the schema.',
+      'Ensure all JSON arrays are valid arrays, even when empty.',
+      
+      '',
+      `Schema: ${JSON.stringify(riskAnalysisResponseSchema)}`,
+      `Candidate sub-process names: ${JSON.stringify(candidateSubProcessNames)}`,
+      
+      '',
+      `Input control: ${JSON.stringify(control)}`,
+      `Candidate sub-processes: ${JSON.stringify(candidateSubProcesses)}`
+      ]
+      
   ].join('\n');
 }
 
@@ -125,7 +199,7 @@ function postJson(url, payload) {
   });
 }
 
-async function requestRiskAnalysis({ companyIdentifier, businessProcess, control, candidateSubProcesses }) {
+async function requestRiskAnalysis({ businessProcess, control, candidateSubProcesses }) {
   if (!OLLAMA_MODEL) {
     throw new Error('OLLAMA_MODEL is not configured.');
   }
@@ -145,7 +219,7 @@ async function requestRiskAnalysis({ companyIdentifier, businessProcess, control
       },
       {
         role: 'user',
-        content: buildRiskAnalysisPrompt({ companyIdentifier, businessProcess, control, candidateSubProcesses }),
+        content: buildRiskAnalysisPrompt({ businessProcess, control, candidateSubProcesses }),
       },
     ],
   };
@@ -174,8 +248,15 @@ async function requestRiskAnalysis({ companyIdentifier, businessProcess, control
   }
 
   try {
-    return parseRiskAnalysisResponse(content);
+    const parsed = parseRiskAnalysisResponse(content);
+    return {
+      ...parsed,
+      matchedSubProcess: resolveMatchedCandidateSubProcess(parsed.matchedSubProcess, candidateSubProcesses),
+    };
   } catch (error) {
+    if (error?.code === 'OLLAMA_INVALID_CANDIDATE_SUB_PROCESS') {
+      throw error;
+    }
     throw createOllamaError(error.message, 'OLLAMA_INVALID_STRUCTURED_RESPONSE');
   }
 }

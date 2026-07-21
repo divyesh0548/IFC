@@ -288,7 +288,7 @@ async function createFreshRacmTemplate(req, res) {
     await client.query('COMMIT');
     return res.status(201).json({
       success: true,
-      message: 'Template created with fixed columns only. Make it active to add custom columns.',
+      message: 'Template created and set as active. You can start editing it now.',
       data: {
         template: result.template,
         fields: result.fields,

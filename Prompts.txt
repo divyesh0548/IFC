@@ -1,2 +1,0 @@
-For RACMs in which No-submission has been declared, do not show editable remarks input filed and also do not provide option to upload documents. Also remove the Resubmit button. Keep all things in read only mode.
-This fix is required in user's form details page. Check coordinator too, if not implemented then do it.

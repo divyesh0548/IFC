@@ -18,7 +18,7 @@ function emptyIfcReportPayload(units = []) {
     },
     approval_statuses: {
       pending: 0,
-      sent_for_approval: 0,
+      approved: 0,
       rejected: 0,
     },
     units: units.map((unit) => ({
@@ -27,6 +27,7 @@ function emptyIfcReportPayload(units = []) {
       total_users: 0,
       total_racms: 0,
     })),
+    user_unit_distribution: [],
     response_timing: {
       average_ms: null,
       average_label: 'N/A',
@@ -105,7 +106,13 @@ async function buildIfcReport({ companyIdentifier, units }) {
     return emptyIfcReportPayload(unitRows);
   }
 
-  const [conclusionStatusResult, usersByUnitResult, racmsByUnitResult, auditEventsResult] = await Promise.all([
+  const [
+    conclusionStatusResult,
+    userUnitDistributionResult,
+    usersByUnitResult,
+    racmsByUnitResult,
+    auditEventsResult,
+  ] = await Promise.all([
     pool.query(
       `
         SELECT
@@ -122,11 +129,12 @@ async function buildIfcReport({ companyIdentifier, units }) {
             WHERE
               COALESCE(NULLIF(TRIM(cf.status), ''), '') = ''
               OR LOWER(TRIM(COALESCE(cf.status, ''))) = 'pending'
+              OR LOWER(TRIM(COALESCE(cf.status, ''))) = 'sent for approval'
               OR LOWER(TRIM(COALESCE(cf.status, ''))) = 'null'
           )::int AS pending_count,
           COUNT(*) FILTER (
-            WHERE LOWER(TRIM(COALESCE(cf.status, ''))) = 'sent for approval'
-          )::int AS sent_for_approval_count,
+            WHERE LOWER(TRIM(COALESCE(cf.status, ''))) = 'approved'
+          )::int AS approved_count,
           COUNT(*) FILTER (
             WHERE LOWER(TRIM(COALESCE(cf.status, ''))) = 'rejected'
           )::int AS rejected_count
@@ -139,14 +147,34 @@ async function buildIfcReport({ companyIdentifier, units }) {
     pool.query(
       `
         SELECT
+          membership_scope.unit_count,
+          COUNT(*)::int AS total_users
+        FROM (
+          SELECT
+            LOWER(TRIM(u.email_id)) AS normalized_email,
+            COUNT(DISTINCT NULLIF(TRIM(uum.unit_id), ''))::int AS unit_count
+          FROM ifc_users u
+          INNER JOIN user_unit_memberships uum
+            ON uum.company_identifier = u.company_identifier
+           AND LOWER(TRIM(uum.user_email_id)) = LOWER(TRIM(u.email_id))
+          WHERE u.company_identifier = $1
+            AND u.role = 'user'
+            AND NULLIF(TRIM(uum.unit_id), '') = ANY($2::text[])
+          GROUP BY LOWER(TRIM(u.email_id))
+        ) membership_scope
+        WHERE membership_scope.unit_count > 1
+        GROUP BY membership_scope.unit_count
+        ORDER BY membership_scope.unit_count ASC
+      `,
+      [normalizedCompany, unitIds]
+    ),
+    pool.query(
+      `
+        SELECT
           NULLIF(TRIM(uum.unit_id), '') AS unit_id,
-          COUNT(DISTINCT u.id)::int AS total_users
-        FROM ifc_users u
-        INNER JOIN user_unit_memberships uum
-          ON uum.company_identifier = u.company_identifier
-         AND LOWER(TRIM(uum.user_email_id)) = LOWER(TRIM(u.email_id))
-        WHERE u.company_identifier = $1
-          AND u.role = 'user'
+          COUNT(DISTINCT LOWER(TRIM(uum.user_email_id)))::int AS total_users
+        FROM user_unit_memberships uum
+        WHERE uum.company_identifier = $1
           AND NULLIF(TRIM(uum.unit_id), '') = ANY($2::text[])
         GROUP BY NULLIF(TRIM(uum.unit_id), '')
       `,
@@ -204,6 +232,10 @@ async function buildIfcReport({ companyIdentifier, units }) {
       total_racms: racmsByUnit.get(unitId) || 0,
     };
   });
+  const userUnitDistribution = userUnitDistributionResult.rows.map((row) => ({
+    unit_count: Number(row.unit_count || 0),
+    total_users: Number(row.total_users || 0),
+  }));
 
   const eventsByFormId = new Map();
   for (const row of auditEventsResult.rows) {
@@ -227,10 +259,11 @@ async function buildIfcReport({ companyIdentifier, units }) {
     },
     approval_statuses: {
       pending: Number(totals.pending_count || 0),
-      sent_for_approval: Number(totals.sent_for_approval_count || 0),
+      approved: Number(totals.approved_count || 0),
       rejected: Number(totals.rejected_count || 0),
     },
     units: unitsPayload,
+    user_unit_distribution: userUnitDistribution,
     response_timing: {
       average_ms: averageMs,
       average_label: formatDurationLabel(averageMs),

@@ -3,379 +3,171 @@
   "business_process_code": "CAPEX",
   "sub_processes": [
     {
-      "sub_process": "Standard Operating Procedures and DOA",
+      "sub_process": "Capex Governance and DOA",
       "risks": [
-        "Non - Standard Procedures followed."
+        "Absence of documented SOPs and delegation of authority may result in inconsistent capex practices, unclear accountability and approvals being performed outside approved authority limits.",
+        "Non-standard procedures may be followed across departments or locations, resulting in weak control discipline and inconsistent treatment of capital expenditure transactions."
       ]
     },
     {
-      "sub_process": "Estimation of requirements & Approval of budget",
+      "sub_process": "Capex Planning",
       "risks": [
-        "Non estimation of correct requirements of assets to be purchased during the year may result incorrect budget provisions / unauthorized purchases been made."
-      ]
-    },
-    {
-      "sub_process": "Unauthorized purchase of Fixed Asset",
-      "risks": [
-        "Unauthorized purchase of Fixed Asset",
-        "Unauthorised expenditure against defined budget"
-      ]
-    },
-    {
-      "sub_process": "Authorisation",
-      "risks": [
-        "Unauthorized access to Fixed Asset module"
-      ]
-    },
-    {
-      "sub_process": "GL Account Assignment",
-      "risks": [
-        "Incorrect assignment of GL and capitalisation of assets"
-      ]
-    },
-    {
-      "sub_process": "Balance in Asset master",
-      "risks": [
-        "Incorrect balance in fixed asset register"
-      ]
-    },
-    {
-      "sub_process": "Incorrect Capitalisation of Fixed Assets",
-      "risks": [
-        "The capitalization of fixed assets may be without actual receipt / acceptance of the same",
-        "All the assets which have been put to use may not be capitalized in the books of accounts"
-      ]
-    },
-    {
-      "sub_process": "Allocation of Asset numbers",
-      "risks": [
-        "Asset numbers may not be allotted to all the assets",
-        "Asset numbers & Bar-Code may not be mentioned for all the Physical Assets."
-      ]
-    },
-    {
-      "sub_process": "Treatment of incidental / non-capital expenses",
-      "risks": [
-        "Incidental expenses may not be capitalized",
-        "Expenditures of a non-capital nature (e.g., repairs and maintenance) have been incorrectly capitalised."
-      ]
-    },
-    {
-      "sub_process": "Treatment of insurance spares",
-      "risks": [
-        "Risk that Insurance spares are not identified and capitalised"
-      ]
-    },
-    {
-      "sub_process": "Calculate and record depreciation",
-      "risks": [
-        "Depreciation charges are inaccurately calculated and recorded.",
-        "Depreciation rates are inaccurately recorded"
-      ]
-    },
-    {
-      "sub_process": "Review of Useful life of asset",
-      "risks": [
-        "No Periodical review of useful life of assets"
-      ]
-    },
-    {
-      "sub_process": "Transfer of Asset",
-      "risks": [
-        "Inter Unit movement may not be tracked"
-      ]
-    },
-    {
-      "sub_process": "Physical verification of asset",
-      "risks": [
-        "Lack of assurance over physical location of assets as reported in books of accounts.",
-        "Losses due to inadequate control over physical location of the assets"
-      ]
-    },
-    {
-      "sub_process": "Disposal of asset",
-      "risks": [
-        "Inappropriate accounting treatment to the FA disposed",
-        "Accumulated depreciation may not be reversed on disposal of assets",
-        "Assets are disposed at inappropriate rates",
-        "Risks for incorrect invoicing at the time of sale",
-        "Unapproved / incorrect disposal of assets"
-      ]
-    },
-    {
-      "sub_process": "Requisition made for Capital Assets",
-      "risks": [
-        "Unauthorized capital purchase requisition"
-      ]
-    },
-    {
-      "sub_process": "Creation and amendment of capital PO",
-      "risks": [
-        "Fake / unauthorised purchase Order (PO) creation",
-        "Incorrect capital purchase order w.r.t.. rate, quantity and taxes etc."
-      ]
-    },
-    {
-      "sub_process": "GRN (Goods Receipt Note) preparation",
-      "risks": [
-        "Incorrect or Incomplete preparation of GRN (Goods Receipt Note)",
-        "GRN (Goods Receipt Note) prepared for faulty / defective material"
-      ]
-    },
-    {
-      "sub_process": "Invoice booking",
-      "risks": [
-        "Invoice processed without authorisation / confirmation"
-      ]
-    },
-    {
-      "sub_process": "Payment processing",
-      "risks": [
-        "Unauthorized payment to vendors"
-      ]
-    },
-    {
-      "sub_process": "Capitalization of assets",
-      "risks": [
-        "Unauthorised / incorrect capitalisation of assets",
-        "All the assets which have been put to use may not be capitalized in the books of accounts",
-        "Expenditures of a non-capital nature incorrectly capitalised",
-        "Unauthorised / incorrect creation and modification of FAR",
-        "Asset numbers may not be mentioned for all the assets in the Fixed Asset Register."
-      ]
-    },
-    {
-      "sub_process": "Depreciation",
-      "risks": [
-        "Assets overvalued / undervalued due to incorrect depreciation / amortisation",
-        "Inaccurate depreciation calculation and accounting"
-      ]
-    },
-    {
-      "sub_process": "Fixed Assets Physical Verification",
-      "risks": [
-        "Fictitious assets - Physical assets not matching with assets recorded in books"
-      ]
-    },
-    {
-      "sub_process": "Fixed Assets Useful Life",
-      "risks": [
-        "Incorrect / Inadequate useful life defined for Fixed Assets"
-      ]
-    },
-    {
-      "sub_process": "Capex Budget approval",
-      "risks": [
-        "Unauthorised capital expenditure."
-      ]
-    },
-    {
-      "sub_process": "Capex projects creations",
-      "risks": [
-        "Unauthorised Fixed asset purchase."
-      ]
-    },
-    {
-      "sub_process": "Budget allocation",
-      "risks": [
-        "Incorrect allocation of funds for CAPEX.",
-        "Unauthorised expenditure against defined budget"
-      ]
-    },
-    {
-      "sub_process": "Purchase Requisition",
-      "risks": [
-        "Unauthorised expenditure against defined budget."
-      ]
-    },
-    {
-      "sub_process": "Purchase Order",
-      "risks": [
-        "Unauthorised creation of PO"
-      ]
-    },
-    {
-      "sub_process": "Good Receipt Note",
-      "risks": [
-        "Delay in creation of the GRN.",
-        "Recording of fictitious GRN (Assets records updated without physically receiving material) or recording of GRN by unauthorized individuals.",
-        "Recording of fictitious GRN (Inventory records updated without physically receiving material) or recording of GRN by unauthorized individuals.",
-        "Fixed Assets received may not be accurately captured in the system.",
-        "Fixed assets may be recorded without actual receipt",
-        "GRN (Goods Receipt Note) prepared for faulty / defective material."
-      ]
-    },
-    {
-      "sub_process": "Asset master",
-      "risks": [
-        "Incorrect asset master"
-      ]
-    },
-    {
-      "sub_process": "Cost to CWIP (Asset under construction)",
-      "risks": [
-        "Incorrect Settlement of the cost to capitalisation."
-      ]
-    },
-    {
-      "sub_process": "Classification of assets",
-      "risks": [
-        "Incorrect classification and use of depreciation key."
-      ]
-    },
-    {
-      "sub_process": "Useful life review",
-      "risks": [
-        "Non-compliance with companies act in regards to depreciation recorded."
-      ]
-    },
-    {
-      "sub_process": "Posting of depreciation in books",
-      "risks": [
-        "Incorrect Depreciation calculation."
-      ]
-    },
-    {
-      "sub_process": "Depreciation of intangibles",
-      "risks": [
-        "Incorrect amortisation of intangible assets."
-      ]
-    },
-    {
-      "sub_process": "Fixed Asset Register Maintenance",
-      "risks": [
-        "Depreciation rates may not be correctly updated / created in the fixed asset register.",
-        "Fixed Asset register may not be correctly updated."
-      ]
-    },
-    {
-      "sub_process": "Physical verification of Fixed Assets",
-      "risks": [
-        "Fictitious assets - Physical assets not matching with assets recorded in books."
-      ]
-    },
-    {
-      "sub_process": "Tagging of an asset",
-      "risks": [
-        "Fictitious assets - Physical assets not matching with assets recorded in books."
-      ]
-    },
-    {
-      "sub_process": "Identification of assets for disposal / retirement",
-      "risks": [
-        "Unapproved / incorrect disposal of assets."
-      ]
-    },
-    {
-      "sub_process": "Impairment of the Assets",
-      "risks": [
-        "Impairment indicators may exist for fixed assets, but are not known to management. On-compliance with the Accounting standard 28."
-      ]
-    },
-    {
-      "sub_process": "Calculation of Payback & IRR at the time of planning",
-      "risks": [
-        "Inaccurate payback period is calculated for capex investment",
-        "Inaccurate Assumptions are used for in payback calculation",
-        "Inaccurate IRR is calculated for capex Investment"
-      ]
-    },
-    {
-      "sub_process": "Planning of Capex",
-      "risks": [
-        "Inadequate capex Planning",
-        "Unauthorized changes in Capex Plan"
-      ]
-    },
-    {
-      "sub_process": "Project Timelines",
-      "risks": [
-        "Delays and Project Extensions",
-        "Unauthorized delay and project extension"
+        "Inadequate assessment of asset requirements may result in incorrect capex planning, unnecessary asset procurement or failure to provide for essential business needs.",
+        "Unauthorized changes to the approved capex plan may result in projects being initiated or modified without proper business justification and management approval.",
+        "Inaccurate assumptions used for payback or IRR evaluation may lead to approval of commercially unviable capital projects."
       ]
     },
     {
       "sub_process": "Budgeting and Approval",
       "risks": [
-        "Incorrect budget provisions",
-        "Incorrect budget updated in the SAP",
-        "Actual expense of Capex exceeds the budget"
+        "Incorrect budget provisions may result in inadequate or excessive allocation of funds for capital expenditure projects.",
+        "Capital expenditure may be incurred without approved budget or beyond sanctioned limits, resulting in unauthorized financial commitments.",
+        "Approved capex budgets may not be accurately updated in the system, leading to incorrect budget tracking and weak monitoring of actual expenditure."
       ]
     },
     {
-      "sub_process": "Procurement Process",
+      "sub_process": "Capex Project Creation",
       "risks": [
-        "Procurement delays or mismatch with technical requirements.",
-        "Procurement delays or suboptimal sourcing.",
-        "Approval of unsuitable proposals or tracking issues.",
-        "Unverified or technically unsuitable vendor selection may lead to quality issues, cost overruns, or project delays.",
-        "Selection of suboptimal vendor, affecting quality, cost, or service."
+        "Capex projects may be created in the system without valid approval, resulting in unauthorized purchase or creation of fixed assets.",
+        "Incorrect project master data may lead to inaccurate cost accumulation, budget monitoring and capitalization of project expenditure."
       ]
     },
     {
-      "sub_process": "Asset Capitalization & CWIP Monitoring",
+      "sub_process": "Capital Requisition",
       "risks": [
-        "Unauthorised and inaccurate receipt of fixed assets",
-        "Delay or errors in asset coding and MIGO processing may lead to inaccurate asset records",
-        "Inaccurate recording and classification of fixed assets",
-        "Inaccurate capitalization and impact financial reporting.",
-        "CWIP is not monitored for timely capitalization",
-        "Inaccurate capitalization of fixed assets",
-        "Inaccurate fixed asset accounting"
+        "Capital purchase requisitions may be raised without proper approval or business justification, resulting in unauthorized procurement initiation.",
+        "Requisitions may not be aligned with approved budget, technical requirement or project scope, leading to unsuitable or unnecessary asset procurement."
       ]
     },
     {
-      "sub_process": "Fixed Asset Register Management",
+      "sub_process": "Capital Procurement",
       "risks": [
-        "Inaccurate addition to the fixed asset master",
-        "Incorrect useful life / Rate of depreaction is mentioned in FAR",
-        "Fixed assets are not tagged"
+        "Capital purchase orders may be created or amended without proper authorization, resulting in unauthorized commitments to vendors.",
+        "Incorrect rates, quantities, tax details or technical specifications in capital purchase orders may result in excess cost, wrong procurement or financial reporting errors.",
+        "Selection of technically unsuitable or suboptimal vendors may result in quality issues, project delays, cost overruns or poor service outcomes."
       ]
     },
     {
-      "sub_process": "Payback Monitoring",
+      "sub_process": "Goods Receipt and Acceptance",
       "risks": [
-        "No monetoring of Payback",
-        "No monetoring of significant deviations of Capex Outcomes"
+        "Goods receipt notes may be prepared without actual receipt or acceptance of the asset, resulting in fictitious or premature recording of fixed assets.",
+        "Incomplete or inaccurate GRN preparation may result in incorrect asset records, vendor liabilities and capitalization entries.",
+        "Assets received in defective or faulty condition may be accepted without adequate inspection, resulting in operational issues and avoidable costs.",
+        "Delay in GRN creation may affect timely recording of assets, project cost tracking and vendor invoice processing."
+      ]
+    },
+    {
+      "sub_process": "Invoice Booking",
+      "risks": [
+        "Capital invoices may be booked without confirmation of receipt, approval or supporting documentation, resulting in unauthorized or inaccurate liability recognition.",
+        "Incorrect invoice booking may result in wrong asset cost, tax treatment, vendor balance or financial statement classification."
+      ]
+    },
+    {
+      "sub_process": "Payment Processing",
+      "risks": [
+        "Payments may be processed to vendors without proper authorization, invoice validation or confirmation of asset receipt.",
+        "Payments made without adequate three-way matching may result in duplicate payments, excess payments or payments for assets not received."
+      ]
+    },
+    {
+      "sub_process": "Asset Capitalization",
+      "risks": [
+        "Fixed assets may be capitalized without actual receipt, acceptance or readiness for use, resulting in premature or inaccurate capitalization.",
+        "Assets that have been put to use may not be capitalized on a timely basis, resulting in understatement of fixed assets and incorrect depreciation charge.",
+        "Revenue expenditure such as repairs and maintenance may be incorrectly capitalized, resulting in overstatement of assets and understatement of expenses.",
+        "Incidental costs directly attributable to asset acquisition or construction may not be capitalized appropriately, resulting in inaccurate asset cost."
+      ]
+    },
+    {
+      "sub_process": "CWIP Monitoring",
+      "risks": [
+        "Project costs may not be correctly accumulated or settled from CWIP to fixed assets, resulting in inaccurate capitalization and project accounting.",
+        "CWIP balances may not be periodically reviewed for completion status, resulting in delayed capitalization and incorrect depreciation recognition.",
+        "Borrowing costs may be incorrectly included or excluded from project cost, resulting in non-compliance with applicable accounting standards."
+      ]
+    },
+    {
+      "sub_process": "Asset Master and FAR",
+      "risks": [
+        "Fixed asset master records may be created or modified inaccurately or without authorization, resulting in unreliable fixed asset register data.",
+        "Asset numbers may not be allotted or recorded for all assets, reducing traceability between physical assets and accounting records.",
+        "Incorrect GL account, asset class, depreciation key or useful life may be assigned, resulting in incorrect classification and accounting of fixed assets.",
+        "Fixed asset register may not be updated completely and accurately for additions, transfers, disposals or changes in asset details."
+      ]
+    },
+    {
+      "sub_process": "Asset Tagging",
+      "risks": [
+        "Physical assets may not be tagged with asset numbers or barcodes, resulting in weak traceability and difficulty in physical verification.",
+        "Mismatch between tagged physical assets and fixed asset register may result in fictitious, duplicate or unrecorded assets remaining unidentified."
+      ]
+    },
+    {
+      "sub_process": "Depreciation and Amortisation",
+      "risks": [
+        "Depreciation may be calculated or recorded inaccurately due to incorrect rates, useful life, asset class or capitalization date.",
+        "Incorrect amortisation of intangible assets may result in misstated asset values and non-compliance with accounting requirements.",
+        "Depreciation rates or keys may not be updated correctly in the fixed asset register, resulting in recurring financial reporting errors."
+      ]
+    },
+    {
+      "sub_process": "Useful Life Review",
+      "risks": [
+        "Useful lives of assets may not be reviewed periodically, resulting in depreciation that does not reflect actual usage, condition or economic benefit of assets.",
+        "Incorrect or inadequate useful life assignment may result in non-compliance with Companies Act requirements and misstatement of depreciation expense."
       ]
     },
     {
       "sub_process": "Physical Verification",
       "risks": [
-        "Fixed assets not physically verified by 3rd Party (External Party)"
+        "Physical assets may not be verified periodically, resulting in lack of assurance over existence, condition and location of assets recorded in the books.",
+        "Differences between physical assets and fixed asset register may remain unidentified, resulting in fictitious, missing or misplaced assets.",
+        "Inadequate control over physical location of assets may result in loss, unauthorized movement or misuse of company assets."
       ]
     },
     {
-      "sub_process": "Asset Disposals & Transfers",
+      "sub_process": "Asset Transfers",
       "risks": [
-        "Unauthorized disposal of fixed assets",
-        "Assets are disposed at inappropriate rates",
-        "Unauthorized transfer of fixed assets",
-        "Unauthorized removal of assets out of company's premises"
+        "Inter-unit or inter-location movement of fixed assets may not be approved, recorded or tracked accurately, resulting in incorrect asset location records.",
+        "Unauthorized transfer or removal of assets from company premises may result in loss of assets and weak accountability."
+      ]
+    },
+    {
+      "sub_process": "Asset Disposal and Retirement",
+      "risks": [
+        "Fixed assets may be disposed of or retired without proper approval, resulting in unauthorized removal or sale of company assets.",
+        "Assets may be disposed at inappropriate rates or without adequate valuation, resulting in financial loss to the company.",
+        "Incorrect accounting of asset disposal may result in inaccurate reversal of cost, accumulated depreciation, gain or loss on sale and invoicing.",
+        "Assets identified for disposal may not be properly tracked, leading to risk of misuse, theft or delayed accounting recognition."
       ]
     },
     {
       "sub_process": "Asset Impairment",
       "risks": [
-        "Inaccurate impairment of fixed assets"
+        "Impairment indicators for fixed assets may not be identified or assessed by management, resulting in overstatement of asset carrying value.",
+        "Incorrect impairment assessment may result in non-compliance with applicable accounting standards and inaccurate financial reporting."
       ]
     },
     {
       "sub_process": "Asset Insurance",
       "risks": [
-        "All asset are not adequately insured"
+        "Fixed assets may not be adequately insured against relevant risks, resulting in potential financial loss in case of damage, theft or other insured events.",
+        "Insurance coverage may not be updated for new additions, disposals or changes in asset values, resulting in underinsurance or unnecessary premium cost."
       ]
     },
     {
-      "sub_process": "Capitalization of Intangible assets",
+      "sub_process": "Insurance Spares",
       "risks": [
-        "Inaccurate capitalization of intangible assets"
+        "Insurance spares may not be properly identified, classified or capitalized, resulting in incorrect accounting treatment and weak tracking of critical spares.",
+        "Critical insurance spares may not be monitored separately, resulting in operational risk if such spares are unavailable when required."
       ]
     },
     {
-      "sub_process": "Borrowing Cost",
+      "sub_process": "Payback Monitoring",
       "risks": [
-        "Inaccurate project costing and non-compliance with accounting standards."
+        "Actual benefits from approved capex projects may not be monitored against payback or IRR assumptions, resulting in weak post-implementation review.",
+        "Significant deviations in capex outcomes may not be identified and escalated, resulting in repeated investment decisions based on inaccurate assumptions."
       ]
     }
   ]

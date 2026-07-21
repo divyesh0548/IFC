@@ -30,7 +30,11 @@ function classifyKeyControlValue(value) {
     return 'nonKey';
   }
 
-  if (normalized === 'yes' || normalizedToken === 'keycontrol') {
+  if (
+    normalized === 'yes' ||
+    normalizedToken === 'keycontrol' ||
+    normalizedToken === 'keycontrols'
+  ) {
     return 'key';
   }
 
