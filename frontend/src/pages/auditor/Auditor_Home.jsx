@@ -10,8 +10,6 @@ import GroupRoundedIcon from '@mui/icons-material/GroupRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import FolderCopyRoundedIcon from '@mui/icons-material/FolderCopyRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
-import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
-import PolicyRoundedIcon from '@mui/icons-material/PolicyRounded'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatDisplayName } from '../../utils/displayName'
@@ -65,42 +63,6 @@ function AuditorHome() {
 
   const blueTokens = theme.palette.blueTheme?.[theme.palette.mode] || {}
   const displayName = readStoredUserDisplayName() || formatDisplayName(stats?.auditor_name, 'Auditor')
-
-  const quickStats = [
-    {
-      label: 'Companies',
-      value: stats?.total_companies ?? 0,
-      accent: theme.palette.primary.main,
-    },
-    {
-      label: 'Total Users',
-      value: stats?.total_users ?? 0,
-      accent: blueTokens.accent || theme.palette.info.main,
-    },
-    {
-      label: 'RACMs',
-      value: stats?.total_racms ?? 0,
-      accent: theme.palette.success.main,
-    },
-  ]
-
-  const snapshotRows = [
-    {
-      label: 'Registered Companies',
-      value: stats?.total_companies ?? 0,
-      color: theme.palette.primary.main,
-    },
-    {
-      label: 'Total Users',
-      value: stats?.total_users ?? 0,
-      color: blueTokens.accent || theme.palette.info.main,
-    },
-    {
-      label: 'Available RACMs',
-      value: stats?.total_racms ?? 0,
-      color: theme.palette.success.main,
-    },
-  ]
 
   const routeTiles = [
     {
@@ -192,7 +154,7 @@ function AuditorHome() {
             position: 'relative',
             p: { xs: 2.5, sm: 3.5, md: 4 },
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.45fr) minmax(280px, 0.95fr)' },
+            gridTemplateColumns: 'minmax(0, 1fr)',
             gap: 3,
             alignItems: 'stretch',
           }}
@@ -249,149 +211,8 @@ function AuditorHome() {
               Review the IFC landscape with read-only access to companies, users, RACMs, and supporting evidence from one place.
             </Typography>
 
-            <Box
-              sx={{
-                mt: 2.4,
-                width: '100%',
-                maxWidth: { xs: '100%', lg: 640 },
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 1,
-                alignItems: 'center',
-              }}
-            >
-              {quickStats.map((item) => (
-                <Box
-                  key={item.label}
-                  sx={{
-                    display: 'inline-flex',
-                    alignItems: 'baseline',
-                    gap: 0.75,
-                    px: 1.15,
-                    py: 0.65,
-                    borderRadius: 1.5,
-                    border: `1px solid ${alpha(item.accent, theme.palette.mode === 'dark' ? 0.28 : 0.18)}`,
-                    backgroundColor: alpha(item.accent, theme.palette.mode === 'dark' ? 0.1 : 0.055),
-                  }}
-                >
-                  <Typography
-                    sx={{
-                      fontSize: '1rem',
-                      fontWeight: 900,
-                      lineHeight: 1,
-                      color: theme.palette.text.primary,
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    {loading ? '-' : item.value}
-                  </Typography>
-                  <Typography sx={{ fontSize: '0.76rem', fontWeight: 800, color: theme.palette.text.secondary }}>
-                    {item.label}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
           </Box>
 
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2.4,
-              borderRadius: 3,
-              border: '1px solid',
-              borderColor:
-                theme.palette.mode === 'dark'
-                  ? alpha(theme.palette.common.white, 0.08)
-                  : alpha(theme.palette.divider, 1),
-              backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.5 : 0.82),
-              backdropFilter: 'blur(8px)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'flex-start',
-              gap: 1.15,
-              minHeight: 'auto',
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-              <Box
-                sx={{
-                  width: 42,
-                  height: 42,
-                  borderRadius: 2.5,
-                  display: 'grid',
-                  placeItems: 'center',
-                  color: theme.palette.primary.contrastText,
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                }}
-              >
-                <InsightsRoundedIcon sx={{ fontSize: 22 }} />
-              </Box>
-              <Box>
-                <Typography sx={{ fontSize: '0.84rem', fontWeight: 700, color: theme.palette.text.secondary }}>
-                  Snapshot
-                </Typography>
-                <Typography sx={{ fontSize: '1.05rem', fontWeight: 800, color: theme.palette.text.primary }}>
-                  Audit Overview
-                </Typography>
-              </Box>
-            </Box>
-
-            <Box sx={{ display: 'grid', gap: 0.85 }}>
-              {snapshotRows.map((item) => (
-                <Box
-                  key={item.label}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 2,
-                    py: 0.9,
-                    borderBottom: `1px solid ${alpha(theme.palette.divider, 0.75)}`,
-                    '&:last-of-type': {
-                      borderBottom: 'none',
-                      pb: 0,
-                    },
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0 }}>
-                    <Box
-                      sx={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: '50%',
-                        backgroundColor: item.color,
-                        flexShrink: 0,
-                      }}
-                    />
-                    <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: theme.palette.text.secondary }}>
-                      {item.label}
-                    </Typography>
-                  </Box>
-                  <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: theme.palette.text.primary }}>
-                    {loading ? '--' : item.value}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-
-            <Box
-              sx={{
-                mt: 1,
-                p: 1.4,
-                borderRadius: 2.5,
-                display: 'flex',
-                gap: 1.2,
-                alignItems: 'flex-start',
-                border: `1px solid ${alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.24 : 0.18)}`,
-                backgroundColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.12 : 0.08),
-              }}
-            >
-              <PolicyRoundedIcon sx={{ color: theme.palette.warning.main, fontSize: 20, mt: 0.15 }} />
-              <Typography sx={{ fontSize: '0.84rem', lineHeight: 1.65, color: theme.palette.text.secondary }}>
-                Auditor access is view-only. Use these sections to inspect records and supporting evidence without changing source data.
-              </Typography>
-            </Box>
-          </Paper>
         </Box>
         <HomeHelpSupport />
       </Box>

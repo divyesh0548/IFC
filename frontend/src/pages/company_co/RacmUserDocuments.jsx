@@ -12,15 +12,9 @@ import Switch from '@mui/material/Switch'
 import Badge from '@mui/material/Badge'
 import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import TablePagination from '@mui/material/TablePagination'
-import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
-import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import { toast } from 'react-hot-toast'
 import {
@@ -36,20 +30,11 @@ import {
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
-import { formatIndianDateTime } from '../../lib/dateTime'
-import { formatRacmUserDocumentSubtitle } from '../../lib/racmUserDocuments'
 import { getRacmProcessOwnerDisplayValue } from '../../racmFormDetailFields'
+import RacmUserDocumentsDialog from '../../components/racm/RacmUserDocumentsDialog'
 
 const DEFAULT_ROWS_PER_PAGE = 10
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50]
-
-function getFileName(filePath) {
-  const raw = String(filePath || '').trim()
-  if (!raw) return 'Document'
-  const withoutQuery = raw.split('?')[0]
-  const segments = withoutQuery.split('/')
-  return segments[segments.length - 1] || 'Document'
-}
 
 function getUserDocCount(form) {
   return Array.isArray(form?.doc_uploaded_by_user_docs) ? form.doc_uploaded_by_user_docs.length : 0
@@ -75,7 +60,6 @@ function RacmUserDocuments() {
   const [controlNumberInput, setControlNumberInput] = useState('')
   const [controlNumberFilter, setControlNumberFilter] = useState('')
   const [loading, setLoading] = useState(true)
-  const [docsDialogOpen, setDocsDialogOpen] = useState(false)
   const [selectedForm, setSelectedForm] = useState(null)
   const { businessProcessOptions } = useBusinessProcesses()
 
@@ -333,7 +317,7 @@ function RacmUserDocuments() {
     if (!filePath) return
 
     try {
-      const fileName = getFileName(filePath)
+      const fileName = String(filePath || '').split('?')[0].split('/').pop() || 'Document'
       const response = await fetch(
         `${API_BASE_URL}/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`,
         {
@@ -359,7 +343,7 @@ function RacmUserDocuments() {
       try {
         const errorData = await response.json()
         errorMessage = errorData.message || errorData.error || errorMessage
-      } catch (parseError) {
+      } catch {
         errorMessage = `Download failed with status ${response.status}`
       }
       toast.error(errorMessage)
@@ -371,11 +355,9 @@ function RacmUserDocuments() {
 
   const handleOpenDocsDialog = (form) => {
     setSelectedForm(form)
-    setDocsDialogOpen(true)
   }
 
   const handleCloseDocsDialog = () => {
-    setDocsDialogOpen(false)
     setSelectedForm(null)
   }
 
@@ -421,10 +403,6 @@ function RacmUserDocuments() {
     rowsPerPage,
   ])
 
-  const selectedUserDocs = Array.isArray(selectedForm?.doc_uploaded_by_user_docs)
-    ? selectedForm.doc_uploaded_by_user_docs
-    : []
-  const selectedUserDocCount = selectedUserDocs.length
   const tableColumnCount = showUnitColumn ? 7 : 6
   const showEmptyState = !loading && forms.length === 0
   const DOC_TABLE_COL_PX = {
@@ -635,16 +613,18 @@ function RacmUserDocuments() {
                   }}
                 >
                   <IconButton
-                    size="small"
                     color={userDocCount > 0 ? 'secondary' : 'default'}
                     onClick={(event) => {
                       event.stopPropagation()
                       handleOpenDocsDialog(form)
                     }}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => event.stopPropagation()}
                     aria-label={`View ${userDocCount} user document(s)`}
                     disabled={userDocCount === 0}
+                    sx={{ p: 1.15 }}
                   >
-                    <FolderOpenRoundedIcon fontSize="small" />
+                    <FolderOpenRoundedIcon />
                   </IconButton>
                 </Badge>
               </span>
@@ -1051,90 +1031,12 @@ function RacmUserDocuments() {
         </Box>
       </Paper>
 
-      <Dialog
-        open={docsDialogOpen}
+      <RacmUserDocumentsDialog
+        form={selectedForm}
         onClose={handleCloseDocsDialog}
-        fullWidth
-        maxWidth="md"
-        aria-labelledby="racm-user-documents-dialog-title"
-      >
-        <DialogTitle id="racm-user-documents-dialog-title" sx={{ fontWeight: 700 }}>
-          User Documents ({selectedUserDocCount})
-        </DialogTitle>
-        <DialogContent dividers>
-          {selectedForm ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
-              <Typography variant="body2" color="text.secondary">
-                <strong>Control Number:</strong> {selectedForm.control_number || selectedForm.form_id || 'N/A'}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                <strong>Business Process:</strong> {selectedForm.business_process || 'N/A'}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                <strong>Process Owner:</strong> {formatProcessOwner(selectedForm)}
-              </Typography>
-            </Box>
-          ) : null}
-
-          {selectedUserDocs.length > 0 ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-              {selectedUserDocs.map((doc, index) => {
-                const docPath = doc.doc_uploaded_by_user
-                return (
-                  <Box
-                    key={doc.id || `${docPath}-${index}`}
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1.5,
-                      p: 1.5,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 1,
-                    }}
-                  >
-                    <InsertDriveFileRoundedIcon color="action" />
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          fontWeight: 600,
-                          color: 'text.primary',
-                          overflowWrap: 'anywhere',
-                        }}
-                      >
-                        {getFileName(docPath)}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {formatRacmUserDocumentSubtitle(
-                          doc,
-                          (value) => formatIndianDateTime(value, 'Uploaded document')
-                        )}
-                      </Typography>
-                    </Box>
-                    <Tooltip title="Download">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDownloadUserDocument(docPath)}
-                        aria-label={`Download ${getFileName(docPath)}`}
-                      >
-                        <DownloadRoundedIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-                )
-              })}
-            </Box>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              No user uploaded documents available.
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={handleCloseDocsDialog}>Close</Button>
-        </DialogActions>
-      </Dialog>
+        onDownload={handleDownloadUserDocument}
+        formatProcessOwner={formatProcessOwner}
+      />
     </Box>
   )
 }

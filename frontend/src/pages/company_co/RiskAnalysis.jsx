@@ -615,10 +615,13 @@ function RiskAnalysis() {
             >
               {['', 'Control Number', 'Unit', 'Business Process', 'Financial Year', 'Sub Process', 'Risk Description'].map((column, index) => (
                 <Box
-                  key={column}
+                  key={column || 'select-all'}
                   sx={{
-                    px: 2,
+                    px: index === 0 ? 0.5 : 2,
                     py: 1.75,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: index === 0 ? 'center' : 'flex-start',
                     borderRight: `1px solid ${theme.palette.divider}`,
                     '&:last-of-type': {
                       borderRight: 'none',
@@ -631,6 +634,7 @@ function RiskAnalysis() {
                       checked={allPageControlsSelected}
                       indeterminate={somePageControlsSelected}
                       onChange={togglePageSelection}
+                      sx={{ p: 0.5 }}
                     />
                   ) : (
                     <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
@@ -685,13 +689,23 @@ function RiskAnalysis() {
                     },
                   }}
                 >
-                  <Box sx={{ px: 1, py: 1.25, borderRight: `1px solid ${theme.palette.divider}` }}>
+                  <Box
+                    sx={{
+                      px: 0.5,
+                      py: 1.25,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRight: `1px solid ${theme.palette.divider}`,
+                    }}
+                  >
                     <Checkbox
                       size="small"
                       checked={isSelected}
                       onClick={(event) => event.stopPropagation()}
                       onChange={() => toggleControlSelection(controlNumber)}
                       disabled={!controlNumber || batchGenerating}
+                      sx={{ p: 0.5 }}
                     />
                   </Box>
                   <Box sx={{ px: 2, py: 1.75, borderRight: `1px solid ${theme.palette.divider}` }}>

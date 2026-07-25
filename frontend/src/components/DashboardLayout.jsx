@@ -301,13 +301,65 @@ function DashboardLayout() {
       <AppDialog
         open={logoutDialogOpen}
         onClose={() => setLogoutDialogOpen(false)}
-        title="Confirm Logout"
         titleId="logout-dialog-title"
-        description="Are you sure you want to log out? You will need to log in again to access your account."
+        description="Are you sure you want to log out? You will need to sign in again to access your account."
         descriptionId="logout-dialog-description"
+        title={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            {/* <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: 1.5,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                color: 'secondary.main',
+                backgroundColor: alpha(theme.palette.secondary.main, theme.palette.mode === 'dark' ? 0.18 : 0.12),
+              }}
+            >
+              <LogoutIcon fontSize="small" />
+            </Box> */}
+            <Typography
+              component="span"
+              sx={{
+                fontWeight: 700,
+                fontSize: '1.125rem',
+                color: 'text.primary',
+                lineHeight: 1.3,
+              }}
+            >
+              Confirm Logout
+            </Typography>
+          </Box>
+        }
+        titleSx={{
+          py: 1.75,
+          px: 2.5,
+          borderBottom: `1px solid ${theme.palette.divider}`,
+        }}
+        contentSx={{
+          px: 2.5,
+          pb: 2,
+          '&&': {
+            paddingTop: 1.75,
+          },
+        }}
+        actionsSx={{
+          px: 2.5,
+          pt: 1.5,
+          pb: 1.75,
+          gap: 1.25,
+        }}
         PaperProps={{
           sx: {
+            borderRadius: 2,
             minWidth: { xs: '90%', sm: '400px' },
+            overflow: 'hidden',
+            boxShadow: theme.palette.mode === 'dark'
+              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
+              : '0 8px 32px rgba(0, 0, 0, 0.12)',
           },
         }}
         actions={
@@ -315,7 +367,17 @@ function DashboardLayout() {
             <Button
               onClick={() => setLogoutDialogOpen(false)}
               variant="outlined"
-              sx={getAppDialogCancelButtonSx(theme)}
+              sx={{
+                ...getAppDialogCancelButtonSx(theme),
+                py: 0.75,
+                borderWidth: '1px',
+                borderColor: alpha(theme.palette.text.primary, 0.16),
+                '&:hover': {
+                  borderWidth: '1px',
+                  borderColor: alpha(theme.palette.text.primary, 0.28),
+                  backgroundColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.08 : 0.05),
+                },
+              }}
             >
               Cancel
             </Button>
@@ -327,8 +389,10 @@ function DashboardLayout() {
               variant="contained"
               color="secondary"
               autoFocus
+              startIcon={<LogoutIcon />}
               sx={{
                 ...APP_DIALOG_PRIMARY_BUTTON_SX,
+                py: 0.75,
               }}
             >
               Log out

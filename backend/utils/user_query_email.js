@@ -9,11 +9,8 @@ function buildUserQueryAdminEmail({ query }) {
     subject: `New User Query - ${typeOfQuery}`,
     text: `A new user query has been submitted on the IFC portal.
 
-Type: ${typeOfQuery}
 Submitted by: ${email}
-
-Explanation:
-${explanation}`,
+Explanation: ${explanation}`,
   };
 }
 

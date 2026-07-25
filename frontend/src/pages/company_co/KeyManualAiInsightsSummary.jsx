@@ -117,6 +117,7 @@ function KeyManualAiInsightsSummary() {
   const [run, setRun] = useState(null)
   const [rows, setRows] = useState([])
   const [excludedEntityLevelCount, setExcludedEntityLevelCount] = useState(0)
+  const [excludedNoticeDismissed, setExcludedNoticeDismissed] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   useSyncGlobalLoading(loading)
@@ -426,34 +427,15 @@ function KeyManualAiInsightsSummary() {
         </Alert>
       ) : null}
 
-      <Paper
-        elevation={0}
-        sx={{
-          ...DASHBOARD_PAPER_SX,
-          p: 2.25,
-          mb: 3,
-          borderRadius: 3,
-          border: `1px solid ${theme.palette.divider}`,
-          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(251,191,36,0.08)' : 'rgba(251,191,36,0.12)',
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
-          <Chip
-            label={`${excludedEntityLevelCount} Entity Level Controls excluded`}
-            size="small"
-            variant="outlined"
-            sx={{
-              fontWeight: 700,
-              color: theme.palette.mode === 'dark' ? '#fef3c7' : '#92400e',
-              borderColor: theme.palette.mode === 'dark' ? 'rgba(251,191,36,0.4)' : 'rgba(217,119,6,0.28)',
-              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.55)',
-            }}
-          />
-          <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
-            These controls are shown as a count only and are not included in AI rationalisation insights for this category.
-          </Typography>
-        </Box>
-      </Paper>
+      {excludedEntityLevelCount > 0 && !excludedNoticeDismissed ? (
+        <Alert
+          severity="info"
+          onClose={() => setExcludedNoticeDismissed(true)}
+          sx={{ mb: 3 }}
+        >
+          {excludedEntityLevelCount} Entity Level Control{excludedEntityLevelCount === 1 ? '' : 's'} excluded from AI insight generation because they are not treated as high risk controls in this category.
+        </Alert>
+      ) : null}
 
       <Paper
         elevation={3}

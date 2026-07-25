@@ -4956,7 +4956,8 @@ function FormDetail() {
         PaperProps={{
           sx: {
             borderRadius: 2,
-            minWidth: { xs: '90%', sm: '460px' },
+            minWidth: { xs: '94%', sm: '720px' },
+            maxWidth: { xs: '96%', sm: '780px' },
             boxShadow: theme.palette.mode === 'dark'
               ? '0 8px 32px rgba(0, 0, 0, 0.4)'
               : '0 8px 32px rgba(0, 0, 0, 0.12)',
@@ -5013,22 +5014,34 @@ function FormDetail() {
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3, pt: 2.5, gap: 1.5, borderTop: '1px solid', borderColor: 'divider', flexWrap: 'wrap' }}>
-          <Button onClick={handleMoreActionsClose} variant="outlined">
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            pt: 2.5,
+            gap: 1.5,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            flexWrap: 'nowrap',
+            justifyContent: 'flex-end',
+            overflowX: 'auto',
+          }}
+        >
+          <Button onClick={handleMoreActionsClose} variant="outlined" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
             Cancel
           </Button>
           {showSelfAssignButton ? (
-            <Button onClick={handleChooseSelfAssignFromMore} variant="contained" color="primary">
+            <Button onClick={handleChooseSelfAssignFromMore} variant="contained" color="primary" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
               Self Assign
             </Button>
           ) : null}
-          <Button onClick={handleChooseApproverAssignmentFromMore} variant="outlined" color="primary">
+          <Button onClick={handleChooseApproverAssignmentFromMore} variant="outlined" color="primary" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
             Approver Assignment
           </Button>
-          <Button onClick={handleChooseDeleteFromMore} variant="outlined" color="error">
+          <Button onClick={handleChooseDeleteFromMore} variant="outlined" color="error" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
             Delete
           </Button>
-          <Button onClick={handleChooseReplicateFromMore} variant="contained" color="secondary">
+          <Button onClick={handleChooseReplicateFromMore} variant="contained" color="secondary" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
             Replicate
           </Button>
         </DialogActions>

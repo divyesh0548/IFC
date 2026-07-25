@@ -1,0 +1,11 @@
+company_co/racm-user-documents
+
+On this route, increase the padding of those document icon button. It keeps opening RACM on new page instead of showing pop-up for documents.
+
+"C:\Divyesh\IFC\IFC_Prisma\frontend\src\pages\auditor\Auditor_Home.jsx" on this page remove that "Auditor access is view-only." whole text line and also those boxes displaying same stats again below greetings text.
+
+Fix the companies page, and provide same UI as siteadmin, but view only.
+
+List all users except siteadmins. No need to display unit because users can be linked to multiple units. Proivide dropdown for type of user. And display the company name as well as dropdown filter.
+
+For RACM listing provide same features as coordinator has. A searchbar, pagination, view documents option (share same component). 

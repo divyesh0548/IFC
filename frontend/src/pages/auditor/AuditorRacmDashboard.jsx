@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
@@ -9,8 +9,14 @@ import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
 import Switch from '@mui/material/Switch'
+import TextField from '@mui/material/TextField'
+import Button from '@mui/material/Button'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import TablePagination from '@mui/material/TablePagination'
 import Typography from '@mui/material/Typography'
 import Alert from '@mui/material/Alert'
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import {
   DASHBOARD_PAGE_OUTER_SX,
   DASHBOARD_PAPER_SX,
@@ -24,9 +30,15 @@ import {
   getApprovalStatusBadgePillSx,
   formatRacmApprovalStatusLabel,
 } from '../../uiConstants'
-import { apiUrl } from '../../config/api'
+import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
+import { getRacmProcessOwnerDisplayValue } from '../../racmFormDetailFields'
+import RacmUserDocumentsDialog from '../../components/racm/RacmUserDocumentsDialog'
+import { toast } from 'react-hot-toast'
+
+const DEFAULT_ROWS_PER_PAGE = 10
+const ROWS_PER_PAGE_OPTIONS = [10, 25, 50]
 
 function getIsActive(value) {
   if (typeof value === 'boolean') return value
@@ -74,6 +86,11 @@ function AuditorRacmDashboard() {
   const [filterCompany, setFilterCompany] = useState('all')
   const [filterUnit, setFilterUnit] = useState('all')
   const [cellWordWrap, setCellWordWrap] = useState(false)
+  const [controlNumberInput, setControlNumberInput] = useState('')
+  const [controlNumberFilter, setControlNumberFilter] = useState('')
+  const [page, setPage] = useState(0)
+  const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
+  const [documentForm, setDocumentForm] = useState(null)
   const { businessProcessOptions } = useBusinessProcesses()
   const isCompanyAdminView = location.pathname.startsWith('/company_admin')
   const racmEndpoint = isCompanyAdminView ? '/api/company-admin/racm-dashboard/racms' : '/api/auditor/racms'
@@ -129,7 +146,7 @@ function AuditorRacmDashboard() {
     }
   }, [racmEndpoint])
 
-  const companyOptions = [...new Map(
+  const companyOptions = useMemo(() => [...new Map(
     forms
       .filter((form) => String(form.company_identifier || '').trim() !== '')
       .map((form) => [
@@ -139,7 +156,7 @@ function AuditorRacmDashboard() {
           label: form.company_name || form.company_identifier,
         },
       ]),
-  ).values()]
+  ).values()], [forms])
 
   const financialYearOptions = [...new Set(
     forms
@@ -153,13 +170,13 @@ function AuditorRacmDashboard() {
 
   const isUnitFilterEnabled = isCompanyAdminView || filterCompany !== 'all'
 
-  const scopedFormsForUnits = isUnitFilterEnabled
+  const scopedFormsForUnits = useMemo(() => (isUnitFilterEnabled
     ? (isCompanyAdminView
       ? forms
       : forms.filter((form) => String(form.company_identifier || '') === filterCompany))
-    : []
+    : []), [filterCompany, forms, isCompanyAdminView, isUnitFilterEnabled])
 
-  const unitOptions = [...new Map(
+  const unitOptions = useMemo(() => [...new Map(
     scopedFormsForUnits
       .filter((form) => String(form.unit_id || '').trim() !== '')
       .map((form) => {
@@ -172,7 +189,7 @@ function AuditorRacmDashboard() {
           },
         ]
       }),
-  ).values()]
+  ).values()], [scopedFormsForUnits])
 
   useEffect(() => {
     if (filterCompany === 'all') return
@@ -191,6 +208,47 @@ function AuditorRacmDashboard() {
       setFilterUnit('all')
     }
   }, [filterUnit, unitOptions])
+
+  useEffect(() => {
+    setPage(0)
+  }, [filterActive, filterStatus, filterBusinessProcess, filterFinancialYear, filterCompany, filterUnit, controlNumberFilter])
+
+  const handleControlNumberSearchSubmit = (event) => {
+    event.preventDefault()
+    setControlNumberFilter(controlNumberInput.trim())
+  }
+
+  const handleControlNumberSearchClear = () => {
+    setControlNumberInput('')
+    setControlNumberFilter('')
+  }
+
+  const handleDownloadUserDocument = async (filePath) => {
+    if (!filePath) return
+    const fileName = String(filePath).split('?')[0].split('/').pop() || 'Document'
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/control-forms/download-document?path=${encodeURIComponent(filePath)}`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.message || 'Failed to download user document')
+      }
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = fileName
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      window.URL.revokeObjectURL(url)
+    } catch (downloadError) {
+      console.error('Auditor document download error:', downloadError)
+      toast.error(downloadError.message || 'Failed to download user document')
+    }
+  }
 
   const filteredForms = forms.filter((form) => {
     if (filterActive !== 'all') {
@@ -212,6 +270,11 @@ function AuditorRacmDashboard() {
       return false
     }
 
+    if (controlNumberFilter) {
+      const controlNumber = String(form.control_number || form.form_id || '').toLowerCase()
+      if (!controlNumber.includes(controlNumberFilter.toLowerCase())) return false
+    }
+
     if (!isCompanyAdminView && filterCompany !== 'all' && String(form.company_identifier || '') !== filterCompany) {
       return false
     }
@@ -223,6 +286,11 @@ function AuditorRacmDashboard() {
 
     return true
   })
+
+  const paginatedForms = filteredForms.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+  const getUserDocCount = (form) => Array.isArray(form?.doc_uploaded_by_user_docs)
+    ? form.doc_uploaded_by_user_docs.length
+    : (form?.doc_uploaded_by_user ? 1 : 0)
 
   const truncatedTextSx = {
     display: 'inline-block',
@@ -268,6 +336,7 @@ function AuditorRacmDashboard() {
     status: 95,
     active: 85,
     dueDate: 100,
+    documents: 85,
   }
   const auditorTableColWidthsOrdered = [
     AUDITOR_TABLE_COL_PX.controlNumber,
@@ -281,6 +350,7 @@ function AuditorRacmDashboard() {
     AUDITOR_TABLE_COL_PX.status,
     AUDITOR_TABLE_COL_PX.active,
     AUDITOR_TABLE_COL_PX.dueDate,
+    AUDITOR_TABLE_COL_PX.documents,
   ]
   const auditorTableTotalWidthPx = auditorTableColWidthsOrdered.reduce((a, b) => a + b, 0)
   const pctColSx = (px) => {
@@ -488,6 +558,22 @@ function AuditorRacmDashboard() {
               </Box>
             </Box>
           </Box>
+        </Box>
+
+        <Box
+          component="form"
+          onSubmit={handleControlNumberSearchSubmit}
+          sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 1, alignItems: { xs: 'stretch', sm: 'center' }, mb: 2 }}
+        >
+          <TextField
+            label="Control Number"
+            value={controlNumberInput}
+            onChange={(event) => setControlNumberInput(event.target.value)}
+            size="small"
+            sx={{ minWidth: { xs: '100%', sm: 280 } }}
+          />
+          <Button type="submit" variant="contained">Search</Button>
+          {(controlNumberInput || controlNumberFilter) ? <Button type="button" variant="outlined" onClick={handleControlNumberSearchClear}>Clear</Button> : null}
         </Box>
 
         {error && (
@@ -737,10 +823,26 @@ function AuditorRacmDashboard() {
                     >
                       Due Date
                     </Box>
+                    <Box
+                      component="th"
+                      sx={{
+                        px: 2,
+                        py: 1.5,
+                        textAlign: 'center',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: theme.palette.text.secondary,
+                        ...pctColSx(AUDITOR_TABLE_COL_PX.documents),
+                      }}
+                    >
+                      Documents
+                    </Box>
                   </Box>
                 </Box>
                 <Box component="tbody">
-                  {filteredForms.map((form, index) => {
+                  {paginatedForms.map((form, index) => {
                     const approvalStatus = formatApprovalStatus(form.status)
                     const approvalStatusColors = getApprovalStatusBadgeSolidColors(approvalStatus)
                     const isActive = getIsActive(form.active)
@@ -817,15 +919,53 @@ function AuditorRacmDashboard() {
                             {formatDate(form.due_date)}
                           </Box>
                         </Box>
+                        <Box component="td" sx={{ px: 2, py: 1.25, textAlign: 'center', ...pctColSx(AUDITOR_TABLE_COL_PX.documents) }}>
+                          <Tooltip title={getUserDocCount(form) > 0 ? 'View user documents' : 'No user documents uploaded'}>
+                            <span>
+                              <IconButton
+                                color={getUserDocCount(form) > 0 ? 'secondary' : 'default'}
+                                disabled={getUserDocCount(form) === 0}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setDocumentForm(form)
+                                }}
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                aria-label={`View ${getUserDocCount(form)} user document(s)`}
+                                sx={{ p: 1.15 }}
+                              >
+                                <FolderOpenRoundedIcon />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Box>
                       </Box>
                     )
                   })}
                 </Box>
               </Box>
+              <TablePagination
+                component="div"
+                count={filteredForms.length}
+                page={page}
+                onPageChange={(_event, newPage) => setPage(newPage)}
+                rowsPerPage={rowsPerPage}
+                onRowsPerPageChange={(event) => {
+                  setRowsPerPage(Number(event.target.value))
+                  setPage(0)
+                }}
+                rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
+              />
             </Box>
           </Box>
         )}
       </Paper>
+      <RacmUserDocumentsDialog
+        form={documentForm}
+        onClose={() => setDocumentForm(null)}
+        onDownload={handleDownloadUserDocument}
+        formatProcessOwner={getRacmProcessOwnerDisplayValue}
+      />
     </Box>
   )
 }

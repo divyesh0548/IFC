@@ -114,6 +114,7 @@ function RacmAssignment() {
   const [bulkSelectedUser, setBulkSelectedUser] = useState(null)
   const [updatingAssignment, setUpdatingAssignment] = useState(false)
   const [selectedForms, setSelectedForms] = useState(new Set())
+  const [dismissedAssignmentAlerts, setDismissedAssignmentAlerts] = useState({})
   const [confirmDialog, setConfirmDialog] = useState({
     open: false,
     kind: null,
@@ -484,6 +485,7 @@ function RacmAssignment() {
 
     setSelectedForm(form)
     setSelectedUser(null)
+    setDismissedAssignmentAlerts({})
     setAssignmentDialogOpen(true)
   }
 
@@ -492,6 +494,26 @@ function RacmAssignment() {
     setAssignmentDialogOpen(false)
     setSelectedForm(null)
     setSelectedUser(null)
+    setDismissedAssignmentAlerts({})
+  }
+
+  const dismissAssignmentAlert = (alertKey) => {
+    setDismissedAssignmentAlerts((prev) => ({ ...prev, [alertKey]: true }))
+  }
+
+  const assignmentDialogAlertSx = {
+    alignItems: 'center',
+    '& .MuiAlert-icon': {
+      py: 0,
+      mr: 1,
+      opacity: 1,
+    },
+    '& .MuiAlert-message': {
+      py: 0,
+      display: 'flex',
+      alignItems: 'center',
+      lineHeight: 1.45,
+    },
   }
 
   const handleBulkAssignmentModeToggle = () => {
@@ -897,6 +919,7 @@ function RacmAssignment() {
     }
 
     setBulkSelectedUser(null)
+    setDismissedAssignmentAlerts({})
     setBulkAssignmentDialogOpen(true)
   }
 
@@ -904,6 +927,7 @@ function RacmAssignment() {
     if (updatingAssignment) return
     setBulkAssignmentDialogOpen(false)
     setBulkSelectedUser(null)
+    setDismissedAssignmentAlerts({})
   }
 
   const executeBulkUpdateAssignment = async ({ confirmReplaceExisting = false } = {}) => {
@@ -1963,25 +1987,41 @@ function RacmAssignment() {
           <DialogContent dividers>
             {selectedForm && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                {isApproverMode && isApproverAssignmentStatusLocked(selectedForm) && (
-                  <Alert severity="warning">
+                {isApproverMode && isApproverAssignmentStatusLocked(selectedForm) && !dismissedAssignmentAlerts.approverStatusLocked && (
+                  <Alert
+                    severity="warning"
+                    onClose={() => dismissAssignmentAlert('approverStatusLocked')}
+                    sx={assignmentDialogAlertSx}
+                  >
                     This RACM is sent for approval. Approver assignment cannot be changed.
                   </Alert>
                 )}
-                {!isApproverMode && isProcessOwnerAssignmentLocked(selectedForm) && (
-                  <Alert severity="warning">
+                {!isApproverMode && isProcessOwnerAssignmentLocked(selectedForm) && !dismissedAssignmentAlerts.processOwnerLocked && (
+                  <Alert
+                    severity="warning"
+                    onClose={() => dismissAssignmentAlert('processOwnerLocked')}
+                    sx={assignmentDialogAlertSx}
+                  >
                     {isCoordinatorAssignedRacm(selectedForm)
                       ? 'This RACM is coordinator self-assigned and cannot be assigned to a process owner.'
                       : (getRacmReassignmentBlockMessage(selectedForm) || 'This RACM cannot be re-assigned.')}
                   </Alert>
                 )}
-                {!isApproverMode && !isProcessOwnerAssignmentLocked(selectedForm) && Boolean(String(selectedForm?.control_owner || '').trim()) && (
-                  <Alert severity="warning">
+                {!isApproverMode && !isProcessOwnerAssignmentLocked(selectedForm) && Boolean(String(selectedForm?.control_owner || '').trim()) && !dismissedAssignmentAlerts.processOwnerReplace && (
+                  <Alert
+                    severity="warning"
+                    onClose={() => dismissAssignmentAlert('processOwnerReplace')}
+                    sx={assignmentDialogAlertSx}
+                  >
                     The current process owner will be replaced and will no longer be able to access this RACM. The new process owner will be notified by email.
                   </Alert>
                 )}
-                {isApproverMode && singleRacmHasSpecificApprover && (
-                  <Alert severity="warning">
+                {isApproverMode && singleRacmHasSpecificApprover && !dismissedAssignmentAlerts.approverReplace && (
+                  <Alert
+                    severity="warning"
+                    onClose={() => dismissAssignmentAlert('approverReplace')}
+                    sx={assignmentDialogAlertSx}
+                  >
                     Current approver will be replaced.
                   </Alert>
                 )}
@@ -2079,18 +2119,30 @@ function RacmAssignment() {
           </DialogTitle>
           <DialogContent dividers>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              {!isApproverMode && hasSelectedLockedRacm && (
-                <Alert severity="warning">
+              {!isApproverMode && hasSelectedLockedRacm && !dismissedAssignmentAlerts.bulkProcessOwnerLocked && (
+                <Alert
+                  severity="warning"
+                  onClose={() => dismissAssignmentAlert('bulkProcessOwnerLocked')}
+                  sx={assignmentDialogAlertSx}
+                >
                   One or more selected RACMs cannot be re-assigned (sent for approval, approved, or no-further-submission declared). Remove them from this selection to continue.
                 </Alert>
               )}
-              {isApproverMode && hasSelectedApproverLockedRacm && (
-                <Alert severity="warning">
+              {isApproverMode && hasSelectedApproverLockedRacm && !dismissedAssignmentAlerts.bulkApproverLocked && (
+                <Alert
+                  severity="warning"
+                  onClose={() => dismissAssignmentAlert('bulkApproverLocked')}
+                  sx={assignmentDialogAlertSx}
+                >
                   Remove RACMs with status Sent for Approval before updating approver assignment.
                 </Alert>
               )}
-              {isApproverMode && selectedRacmsWithSpecificApprover.length > 0 && (
-                <Alert severity="warning">
+              {isApproverMode && selectedRacmsWithSpecificApprover.length > 0 && !dismissedAssignmentAlerts.bulkApproverReplace && (
+                <Alert
+                  severity="warning"
+                  onClose={() => dismissAssignmentAlert('bulkApproverReplace')}
+                  sx={assignmentDialogAlertSx}
+                >
                   Current approver will be replaced for {selectedRacmsWithSpecificApprover.length} of {selectedForms.size} selected RACM{selectedForms.size === 1 ? '' : 's'}.
                 </Alert>
               )}
