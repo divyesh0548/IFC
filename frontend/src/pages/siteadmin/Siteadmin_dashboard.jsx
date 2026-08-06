@@ -7,7 +7,6 @@ import { PieChart } from '@mui/x-charts/PieChart';
 import { Alert, Select, MenuItem, FormControl, InputLabel, Box, Card, CardHeader, CardContent, Paper, Stack, Typography } from '@mui/material';
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
-import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded';
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
@@ -63,7 +62,6 @@ function Siteadmin_Dashboard() {
     }
     const navTileSx = {
         p: 0,
-        minHeight: 150,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'flex-start',
@@ -500,58 +498,33 @@ function Siteadmin_Dashboard() {
                             <Box
                                 sx={{
                                     width: '100%',
-                                    p: 2.1,
+                                    px: 2.1,
+                                    py: 1.75,
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: 1.5,
-                                    minHeight: 150,
+                                    gap: 1,
                                     background: `linear-gradient(180deg, ${alpha(tile.accent, theme.palette.mode === 'dark' ? 0.12 : 0.06)} 0%, transparent 100%)`,
                                 }}
                             >
-                                <Box
+                                <Typography
                                     sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        gap: 1,
-                                        width: '100%',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.08em',
+                                        fontSize: '0.72rem',
+                                        fontWeight: 800,
+                                        color: theme.palette.text.secondary,
                                     }}
                                 >
-                                    <Typography
-                                        sx={{
-                                            textTransform: 'uppercase',
-                                            letterSpacing: '0.08em',
-                                            fontSize: '0.72rem',
-                                            fontWeight: 800,
-                                            color: theme.palette.text.secondary,
-                                        }}
-                                    >
-                                        {tile.eyebrow}
-                                    </Typography>
-                                    <ArrowOutwardRoundedIcon sx={{ fontSize: 18, color: theme.palette.text.secondary }} />
-                                </Box>
-                                <Box sx={{ display: 'grid', gap: 0.7 }}>
-                                    <Typography
-                                        sx={sectionTitleSx}
-                                    >
+                                    {tile.eyebrow}
+                                </Typography>
+                                <Box sx={{ display: 'grid', gap: 0.55 }}>
+                                    <Typography sx={sectionTitleSx}>
                                         {tile.title}
                                     </Typography>
-                                    <Typography
-                                        sx={sectionSubtextSx}
-                                    >
+                                    <Typography sx={sectionSubtextSx}>
                                         {tile.description}
                                     </Typography>
                                 </Box>
-                                <Typography
-                                    sx={{
-                                        mt: 'auto',
-                                        fontSize: '0.84rem',
-                                        fontWeight: 800,
-                                        color: theme.palette.text.primary,
-                                    }}
-                                >
-                                    Open module
-                                </Typography>
                             </Box>
                         </Paper>
                     ))}

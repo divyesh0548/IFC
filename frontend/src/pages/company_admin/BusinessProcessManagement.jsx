@@ -1,13 +1,13 @@
 import React, { useMemo, useState } from 'react'
-import { alpha, useTheme } from '@mui/material/styles'
+import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import Paper from '@mui/material/Paper'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -18,8 +18,15 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import { toast } from 'react-hot-toast'
+import ManagementPageHeader from '../../components/ManagementPageHeader'
 import { apiUrl } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
+import {
+  getManagementTableBorderColor,
+  getManagementTableContainerSx,
+  TABLE_HEADER_BG,
+  TABLE_ROW_HOVER_BG,
+} from '../../uiConstants'
 
 function BusinessProcessManagement() {
   const theme = useTheme()
@@ -30,6 +37,24 @@ function BusinessProcessManagement() {
     business_process: '',
     business_process_code: '',
   })
+
+  const tableBorderColor = getManagementTableBorderColor(theme)
+  const bodyCellSx = {
+    py: 1.55,
+    px: 2.25,
+    borderBottom: `1px solid ${tableBorderColor}`,
+    verticalAlign: 'middle',
+  }
+  const headCellSx = {
+    ...bodyCellSx,
+    py: 1.7,
+    fontSize: '0.84rem',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    color: 'text.secondary',
+    backgroundColor: TABLE_HEADER_BG,
+  }
 
   const sortedRows = useMemo(
     () => [...businessProcesses].sort((a, b) => {
@@ -99,101 +124,42 @@ function BusinessProcessManagement() {
   }
 
   return (
-    <Box sx={{ display: 'grid', gap: 3, px: 0, py: 1 }}>
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 2.5, md: 3 },
-          borderRadius: 3,
-          border: '1px solid',
-          borderColor:
-            theme.palette.mode === 'dark'
-              ? alpha(theme.palette.common.white, 0.08)
-              : alpha(theme.palette.primary.main, 0.12),
-          background: theme.palette.gradients?.hero,
-        }}
-      >
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: { xs: 'column', sm: 'row' },
-            alignItems: { xs: 'flex-start', sm: 'center' },
-            justifyContent: 'space-between',
-            gap: 2,
-          }}
-        >
-          <Box sx={{ display: 'grid', gap: 1 }}>
-            <Typography sx={{ fontSize: { xs: '1.3rem', md: '1.6rem' }, fontWeight: 900, lineHeight: 1.1 }}>
-              Business Process Management
-            </Typography>
-            <Typography sx={{ color: theme.palette.text.secondary, maxWidth: 760 }}>
-              Aadd company specific business process name with code.
-            </Typography>
-          </Box>
-
+    <>
+      <ManagementPageHeader
+        title="Business Process Management"
+        subtitle="Add company-specific business process names with codes."
+        actions={
           <Button
             variant="contained"
             color="secondary"
             startIcon={<AddRoundedIcon />}
             onClick={() => setDialogOpen(true)}
-            sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 999 }}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
           >
             Add Company Process
           </Button>
-        </Box>
-      </Paper>
-
-      <Paper
-        elevation={0}
-        sx={{
-          borderRadius: 3,
-          border: '1px solid',
-          borderColor:
-            theme.palette.mode === 'dark'
-              ? alpha(theme.palette.common.white, 0.08)
-              : alpha(theme.palette.divider, 1),
-          overflow: 'hidden',
-        }}
+        }
       >
-        <TableContainer
-          sx={{
-            backgroundColor: theme.palette.background.paper,
-          }}
-        >
-          <Table sx={{ minWidth: 720 }}>
+        <TableContainer component={Box} sx={getManagementTableContainerSx(theme)}>
+          <Table size="medium" sx={{ minWidth: 720, borderCollapse: 'separate', borderSpacing: 0 }}>
             <TableHead>
-              <TableRow
-                sx={{
-                  backgroundColor:
-                    theme.palette.mode === 'dark'
-                      ? alpha(theme.palette.common.white, 0.04)
-                      : alpha(theme.palette.primary.main, 0.05),
-                }}
-              >
-                <TableCell sx={{ fontWeight: 800, fontSize: '0.82rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid', borderBottomColor: 'divider', py: 1.75, width: 72 }}>
-                  #
-                </TableCell>
-                <TableCell sx={{ fontWeight: 800, fontSize: '0.82rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid', borderBottomColor: 'divider', py: 1.75 }}>
-                  Business Process
-                </TableCell>
-                <TableCell sx={{ fontWeight: 800, fontSize: '0.82rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid', borderBottomColor: 'divider', py: 1.75, width: 180 }}>
-                  Code
-                </TableCell>
-                <TableCell sx={{ fontWeight: 800, fontSize: '0.82rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid', borderBottomColor: 'divider', py: 1.75, width: 190 }}>
-                  Scope
-                </TableCell>
+              <TableRow>
+                <TableCell sx={{ ...headCellSx, width: 72 }}>#</TableCell>
+                <TableCell sx={headCellSx}>Business Process</TableCell>
+                <TableCell sx={{ ...headCellSx, width: 180 }}>Code</TableCell>
+                <TableCell sx={{ ...headCellSx, width: 190 }}>Scope</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={4} sx={{ py: 6, textAlign: 'center', color: 'text.secondary', borderBottom: 'none' }}>
-                    Loading business processes...
+                  <TableCell colSpan={4} align="center" sx={{ py: 5, borderBottom: 0 }}>
+                    <CircularProgress size={26} />
                   </TableCell>
                 </TableRow>
               ) : sortedRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} sx={{ py: 6, textAlign: 'center', color: 'text.secondary', borderBottom: 'none' }}>
+                  <TableCell colSpan={4} align="center" sx={{ py: 5, borderBottom: 0 }}>
                     No business process found.
                   </TableCell>
                 </TableRow>
@@ -201,50 +167,33 @@ function BusinessProcessManagement() {
                 sortedRows.map((row, index) => (
                   <TableRow
                     key={row.id || `${row.business_process}-${row.business_process_code}`}
-                    hover
                     sx={{
-                      backgroundColor:
-                        index % 2 === 0
-                          ? 'transparent'
-                          : theme.palette.mode === 'dark'
-                            ? alpha(theme.palette.common.white, 0.015)
-                            : alpha('#0f172a', 0.015),
-                      '&:hover': {
-                        backgroundColor:
-                          theme.palette.mode === 'dark'
-                            ? alpha(theme.palette.primary.main, 0.08)
-                            : alpha(theme.palette.primary.main, 0.04),
-                      },
+                      '&:hover': { backgroundColor: TABLE_ROW_HOVER_BG },
+                      '&:last-of-type td': { borderBottom: 0 },
                       '& td': {
-                        borderBottom: '1px solid',
-                        borderBottomColor: alpha(theme.palette.divider, 0.9),
-                        py: 1.8,
-                        verticalAlign: 'middle',
-                      },
-                      '&:last-child td': {
-                        borderBottom: 'none',
+                        borderBottom:
+                          index === sortedRows.length - 1 ? 0 : `1px solid ${tableBorderColor}`,
                       },
                     }}
                   >
-                    <TableCell sx={{ fontWeight: 700, color: 'text.secondary' }}>{index + 1}</TableCell>
-                    <TableCell>
-                      <Typography sx={{ fontWeight: 700, color: 'text.primary' }}>
-                        {row.business_process}
-                      </Typography>
+                    <TableCell sx={{ ...bodyCellSx, fontWeight: 700, color: 'text.secondary' }}>
+                      {index + 1}
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={bodyCellSx}>
+                      <Typography sx={{ fontWeight: 700 }}>{row.business_process}</Typography>
+                    </TableCell>
+                    <TableCell sx={bodyCellSx}>
                       <Typography
                         sx={{
                           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace',
                           fontSize: '0.92rem',
                           fontWeight: 700,
-                          color: 'text.primary',
                         }}
                       >
                         {row.business_process_code}
                       </Typography>
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={bodyCellSx}>
                       <Chip
                         size="small"
                         label={row.is_default ? 'Common' : 'Company Specific'}
@@ -259,7 +208,7 @@ function BusinessProcessManagement() {
             </TableBody>
           </Table>
         </TableContainer>
-      </Paper>
+      </ManagementPageHeader>
 
       <Dialog open={dialogOpen} onClose={handleCloseDialog} fullWidth maxWidth="sm">
         <DialogTitle>Add Company Specific Business Process</DialogTitle>
@@ -286,7 +235,7 @@ function BusinessProcessManagement() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </>
   )
 }
 

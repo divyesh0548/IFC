@@ -9,7 +9,7 @@ import Typography from '@mui/material/Typography'
 import Grid from '@mui/material/Grid'
 import CircularProgress from '@mui/material/CircularProgress'
 import Alert from '@mui/material/Alert'
-import { MAIN_CONTENT_MAX_WIDTH } from '../../uiConstants'
+import ManagementPageHeader from '../../components/ManagementPageHeader'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
 import { parseDateValue } from '../../lib/dateTime'
@@ -63,90 +63,34 @@ function Company_Management() {
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        backgroundColor: theme.palette.background.default,
-      }}
-    >
-        {/* Dashboard Content */}
-      <Box
-        sx={{
-          maxWidth: MAIN_CONTENT_MAX_WIDTH,
-          mx: 'auto',
-          width: '100%',
-          px: 0,
-          py: { xs: 3, sm: 4, md: 5 },
-        }}
-      >
-        {/* Header Section */}
-        <Box
+    <ManagementPageHeader
+      title="Company Management"
+      subtitle={loading ? 'Loading...' : `${companies.length} ${companies.length === 1 ? 'company' : 'companies'} registered`}
+      actions={
+        <Button
+          component={Link}
+          to="/siteadmin/create-company"
+          variant="contained"
+          color="secondary"
           sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            mb: 4,
-            pb: 3,
-            borderBottom: '1px solid',
-            borderColor: theme.palette.divider,
-            flexDirection: { xs: 'column', sm: 'row' },
-            gap: 3,
+            px: 2.5,
+            py: 1,
+            fontSize: '0.875rem',
+            fontWeight: 700,
+            textTransform: 'none',
+            boxShadow: 'none',
           }}
         >
-          <Box sx={{ flex: 1 }}>
-            <Typography
-              variant="h5"
-              component="h1"
-              sx={{
-                fontWeight: 600,
-                color: theme.palette.text.primary,
-                mb: 0.75,
-                fontSize: { xs: '1.375rem', sm: '1.5rem' },
-                letterSpacing: '-0.02em',
-              }}
-            >
-              Company Management
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                color: theme.palette.text.secondary,
-                fontSize: '0.875rem',
-                fontWeight: 400,
-              }}
-            >
-              {loading ? 'Loading...' : `${companies.length} ${companies.length === 1 ? 'company' : 'companies'} registered`}
-            </Typography>
-          </Box>
-          
-          <Button
-            component={Link}
-            to="/siteadmin/create-company"
-            variant="contained"
-            color="secondary"
-            sx={{
-              px: 3.5,
-              py: 1.25,
-              fontSize: '0.875rem',
-              fontWeight: 500,
-              textTransform: 'none',
-              borderRadius: '4px',
-              boxShadow: 'none',
-              '&:hover': {
-                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-              },
-            }}
-          >
-            + Add New Company
-          </Button>
-        </Box>
-
+          + Add New Company
+        </Button>
+      }
+    >
         {error && (
-          <Alert 
-            severity="error" 
-            sx={{ 
-              mb: 3,
-              borderRadius: '4px',
+          <Alert
+            severity="error"
+            sx={{
+              mb: 2,
+              borderRadius: 0,
             }}
           >
             {error}
@@ -159,7 +103,7 @@ function Company_Management() {
               display: 'flex',
               justifyContent: 'center',
               alignItems: 'center',
-              minHeight: '400px',
+              minHeight: '280px',
             }}
           >
             <CircularProgress size={32} />
@@ -167,10 +111,8 @@ function Company_Management() {
         ) : companies.length === 0 ? (
           <Card
             sx={{
-              borderRadius: '4px',
-              boxShadow: theme.palette.mode === 'dark' 
-                ? '0 1px 3px rgba(0,0,0,0.3)' 
-                : '0 1px 3px rgba(0,0,0,0.12)',
+              borderRadius: 1.5,
+              boxShadow: 'none',
               border: `1px solid ${theme.palette.divider}`,
               backgroundColor: theme.palette.background.paper,
             }}
@@ -222,87 +164,53 @@ function Company_Management() {
                     flexDirection: 'column',
                     borderRadius: '4px',
                     border: `1px solid ${theme.palette.divider}`,
-                    boxShadow: theme.palette.mode === 'dark' 
-                      ? '0 1px 3px rgba(0,0,0,0.3)' 
+                    boxShadow: theme.palette.mode === 'dark'
+                      ? '0 1px 3px rgba(0,0,0,0.3)'
                       : '0 1px 3px rgba(0,0,0,0.12)',
                     transition: 'all 0.2s ease-in-out',
                     backgroundColor: theme.palette.background.paper,
                     cursor: 'pointer',
                     '&:hover': {
-                      borderColor: theme.palette.mode === 'dark' 
-                        ? 'rgba(255, 255, 255, 0.3)' 
+                      borderColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.3)'
                         : '#bdbdbd',
-                      boxShadow: theme.palette.mode === 'dark' 
-                        ? '0 4px 12px rgba(0,0,0,0.5)' 
+                      boxShadow: theme.palette.mode === 'dark'
+                        ? '0 4px 12px rgba(0,0,0,0.5)'
                         : '0 4px 12px rgba(0,0,0,0.15)',
                       transform: 'translateY(-2px)',
                     },
                   }}
                 >
                   <CardContent sx={{ flexGrow: 1, p: 3 }}>
-                    {/* Company Name */}
                     <Typography
                       variant="h6"
                       component="h2"
                       sx={{
-                        fontWeight: 600,
+                        fontWeight: 800,
                         mb: 2.5,
                         color: theme.palette.text.primary,
-                        fontSize: '1.125rem',
-                        lineHeight: 1.4,
+                        fontSize: '1.2rem',
+                        lineHeight: 1.35,
                         borderBottom: `1px solid ${theme.palette.divider}`,
                         pb: 2,
-                        letterSpacing: '-0.01em',
+                        letterSpacing: '-0.02em',
                       }}
                     >
                       {company.company_name || 'N/A'}
                     </Typography>
 
-                    {/* Company Details */}
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.25 }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <Box>
                         <Typography
                           variant="caption"
                           sx={{
-                            fontWeight: 500,
+                            fontWeight: 600,
                             color: theme.palette.text.secondary,
-                            fontSize: '0.75rem',
+                            fontSize: '0.7rem',
                             textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
+                            letterSpacing: '0.06em',
                             display: 'block',
-                            mb: 0.75,
-                          }}
-                        >
-                          Company Identifier
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          noWrap
-                          sx={{
-                            color: theme.palette.text.primary,
-                            fontSize: '0.875rem',
-                            fontWeight: 500,
-                            fontFamily: 'monospace',
-                            letterSpacing: '0.5px',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {company.company_identifier || 'N/A'}
-                        </Typography>
-                      </Box>
-
-                      <Box>
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            fontWeight: 500,
-                            color: theme.palette.text.secondary,
-                            fontSize: '0.75rem',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            display: 'block',
-                            mb: 0.75,
+                            mb: 0.6,
                           }}
                         >
                           Registered Email
@@ -310,9 +218,11 @@ function Company_Management() {
                         <Typography
                           variant="body2"
                           noWrap
+                          title={company.registered_email || 'N/A'}
                           sx={{
                             color: theme.palette.text.primary,
                             fontSize: '0.875rem',
+                            fontWeight: 500,
                             lineHeight: 1.5,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -322,17 +232,76 @@ function Company_Management() {
                         </Typography>
                       </Box>
 
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          flexWrap: 'wrap',
+                          gap: 2.5,
+                          rowGap: 1,
+                        }}
+                      >
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: theme.palette.text.primary,
+                            fontSize: '0.875rem',
+                            fontWeight: 500,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          <Box
+                            component="span"
+                            sx={{
+                              color: theme.palette.text.secondary,
+                              fontWeight: 600,
+                              fontSize: '0.7rem',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.05em',
+                              mr: 0.75,
+                            }}
+                          >
+                            Units
+                          </Box>
+                          {Number(company.total_units || 0)}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: theme.palette.text.primary,
+                            fontSize: '0.875rem',
+                            fontWeight: 500,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          <Box
+                            component="span"
+                            sx={{
+                              color: theme.palette.text.secondary,
+                              fontWeight: 600,
+                              fontSize: '0.7rem',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.05em',
+                              mr: 0.75,
+                            }}
+                          >
+                            Admins
+                          </Box>
+                          {Number(company.total_company_admins || 0)}
+                        </Typography>
+                      </Box>
+
                       <Box>
                         <Typography
                           variant="caption"
                           sx={{
-                            fontWeight: 500,
+                            fontWeight: 600,
                             color: theme.palette.text.secondary,
-                            fontSize: '0.75rem',
+                            fontSize: '0.7rem',
                             textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
+                            letterSpacing: '0.06em',
                             display: 'block',
-                            mb: 0.75,
+                            mb: 0.6,
                           }}
                         >
                           Registration Date
@@ -342,6 +311,7 @@ function Company_Management() {
                           sx={{
                             color: theme.palette.text.primary,
                             fontSize: '0.875rem',
+                            fontWeight: 500,
                             lineHeight: 1.5,
                           }}
                         >
@@ -355,8 +325,7 @@ function Company_Management() {
             ))}
           </Grid>
         )}
-      </Box>
-    </Box>
+    </ManagementPageHeader>
   )
 }
 

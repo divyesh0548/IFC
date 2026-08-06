@@ -1,11 +1,14 @@
-company_co/racm-user-documents
+Changes for API call optimization.
 
-On this route, increase the padding of those document icon button. It keeps opening RACM on new page instead of showing pop-up for documents.
+1. Add an auth context using context API. So all components will have shared access to user identity and role. So on each API call it will not call verify api again. 
+Currently the app loads 
+✅ Token verified successfully, user: divyesh.parmar@sharpandtannan.com role: company_co
+✅ Company coordinator verified successfully, user: divyesh.parmar@sharpandtannan.com role: company_co
+✅ Company coordinator verified successfully, user: divyesh.parmar@sharpandtannan.com role: company_co
 
-"C:\Divyesh\IFC\IFC_Prisma\frontend\src\pages\auditor\Auditor_Home.jsx" on this page remove that "Auditor access is view-only." whole text line and also those boxes displaying same stats again below greetings text.
+this 5-6 times when loading some data.
 
-Fix the companies page, and provide same UI as siteadmin, but view only.
+2. Keep RoleBasedProtectedRoute as the only auth gate; remove page-level /api/auth/verify calls where context already has the data.
 
-List all users except siteadmins. No need to display unit because users can be linked to multiple units. Proivide dropdown for type of user. And display the company name as well as dropdown filter.
-
-For RACM listing provide same features as coordinator has. A searchbar, pagination, view documents option (share same component). 
+Does this mean removing middlewares from API?
+I don't think so, cause the problem is that APIs for auth and other type of get requests are called many times.

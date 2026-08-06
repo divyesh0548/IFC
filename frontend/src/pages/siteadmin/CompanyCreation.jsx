@@ -348,7 +348,6 @@ function CompanyCreation() {
                     helperText={
                       errors[`company_admin_email_${index}`]
                       || getEmailWarning(item.email_id)
-                      || 'This email will be used for company admin login.'
                     }
                     FormHelperTextProps={{
                       sx: errors[`company_admin_email_${index}`]
@@ -375,7 +374,6 @@ function CompanyCreation() {
                     helperText={
                       errors[`company_admin_mobile_${index}`]
                       || (item.mobile && getMobileValidationError(item.mobile))
-                      || 'Enter a valid 10-digit mobile number.'
                     }
                     fullWidth
                   />

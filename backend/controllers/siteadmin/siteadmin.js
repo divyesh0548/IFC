@@ -107,7 +107,24 @@ function normalizeCompanyAdminEntries(companyAdminEntries, companyAdminEmails, f
 // Get all companies API endpoint
 async function getCompanies(req, res) {
   try {
-    const query = `SELECT *, ${createdAtUtcSql('companies.created_at')} FROM companies ORDER BY companies.created_at DESC`;
+    const query = `
+      SELECT
+        c.*,
+        ${createdAtUtcSql('c.created_at')},
+        (
+          SELECT COUNT(*)::int
+          FROM company_unit_master cum
+          WHERE cum.company_identifier = c.company_identifier
+        ) AS total_units,
+        (
+          SELECT COUNT(*)::int
+          FROM ifc_users u
+          WHERE u.company_identifier = c.company_identifier
+            AND LOWER(TRIM(COALESCE(u.role, ''))) = 'company_admin'
+        ) AS total_company_admins
+      FROM companies c
+      ORDER BY c.created_at DESC NULLS LAST, c.id DESC
+    `;
     const result = await pool.query(query);
 
     res.status(200).json({

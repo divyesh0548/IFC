@@ -28,7 +28,8 @@ import {
 } from '../storageKeys'
 import { MAIN_CONTENT_MAX_WIDTH, DASHBOARD_SECTION_GAP } from '../uiConstants'
 import { apiUrl } from '../config/api'
-import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX, getAppDialogCancelButtonSx } from './AppDialog'
+import Dialog from '@mui/material/Dialog'
+import DialogContent from '@mui/material/DialogContent'
 
 const getHomePath = (pathname) => {
   if (pathname.startsWith('/company_co')) return '/company_co/home'
@@ -298,84 +299,91 @@ function DashboardLayout() {
         </Toolbar>
       </AppBar>
 
-      <AppDialog
+      <Dialog
         open={logoutDialogOpen}
         onClose={() => setLogoutDialogOpen(false)}
-        titleId="logout-dialog-title"
-        description="Are you sure you want to log out? You will need to sign in again to access your account."
-        descriptionId="logout-dialog-description"
-        title={
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            {/* <Box
-              sx={{
-                width: 36,
-                height: 36,
-                borderRadius: 1.5,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                color: 'secondary.main',
-                backgroundColor: alpha(theme.palette.secondary.main, theme.palette.mode === 'dark' ? 0.18 : 0.12),
-              }}
-            >
-              <LogoutIcon fontSize="small" />
-            </Box> */}
-            <Typography
-              component="span"
-              sx={{
-                fontWeight: 700,
-                fontSize: '1.125rem',
-                color: 'text.primary',
-                lineHeight: 1.3,
-              }}
-            >
-              Confirm Logout
-            </Typography>
-          </Box>
-        }
-        titleSx={{
-          py: 1.75,
-          px: 2.5,
-          borderBottom: `1px solid ${theme.palette.divider}`,
-        }}
-        contentSx={{
-          px: 2.5,
-          pb: 2,
-          '&&': {
-            paddingTop: 1.75,
-          },
-        }}
-        actionsSx={{
-          px: 2.5,
-          pt: 1.5,
-          pb: 1.75,
-          gap: 1.25,
-        }}
+        aria-labelledby="logout-dialog-title"
+        aria-describedby="logout-dialog-description"
+        maxWidth={false}
         PaperProps={{
           sx: {
-            borderRadius: 2,
-            minWidth: { xs: '90%', sm: '400px' },
-            overflow: 'hidden',
+            position: 'relative',
+            borderRadius: 4,
+            width: { xs: 'calc(100% - 40px)', sm: 460 },
+            maxWidth: 460,
+            mx: 2.5,
+            p: 0,
+            overflow: 'visible',
             boxShadow: theme.palette.mode === 'dark'
-              ? '0 8px 32px rgba(0, 0, 0, 0.4)'
-              : '0 8px 32px rgba(0, 0, 0, 0.12)',
+              ? '0 24px 64px rgba(0, 0, 0, 0.55)'
+              : '0 24px 64px rgba(15, 23, 42, 0.14)',
           },
         }}
-        actions={
-          <>
+      >
+        <DialogContent
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            px: { xs: 3, sm: 4 },
+            pb: { xs: 3, sm: 3.5 },
+            '&&': {
+              paddingTop: theme.spacing(5),
+            },
+          }}
+        >
+          <Typography
+            id="logout-dialog-title"
+            component="h2"
+            sx={{
+              fontWeight: 700,
+              fontSize: { xs: '1.35rem', sm: '1.5rem' },
+              lineHeight: 1.25,
+              letterSpacing: '-0.02em',
+              color: 'text.primary',
+              maxWidth: 380,
+            }}
+          >
+            Are you sure you want to log out?
+          </Typography>
+          <Typography
+            id="logout-dialog-description"
+            sx={{
+              mt: 1.5,
+              mb: 0,
+              color: 'text.secondary',
+              fontSize: '0.95rem',
+              lineHeight: 1.6,
+              maxWidth: 380,
+            }}
+          >
+            You will need to sign in again to access your account.
+          </Typography>
+
+          <Box
+            sx={{
+              mt: 3.5,
+              width: '100%',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 1.5,
+            }}
+          >
             <Button
               onClick={() => setLogoutDialogOpen(false)}
               variant="outlined"
+              fullWidth
               sx={{
-                ...getAppDialogCancelButtonSx(theme),
-                py: 0.75,
-                borderWidth: '1px',
-                borderColor: alpha(theme.palette.text.primary, 0.16),
+                textTransform: 'none',
+                fontWeight: 600,
+                fontSize: '0.95rem',
+                py: 1.15,
+                borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.28 : 0.18),
+                color: 'text.primary',
                 '&:hover': {
-                  borderWidth: '1px',
-                  borderColor: alpha(theme.palette.text.primary, 0.28),
-                  backgroundColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.08 : 0.05),
+                  borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.4 : 0.28),
+                  backgroundColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.06 : 0.04),
                 },
               }}
             >
@@ -389,17 +397,23 @@ function DashboardLayout() {
               variant="contained"
               color="secondary"
               autoFocus
-              startIcon={<LogoutIcon />}
+              fullWidth
               sx={{
-                ...APP_DIALOG_PRIMARY_BUTTON_SX,
-                py: 0.75,
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                py: 1.15,
+                boxShadow: 'none',
+                '&:hover': {
+                  boxShadow: 'none',
+                },
               }}
             >
               Log out
             </Button>
-          </>
-        }
-      />
+          </Box>
+        </DialogContent>
+      </Dialog>
 
       <Box
         component="main"

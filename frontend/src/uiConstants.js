@@ -95,6 +95,79 @@ export const TABLE_HEADER_BG = 'action.hover'
 export const TABLE_ROW_HOVER_BG = 'action.hover'
 
 // ---------------------------------------------------------------------------
+// Management list pages (standard: company_admin/user-management)
+// Transparent shell + divider header + bordered content below
+// ---------------------------------------------------------------------------
+
+export const MANAGEMENT_PAGE_SHELL_SX = {
+  ...DASHBOARD_PAPER_SX,
+  overflow: 'visible',
+  backgroundColor: 'transparent',
+  boxShadow: 'none',
+  borderRadius: 0,
+}
+
+export const MANAGEMENT_PAGE_HEADER_SX = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: 2,
+  flexWrap: 'wrap',
+  alignItems: { xs: 'stretch', md: 'flex-start' },
+  py: 2.25,
+  flexDirection: { xs: 'column', md: 'row' },
+  borderBottom: '1px solid',
+  borderColor: 'divider',
+  mb: 2,
+}
+
+export const MANAGEMENT_PAGE_TITLE_SX = {
+  fontSize: { xs: '1.45rem', sm: '1.7rem' },
+  fontWeight: 850,
+  lineHeight: 1.15,
+  color: 'text.primary',
+}
+
+export const MANAGEMENT_PAGE_SUBTITLE_SX = {
+  mt: 0.65,
+  color: 'text.secondary',
+  lineHeight: 1.6,
+}
+
+export const MANAGEMENT_PAGE_ACTIONS_SX = {
+  display: 'flex',
+  gap: 1.25,
+  flexWrap: 'wrap',
+  alignItems: 'center',
+}
+
+export function getManagementTableBorderColor(theme) {
+  const isLight = theme.palette.mode === 'light'
+  const base = theme.palette.text.primary
+  // Match company_admin/user-management table borders
+  if (typeof base === 'string' && base.startsWith('#')) {
+    const alpha = isLight ? 0.16 : 0.2
+    const r = parseInt(base.slice(1, 3), 16)
+    const g = parseInt(base.slice(3, 5), 16)
+    const b = parseInt(base.slice(5, 7), 16)
+    if (!Number.isNaN(r + g + b)) return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  return isLight ? 'rgba(15, 23, 42, 0.16)' : 'rgba(255, 255, 255, 0.2)'
+}
+
+export function getManagementTableContainerSx(theme) {
+  const borderColor = getManagementTableBorderColor(theme)
+  const isDark = theme.palette.mode === 'dark'
+  return {
+    border: `1px solid ${borderColor}`,
+    borderRadius: 1.5,
+    overflow: 'hidden',
+    backgroundColor: isDark
+      ? 'rgba(15, 23, 42, 0.96)'
+      : 'rgba(255, 255, 255, 0.92)',
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Status badges (solid pastels — same in light and dark mode site-wide)
 // ---------------------------------------------------------------------------
 

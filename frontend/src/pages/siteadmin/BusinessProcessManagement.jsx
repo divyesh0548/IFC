@@ -1,26 +1,21 @@
 import React, { useMemo, useState } from 'react'
-import { alpha, useTheme } from '@mui/material/styles'
+import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import Paper from '@mui/material/Paper'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import { toast } from 'react-hot-toast'
+import ManagementPageHeader from '../../components/ManagementPageHeader'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
+import { getManagementTableBorderColor } from '../../uiConstants'
 
 function BusinessProcessManagement() {
   const theme = useTheme()
@@ -32,6 +27,8 @@ function BusinessProcessManagement() {
     business_process_code: '',
   })
   useSyncGlobalLoading(loading || saving)
+
+  const borderColor = getManagementTableBorderColor(theme)
 
   const sortedRows = useMemo(
     () => [...businessProcesses].sort((a, b) => a.business_process.localeCompare(b.business_process)),
@@ -96,103 +93,79 @@ function BusinessProcessManagement() {
   }
 
   return (
-    <Box sx={{ display: 'grid', gap: 3, px: 0, py: 1 }}>
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 2.5, md: 3 },
-          borderRadius: 3,
-          border: '1px solid',
-          borderColor:
-            theme.palette.mode === 'dark'
-              ? alpha(theme.palette.common.white, 0.08)
-              : alpha(theme.palette.primary.main, 0.12),
-          background: theme.palette.gradients?.hero,
-        }}
-      >
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: { xs: 'column', sm: 'row' },
-            alignItems: { xs: 'flex-start', sm: 'center' },
-            justifyContent: 'space-between',
-            gap: 2,
-          }}
-        >
-          <Box sx={{ display: 'grid', gap: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <AccountTreeRoundedIcon sx={{ color: theme.palette.primary.main }} />
-              <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: theme.palette.text.secondary }}>
-                Siteadmin
-              </Typography>
-            </Box>
-            <Typography sx={{ fontSize: { xs: '1.7rem', md: '2.1rem' }, fontWeight: 900, lineHeight: 1.1 }}>
-              Business Process Management
-            </Typography>
-            <Typography sx={{ color: theme.palette.text.secondary, maxWidth: 760 }}>
-              Maintain the central business-process master used by RACM creation, uploads, and dashboards.
-            </Typography>
-          </Box>
-
+    <>
+      <ManagementPageHeader
+        title="Business Process Management"
+        subtitle="Maintain the central business-process master used by RACM creation, uploads, and dashboards."
+        actions={
           <Button
             variant="contained"
             color="secondary"
             startIcon={<AddRoundedIcon />}
             onClick={() => setDialogOpen(true)}
-            sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 999 }}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
           >
             Add Business Process
           </Button>
-        </Box>
-      </Paper>
-
-      <Paper
-        elevation={0}
-        sx={{
-          borderRadius: 3,
-          border: '1px solid',
-          borderColor:
-            theme.palette.mode === 'dark'
-              ? alpha(theme.palette.common.white, 0.08)
-              : alpha(theme.palette.divider, 1),
-          overflow: 'hidden',
-        }}
+        }
       >
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 800 }}>#</TableCell>
-                <TableCell sx={{ fontWeight: 800 }}>Business Process</TableCell>
-                <TableCell sx={{ fontWeight: 800 }}>Code</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={3} sx={{ py: 4, textAlign: 'center', color: 'text.secondary' }}>
-                    Loading business processes...
-                  </TableCell>
-                </TableRow>
-              ) : sortedRows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={3} sx={{ py: 4, textAlign: 'center', color: 'text.secondary' }}>
-                    No business process found.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                sortedRows.map((row, index) => (
-                  <TableRow key={row.id || `${row.business_process}-${row.business_process_code}`}>
-                    <TableCell>{index + 1}</TableCell>
-                    <TableCell>{row.business_process}</TableCell>
-                    <TableCell>{row.business_process_code}</TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
+        <Box
+          sx={{
+            border: `1px solid ${borderColor}`,
+            borderRadius: 1.5,
+            overflow: 'hidden',
+            backgroundColor: theme.palette.mode === 'dark'
+              ? 'rgba(15, 23, 42, 0.96)'
+              : 'rgba(255, 255, 255, 0.92)',
+          }}
+        >
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}>
+              <CircularProgress size={26} />
+            </Box>
+          ) : sortedRows.length === 0 ? (
+            <Typography sx={{ py: 5, px: 2.25, textAlign: 'center', color: 'text.secondary' }}>
+              No business process found.
+            </Typography>
+          ) : (
+            sortedRows.map((row, index) => (
+              <Box
+                key={row.id || `${row.business_process}-${row.business_process_code}`}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  gap: 2,
+                  flexWrap: 'wrap',
+                  px: 2.25,
+                  py: 1.65,
+                  borderBottom: index === sortedRows.length - 1 ? 0 : `1px solid ${borderColor}`,
+                  '&:hover': { backgroundColor: 'action.hover' },
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, minWidth: 0 }}>
+                  <Typography sx={{ color: 'text.secondary', fontWeight: 600, fontSize: '0.85rem', width: 28, flexShrink: 0 }}>
+                    {index + 1}.
+                  </Typography>
+                  <Typography sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.4 }}>
+                    {row.business_process}
+                  </Typography>
+                </Box>
+                <Typography
+                  sx={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace',
+                    fontSize: '0.9rem',
+                    fontWeight: 700,
+                    color: 'text.secondary',
+                  }}
+                >
+                  {row.business_process_code}
+                </Typography>
+              </Box>
+            ))
+          )}
+        </Box>
+      </ManagementPageHeader>
 
       <Dialog open={dialogOpen} onClose={handleCloseDialog} fullWidth maxWidth="sm">
         <DialogTitle>Add Business Process</DialogTitle>
@@ -219,7 +192,7 @@ function BusinessProcessManagement() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </>
   )
 }
 
