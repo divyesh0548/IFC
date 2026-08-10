@@ -25,6 +25,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { toast } from 'react-hot-toast'
 import dayjs from 'dayjs'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { 
@@ -78,7 +79,7 @@ function getTomorrowDateString() {
 function RacmManagementDashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const [companyIdentifier, setCompanyIdentifier] = useState(null)
+  const { companyIdentifier } = useAuth()
   const [forms, setForms] = useState([])
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
@@ -152,28 +153,6 @@ function RacmManagementDashboard() {
   useSyncGlobalLoading(deleting)
   useSyncGlobalLoading(replicating)
   useSyncGlobalLoading(setActiveClassifying)
-
-  useEffect(() => {
-    // Fetch user role and company_identifier on component mount
-    const fetchUserInfo = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-
-        const data = await response.json()
-
-        if (response.ok && data.success) {
-          setCompanyIdentifier(data.user.company_identifier)
-        }
-      } catch (error) {
-        console.error('Error fetching user info:', error)
-      }
-    }
-
-    fetchUserInfo()
-  }, [])
 
   useEffect(() => {
     if (companyIdentifier) {

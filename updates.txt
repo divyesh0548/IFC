@@ -1,14 +1,6 @@
-Ask for sample email formats.
-
 Provide a way to change the email body. First fetch default email then user will change it to requirement.
 
 
-IFC User Mannual via Claude
-IFC Reports to be developed = Reports for Effective/Ineffective RACMs, Number of RACMs submitted/pending, Users, Response timing.
-Mail Communication Template to be finalised 
-User Communication for in case of different format = Dynamic RACM template
 ELC to be Developed = Mayank sir will provide info on this later.
 
 Add audit logs of user(all types) creation as well as approver Assignment.
-
-Mention who suggested a change

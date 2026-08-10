@@ -33,6 +33,7 @@ import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
@@ -55,8 +56,9 @@ function CompanyAdminUserManagement() {
   const theme = useTheme()
   const navigate = useNavigate()
   const bulkFileInputRef = useRef(null)
+  const { email } = useAuth()
+  const currentUserEmail = String(email || '').trim().toLowerCase()
   const [users, setUsers] = useState([])
-  const [currentUserEmail, setCurrentUserEmail] = useState('')
   const [unitOptions, setUnitOptions] = useState([])
   const [unitsLoading, setUnitsLoading] = useState(false)
   const [loadingUsers, setLoadingUsers] = useState(true)
@@ -124,24 +126,6 @@ function CompanyAdminUserManagement() {
       setUnitsLoading(false)
     }
   }
-
-  useEffect(() => {
-    const fetchCurrentUser = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-        const result = await response.json()
-        if (response.ok && result?.success) {
-          setCurrentUserEmail(String(result.user?.email_id || result.user?.emailId || '').trim().toLowerCase())
-        }
-      } catch (error) {
-        console.error('Company admin current user fetch error:', error)
-      }
-    }
-    fetchCurrentUser()
-  }, [])
 
   useEffect(() => {
     if (!deleteMode) {

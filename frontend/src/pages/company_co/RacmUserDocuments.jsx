@@ -28,6 +28,7 @@ import {
   toRacmApprovalStatusQueryParam,
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { getRacmProcessOwnerDisplayValue } from '../../racmFormDetailFields'
@@ -42,7 +43,7 @@ function getUserDocCount(form) {
 
 function RacmUserDocuments() {
   const theme = useTheme()
-  const [companyIdentifier, setCompanyIdentifier] = useState(null)
+  const { companyIdentifier } = useAuth()
   const [forms, setForms] = useState([])
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
@@ -360,25 +361,6 @@ function RacmUserDocuments() {
   const handleCloseDocsDialog = () => {
     setSelectedForm(null)
   }
-
-  useEffect(() => {
-    const fetchUserInfo = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-        const data = await response.json()
-        if (response.ok && data.success) {
-          setCompanyIdentifier(data.user.company_identifier)
-        }
-      } catch (error) {
-        console.error('Error fetching user info:', error)
-      }
-    }
-
-    fetchUserInfo()
-  }, [])
 
   useEffect(() => {
     if (!companyIdentifier) return

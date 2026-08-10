@@ -23,6 +23,7 @@ import {
   writeStoredUserDisplayName,
 } from '../storageKeys'
 import { useThemeMode } from '../contexts/ThemeContext'
+import { useAuth } from '../contexts/AuthContext'
 import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
 import { apiUrl } from '../config/api'
 
@@ -64,6 +65,13 @@ function Login() {
   const theme = useTheme()
   const { toggleTheme, mode } = useThemeMode()
   const navigate = useNavigate()
+  const {
+    loading: authLoading,
+    isAuthenticated,
+    role: authRole,
+    requiresPasswordUpdate,
+    setSession,
+  } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -71,56 +79,42 @@ function Login() {
   const [error, setError] = useState('')
   useSyncGlobalLoading(loading)
 
-  // If user is already authenticated (token cookie valid), redirect away from Login
+  // If user is already authenticated, redirect away from Login (uses shared AuthContext).
   useEffect(() => {
-    const checkExistingSession = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
+    if (authLoading || !isAuthenticated) return
 
-        const data = await response.json()
+    const redirectAuthenticatedUser = async () => {
+      if (requiresPasswordUpdate) {
+        navigate('/update-password', { replace: true })
+        return
+      }
 
-        if (response.ok && data.success) {
-          if (data.requiresPasswordUpdate) {
-            navigate('/update-password', { replace: true })
-            return
-          }
+      await cacheCompanyContext()
 
-          await cacheCompanyContext()
+      const urlParams = new URLSearchParams(window.location.search)
+      const redirectPath = urlParams.get('redirect')
 
-          // Check if there's a redirect parameter in the URL
-          const urlParams = new URLSearchParams(window.location.search)
-          const redirectPath = urlParams.get('redirect')
-          
-          if (redirectPath) {
-            // Redirect to the specified path
-            navigate(decodeURIComponent(redirectPath), { replace: true })
-          } else {
-            // Default role-based redirect
-            const role = data.user?.role
-            const roleRoutes = {
-              user: '/user/home',
-              company_admin: '/company_admin/home',
-              company_co: '/company_co/home',
-              approver: '/approver/home',
-              siteadmin: '/siteadmin/dashboard',
-              auditor: '/auditor/home',
-            }
-            const defaultRedirectPath = roleRoutes[role]
-            if (defaultRedirectPath) {
-              navigate(defaultRedirectPath, { replace: true })
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Error checking existing session on Login:', err)
+      if (redirectPath) {
+        navigate(decodeURIComponent(redirectPath), { replace: true })
+        return
+      }
+
+      const roleRoutes = {
+        user: '/user/home',
+        company_admin: '/company_admin/home',
+        company_co: '/company_co/home',
+        approver: '/approver/home',
+        siteadmin: '/siteadmin/dashboard',
+        auditor: '/auditor/home',
+      }
+      const defaultRedirectPath = roleRoutes[authRole]
+      if (defaultRedirectPath) {
+        navigate(defaultRedirectPath, { replace: true })
       }
     }
 
-    checkExistingSession()
-  }, [navigate])
+    redirectAuthenticatedUser()
+  }, [authLoading, authRole, isAuthenticated, navigate, requiresPasswordUpdate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -148,6 +142,7 @@ function Login() {
         // Login successful - token is stored in httpOnly cookie
         console.log('Login successful:', data.user)
         toast.success('Login successful!')
+        setSession(data.user, data.requiresPasswordUpdate)
 
         // Prefetch company name once and store in localStorage
         await cacheCompanyContext()

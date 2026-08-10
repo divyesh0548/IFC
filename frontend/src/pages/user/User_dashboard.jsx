@@ -33,12 +33,13 @@ import {
   isMuiAlertCloseActionClick,
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { apiUrl, API_BASE_URL } from '../../config/api'
+import { useAuth } from '../../contexts/AuthContext'
+import { API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 
 function User_dashboard() {
   const theme = useTheme()
-  const [userEmail, setUserEmail] = useState(null)
+  const { email: userEmail } = useAuth()
   const [forms, setForms] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
@@ -84,25 +85,6 @@ function User_dashboard() {
     if (!normalized) return 'None'
     return normalized.charAt(0).toUpperCase() + normalized.slice(1)
   }
-
-  useEffect(() => {
-    const fetchUserInfo = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-        const data = await response.json()
-        if (response.ok && data.success) {
-          setUserEmail(data.user.email_id)
-        }
-      } catch (error) {
-        console.error('Error fetching user info:', error)
-      }
-    }
-
-    fetchUserInfo()
-  }, [])
 
   useEffect(() => {
     if (userEmail) {

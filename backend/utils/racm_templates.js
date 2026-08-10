@@ -32,6 +32,7 @@ const RESERVED_EXTRA_FIELD_KEYS = new Set([
   'active',
   'status',
   'template_id',
+  'area',
   'sub_process',
   'risk_description',
   'risk_heat',
@@ -52,6 +53,7 @@ const RESERVED_EXTRA_FIELD_KEYS = new Set([
 
 const DEFAULT_EXCEL_KEYWORDS_BY_FIELD = {
   control_number: ['control number', 'control no'],
+  area: ['area'],
   sub_process: ['sub process', 'sub-process', 'subprocess'],
   risk_description: ['risk description', 'risk desc'],
   risk_heat: ['risk heat', 'heat'],
@@ -74,9 +76,10 @@ const DEFAULT_EXCEL_KEYWORDS_BY_FIELD = {
 };
 
 const RACM_FIXED_TEMPLATE_FIELDS = [
-  { fieldKey: 'sub_process', label: 'Sub-Process', sectionKey: 'process_and_risk', displayOrder: 1 },
-  { fieldKey: 'risk_description', label: 'Risk Description', sectionKey: 'process_and_risk', displayOrder: 2 },
-  { fieldKey: 'risk_heat', label: 'Risk Heat', sectionKey: 'process_and_risk', displayOrder: 3 },
+  { fieldKey: 'area', label: 'Area', sectionKey: 'process_and_risk', displayOrder: 1 },
+  { fieldKey: 'sub_process', label: 'Sub-Process', sectionKey: 'process_and_risk', displayOrder: 2 },
+  { fieldKey: 'risk_description', label: 'Risk Description', sectionKey: 'process_and_risk', displayOrder: 3 },
+  { fieldKey: 'risk_heat', label: 'Risk Heat', sectionKey: 'process_and_risk', displayOrder: 4 },
   { fieldKey: 'control_number', label: 'Control Number', sectionKey: 'control_details', displayOrder: 1 },
   { fieldKey: 'control_objective', label: 'Control Objective', sectionKey: 'control_details', displayOrder: 2 },
   { fieldKey: 'standard_control_description', label: 'Standard Control Description', sectionKey: 'control_details', displayOrder: 3 },

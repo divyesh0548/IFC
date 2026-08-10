@@ -10,12 +10,6 @@ import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
@@ -26,7 +20,7 @@ import { toast } from 'react-hot-toast'
 import { useSearchParams } from 'react-router-dom'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
+import { TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX, getAppDialogCancelButtonSx } from '../../components/AppDialog'
 import ApproverAssignmentHelpDialog from '../../components/approver/ApproverAssignmentHelpDialog'
 import ApproverAssignmentsPanel from '../../components/approver/ApproverAssignmentsPanel'
@@ -119,25 +113,6 @@ function CompanyAdminApproverManagement() {
   useEffect(() => {
     fetchApproverManagement()
   }, [fetchApproverManagement])
-
-  const tableBorderColor = theme.palette.mode === 'light'
-    ? alpha(theme.palette.text.primary, 0.16)
-    : alpha('#0f172a', 0.72)
-  const commonCellSx = {
-    py: 1.5,
-    px: 2.25,
-    borderBottom: `1px solid ${tableBorderColor}`,
-    verticalAlign: 'top',
-  }
-  const headCellSx = {
-    ...commonCellSx,
-    fontSize: '0.76rem',
-    fontWeight: 800,
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    color: 'text.secondary',
-    backgroundColor: TABLE_HEADER_BG,
-  }
 
   const approverRows = useMemo(() => {
     const normalizedSearch = String(searchTerm || '').trim().toLowerCase()
@@ -365,72 +340,80 @@ function CompanyAdminApproverManagement() {
           <CircularProgress size={22} />
           <Typography color="text.secondary">Loading approver management data...</Typography>
         </Paper>
+      ) : approverRows.length === 0 ? (
+        <Typography sx={{ py: 4, color: 'text.secondary' }}>
+          No approvers found for the selected filter.
+        </Typography>
       ) : (
-        <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-          <TableContainer>
-            <Table sx={{ minWidth: 900, tableLayout: 'fixed' }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ ...headCellSx, width: '34%' }}>Approver</TableCell>
-                  <TableCell sx={{ ...headCellSx, width: '16%' }}>Status</TableCell>
-                  <TableCell sx={{ ...headCellSx, width: '24%' }}>Current Scope</TableCell>
-                  <TableCell sx={{ ...headCellSx, width: '26%' }}>Unit Name</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {approverRows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} sx={{ py: 4, textAlign: 'center', borderBottom: 0 }}>
-                      No approvers found for the selected filter.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  approverRows.map((row, index) => {
-                    const latestAssignment = row.assignments[0] || null
-                    const hasMultipleAssignments = row.assignments.length > 1
-                    const displayName = String(row.display_name || '').trim()
-                    const emailId = String(row.email_id || '').trim()
-                    const showName = displayName && displayName.toLowerCase() !== emailId.toLowerCase()
-                    return (
-                      <TableRow
-                        key={row.email_id}
-                        onClick={() => handleOpenAssignmentDialog(row)}
-                        sx={{
-                          cursor: 'pointer',
-                          '&:hover': { backgroundColor: TABLE_ROW_HOVER_BG },
-                          '&:last-of-type td': { borderBottom: 0 },
-                          '& td': { borderBottom: index === approverRows.length - 1 ? 0 : `1px solid ${tableBorderColor}` },
-                        }}
-                      >
-                        <TableCell sx={commonCellSx}>
-                          <Typography sx={{ fontWeight: 700 }}>{emailId || '-'}</Typography>
-                          {showName ? (
-                            <Typography variant="body2" color="text.secondary">{displayName}</Typography>
-                          ) : null}
-                        </TableCell>
-                        <TableCell sx={commonCellSx}>
-                          <Typography sx={{ fontWeight: 700, color: row.assigned ? 'success.main' : 'text.secondary' }}>
-                            {row.assigned ? 'Assigned' : 'Unassigned'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell sx={commonCellSx}>
-                          {hasMultipleAssignments
-                            ? 'Multiple (Click to view)'
-                            : latestAssignment
-                              ? formatScopeLabel(latestAssignment.assignment_scope)
-                              : '-'}
-                        </TableCell>
-                        <TableCell sx={commonCellSx}>
-                          {hasMultipleAssignments ? 'Multiple' : latestAssignment?.unit_name || '-'}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
+        <Box
+          sx={{
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1.5,
+            overflow: 'hidden',
+            backgroundColor: theme.palette.mode === 'dark'
+              ? alpha(theme.palette.background.paper, 0.96)
+              : alpha(theme.palette.background.paper, 0.92),
+            maxWidth: 720,
+            alignSelf: 'flex-start',
+            width: '100%',
+          }}
+        >
+          {approverRows.map((row, index) => {
+            const latestAssignment = row.assignments[0] || null
+            const hasMultipleAssignments = row.assignments.length > 1
+            const displayName = String(row.display_name || '').trim()
+            const emailId = String(row.email_id || '').trim()
+            const showName = displayName && displayName.toLowerCase() !== emailId.toLowerCase()
+            const scopeLabel = hasMultipleAssignments
+              ? 'Multiple (Click to view)'
+              : latestAssignment
+                ? formatScopeLabel(latestAssignment.assignment_scope)
+                : 'Unassigned'
+
+            return (
+              <Box
+                key={row.email_id}
+                onClick={() => handleOpenAssignmentDialog(row)}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  gap: 2,
+                  flexWrap: 'wrap',
+                  px: 2.25,
+                  py: 1.65,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  borderBottom: index === approverRows.length - 1 ? 0 : '1px solid',
+                  borderColor: 'divider',
+                  '&:hover': { backgroundColor: TABLE_ROW_HOVER_BG },
+                }}
+              >
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.35 }}>
+                    {emailId || '-'}
+                  </Typography>
+                  {showName ? (
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                      {displayName}
+                    </Typography>
+                  ) : null}
+                </Box>
+                <Typography
+                  sx={{
+                    fontWeight: 600,
+                    fontSize: '0.875rem',
+                    color: row.assigned ? 'text.primary' : 'text.secondary',
+                    flexShrink: 0,
+                  }}
+                >
+                  {scopeLabel}
+                </Typography>
+              </Box>
+            )
+          })}
+        </Box>
       )}
 
       <AppDialog

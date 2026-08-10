@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import {
@@ -21,6 +21,7 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import SyncAltOutlinedIcon from '@mui/icons-material/SyncAltOutlined'
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
 import { useThemeMode } from '../contexts/ThemeContext'
+import { useAuth } from '../contexts/AuthContext'
 import { clearCachedUserProfile, clearStoredUserDisplayName } from '../storageKeys'
 import { MAIN_CONTENT_MAX_WIDTH } from '../uiConstants'
 import { apiUrl } from '../config/api'
@@ -172,45 +173,18 @@ const portalContent = {
 function Home() {
   const theme = useTheme()
   const { toggleTheme, mode } = useThemeMode()
-  const [authStatus, setAuthStatus] = useState('checking')
-  const [userRole, setUserRole] = useState(null)
+  const {
+    loading: authLoading,
+    isAuthenticated,
+    role: userRole,
+    clearAuth,
+  } = useAuth()
+  const authStatus = authLoading
+    ? 'checking'
+    : isAuthenticated
+      ? 'authenticated'
+      : 'unauthenticated'
   const navigate = useNavigate()
-
-  useEffect(() => {
-    let cancelled = false
-
-    const checkAuthOnHome = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-        const data = await response.json()
-
-        if (cancelled) return
-
-        if (response.ok && data.success) {
-          setAuthStatus('authenticated')
-          setUserRole(data.user?.role || null)
-        } else {
-          setAuthStatus('unauthenticated')
-          setUserRole(null)
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error('Error verifying auth token on Home:', error)
-          setAuthStatus('unauthenticated')
-          setUserRole(null)
-        }
-      }
-    }
-
-    checkAuthOnHome()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   const getDashboardPath = () => {
     if (!userRole) return '/login'
@@ -231,14 +205,12 @@ function Home() {
     } finally {
       clearCachedUserProfile()
       clearStoredUserDisplayName()
-      setAuthStatus('unauthenticated')
-      setUserRole(null)
+      clearAuth()
       navigate('/', { replace: true })
     }
   }
 
   const isAuthResolved = authStatus !== 'checking'
-  const isAuthenticated = authStatus === 'authenticated'
 
   const navButtonSx = {
     textTransform: 'none',

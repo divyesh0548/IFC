@@ -1,5 +1,5 @@
 import './index.css'
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import { Navigate, Routes, Route, useLocation } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import LinearProgress from '@mui/material/LinearProgress'
@@ -8,7 +8,7 @@ import CircularProgress from '@mui/material/CircularProgress'
 import RoleBasedProtectedRoute from './components/RoleBasedProtectedRoute'
 import { Toaster } from 'react-hot-toast'
 import { GlobalLoadingProvider, useGlobalLoading } from './contexts/GlobalLoadingContext'
-import { apiUrl } from './config/api'
+import { useAuth } from './contexts/AuthContext'
 import { installGlobalAuthSessionHandler } from './utils/authSession'
 
 const Home = lazy(() => import('./pages/Home'))
@@ -152,49 +152,17 @@ const ROLE_HOME_ROUTES = {
 }
 
 function RouteFallbackRedirect() {
-  const [redirectPath, setRedirectPath] = useState(null)
+  const { loading, isAuthenticated, role } = useAuth()
 
-  useEffect(() => {
-    let cancelled = false
-
-    const resolveRedirect = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-        const data = await response.json()
-
-        if (cancelled) return
-
-        if (response.ok && data.success) {
-          const role = String(data.user?.role || '').trim()
-          setRedirectPath(ROLE_HOME_ROUTES[role] || '/')
-          return
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error('Error verifying auth token for route fallback:', error)
-        }
-      }
-
-      if (!cancelled) {
-        setRedirectPath('/')
-      }
-    }
-
-    resolveRedirect()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  if (!redirectPath) {
+  if (loading) {
     return null
   }
 
-  return <Navigate to={redirectPath} replace />
+  if (isAuthenticated) {
+    return <Navigate to={ROLE_HOME_ROUTES[role] || '/'} replace />
+  }
+
+  return <Navigate to="/" replace />
 }
 
 function App() {

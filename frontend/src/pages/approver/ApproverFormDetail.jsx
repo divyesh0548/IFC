@@ -104,24 +104,11 @@ function ApproverFormDetail() {
   useEffect(() => {
     let cancelled = false
 
-    const checkAuthAndFetch = async () => {
+    const checkAccessAndFetch = async () => {
       setLoading(true)
       setError(null)
 
       try {
-        const authResponse = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-        const authData = await authResponse.json()
-
-        if (cancelled) return
-
-        if (!authResponse.ok || !authData.success || authData.user?.role !== 'approver') {
-          navigate('/login', { replace: true })
-          return
-        }
-
         const accessResponse = await fetch(
           apiUrl(`/api/approver/control-forms/${form_id}/access`),
           {
@@ -140,15 +127,16 @@ function ApproverFormDetail() {
         }
 
         await fetchFormData()
-      } catch (authError) {
-        console.error('Approver auth check error:', authError)
+      } catch (accessError) {
+        console.error('Approver access check error:', accessError)
         if (!cancelled) {
-          navigate('/login', { replace: true })
+          toast.error('Failed to verify RACM access')
+          navigate('/approver/dashboard', { replace: true })
         }
       }
     }
 
-    checkAuthAndFetch()
+    checkAccessAndFetch()
 
     return () => {
       cancelled = true

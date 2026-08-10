@@ -1,58 +1,17 @@
-import { useState, useEffect } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { apiUrl } from '../config/api'
+import { useAuth } from '../contexts/AuthContext'
 
+/** Legacy siteadmin-only gate. Prefer RoleBasedProtectedRoute. */
 function ProtectedRoute({ children }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(null)
-  const [requiresPasswordUpdate, setRequiresPasswordUpdate] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [verifiedPath, setVerifiedPath] = useState(null)
   const location = useLocation()
+  const {
+    loading,
+    isAuthenticated,
+    role,
+    requiresPasswordUpdate,
+  } = useAuth()
 
-  useEffect(() => {
-    let cancelled = false
-    const pathBeingVerified = location.pathname
-
-    const verifyToken = async () => {
-      setLoading(true)
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include', // Important: sends cookies
-        })
-
-        const data = await response.json()
-
-        if (cancelled) return
-
-        if (response.ok && data.success && data.user?.role === 'siteadmin') {
-          setIsAuthenticated(true)
-          setRequiresPasswordUpdate(Boolean(data.requiresPasswordUpdate))
-        } else {
-          setIsAuthenticated(false)
-          setRequiresPasswordUpdate(false)
-        }
-      } catch (error) {
-        if (cancelled) return
-        console.error('Token verification error:', error)
-        setIsAuthenticated(false)
-        setRequiresPasswordUpdate(false)
-      } finally {
-        if (!cancelled) {
-          setVerifiedPath(pathBeingVerified)
-          setLoading(false)
-        }
-      }
-    }
-
-    verifyToken()
-
-    return () => {
-      cancelled = true
-    }
-  }, [location.pathname])
-
-  if (loading || verifiedPath !== location.pathname) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-primary">
         <div className="text-secondary text-lg">Loading...</div>
@@ -60,7 +19,7 @@ function ProtectedRoute({ children }) {
     )
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || role !== 'siteadmin') {
     return <Navigate to="/login" replace />
   }
 
@@ -72,4 +31,3 @@ function ProtectedRoute({ children }) {
 }
 
 export default ProtectedRoute
-

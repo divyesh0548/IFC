@@ -36,6 +36,7 @@ import {
 } from '../../uiConstants'
 import { STORAGE_KEYS } from '../../storageKeys'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { apiUrl } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { formatIndianDateTime as formatIndianDateTimeShared, parseDateValue } from '../../lib/dateTime'
@@ -43,6 +44,7 @@ import { formatIndianDateTime as formatIndianDateTimeShared, parseDateValue } fr
 function ApproverDashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
+  const { user, role, isAuthenticated, loading: authLoading } = useAuth()
   const [approver, setApprover] = useState(null)
   const [forms, setForms] = useState([])
   const [financialYearOptions, setFinancialYearOptions] = useState([])
@@ -86,42 +88,23 @@ function ApproverDashboard() {
   }
 
   useEffect(() => {
-    // Fetch user info on component mount
-    const fetchUserInfo = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
+    loadCachedFinancialYearOptions()
+  }, [])
 
-        const data = await response.json()
+  useEffect(() => {
+    if (authLoading) return
 
-        if (response.ok && data.success) {
-          if (data.user.role !== 'approver') {
-            localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
-            navigate('/login')
-            return
-          }
-
-          // Store user info as approver for compatibility
-          setApprover({
-            id: data.user.id,
-            email_id: data.user.email_id
-          })
-        } else {
-          localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
-          navigate('/login')
-        }
-      } catch (error) {
-        console.error('Error fetching user info:', error)
-        localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
-        navigate('/login')
-      }
+    if (!isAuthenticated || role !== 'approver' || !user) {
+      localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
+      navigate('/login')
+      return
     }
 
-    loadCachedFinancialYearOptions()
-    fetchUserInfo()
-  }, [navigate])
+    setApprover({
+      id: user.id,
+      email_id: user.email_id,
+    })
+  }, [authLoading, isAuthenticated, role, user, navigate])
 
   useEffect(() => {
     if (approver) {

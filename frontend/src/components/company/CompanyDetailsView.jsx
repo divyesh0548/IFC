@@ -116,7 +116,7 @@ function CompanyDetailsView({
             Company Details
           </Typography>
           <Typography sx={{ mt: 0.75, color: 'text.secondary', lineHeight: 1.7, maxWidth: 720 }}>
-            Review company registration details and the current unit master from one place.
+            Review company registration details from one place
           </Typography>
         </Box>
 

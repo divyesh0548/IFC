@@ -16,12 +16,14 @@ import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import { toast } from 'react-hot-toast'
 import { useThemeMode } from '../contexts/ThemeContext'
+import { useAuth } from '../contexts/AuthContext'
 import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
 import { apiUrl } from '../config/api'
 
 const ROLE_HOME_ROUTES = {
   user: '/user/home',
   company_co: '/company_co/home',
+  company_admin: '/company_admin/home',
   approver: '/approver/home',
   siteadmin: '/siteadmin/dashboard',
   auditor: '/auditor/home',
@@ -46,46 +48,32 @@ function UpdatePassword() {
   const theme = useTheme()
   const { toggleTheme, mode } = useThemeMode()
   const navigate = useNavigate()
-  const [email_id, setEmail_id] = useState('')
-  const [userRole, setUserRole] = useState(null)
+  const {
+    loading: authLoading,
+    isAuthenticated,
+    user,
+    role: authRole,
+    setSession,
+  } = useAuth()
+  const email_id = user?.email_id || ''
+  const userRole = authRole
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [checkingSession, setCheckingSession] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const checkingSession = authLoading
   useSyncGlobalLoading(loading || checkingSession)
 
   useEffect(() => {
-    const fetchUserInfo = async () => {
-      setCheckingSession(true)
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-
-        const data = await response.json()
-
-        if (response.ok && data.success) {
-          setEmail_id(data.user.email_id)
-          setUserRole(data.user.role ?? null)
-        } else {
-          navigate('/login', { replace: true })
-        }
-      } catch (err) {
-        console.error('Error fetching user info:', err)
-        navigate('/login', { replace: true })
-      } finally {
-        setCheckingSession(false)
-      }
+    if (authLoading) return
+    if (!isAuthenticated) {
+      navigate('/login', { replace: true })
     }
-
-    fetchUserInfo()
-  }, [navigate])
+  }, [authLoading, isAuthenticated, navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -134,6 +122,11 @@ function UpdatePassword() {
 
       if (response.ok && data.success) {
         toast.success(data.message || 'Password updated successfully')
+        if (data.user) {
+          setSession(data.user, false)
+        } else if (user) {
+          setSession(user, false)
+        }
         const updatedRole = data.user?.role || userRole
         const dest = (updatedRole && ROLE_HOME_ROUTES[updatedRole]) || '/login'
         navigate(dest, { replace: true })

@@ -44,6 +44,7 @@ import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import LocalPhoneOutlinedIcon from '@mui/icons-material/LocalPhoneOutlined'
 import * as XLSX from 'xlsx'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { apiUrl } from '../../config/api'
 import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
@@ -168,7 +169,8 @@ function UserManagement() {
   const [selectedCreateUnitIds, setSelectedCreateUnitIds] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [loggedCoordinatorEmail, setLoggedCoordinatorEmail] = useState('')
+  const { email: authEmail, role: authRole } = useAuth()
+  const loggedCoordinatorEmail = authRole === 'company_co' ? (authEmail || '') : ''
   const { getEmailWarning, getEmailWarningHelperTextSx, countNonOrganizationEmails } = useOrganizationEmailWarning()
   const showUnitControls = mappedUnits.length > 1
 
@@ -335,28 +337,6 @@ function UserManagement() {
     fetchUsers()
     fetchMappedUnits()
   }, [fetchUsers, fetchMappedUnits])
-
-  useEffect(() => {
-    const fetchLoggedCoordinator = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-        const data = await response.json()
-        if (response.ok && data.success && String(data.user?.role || '').trim() === 'company_co') {
-          setLoggedCoordinatorEmail(String(data.user?.email_id || '').trim())
-        } else {
-          setLoggedCoordinatorEmail('')
-        }
-      } catch (verifyError) {
-        console.error('Fetch logged coordinator error:', verifyError)
-        setLoggedCoordinatorEmail('')
-      }
-    }
-
-    fetchLoggedCoordinator()
-  }, [])
 
   useEffect(() => {
     if (!bulkUploadDialog.submitting) return undefined

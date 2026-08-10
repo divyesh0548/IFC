@@ -28,6 +28,7 @@ import {
 } from '../storageKeys'
 import { MAIN_CONTENT_MAX_WIDTH, DASHBOARD_SECTION_GAP } from '../uiConstants'
 import { apiUrl } from '../config/api'
+import { useAuth } from '../contexts/AuthContext'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 
@@ -55,6 +56,7 @@ function DashboardLayout() {
   const theme = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
+  const { clearAuth } = useAuth()
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
   const [accountMenuAnchor, setAccountMenuAnchor] = useState(null)
   const accountMenuOpen = Boolean(accountMenuAnchor)
@@ -123,30 +125,28 @@ function DashboardLayout() {
         credentials: 'include',
       })
       const data = await response.json()
+      localStorage.removeItem(STORAGE_KEYS.companyName)
+      localStorage.removeItem(STORAGE_KEYS.companyIdentifier)
+      localStorage.removeItem(STORAGE_KEYS.approverCompanyNames)
+      localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
+      clearCompanyFinancialYearOptionsCache()
+      clearCachedUserProfile()
+      clearStoredUserDisplayName()
+      clearAuth()
       if (response.ok && data.success) {
-        localStorage.removeItem(STORAGE_KEYS.companyName)
-        localStorage.removeItem(STORAGE_KEYS.companyIdentifier)
-        localStorage.removeItem(STORAGE_KEYS.approverCompanyNames)
-        localStorage.removeItem(STORAGE_KEYS.approverFinancialYears)
-        clearCompanyFinancialYearOptionsCache()
-        clearCachedUserProfile()
-        clearStoredUserDisplayName()
         toast.success('Logged out successfully')
-        navigate('/login')
       } else {
         console.error('Logout failed:', data.message)
         toast.error(data.message || 'Logout failed')
-        clearCompanyFinancialYearOptionsCache()
-        clearCachedUserProfile()
-        clearStoredUserDisplayName()
-        navigate('/login')
       }
+      navigate('/login')
     } catch (error) {
       console.error('Logout error:', error)
       toast.error('Error during logout')
       clearCompanyFinancialYearOptionsCache()
       clearCachedUserProfile()
       clearStoredUserDisplayName()
+      clearAuth()
       navigate('/login')
     }
   }

@@ -103,6 +103,7 @@ function CustomColumnEditorDialog({
   canEditLabel = true,
   saveRequiresNewVersion = false,
   canDelete,
+  actionsDisabled = false,
   onClose,
   onEdit,
   onSave,
@@ -162,20 +163,22 @@ function CustomColumnEditorDialog({
       <DialogActions sx={{ px: 3, pt: 1, pb: 2.5 }}>
         {isEditing ? (
           <Stack direction="row" spacing={1} sx={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={onCancelEdit}>Cancel</Button>
-            <Button variant="contained" onClick={onSave}>
+            <Button onClick={onCancelEdit} disabled={actionsDisabled}>
+              Cancel
+            </Button>
+            <Button variant="contained" onClick={onSave} disabled={actionsDisabled}>
               Save
             </Button>
           </Stack>
         ) : (
           <Stack direction="row" spacing={1} sx={{ width: '100%', justifyContent: 'flex-end' }}>
             {canDelete ? (
-              <Button color="error" onClick={onDelete}>
+              <Button color="error" onClick={onDelete} disabled={actionsDisabled}>
                 Delete
               </Button>
             ) : null}
             {canEditLabel || canEditSection ? (
-              <Button variant="contained" onClick={onEdit}>
+              <Button variant="contained" onClick={onEdit} disabled={actionsDisabled}>
                 Edit
               </Button>
             ) : null}
@@ -391,7 +394,14 @@ function RacmTemplates() {
     canEditSection: false,
   })
   const assertionWarningShownRef = useRef(null)
+  const loadingRef = useRef(false)
   useSyncGlobalLoading(loading)
+
+  useEffect(() => {
+    loadingRef.current = loading
+  }, [loading])
+
+  const isPageBusy = () => loadingRef.current
 
   const fixedTemplateFields = useMemo(
     () => (Array.isArray(templateDetails?.fixed_fields) ? templateDetails.fixed_fields : []),
@@ -424,6 +434,7 @@ function RacmTemplates() {
 
   const fetchUnits = async () => {
     setLoading(true)
+    loadingRef.current = true
     try {
       const response = await fetch(apiUrl('/api/company-co/assigned-units'), {
         credentials: 'include',
@@ -447,6 +458,7 @@ function RacmTemplates() {
       console.error('Failed to fetch units:', error)
       toast.error('Failed to load units')
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }
@@ -514,6 +526,7 @@ function RacmTemplates() {
     let cancelled = false
     ;(async () => {
       setLoading(true)
+      loadingRef.current = true
       try {
         await fetchVersions(selectedUnitId)
       } catch (error) {
@@ -524,7 +537,10 @@ function RacmTemplates() {
           setTemplateDetails(null)
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          loadingRef.current = false
+          setLoading(false)
+        }
       }
     })()
     return () => {
@@ -537,6 +553,7 @@ function RacmTemplates() {
     let cancelled = false
     ;(async () => {
       setLoading(true)
+      loadingRef.current = true
       try {
         await fetchTemplateById(selectedTemplateId, selectedUnitId)
       } catch (error) {
@@ -547,7 +564,10 @@ function RacmTemplates() {
           setEditableExtraFields([])
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          loadingRef.current = false
+          setLoading(false)
+        }
       }
     })()
     return () => {
@@ -638,6 +658,7 @@ function RacmTemplates() {
   }, [selectedTemplateId, requiresVersionedSave])
 
   const handleOpenColumnEditor = (clientId, { startInEditMode = false } = {}) => {
+    if (isPageBusy()) return
     const field = editableExtraFields.find((item) => item.clientId === clientId)
     if (!field) return
     const sectionKey = field.draft_section_key ?? field.section_key ?? 'others'
@@ -732,6 +753,7 @@ function RacmTemplates() {
   }
 
   const appendDraftField = (sectionKey) => {
+    if (isPageBusy()) return
     if (columnEditor.open) {
       toast.error('Close the column editor first')
       return
@@ -767,6 +789,7 @@ function RacmTemplates() {
   }
 
   const handleAddCatalogAssertion = (catalogItem) => {
+    if (isPageBusy()) return
     const exists = editableExtraFields.some((field) => field.field_key === catalogItem.field_key)
     if (exists) {
       toast.error(`${catalogItem.label} is already on this template`)
@@ -793,6 +816,7 @@ function RacmTemplates() {
   }
 
   const handleAddExtraField = () => {
+    if (isPageBusy()) return
     appendDraftField('others')
   }
 
@@ -819,6 +843,7 @@ function RacmTemplates() {
   }
 
   const handleOpenSaveDialog = () => {
+    if (isPageBusy()) return
     if (!canEditExtras) {
       toast.error('Only the active template can be edited')
       return
@@ -844,12 +869,14 @@ function RacmTemplates() {
   }
 
   const handleOpenImportListDialog = async () => {
+    if (isPageBusy()) return
     if (!selectedUnitId) {
       toast.error('Select a unit first')
       return
     }
 
     setLoading(true)
+    loadingRef.current = true
     try {
       const response = await fetch(apiUrl('/api/company-co/racm-templates/import-catalog'), {
         credentials: 'include',
@@ -864,6 +891,7 @@ function RacmTemplates() {
       console.error('Failed to load import catalog:', error)
       toast.error(error.message || 'Failed to load templates for import')
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }
@@ -880,7 +908,9 @@ function RacmTemplates() {
   }
 
   const handleOpenImportPreview = async (unitMeta, templateMeta) => {
+    if (isPageBusy()) return
     setLoading(true)
+    loadingRef.current = true
     try {
       const response = await fetch(
         apiUrl(`/api/company-co/racm-templates/import-catalog/${encodeURIComponent(templateMeta.id)}`),
@@ -906,11 +936,13 @@ function RacmTemplates() {
       console.error('Failed to load import preview:', error)
       toast.error(error.message || 'Failed to load template preview')
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }
 
   const handleImportTemplate = async () => {
+    if (isPageBusy()) return
     const name = String(importTemplateName || '').trim()
     if (!name) {
       toast.error('Template name is required')
@@ -922,6 +954,7 @@ function RacmTemplates() {
     }
 
     setLoading(true)
+    loadingRef.current = true
     try {
       const response = await fetch(apiUrl('/api/company-co/racm-templates/import'), {
         method: 'POST',
@@ -949,11 +982,13 @@ function RacmTemplates() {
       console.error('Failed to import template:', error)
       toast.error(error.message || 'Failed to import template')
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }
 
   const handleActivateTemplate = async () => {
+    if (isPageBusy()) return
     if (!selectedTemplateId || !selectedUnitId || !templateDetails) return
     if (templateDetails.template?.status === 'active') {
       toast.error('This template is already active')
@@ -961,6 +996,7 @@ function RacmTemplates() {
     }
 
     setLoading(true)
+    loadingRef.current = true
     try {
       const response = await fetch(
         apiUrl(`/api/company-co/racm-templates/${encodeURIComponent(selectedTemplateId)}/activate`),
@@ -984,11 +1020,13 @@ function RacmTemplates() {
       console.error('Failed to activate template:', error)
       toast.error(error.message || 'Failed to activate template')
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }
 
   const handleSaveStructure = async (modeOverride) => {
+    if (isPageBusy()) return
     const committedFields = finalizeEditableExtraFields(editableExtraFields)
     if (!assertNoDuplicateLabelsInCommittedFields(committedFields)) {
       return
@@ -1010,6 +1048,7 @@ function RacmTemplates() {
     }
 
     setLoading(true)
+    loadingRef.current = true
     try {
       const response = await fetch(apiUrl('/api/company-co/racm-templates/structural-save'), {
         method: 'POST',
@@ -1040,14 +1079,17 @@ function RacmTemplates() {
       console.error('Failed to save template structure:', error)
       toast.error(error.message || 'Failed to save template changes')
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }
 
   const handleDeleteTemplateVersion = async () => {
+    if (isPageBusy()) return
     if (!selectedTemplateId || !canDeleteTemplateVersion) return
 
     setLoading(true)
+    loadingRef.current = true
     try {
       const response = await fetch(
         apiUrl(`/api/company-co/racm-templates/${encodeURIComponent(selectedTemplateId)}`),
@@ -1068,11 +1110,13 @@ function RacmTemplates() {
       console.error('Failed to delete template version:', error)
       toast.error(error.message || 'Failed to delete template version')
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }
 
   const handleCreateFreshTemplate = async () => {
+    if (isPageBusy()) return
     const name = freshTemplateName.trim()
     if (!name) {
       toast.error('Template name is required')
@@ -1084,6 +1128,7 @@ function RacmTemplates() {
     }
 
     setLoading(true)
+    loadingRef.current = true
     try {
       const response = await fetch(apiUrl('/api/company-co/racm-templates/create-fresh'), {
         method: 'POST',
@@ -1111,12 +1156,18 @@ function RacmTemplates() {
       console.error('Failed to create template:', error)
       toast.error(error.message || 'Failed to create template')
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }
 
   return (
-    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
+    <Box
+      sx={{
+        ...DASHBOARD_PAGE_OUTER_SX,
+        pointerEvents: loading ? 'none' : 'auto',
+      }}
+    >
       <Card sx={DASHBOARD_PAPER_SX}>
         <CardContent sx={{ p: { xs: 3, sm: 4 }, '&:last-child': { pb: { xs: 3, sm: 4 } } }}>
           <Stack
@@ -1139,7 +1190,7 @@ function RacmTemplates() {
                 startIcon={<FileDownloadOutlinedIcon />}
                 variant="outlined"
                 onClick={handleOpenImportListDialog}
-                disabled={!selectedUnitId}
+                disabled={loading || !selectedUnitId}
               >
                 Import
               </Button>
@@ -1147,7 +1198,7 @@ function RacmTemplates() {
                 startIcon={<AddRoundedIcon />}
                 variant="contained"
                 onClick={() => setCreateTemplateDialogOpen(true)}
-                disabled={!selectedUnitId}
+                disabled={loading || !selectedUnitId}
               >
                 Create new template
               </Button>
@@ -1155,7 +1206,7 @@ function RacmTemplates() {
           </Stack>
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 3 }}>
-            <FormControl fullWidth sx={{ flex: 1 }}>
+            <FormControl fullWidth sx={{ flex: 1 }} disabled={loading}>
               <InputLabel id="racm-template-unit-label">Unit</InputLabel>
               <Select
                 labelId="racm-template-unit-label"
@@ -1171,7 +1222,7 @@ function RacmTemplates() {
               </Select>
             </FormControl>
 
-            <FormControl fullWidth sx={{ flex: 1 }} disabled={versions.length === 0}>
+            <FormControl fullWidth sx={{ flex: 1 }} disabled={loading || versions.length === 0}>
               <InputLabel id="racm-template-version-label">Available Templates</InputLabel>
               <Select
                 labelId="racm-template-version-label"
@@ -1195,6 +1246,7 @@ function RacmTemplates() {
               variant="text"
               startIcon={<LightbulbOutlinedIcon fontSize="small" />}
               onClick={() => setAssertionInfoDialogOpen(true)}
+              disabled={loading}
               sx={{
                 textTransform: 'none',
                 fontWeight: 600,
@@ -1229,7 +1281,12 @@ function RacmTemplates() {
                     }}
                   >
                     {!isSelectedActiveTemplate ? (
-                      <Button variant="contained" size="small" onClick={handleActivateTemplate}>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        onClick={handleActivateTemplate}
+                        disabled={loading}
+                      >
                         Make Active
                       </Button>
                     ) : null}
@@ -1240,6 +1297,7 @@ function RacmTemplates() {
                         color="error"
                         startIcon={<DeleteOutlineRoundedIcon />}
                         onClick={() => setDeleteTemplateConfirmOpen(true)}
+                        disabled={loading}
                       >
                         Delete version
                       </Button>
@@ -1284,14 +1342,14 @@ function RacmTemplates() {
 
                 <TemplateColumnListing
                   groupedFields={groupedFields}
-                  canEditExtras={canEditExtras}
+                  canEditExtras={canEditExtras && !loading}
                   onColumnClick={handleOpenColumnEditor}
                 />
 
                 {canEditExtras ? (
                   <Stack direction="row" spacing={1.5} sx={{ pt: 0.5, flexWrap: 'wrap', gap: 1.5 }}>
                     {availableCatalogAssertions.length > 0 ? (
-                      <FormControl size="small" sx={{ minWidth: 240 }}>
+                      <FormControl size="small" sx={{ minWidth: 240 }} disabled={loading}>
                         <InputLabel id="add-standard-assertion-label">Add standard assertion</InputLabel>
                         <Select
                           labelId="add-standard-assertion-label"
@@ -1316,6 +1374,7 @@ function RacmTemplates() {
                       startIcon={<AddRoundedIcon />}
                       variant="outlined"
                       onClick={handleAddExtraField}
+                      disabled={loading}
                     >
                       Add custom column (Others)
                     </Button>
@@ -1323,7 +1382,7 @@ function RacmTemplates() {
                       startIcon={<SaveRoundedIcon />}
                       variant="contained"
                       onClick={handleOpenSaveDialog}
-                      disabled={!hasStructuralChanges}
+                      disabled={loading || !hasStructuralChanges}
                     >
                       Save Changes
                     </Button>
@@ -1339,7 +1398,15 @@ function RacmTemplates() {
         </CardContent>
       </Card>
 
-      <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={saveDialogOpen}
+        onClose={() => {
+          if (loading) return
+          setSaveDialogOpen(false)
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Save Template Changes</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3, mt: 1.5 }}>
@@ -1347,7 +1414,7 @@ function RacmTemplates() {
               ? 'Existing RACMs keep their current template version (linked via control_forms.template_id). Choose how to save structural changes.'
               : 'No RACMs are linked to this template yet. You can update the current template or create a new version if you prefer.'}
           </Typography>
-          <FormControl fullWidth sx={{ mb: 2 }}>
+          <FormControl fullWidth sx={{ mb: 2 }} disabled={loading}>
             <InputLabel id="save-mode-label">Save option</InputLabel>
             <Select
               labelId="save-mode-label"
@@ -1370,12 +1437,15 @@ function RacmTemplates() {
               fullWidth
               value={newTemplateName}
               onChange={(e) => setNewTemplateName(e.target.value)}
+              disabled={loading}
             />
           ) : null}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={() => handleSaveStructure()}>
+          <Button onClick={() => setSaveDialogOpen(false)} disabled={loading}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={() => handleSaveStructure()} disabled={loading}>
             Save
           </Button>
         </DialogActions>
@@ -1391,6 +1461,7 @@ function RacmTemplates() {
         canEditLabel
         saveRequiresNewVersion={requiresVersionedSave}
         canDelete={editableExtraFields.some((field) => field.clientId === columnEditor.clientId)}
+        actionsDisabled={loading}
         onClose={handleDialogClose}
         onEdit={handleEnterColumnEditMode}
         onSave={handleColumnEditorSave}
@@ -1440,6 +1511,7 @@ function RacmTemplates() {
                     <ListItemButton
                       key={template.id}
                       onClick={() => handleOpenImportPreview(unit, template)}
+                      disabled={loading}
                       sx={{ borderRadius: 1.5, mb: 0.5 }}
                     >
                       <ListItemText
@@ -1459,13 +1531,18 @@ function RacmTemplates() {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pt: 1, pb: 2.5 }}>
-          <Button onClick={handleCloseImportListDialog}>Close</Button>
+          <Button onClick={handleCloseImportListDialog} disabled={loading}>
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog
         open={importPreviewDialogOpen}
-        onClose={handleCloseImportPreviewDialog}
+        onClose={() => {
+          if (loading) return
+          handleCloseImportPreviewDialog()
+        }}
         maxWidth="md"
         fullWidth
       >
@@ -1507,11 +1584,12 @@ function RacmTemplates() {
                 autoFocus
                 value={importTemplateName}
                 onChange={(e) => setImportTemplateName(e.target.value)}
+                disabled={loading}
                 helperText="This name will be used for the imported template in the current unit."
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault()
-                    handleImportTemplate()
+                    if (!loading) handleImportTemplate()
                   }
                 }}
               />
@@ -1519,8 +1597,14 @@ function RacmTemplates() {
           ) : null}
         </DialogContent>
         <DialogActions sx={{ px: 3, pt: 1, pb: 2.5 }}>
-          <Button onClick={handleCloseImportPreviewDialog}>Cancel</Button>
-          <Button variant="contained" onClick={handleImportTemplate} disabled={!importPreviewDetails}>
+          <Button onClick={handleCloseImportPreviewDialog} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleImportTemplate}
+            disabled={loading || !importPreviewDetails}
+          >
             Import
           </Button>
         </DialogActions>
@@ -1529,6 +1613,7 @@ function RacmTemplates() {
       <Dialog
         open={createTemplateDialogOpen}
         onClose={() => {
+          if (loading) return
           setCreateTemplateDialogOpen(false)
           setFreshTemplateName('')
         }}
@@ -1546,10 +1631,11 @@ function RacmTemplates() {
             autoFocus
             value={freshTemplateName}
             onChange={(e) => setFreshTemplateName(e.target.value)}
+            disabled={loading}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
-                handleCreateFreshTemplate()
+                if (!loading) handleCreateFreshTemplate()
               }
             }}
           />
@@ -1557,13 +1643,15 @@ function RacmTemplates() {
         <DialogActions>
           <Button
             onClick={() => {
+              if (loading) return
               setCreateTemplateDialogOpen(false)
               setFreshTemplateName('')
             }}
+            disabled={loading}
           >
             Cancel
           </Button>
-          <Button variant="contained" onClick={handleCreateFreshTemplate}>
+          <Button variant="contained" onClick={handleCreateFreshTemplate} disabled={loading}>
             Create
           </Button>
         </DialogActions>
@@ -1587,14 +1675,19 @@ function RacmTemplates() {
 
       <AppDialog
         open={deleteTemplateConfirmOpen}
-        onClose={() => setDeleteTemplateConfirmOpen(false)}
+        onClose={() => {
+          if (loading) return
+          setDeleteTemplateConfirmOpen(false)
+        }}
         title="Delete template version?"
+        showTitleDivider
         description={`Delete ${templateDetails?.template?.template_name} (v${templateDetails?.template?.version})? This cannot be undone. Only versions with no linked RACMs can be removed.`}
         actions={
           <>
             <Button
               variant="outlined"
               onClick={() => setDeleteTemplateConfirmOpen(false)}
+              disabled={loading}
               sx={getAppDialogCancelButtonSx(theme)}
             >
               Cancel
@@ -1603,6 +1696,7 @@ function RacmTemplates() {
               variant="contained"
               color="error"
               onClick={handleDeleteTemplateVersion}
+              disabled={loading}
               sx={APP_DIALOG_PRIMARY_BUTTON_SX}
             >
               Delete version
@@ -1613,7 +1707,10 @@ function RacmTemplates() {
 
       <AppDialog
         open={removeConfirm.open}
-        onClose={() => setRemoveConfirm({ open: false, clientId: null, label: '' })}
+        onClose={() => {
+          if (loading) return
+          setRemoveConfirm({ open: false, clientId: null, label: '' })
+        }}
         title="Remove custom column?"
         description={`Remove "${removeConfirm.label}" from this template? You must save changes for this to take effect.`}
         actions={
@@ -1621,6 +1718,7 @@ function RacmTemplates() {
             <Button
               variant="outlined"
               onClick={() => setRemoveConfirm({ open: false, clientId: null, label: '' })}
+              disabled={loading}
               sx={getAppDialogCancelButtonSx(theme)}
             >
               Cancel
@@ -1629,6 +1727,7 @@ function RacmTemplates() {
               variant="contained"
               color="error"
               onClick={handleConfirmRemoveExtraField}
+              disabled={loading}
               sx={APP_DIALOG_PRIMARY_BUTTON_SX}
             >
               Remove

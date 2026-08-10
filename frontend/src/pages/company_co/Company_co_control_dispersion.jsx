@@ -20,6 +20,7 @@ import {
   toRacmApprovalStatusQueryParam,
 } from '../../uiConstants'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { apiUrl } from '../../config/api'
 import {
   normalizeValue,
@@ -167,7 +168,7 @@ const countControlsByCombination = (forms, filters = {}) =>
 function ControlDispersionDashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const [companyIdentifier, setCompanyIdentifier] = useState(null)
+  const { companyIdentifier } = useAuth()
   const [dashboardStats, setDashboardStats] = useState(EMPTY_STATS)
   const [filterActive, setFilterActive] = useState('all')
   const [filterBusinessProcess, setFilterBusinessProcess] = useState('all')
@@ -184,27 +185,6 @@ function ControlDispersionDashboard() {
   const [businessProcessSummaryLoading, setBusinessProcessSummaryLoading] = useState(true)
   const [allRacms, setAllRacms] = useState([])
   useSyncGlobalLoading(loading || chartStatsLoading || businessProcessSummaryLoading)
-
-  useEffect(() => {
-    const fetchUserInfo = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-
-        const data = await response.json()
-
-        if (response.ok && data.success) {
-          setCompanyIdentifier(data.user.company_identifier)
-        }
-      } catch (error) {
-        console.error('Error fetching user info:', error)
-      }
-    }
-
-    fetchUserInfo()
-  }, [])
 
   useEffect(() => {
     let cancelled = false

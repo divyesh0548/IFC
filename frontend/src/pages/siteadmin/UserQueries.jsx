@@ -267,56 +267,100 @@ function UserQueries() {
         }}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 2 } }}
+        PaperProps={{ sx: { borderRadius: 2.5, overflow: 'hidden' } }}
       >
-        <DialogTitle sx={{ fontWeight: 800 }}>Query Details</DialogTitle>
-        <DialogContent dividers sx={{ display: 'grid', gap: 1.5 }}>
-          <Box>
-            <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'text.secondary' }}>
-              Submitted On
-            </Typography>
-            <Typography>{selectedQuery ? formatIndianDateTime(selectedQuery.submitted_on) : '-'}</Typography>
+        <DialogTitle
+          sx={{
+            px: 3,
+            pt: 2.5,
+            pb: 2,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontWeight: 800, fontSize: '1.2rem', lineHeight: 1.3 }}>
+                Query Details
+              </Typography>
+              <Typography sx={{ mt: 0.5, color: 'text.secondary', fontSize: '0.875rem' }}>
+                {selectedQuery ? formatIndianDateTime(selectedQuery.submitted_on) : '-'}
+              </Typography>
+            </Box>
+            <Chip
+              size="small"
+              label={selectedQuery?.reviewed ? 'Reviewed' : 'Pending'}
+              color={selectedQuery?.reviewed ? 'success' : 'default'}
+              variant={selectedQuery?.reviewed ? 'filled' : 'outlined'}
+              sx={{ flexShrink: 0, mt: 0.25 }}
+            />
           </Box>
-          <Box>
-            <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'text.secondary' }}>
-              Type
-            </Typography>
-            <Typography>{selectedQuery?.type_of_query || '-'}</Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, py: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+              gap: 1.5,
+            }}
+          >
+            <Box
+              sx={{
+                p: 1.75,
+                borderRadius: 1.5,
+                border: '1px solid',
+                borderColor: 'divider',
+                backgroundColor: 'action.hover',
+              }}
+            >
+              <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary', mb: 0.75 }}>
+                Type
+              </Typography>
+              <Typography sx={{ fontWeight: 600, lineHeight: 1.4 }}>
+                {selectedQuery?.type_of_query || '-'}
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                p: 1.75,
+                borderRadius: 1.5,
+                border: '1px solid',
+                borderColor: 'divider',
+                backgroundColor: 'action.hover',
+              }}
+            >
+              <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary', mb: 0.75 }}>
+                User Email ID
+              </Typography>
+              <Typography sx={{ fontWeight: 600, lineHeight: 1.4, wordBreak: 'break-word' }}>
+                {selectedQuery?.user_email_id || '-'}
+              </Typography>
+            </Box>
           </Box>
-          <Box>
-            <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'text.secondary' }}>
-              User Email ID
-            </Typography>
-            <Typography sx={{ wordBreak: 'break-word' }}>{selectedQuery?.user_email_id || '-'}</Typography>
-          </Box>
-          <Box>
-            <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'text.secondary' }}>
+
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 1.5,
+              border: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary', mb: 1 }}>
               Explanation
             </Typography>
             <Typography sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.7 }}>
               {selectedQuery?.explanation || '-'}
             </Typography>
           </Box>
-          <Box>
-            <Typography sx={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'text.secondary' }}>
-              Review Status
+
+          {selectedQuery?.reviewed_on ? (
+            <Typography sx={{ fontSize: '0.84rem', color: 'text.secondary' }}>
+              Reviewed on {formatIndianDateTime(selectedQuery.reviewed_on)}
             </Typography>
-            <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-              <Chip
-                size="small"
-                label={selectedQuery?.reviewed ? 'Reviewed' : 'Pending'}
-                color={selectedQuery?.reviewed ? 'success' : 'default'}
-                variant={selectedQuery?.reviewed ? 'filled' : 'outlined'}
-              />
-              {selectedQuery?.reviewed_on ? (
-                <Typography sx={{ fontSize: '0.84rem', color: 'text.secondary' }}>
-                  {formatIndianDateTime(selectedQuery.reviewed_on)}
-                </Typography>
-              ) : null}
-            </Box>
-          </Box>
+          ) : null}
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2 }}>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid', borderColor: 'divider', gap: 1.25 }}>
           <Button
             onClick={() => setSelectedQuery(null)}
             disabled={Boolean(updatingId)}

@@ -16,6 +16,7 @@ import Typography from '@mui/material/Typography'
 import TablePagination from '@mui/material/TablePagination'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { getRacmProcessOwnerDisplayValue } from '../../racmFormDetailFields'
 import {
@@ -72,7 +73,7 @@ function formatDate(date) {
 function CompanyAdminRacmDashboard() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const [companyIdentifier, setCompanyIdentifier] = useState(null)
+  const { companyIdentifier } = useAuth()
   const [forms, setForms] = useState([])
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
@@ -93,24 +94,6 @@ function CompanyAdminRacmDashboard() {
   const { businessProcessOptions } = useBusinessProcesses()
 
   useSyncGlobalLoading(loading)
-
-  useEffect(() => {
-    const fetchUserInfo = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-        const data = await response.json()
-        if (response.ok && data.success) {
-          setCompanyIdentifier(data.user?.company_identifier || null)
-        }
-      } catch (error) {
-        console.error('Error fetching user info:', error)
-      }
-    }
-    fetchUserInfo()
-  }, [])
 
   useEffect(() => {
     if (!companyIdentifier) return

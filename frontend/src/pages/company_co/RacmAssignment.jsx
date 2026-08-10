@@ -37,6 +37,7 @@ import {
 import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
 import CompanyUserSearchAutocomplete from '../../components/company_co/CompanyUserSearchAutocomplete'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { isCoordinatorAssignedRacm, getRacmReassignmentBlockMessage, hasValidProcessOwnerAssignment } from '../../racmFormDetailFields'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
@@ -92,7 +93,7 @@ function RacmAssignment() {
   const UNIT_MISMATCH_TOAST_ID = 'racm-assignment-unit-mismatch'
   const ACTIVE_RACM_SELECTION_TOAST_ID = 'racm-assignment-active-selection'
   const theme = useTheme()
-  const [companyIdentifier, setCompanyIdentifier] = useState(null)
+  const { companyIdentifier } = useAuth()
   const [forms, setForms] = useState([])
   const [assignmentTarget, setAssignmentTarget] = useState('process_owner')
   const [filterAssignment, setFilterAssignment] = useState('all') // 'all' | 'assigned' | 'unassigned'
@@ -226,28 +227,6 @@ function RacmAssignment() {
     }
     return String(form?.sample_doc || '').trim() !== ''
   }
-
-  useEffect(() => {
-    // Fetch user role and company_identifier on component mount
-    const fetchUserInfo = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-
-        const data = await response.json()
-
-        if (response.ok && data.success) {
-          setCompanyIdentifier(data.user.company_identifier)
-        }
-      } catch (error) {
-        console.error('Error fetching user info:', error)
-      }
-    }
-
-    fetchUserInfo()
-  }, [])
 
   useEffect(() => {
     if (companyIdentifier) {

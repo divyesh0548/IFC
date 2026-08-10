@@ -5,6 +5,7 @@ import {
   clearCompanyFinancialYearOptionsCache,
   clearStoredUserDisplayName,
 } from '../storageKeys'
+import { clearAuthFromSessionHandler } from '../contexts/AuthContext'
 
 let installed = false
 let redirecting = false
@@ -51,6 +52,7 @@ function redirectToLogin() {
 
   redirecting = true
   clearClientAuthState()
+  clearAuthFromSessionHandler()
 
   const loginPath = currentPath && currentPath !== '/login'
     ? `/login?redirect=${encodeURIComponent(currentPath)}`

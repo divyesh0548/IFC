@@ -10,12 +10,6 @@ import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
@@ -24,7 +18,7 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import { toast } from 'react-hot-toast'
 import { apiUrl, API_BASE_URL } from '../../config/api'
-import { TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
+import { TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX, getAppDialogCancelButtonSx } from '../../components/AppDialog'
 import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
@@ -128,25 +122,6 @@ function CompanyAdminUnitManagement() {
   useEffect(() => {
     fetchUnitManagement()
   }, [fetchUnitManagement])
-
-  const tableBorderColor = theme.palette.mode === 'light'
-    ? alpha(theme.palette.text.primary, 0.16)
-    : alpha('#0f172a', 0.72)
-  const commonCellSx = {
-    py: 1.5,
-    px: 2.25,
-    borderBottom: `1px solid ${tableBorderColor}`,
-    verticalAlign: 'top',
-  }
-  const headCellSx = {
-    ...commonCellSx,
-    fontSize: '0.76rem',
-    fontWeight: 800,
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    color: 'text.secondary',
-    backgroundColor: TABLE_HEADER_BG,
-  }
 
   const handleCreateOrUpdateUnit = async () => {
     const unitName = String(unitDialog.unitName || '').trim()
@@ -319,73 +294,83 @@ function CompanyAdminUnitManagement() {
           <CircularProgress size={22} />
           <Typography color="text.secondary">Loading unit management data...</Typography>
         </Paper>
+      ) : data.units.length === 0 ? (
+        <Typography sx={{ py: 4, textAlign: 'center', color: 'text.secondary' }}>
+          No units found for this company.
+        </Typography>
       ) : (
-        <Paper elevation={0} sx={{ borderRadius: 1, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-          {/* <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-            <Typography sx={{ fontWeight: 850 }}>Unit Master</Typography>
-            <Typography sx={{ mt: 0.4, color: 'text.secondary', fontSize: '0.92rem', lineHeight: 1.6 }}>
-              Review current unit ownership and update mappings where required.
-            </Typography>
-          </Box> */}
-          <TableContainer>
-            <Table sx={{ minWidth: 840, tableLayout: 'fixed' }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ ...headCellSx, width: '20%' }}>Unit Name</TableCell>
-                  <TableCell sx={{ ...headCellSx, width: '30%' }}>Coordinator</TableCell>
-                  <TableCell sx={{ ...headCellSx, width: '50%' }}>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {data.units.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} sx={{ py: 4, textAlign: 'center', borderBottom: 0 }}>
-                      No units found for this company.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  data.units.map((unit, index) => (
-                    <TableRow key={unit.unit_id || unit.id} sx={{ '&:hover': { backgroundColor: TABLE_ROW_HOVER_BG }, '&:last-of-type td': { borderBottom: 0 }, '& td': { borderBottom: index === data.units.length - 1 ? 0 : `1px solid ${tableBorderColor}` } }}>
-                      <TableCell sx={{ ...commonCellSx, width: '20%', fontWeight: 700 }}>{unit.unit_name || 'N/A'}</TableCell>
-                      <TableCell sx={{ ...commonCellSx, width: '30%' }}>{unit.coordinator_display_name || unit.coordinator_email_id || 'Unassigned'}</TableCell>
-                      <TableCell sx={{ ...commonCellSx, width: '50%' }}>
-                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<EditRoundedIcon />}
-                            sx={{ textTransform: 'none' }}
-                            onClick={() => openEditUnitDialog(unit)}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<AssignmentIndRoundedIcon />}
-                            sx={{ textTransform: 'none' }}
-                            onClick={() => setAssignmentDialog({ open: true, unit, email: unit.coordinator_email_id || '', submitting: false, error: '' })}
-                          >
-                            Coordinator
-                          </Button>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<ManageAccountsRoundedIcon />}
-                            sx={{ textTransform: 'none' }}
-                            onClick={() => openApproverManagement(unit)}
-                          >
-                            Approver
-                          </Button>
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
+        <Box
+          sx={{
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1.5,
+            overflow: 'hidden',
+            backgroundColor: theme.palette.mode === 'dark'
+              ? alpha(theme.palette.background.paper, 0.96)
+              : alpha(theme.palette.background.paper, 0.92),
+          }}
+        >
+          {data.units.map((unit, index) => (
+            <Box
+              key={unit.unit_id || unit.id}
+              sx={{
+                display: 'flex',
+                alignItems: { xs: 'flex-start', md: 'center' },
+                justifyContent: 'space-between',
+                gap: 2,
+                flexWrap: 'wrap',
+                px: 2.25,
+                py: 1.75,
+                borderBottom: index === data.units.length - 1 ? 0 : '1px solid',
+                borderColor: 'divider',
+                '&:hover': { backgroundColor: TABLE_ROW_HOVER_BG },
+              }}
+            >
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.35 }}>
+                  {unit.unit_name || 'N/A'}
+                </Typography>
+                <Typography sx={{ mt: 0.4, color: 'text.secondary', fontSize: '0.875rem' }}>
+                  Coordinator: {unit.coordinator_display_name || unit.coordinator_email_id || 'Unassigned'}
+                </Typography>
+                {unit.unit_address ? (
+                  <Typography sx={{ mt: 0.25, color: 'text.secondary', fontSize: '0.8rem' }}>
+                    {unit.unit_address}
+                  </Typography>
+                ) : null}
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<EditRoundedIcon />}
+                  sx={{ textTransform: 'none' }}
+                  onClick={() => openEditUnitDialog(unit)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<AssignmentIndRoundedIcon />}
+                  sx={{ textTransform: 'none' }}
+                  onClick={() => setAssignmentDialog({ open: true, unit, email: unit.coordinator_email_id || '', submitting: false, error: '' })}
+                >
+                  Coordinator
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<ManageAccountsRoundedIcon />}
+                  sx={{ textTransform: 'none' }}
+                  onClick={() => openApproverManagement(unit)}
+                >
+                  Approver
+                </Button>
+              </Box>
+            </Box>
+          ))}
+        </Box>
       )}
 
       <AppDialog

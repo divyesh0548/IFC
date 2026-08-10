@@ -93,6 +93,7 @@ function AuditorFormDetail() {
   const [auditLogRows, setAuditLogRows] = useState([])
   const [rejectionHistoryRows, setRejectionHistoryRows] = useState([])
   const [rejectionHistoryOpen, setRejectionHistoryOpen] = useState(false)
+  const [expandedDeficiencyVersions, setExpandedDeficiencyVersions] = useState({})
 
   useSyncGlobalLoading(loading || auditLogLoading)
 
@@ -353,6 +354,36 @@ function AuditorFormDetail() {
   const isActive = getIsActive(formData?.active)
   const processOwnerDeclaration = formData?.process_owner_declaration || null
   const hasProcessOwnerDeclaration = Boolean(processOwnerDeclaration?.no_furthure_submission)
+  const showRemarksByUser = hasRacmFieldValue(formData?.remarks_by_user)
+  const showReasonByApprover = hasRacmFieldValue(formData?.reason_by_approver)
+  const deficiencyResponse = formData?.deficiency_response || null
+  const deficiencyCurrentSubmission = deficiencyResponse?.current_submission || null
+  const deficiencySubmissions = Array.isArray(deficiencyResponse?.submissions)
+    ? deficiencyResponse.submissions
+    : []
+  const deficiencyHistorySubmissions = deficiencySubmissions.filter((submission) => {
+    const isCurrentSubmission = Number(submission?.id) === Number(deficiencyCurrentSubmission?.id)
+    if (!isCurrentSubmission) return true
+    const normalizedStatus = String(submission?.status || '').trim().toLowerCase()
+    return normalizedStatus === 'approved' || normalizedStatus === 'rejected'
+  })
+  const deficiencyAttachments = Array.isArray(deficiencyCurrentSubmission?.attachments)
+    ? deficiencyCurrentSubmission.attachments
+    : []
+  const showActiveDeficiencyResponseSection = Boolean(
+    deficiencyResponse && String(deficiencyResponse.status || '').trim().toLowerCase() === 'submitted'
+  )
+  const formatDeficiencyStatus = (value) => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return '-'
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }
+  const toggleDeficiencySubmissionExpansion = (submissionId) => {
+    setExpandedDeficiencyVersions((current) => ({
+      ...current,
+      [submissionId]: !current[submissionId],
+    }))
+  }
   const topSummaryCardSx = isCompanyAdminView
     ? {
         p: 2,
@@ -1165,60 +1196,381 @@ function AuditorFormDetail() {
                     {userDocCount > 0 ? `${userDocCount} file(s)` : 'No user documents'}
                   </Typography>
                 </Box>
-                <Box sx={DOCUMENTS_APPROVAL_REMARKS_ROW_SX}>
-                  <Box
-                    sx={{
-                      p: 2.5,
-                      borderRadius: 2,
-                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
-                      border: '1px solid',
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
-                    }}
-                  >
-                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', mb: 1.5 }}>
-                      {fieldLabels.remarks_by_user}
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: hasRacmFieldValue(formData.remarks_by_user) ? 'text.secondary' : 'text.disabled',
-                        wordBreak: 'break-word',
-                        lineHeight: 1.6,
-                        whiteSpace: 'pre-wrap',
-                      }}
-                    >
-                      {hasRacmFieldValue(formData.remarks_by_user) ? String(formData.remarks_by_user) : '-'}
-                    </Typography>
+                {(showRemarksByUser || showReasonByApprover) ? (
+                  <Box sx={DOCUMENTS_APPROVAL_REMARKS_ROW_SX}>
+                    {showRemarksByUser ? (
+                      <Box
+                        sx={{
+                          p: 2.5,
+                          borderRadius: 2,
+                          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                          border: '1px solid',
+                          borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', mb: 1.5 }}>
+                          {fieldLabels.remarks_by_user}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.secondary',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {String(formData.remarks_by_user)}
+                        </Typography>
+                      </Box>
+                    ) : null}
+                    {showReasonByApprover ? (
+                      <Box
+                        sx={{
+                          p: 2.5,
+                          borderRadius: 2,
+                          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                          border: '1px solid',
+                          borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', mb: 1.5 }}>
+                          {fieldLabels.reason_by_approver}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.secondary',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {String(formData.reason_by_approver)}
+                        </Typography>
+                      </Box>
+                    ) : null}
                   </Box>
-                  <Box
-                    sx={{
-                      p: 2.5,
-                      borderRadius: 2,
-                      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
-                      border: '1px solid',
-                      borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
-                    }}
-                  >
-                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', mb: 1.5 }}>
-                      {fieldLabels.reason_by_approver}
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: hasRacmFieldValue(formData.reason_by_approver) ? 'text.secondary' : 'text.disabled',
-                        wordBreak: 'break-word',
-                        lineHeight: 1.6,
-                        whiteSpace: 'pre-wrap',
-                      }}
-                    >
-                      {hasRacmFieldValue(formData.reason_by_approver) ? String(formData.reason_by_approver) : '-'}
-                    </Typography>
-                  </Box>
-                </Box>
+                ) : null}
               </Box>
             </CardContent>
           </Card>
         </Box>
+
+        {deficiencyHistorySubmissions.length > 0 ? (
+          <Card
+            sx={{
+              borderRadius: 3,
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                : '0 2px 12px rgba(0, 0, 0, 0.08)',
+              border: '1px solid',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.12)'
+                : 'rgba(0, 0, 0, 0.08)',
+              overflow: 'hidden',
+            }}
+          >
+            <CardContent sx={{ p: 4 }}>
+              <Typography
+                variant="h6"
+                component="h3"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: 'text.primary',
+                  fontSize: '1.25rem',
+                  pb: 2,
+                  borderBottom: '2px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                Mitigation/Compensatory Plans History
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {deficiencyHistorySubmissions.map((submission) => {
+                  const isExpanded = Boolean(expandedDeficiencyVersions[submission.id])
+                  const submissionAttachments = Array.isArray(submission.attachments) ? submission.attachments : []
+                  const submissionTypeLabel = String(submission.submission_type || '').trim() === 'compensatory_racm'
+                    ? 'Compensatory RACM'
+                    : 'Mitigation Plan'
+                  const normalizedSubmissionStatus = String(submission.status || '').trim().toLowerCase()
+                  const tileTimestampLabel = normalizedSubmissionStatus === 'approved'
+                    ? 'Approved on'
+                    : normalizedSubmissionStatus === 'rejected'
+                      ? 'Rejected on'
+                      : 'Updated on'
+                  const tileTimestampValue = submission.reviewed_at || submission.submitted_at
+
+                  return (
+                    <Box
+                      key={submission.id}
+                      sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}
+                    >
+                      <Box
+                        sx={{
+                          px: 2,
+                          py: 1.5,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 2,
+                          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(15,23,42,0.02)',
+                        }}
+                      >
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                            Version {submission.version_no} • {submissionTypeLabel}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                            Status: {formatDeficiencyStatus(submission.status)}
+                            {tileTimestampValue ? ` • ${tileTimestampLabel} ${formatDateTime(tileTimestampValue)}` : ''}
+                          </Typography>
+                        </Box>
+                        <Button
+                          size="small"
+                          onClick={() => toggleDeficiencySubmissionExpansion(submission.id)}
+                          endIcon={isExpanded ? <KeyboardArrowUpIcon /> : null}
+                          sx={{ textTransform: 'none', flexShrink: 0 }}
+                        >
+                          {isExpanded ? 'Hide details' : 'View details'}
+                        </Button>
+                      </Box>
+                      {isExpanded ? (
+                        <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                          <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                            <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                              Explanation
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                              {String(submission.explaination || '').trim() || '-'}
+                            </Typography>
+                          </Box>
+                          {(String(submission.concerned_person || '').trim() || submission.due_date) ? (
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.5 }}>
+                              <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                  Concerned Person
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                  {String(submission.concerned_person || '').trim() || '-'}
+                                </Typography>
+                              </Box>
+                              <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                  Due Date
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                  {submission.due_date ? formatDate(submission.due_date) : '-'}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          ) : null}
+                          {submissionAttachments.length > 0 ? (
+                            <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                              <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                Documents
+                              </Typography>
+                              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                {submissionAttachments.map((attachment) => (
+                                  <Box key={attachment.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                                    <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                      {attachment.original_name || getFileName(attachment.file_url)}
+                                    </Typography>
+                                    <Button
+                                      size="small"
+                                      startIcon={<DownloadRoundedIcon />}
+                                      onClick={() => handleDownloadDocument(attachment.file_url, 'Document downloaded successfully')}
+                                      sx={{ textTransform: 'none' }}
+                                    >
+                                      Download
+                                    </Button>
+                                  </Box>
+                                ))}
+                              </Box>
+                            </Box>
+                          ) : null}
+                          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.5 }}>
+                            <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                              <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                Submitted By
+                              </Typography>
+                              <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                {String(submission.submitted_by_email || '').trim() || '-'}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                              <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                Submitted On
+                              </Typography>
+                              <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                {submission.submitted_at ? formatDateTime(submission.submitted_at) : '-'}
+                              </Typography>
+                            </Box>
+                          </Box>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.5 }}>
+                            <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                              <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                Reviewed By
+                              </Typography>
+                              <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                                {String(submission.reviewed_by_email || '').trim() || '-'}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                              <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                Reviewed On
+                              </Typography>
+                              <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                {submission.reviewed_at ? formatDateTime(submission.reviewed_at) : '-'}
+                              </Typography>
+                            </Box>
+                          </Box>
+                          <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                            <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                              Review Decision
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                              {formatDeficiencyStatus(submission.review_decision)}
+                            </Typography>
+                          </Box>
+                          {String(submission.review_comment || '').trim() ? (
+                            <Box sx={{ p: 1.75, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                              <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                                Review Comment
+                              </Typography>
+                              <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                                {String(submission.review_comment)}
+                              </Typography>
+                            </Box>
+                          ) : null}
+                        </Box>
+                      ) : null}
+                    </Box>
+                  )
+                })}
+              </Box>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {showActiveDeficiencyResponseSection ? (
+          <Card
+            sx={{
+              borderRadius: 3,
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                : '0 2px 12px rgba(0, 0, 0, 0.08)',
+              border: '1px solid',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.12)'
+                : 'rgba(0, 0, 0, 0.08)',
+              overflow: 'hidden',
+            }}
+          >
+            <CardContent sx={{ p: 4 }}>
+              <Typography
+                variant="h6"
+                component="h3"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: 'text.primary',
+                  fontSize: '1.25rem',
+                  pb: 2,
+                  borderBottom: '2px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                Mitigation/Compensatory Plans
+              </Typography>
+              {deficiencyResponse ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                  <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                      Response Type
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                      {String(deficiencyResponse.response_type || '').trim() === 'compensatory_racm' ? 'Compensatory RACM' : 'Mitigation Plan'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                      Explanation
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                      {String(deficiencyCurrentSubmission?.explaination || deficiencyResponse.explaination || '').trim() || '-'}
+                    </Typography>
+                  </Box>
+                  {(
+                    String(deficiencyCurrentSubmission?.concerned_person || deficiencyResponse.concerned_person || '').trim()
+                    || deficiencyCurrentSubmission?.due_date
+                    || deficiencyResponse.due_date
+                  ) ? (
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                          Concerned Person
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                          {String(deficiencyCurrentSubmission?.concerned_person || deficiencyResponse.concerned_person || '').trim() || '-'}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                          Due Date
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                          {(deficiencyCurrentSubmission?.due_date || deficiencyResponse.due_date)
+                            ? formatDate(deficiencyCurrentSubmission?.due_date || deficiencyResponse.due_date)
+                            : '-'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ) : null}
+                  {deficiencyAttachments.length > 0 ? (
+                    <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1.5, color: 'text.secondary' }}>
+                        Documents
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {deficiencyAttachments.map((attachment) => (
+                          <Box key={attachment.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                            <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                              {attachment.original_name || getFileName(attachment.file_url)}
+                            </Typography>
+                            <Button
+                              size="small"
+                              startIcon={<DownloadRoundedIcon />}
+                              onClick={() => handleDownloadDocument(attachment.file_url, 'Document downloaded successfully')}
+                              sx={{ textTransform: 'none' }}
+                            >
+                              Download
+                            </Button>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  ) : null}
+                  {String(deficiencyResponse.review_comment || '').trim() ? (
+                    <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 1, color: 'text.secondary' }}>
+                        Review Comment
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                        {String(deficiencyResponse.review_comment)}
+                      </Typography>
+                    </Box>
+                  ) : null}
+                </Box>
+              ) : (
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  No Mitigation/Compensatory Plans submitted yet.
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
       </Box>
 
       <Dialog

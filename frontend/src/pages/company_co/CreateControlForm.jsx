@@ -26,6 +26,7 @@ import { FORM_DETAIL_MAX_WIDTH } from '../../uiConstants'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { useAuth } from '../../contexts/AuthContext'
 import RacmUserAssignmentSection from '../../components/company_co/RacmUserAssignmentSection'
 import ActiveRacmTemplateNotice from '../../components/company_co/ActiveRacmTemplateNotice'
 import CustomColumnDot from '../../components/racm/CustomColumnDot'
@@ -82,8 +83,9 @@ const EMPTY_CONTROL_NUMBER_META = {
 function CreateControlForm() {
   const theme = useTheme()
   const navigate = useNavigate()
+  const { companyIdentifier: authCompanyIdentifier } = useAuth()
+  const companyIdentifier = authCompanyIdentifier || ''
   const [loading, setLoading] = useState(false)
-  const [companyIdentifier, setCompanyIdentifier] = useState('')
   const [unitOptions, setUnitOptions] = useState([])
   const controlNumberDebounceRef = useRef(null)
   const { businessProcessOptions, loading: businessProcessesLoading } = useBusinessProcesses()
@@ -153,28 +155,6 @@ function CreateControlForm() {
       reminder_frequency: '',
     }))
   }
-
-  useEffect(() => {
-    // Fetch user's company_identifier
-    const fetchUserInfo = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-
-        const data = await response.json()
-
-        if (response.ok && data.success && data.user.company_identifier) {
-          setCompanyIdentifier(data.user.company_identifier)
-        }
-      } catch (error) {
-        console.error('Error fetching user info:', error)
-      }
-    }
-
-    fetchUserInfo()
-  }, [])
 
   useEffect(() => {
     let cancelled = false

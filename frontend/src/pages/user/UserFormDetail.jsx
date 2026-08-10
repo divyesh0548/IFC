@@ -51,7 +51,7 @@ import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS,
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatIndianDateTime, formatDateOnly, toDateOnlyString } from '../../lib/dateTime'
 import { formatChangeRequestDisplayValue } from '../../lib/changeRequestHistory'
-import { apiUrl, API_BASE_URL } from '../../config/api'
+import { API_BASE_URL } from '../../config/api'
 import { formatDisplayName } from '../../utils/displayName'
 
 const REQUEST_CHANGE_FIELD_KEYS = [
@@ -209,34 +209,10 @@ function UserFormDetail() {
   }, [])
 
   useEffect(() => {
-    const checkAuthAndFetch = async () => {
-      // First check authentication
-      try {
-        const authResponse = await fetch(apiUrl('/api/auth/verify'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-
-        const authData = await authResponse.json()
-
-        if (!authResponse.ok || !authData.success) {
-          // Not authenticated - redirect to login with redirect param
-          const redirectUrl = encodeURIComponent(`/user/form/${form_id}`)
-          navigate(`/login?redirect=${redirectUrl}`, { replace: true })
-          return
-        }
-
-        // Authenticated - now fetch form data
-        await fetchFormData()
-      } catch (error) {
-        console.error('Auth check error:', error)
-        const redirectUrl = encodeURIComponent(`/user/form/${form_id}`)
-        navigate(`/login?redirect=${redirectUrl}`, { replace: true })
-      }
+    if (form_id) {
+      fetchFormData()
     }
-
-    checkAuthAndFetch()
-  }, [form_id, navigate])
+  }, [form_id])
 
   useEffect(() => {
     setRemarksDraftDirty(false)

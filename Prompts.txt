@@ -1,14 +1,4 @@
-Changes for API call optimization.
+1. in "Delete template version?" pop-up a border below header is missing, due to that pop-up looks bad.
 
-1. Add an auth context using context API. So all components will have shared access to user identity and role. So on each API call it will not call verify api again. 
-Currently the app loads 
-✅ Token verified successfully, user: divyesh.parmar@sharpandtannan.com role: company_co
-✅ Company coordinator verified successfully, user: divyesh.parmar@sharpandtannan.com role: company_co
-✅ Company coordinator verified successfully, user: divyesh.parmar@sharpandtannan.com role: company_co
-
-this 5-6 times when loading some data.
-
-2. Keep RoleBasedProtectedRoute as the only auth gate; remove page-level /api/auth/verify calls where context already has the data.
-
-Does this mean removing middlewares from API?
-I don't think so, cause the problem is that APIs for auth and other type of get requests are called many times.
+2. In all templates "Area" column is missing, please check and fix it. In bulk upload and manual form creation that column is present but in templates it is not present. It is a fixed column not an extra column.
+I checked "C:\Divyesh\IFC\IFC_Prisma\backend\utils\racm_templates.js" this file it also do not inlcude "Area" as fixed column in control. Please add it as one available in control_forms table.
