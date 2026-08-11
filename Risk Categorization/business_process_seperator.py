@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Split an Excel worksheet into separate Excel files based on distinct values
-in a selected column.
+Split an Excel workbook into separate Excel files.
+
+Two modes (see CONFIGURATION):
+  - Column mode: split one worksheet by distinct values in a selected column.
+  - Sheet mode: create one file per worksheet, named after the sheet.
 
 Before running, update the variables under CONFIGURATION below.
 
@@ -27,11 +30,18 @@ from openpyxl.cell.cell import MergedCell
 # CONFIGURATION — CHANGE ONLY THESE VALUES
 # ============================================================
 
-INPUT_FILE = r"C:\Divyesh\IFC\IFC_Prisma\Risk Categorization\Base IFCs\TIL\TIL_FY-2025-26_IFC Review.xlsx"
+INPUT_FILE = r"C:\Divyesh\IFC\IFC_Prisma\Risk Categorization\Base IFCs\Roechling\Roechling IFC.xlsx"
+OUTPUT_FOLDER = r"C:\Divyesh\IFC\IFC_Prisma\Risk Categorization"
+
+# If True, ignore SHEET_NAME / COLUMN_NAME and create one Excel file per sheet,
+# named after the sheet. If False, split one sheet by COLUMN_NAME values.
+SEPARATE_BY_SHEET_NAMES = True
+
+# Used only when SEPARATE_BY_SHEET_NAMES is False.
 SHEET_NAME = "IFC"
 COLUMN_NAME = "Process"
-OUTPUT_FOLDER = r"C:\Divyesh\IFC\IFC_Prisma\Risk Categorization\TIL"
 
+# Used only when SEPARATE_BY_SHEET_NAMES is False.
 # Set True to create Blank.xlsx for rows where the selected column is blank.
 INCLUDE_BLANK_VALUES = False
 
@@ -259,8 +269,7 @@ def copy_column_widths(
         destination_dimension.outlineLevel = source_dimension.outlineLevel
 
 
-def split_excel_file() -> list[Path]:
-    """Perform the complete Excel splitting process."""
+def resolve_input_and_output() -> tuple[Path, Path]:
     input_path = Path(INPUT_FILE).expanduser().resolve()
     output_path = Path(OUTPUT_FOLDER).expanduser().resolve()
 
@@ -270,6 +279,87 @@ def split_excel_file() -> list[Path]:
     if input_path.suffix.lower() not in {".xlsx", ".xlsm"}:
         raise ValueError("The input file must be an .xlsx or .xlsm file.")
 
+    return input_path, output_path
+
+
+def copy_worksheet_contents(source_worksheet, destination_worksheet) -> tuple[int, int]:
+    """Copy used cells, column widths, freeze panes, and auto-filter."""
+    maximum_row = max(source_worksheet.max_row or 1, 1)
+    maximum_column = max(source_worksheet.max_column or 1, 1)
+
+    copy_column_widths(source_worksheet, destination_worksheet, maximum_column)
+
+    for row_number in range(1, maximum_row + 1):
+        copy_row(
+            source_worksheet=source_worksheet,
+            destination_worksheet=destination_worksheet,
+            source_row_number=row_number,
+            destination_row_number=row_number,
+            maximum_column=maximum_column,
+        )
+
+    if source_worksheet.freeze_panes:
+        destination_worksheet.freeze_panes = source_worksheet.freeze_panes
+
+    if source_worksheet.auto_filter and source_worksheet.auto_filter.ref:
+        destination_worksheet.auto_filter.ref = source_worksheet.auto_filter.ref
+
+    return maximum_row, maximum_column
+
+
+def split_by_sheet_names() -> list[Path]:
+    """Create one Excel file for each worksheet, named after the sheet."""
+    input_path, output_path = resolve_input_and_output()
+    keep_vba = input_path.suffix.lower() == ".xlsm"
+    output_extension = ".xlsm" if keep_vba else ".xlsx"
+
+    source_workbook = load_workbook(
+        filename=input_path,
+        data_only=False,
+        keep_vba=keep_vba,
+    )
+
+    sheet_names = list(source_workbook.sheetnames)
+    if not sheet_names:
+        raise ValueError("The workbook does not contain any worksheets.")
+
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    used_filenames: set[str] = set()
+    created_files: list[Path] = []
+
+    print(f"Sheet-name mode: found {len(sheet_names)} worksheet(s).\n")
+
+    for sheet_name in sheet_names:
+        source_worksheet = source_workbook[sheet_name]
+        output_workbook = Workbook()
+        output_worksheet = output_workbook.active
+        output_worksheet.title = str(sheet_name)[:31]
+
+        maximum_row, _maximum_column = copy_worksheet_contents(
+            source_worksheet,
+            output_worksheet,
+        )
+
+        unique_name = create_unique_filename(
+            create_safe_filename(sheet_name),
+            used_filenames,
+        )
+        destination_file = output_path / f"{unique_name}{output_extension}"
+        output_workbook.save(destination_file)
+        created_files.append(destination_file)
+
+        print(
+            f"Created: {destination_file.name} "
+            f'(sheet "{sheet_name}", {maximum_row} row(s))'
+        )
+
+    return created_files
+
+
+def split_excel_file() -> list[Path]:
+    """Split one worksheet by distinct values in the configured column."""
+    input_path, output_path = resolve_input_and_output()
     keep_vba = input_path.suffix.lower() == ".xlsm"
 
     source_workbook = load_workbook(
@@ -415,7 +505,11 @@ def split_excel_file() -> list[Path]:
 
 def main() -> None:
     try:
-        created_files = split_excel_file()
+        created_files = (
+            split_by_sheet_names()
+            if SEPARATE_BY_SHEET_NAMES
+            else split_excel_file()
+        )
 
         print(
             f"\nCompleted successfully. "
