@@ -24,7 +24,7 @@ function normalizeSubProcessName(value) {
   return String(value || '').trim().toLowerCase();
 }
 
-function resolveMatchedCandidateSubProcess(matchedSubProcess, candidateSubProcesses) {
+function resolveMatchedCandidate(matchedSubProcess, candidateSubProcesses) {
   const normalizedMatchedSubProcess = normalizeSubProcessName(matchedSubProcess);
   const matchedCandidate = (Array.isArray(candidateSubProcesses) ? candidateSubProcesses : []).find(
     (candidate) => normalizeSubProcessName(candidate?.subProcess) === normalizedMatchedSubProcess
@@ -39,7 +39,103 @@ function resolveMatchedCandidateSubProcess(matchedSubProcess, candidateSubProces
     throw error;
   }
 
-  return String(matchedCandidate.subProcess || '').trim();
+  return matchedCandidate;
+}
+
+const RISK_COMPARE_STOPWORDS = new Set([
+  'about', 'after', 'also', 'been', 'being', 'from', 'have', 'into', 'that', 'this',
+  'they', 'them', 'their', 'with', 'without', 'will', 'shall', 'such', 'than', 'then',
+  'when', 'where', 'which', 'while', 'would', 'could', 'should', 'may', 'might',
+  'result', 'results', 'resulting', 'lead', 'leads', 'leading', 'ensure', 'ensures',
+  'process', 'does', 'not', 'and', 'the', 'for', 'are', 'was', 'were',
+]);
+
+function normalizeRiskCompareText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function tokenizeRiskCompareText(value) {
+  return normalizeRiskCompareText(value)
+    .split(/\s+/)
+    .map((token) => {
+      if (token.endsWith('ies') && token.length > 5) return `${token.slice(0, -3)}y`;
+      if (token.endsWith('s') && !token.endsWith('ss') && token.length > 4) return token.slice(0, -1);
+      return token;
+    })
+    .filter((token) => token.length > 3 && !RISK_COMPARE_STOPWORDS.has(token));
+}
+
+function riskTokenOverlapRatio(riskText, sourceText) {
+  const riskTokens = tokenizeRiskCompareText(riskText);
+  const sourceTokens = new Set(tokenizeRiskCompareText(sourceText));
+  if (riskTokens.length === 0 || sourceTokens.size === 0) return 0;
+  const hits = riskTokens.filter((token) => sourceTokens.has(token)).length;
+  return hits / riskTokens.length;
+}
+
+function findExactCandidateRisk(riskText, candidateRisks) {
+  const normalizedRisk = normalizeRiskCompareText(riskText);
+  if (!normalizedRisk) return '';
+  return (Array.isArray(candidateRisks) ? candidateRisks : []).find(
+    (candidateRisk) => normalizeRiskCompareText(candidateRisk) === normalizedRisk
+  ) || '';
+}
+
+function isCandidateRiskCoveredByControl(riskText, control) {
+  const riskDescription = String(control?.riskDescription || '').trim();
+  const controlDetails = [
+    control?.riskDescription,
+    control?.controlObjective,
+    control?.standardControlDescription,
+  ].filter(Boolean).join(' ');
+
+  if (riskDescription && riskTokenOverlapRatio(riskText, riskDescription) >= 0.45) {
+    return true;
+  }
+  return riskTokenOverlapRatio(riskText, controlDetails) >= 0.5;
+}
+
+function sanitizeRiskAnalysisResult(parsed, matchedCandidate, control) {
+  const candidateRisks = Array.isArray(matchedCandidate?.risks) ? matchedCandidate.risks : [];
+  const allowedMissingRisks = [];
+
+  for (const riskText of Array.isArray(parsed.missingRisks) ? parsed.missingRisks : []) {
+    const exactCandidateRisk = findExactCandidateRisk(riskText, candidateRisks);
+    const canonicalRisk = exactCandidateRisk || riskText;
+    if (isCandidateRiskCoveredByControl(canonicalRisk, control)) continue;
+    if (exactCandidateRisk && !allowedMissingRisks.includes(exactCandidateRisk)) {
+      allowedMissingRisks.push(exactCandidateRisk);
+    }
+  }
+
+  const missingRiskPointers = (Array.isArray(parsed.missingRiskPointers) ? parsed.missingRiskPointers : [])
+    .map((item) => {
+      const exactCandidateRisk = findExactCandidateRisk(item.risk, candidateRisks)
+        || findExactCandidateRisk(item.risk, allowedMissingRisks);
+      const canonicalRisk = exactCandidateRisk || item.risk;
+      if (isCandidateRiskCoveredByControl(canonicalRisk, control)) return null;
+      if (!exactCandidateRisk && !allowedMissingRisks.includes(canonicalRisk)) return null;
+      return {
+        risk: exactCandidateRisk || canonicalRisk,
+        pointer: item.pointer,
+      };
+    })
+    .filter(Boolean);
+
+  const missingRisks = allowedMissingRisks.length > 0
+    ? allowedMissingRisks
+    : [...new Set(missingRiskPointers.map((item) => item.risk))];
+
+  return {
+    ...parsed,
+    matchedSubProcess: String(matchedCandidate?.subProcess || parsed.matchedSubProcess || '').trim(),
+    missingRisks,
+    missingRiskPointers: missingRiskPointers.filter((item) => missingRisks.includes(item.risk)),
+    coverageStatus: missingRisks.length === 0 ? 'Covered' : parsed.coverageStatus,
+  };
 }
 
 function buildRiskAnalysisPrompt({ businessProcess, control, candidateSubProcesses }) {
@@ -55,11 +151,11 @@ function buildRiskAnalysisPrompt({ businessProcess, control, candidateSubProcess
       '',
       'Your task has two steps:',
       '1. Match the input control to the most appropriate candidate sub-process.',
-      '2. For the matched candidate sub-process, compare the control risk coverage with the listed candidate risks and identify which listed risks are not addressed by the control.',
+      '2. For the matched candidate sub-process, compare each listed candidate risk category with the input control details and identify only those listed risks that are not addressed by the control.',
       
       '',
       'Use only the information provided in the input control and candidate sub-process list.',
-      'Do not use external knowledge, assumptions, industry examples, or inferred control details.',
+      'Do not use external knowledge, assumptions, industry examples, or inferred control details that are not supported by the input control fields.',
       'Do not invent risks, sub-processes, control activities, or evidence requirements.',
       
       '',
@@ -72,19 +168,27 @@ function buildRiskAnalysisPrompt({ businessProcess, control, candidateSubProcess
       
       '',
       'Risk coverage comparison rules:',
-      'After selecting matchedSubProcess, review only the risks listed under that matched candidate sub-process.',
-      'Compare each listed candidate risk against the input control objective, control description, risk, and other available control fields.',
-      'Treat a candidate risk as covered only when the input control clearly addresses that risk.',
-      'If the control does not clearly test or mitigate a listed candidate risk, include that risk in missingRisks.',
-      'Do not mark a risk as covered merely because the wording is generally related to the same process.',
-      'If coverage is unclear or only indirectly implied, treat the risk as missing.',
+      'After selecting matchedSubProcess, review only the risks listed under that matched candidate sub-process. Those listed items are the risk categories for that sub-process.',
+      'For each listed candidate risk, ask: does this RACM already address that risk category?',
+      'Read riskDescription, controlObjective, and standardControlDescription together. These are the control details.',
+      'riskDescription is the risk this RACM is written to address. If a candidate risk has the same meaning as riskDescription, that candidate risk is COVERED by this control. Do not list it as missing.',
+      'controlObjective and standardControlDescription describe what the control does. If they already mitigate, review, approve, test, or select against the same issue as a candidate risk, that candidate risk is COVERED.',
+      'Match on meaning and risk theme, not exact wording.',
+      'A candidate risk is MISSING only when the control details do not address that risk category at all.',
+      'Do not invert the control details into a missing risk.',
+      'Do not create a new missing-risk sentence from the control text. Use only candidate risk wording, and only when that candidate risk is truly not addressed.',
+      'Do not flag a risk as missing merely because the control uses different words, a shorter description, or a more specific activity.',
+      'Do not mark a risk as covered merely because it belongs to the same business process or sub-process. Coverage must come from the control details.',
+      'If every listed candidate risk that relates to this control is already addressed, return missingRisks as an empty array.',
       
       '',
       'missingRisks rules:',
-      'missingRisks must contain only risks from the selected candidate sub-process.',
+      'missingRisks must contain only risks copied exactly from the selected candidate sub-process list, and only those not addressed by the input control details.',
       'Copy missingRisks exactly as written in the candidate sub-process risk list.',
       'Do not add new risks to missingRisks.',
+      'Do not paraphrase, shorten, invert, or rewrite candidate risks.',
       'Do not include risks from other candidate sub-processes.',
+      'Do not include a listed candidate risk in missingRisks if riskDescription, controlObjective, or standardControlDescription already covers that risk category.',
       
       '',
       'missingRiskPointers rules:',
@@ -215,7 +319,7 @@ async function requestRiskAnalysis({ businessProcess, control, candidateSubProce
     messages: [
       {
         role: 'system',
-        content: 'You are an internal controls risk specialist. Return only valid JSON matching the schema. Rewrite findings in simple language and never return duplicate or near-duplicate pointers.',
+        content: 'You are an internal controls risk specialist. List missing risks only when a candidate sub-process risk is not already addressed by riskDescription, controlObjective, or standardControlDescription. If the control already covers a candidate risk, omit it. Never invert control wording into a missing risk. Copy missingRisks exactly from the candidate list. Return only valid JSON matching the schema.',
       },
       {
         role: 'user',
@@ -249,10 +353,8 @@ async function requestRiskAnalysis({ businessProcess, control, candidateSubProce
 
   try {
     const parsed = parseRiskAnalysisResponse(content);
-    return {
-      ...parsed,
-      matchedSubProcess: resolveMatchedCandidateSubProcess(parsed.matchedSubProcess, candidateSubProcesses),
-    };
+    const matchedCandidate = resolveMatchedCandidate(parsed.matchedSubProcess, candidateSubProcesses);
+    return sanitizeRiskAnalysisResult(parsed, matchedCandidate, control);
   } catch (error) {
     if (error?.code === 'OLLAMA_INVALID_CANDIDATE_SUB_PROCESS') {
       throw error;

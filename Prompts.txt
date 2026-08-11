@@ -1,4 +1,0 @@
-1. in "Delete template version?" pop-up a border below header is missing, due to that pop-up looks bad.
-
-2. In all templates "Area" column is missing, please check and fix it. In bulk upload and manual form creation that column is present but in templates it is not present. It is a fixed column not an extra column.
-I checked "C:\Divyesh\IFC\IFC_Prisma\backend\utils\racm_templates.js" this file it also do not inlcude "Area" as fixed column in control. Please add it as one available in control_forms table.

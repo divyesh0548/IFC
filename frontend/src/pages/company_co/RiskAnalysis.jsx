@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -55,13 +55,21 @@ function getSelectedFilterLabel(selected, options, getLabel = (value) => value) 
   return `${selected.length} selected`
 }
 
+const FILTER_CONTROL_HEIGHT = 40
+
 const FILTER_SELECT_SX = {
   minWidth: { xs: '100%', sm: 220 },
   maxWidth: { xs: '100%', sm: 260 },
+  height: FILTER_CONTROL_HEIGHT,
+  '& .MuiInputBase-root': {
+    height: FILTER_CONTROL_HEIGHT,
+  },
   '& .MuiSelect-select': {
     display: 'flex',
     alignItems: 'center',
-    minHeight: '1.4375em',
+    py: 0,
+    height: FILTER_CONTROL_HEIGHT,
+    boxSizing: 'border-box',
   },
 }
 
@@ -116,7 +124,16 @@ function RiskAnalysis() {
   const [analysisGenerating, setAnalysisGenerating] = useState(false)
   const [batchGenerating, setBatchGenerating] = useState(false)
   const [analysisData, setAnalysisData] = useState(null)
-  useSyncGlobalLoading(loading || batchGenerating)
+  const lastSelectedIndexRef = useRef(null)
+  useSyncGlobalLoading(loading || batchGenerating || analysisGenerating)
+
+  const pageControlNumbers = useMemo(
+    () =>
+      rows
+        .map((row) => String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim())
+        .filter(Boolean),
+    [rows]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -187,11 +204,33 @@ function RiskAnalysis() {
     setter(typeof value === 'string' ? value.split(',').filter(Boolean) : value)
     setPage(0)
     setSelectedControlNumbers(new Set())
+    lastSelectedIndexRef.current = null
   }
 
-  const toggleControlSelection = (controlNumber) => {
+  const toggleControlSelection = (controlNumber, event) => {
     const normalizedControlNumber = String(controlNumber || '').trim()
     if (!normalizedControlNumber) return
+
+    const currentIndex = pageControlNumbers.indexOf(normalizedControlNumber)
+    if (currentIndex < 0) return
+
+    const isShiftSelect = Boolean(event?.nativeEvent?.shiftKey || event?.shiftKey)
+    const anchorIndex = lastSelectedIndexRef.current
+
+    if (isShiftSelect && Number.isInteger(anchorIndex) && pageControlNumbers[anchorIndex]) {
+      const start = Math.min(anchorIndex, currentIndex)
+      const end = Math.max(anchorIndex, currentIndex)
+      setSelectedControlNumbers((current) => {
+        const next = new Set(current)
+        for (let index = start; index <= end; index += 1) {
+          const rangeControlNumber = pageControlNumbers[index]
+          if (rangeControlNumber) next.add(rangeControlNumber)
+        }
+        return next
+      })
+      lastSelectedIndexRef.current = currentIndex
+      return
+    }
 
     setSelectedControlNumbers((current) => {
       const next = new Set(current)
@@ -202,19 +241,18 @@ function RiskAnalysis() {
       }
       return next
     })
+    lastSelectedIndexRef.current = currentIndex
   }
 
   const togglePageSelection = () => {
     setSelectedControlNumbers((current) => {
       const next = new Set(current)
-      const pageControlNumbers = rows
-        .map((row) => String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim())
-        .filter(Boolean)
-
-      if (pageControlNumbers.every((controlNumber) => next.has(controlNumber))) {
+      if (pageControlNumbers.length > 0 && pageControlNumbers.every((controlNumber) => next.has(controlNumber))) {
         pageControlNumbers.forEach((controlNumber) => next.delete(controlNumber))
+        lastSelectedIndexRef.current = null
       } else {
         pageControlNumbers.forEach((controlNumber) => next.add(controlNumber))
+        lastSelectedIndexRef.current = pageControlNumbers.length > 0 ? pageControlNumbers.length - 1 : null
       }
 
       return next
@@ -501,24 +539,11 @@ function RiskAnalysis() {
           <Box
             sx={{
               display: 'flex',
-              alignItems: { xs: 'flex-start', sm: 'center' },
-              justifyContent: 'space-between',
-              gap: 2,
+              alignItems: 'center',
+              gap: 1.25,
               flexWrap: 'wrap',
             }}
           >
-            <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-              Controls Risk Analysis
-            </Typography>
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.25,
-                flexWrap: 'wrap',
-                ml: { xs: 0, sm: 'auto' },
-              }}
-            >
               <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
                 <InputLabel id="risk-analysis-unit-label" shrink>Unit</InputLabel>
                 <Select
@@ -592,18 +617,21 @@ function RiskAnalysis() {
                 color="secondary"
                 onClick={handleGenerateSelectedAnalyses}
                 disabled={batchGenerating || selectedControlNumbers.size === 0}
-                sx={{ whiteSpace: 'nowrap' }}
+                sx={{
+                  height: FILTER_CONTROL_HEIGHT,
+                  whiteSpace: 'nowrap',
+                  px: 2,
+                }}
               >
                 {batchGenerating ? 'Generating...' : `Generate Selected (${selectedControlNumbers.size})`}
               </Button>
-            </Box>
           </Box>
           <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
             Showing {rows.length} of {totalCount} assigned-unit controls for the selected filters.
           </Typography>
         </Box>
 
-        <Box sx={{ width: '100%', overflowX: 'auto' }}>
+        <Box sx={{ width: '100%', overflowX: 'auto', userSelect: 'none' }}>
           <Box sx={{ minWidth: 900 }}>
             <Box
               sx={{
@@ -702,8 +730,17 @@ function RiskAnalysis() {
                     <Checkbox
                       size="small"
                       checked={isSelected}
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={() => toggleControlSelection(controlNumber)}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (event.shiftKey) {
+                          event.preventDefault()
+                          toggleControlSelection(controlNumber, event)
+                        }
+                      }}
+                      onChange={(event) => {
+                        if (event.nativeEvent.shiftKey || event.shiftKey) return
+                        toggleControlSelection(controlNumber, event)
+                      }}
                       disabled={!controlNumber || batchGenerating}
                       sx={{ p: 0.5 }}
                     />
@@ -777,9 +814,13 @@ function RiskAnalysis() {
           component="div"
           count={totalCount}
           page={page}
-          onPageChange={(event, nextPage) => setPage(nextPage)}
+          onPageChange={(event, nextPage) => {
+            lastSelectedIndexRef.current = null
+            setPage(nextPage)
+          }}
           rowsPerPage={rowsPerPage}
           onRowsPerPageChange={(event) => {
+            lastSelectedIndexRef.current = null
             setRowsPerPage(Number.parseInt(event.target.value, 10))
             setPage(0)
             setSelectedControlNumbers(new Set())
@@ -803,7 +844,13 @@ function RiskAnalysis() {
           }}
         >
           <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-            Risk Analysis
+            {`Risk Analysis - ${
+              String(
+                analysisData?.control?.control_number
+                || getFieldValue(selectedControl, 'control_number', 'controlNumber')
+                || ''
+              ).trim() || '—'
+            }`}
           </Typography>
           <Button
             size="small"

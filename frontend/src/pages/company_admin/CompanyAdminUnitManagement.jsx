@@ -331,13 +331,11 @@ function CompanyAdminUnitManagement() {
                   {unit.unit_name || 'N/A'}
                 </Typography>
                 <Typography sx={{ mt: 0.4, color: 'text.secondary', fontSize: '0.875rem' }}>
+                  Address: {String(unit.unit_address || '').trim() || '—'}
+                </Typography>
+                <Typography sx={{ mt: 0.25, color: 'text.secondary', fontSize: '0.875rem' }}>
                   Coordinator: {unit.coordinator_display_name || unit.coordinator_email_id || 'Unassigned'}
                 </Typography>
-                {unit.unit_address ? (
-                  <Typography sx={{ mt: 0.25, color: 'text.secondary', fontSize: '0.8rem' }}>
-                    {unit.unit_address}
-                  </Typography>
-                ) : null}
               </Box>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                 <Button

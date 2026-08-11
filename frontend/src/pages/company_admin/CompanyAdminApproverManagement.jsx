@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { alpha, useTheme } from '@mui/material/styles'
+import { useTheme } from '@mui/material/styles'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -47,19 +47,6 @@ const createAssignmentDialogState = () => ({
   submitting: false,
   error: '',
 })
-
-function formatScopeLabel(scope) {
-  switch (String(scope || '').trim().toUpperCase()) {
-    case 'UNIT':
-      return 'Unit'
-    case 'BUSINESS_PROCESS':
-      return 'Unit + Business Process'
-    case 'RACM':
-      return 'Specific RACM'
-    default:
-      return 'Unassigned'
-  }
-}
 
 function CompanyAdminApproverManagement() {
   const theme = useTheme()
@@ -345,31 +332,11 @@ function CompanyAdminApproverManagement() {
           No approvers found for the selected filter.
         </Typography>
       ) : (
-        <Box
-          sx={{
-            border: '1px solid',
-            borderColor: 'divider',
-            borderRadius: 1.5,
-            overflow: 'hidden',
-            backgroundColor: theme.palette.mode === 'dark'
-              ? alpha(theme.palette.background.paper, 0.96)
-              : alpha(theme.palette.background.paper, 0.92),
-            maxWidth: 720,
-            alignSelf: 'flex-start',
-            width: '100%',
-          }}
-        >
+        <Box sx={{ width: '100%' }}>
           {approverRows.map((row, index) => {
-            const latestAssignment = row.assignments[0] || null
-            const hasMultipleAssignments = row.assignments.length > 1
             const displayName = String(row.display_name || '').trim()
             const emailId = String(row.email_id || '').trim()
             const showName = displayName && displayName.toLowerCase() !== emailId.toLowerCase()
-            const scopeLabel = hasMultipleAssignments
-              ? 'Multiple (Click to view)'
-              : latestAssignment
-                ? formatScopeLabel(latestAssignment.assignment_scope)
-                : 'Unassigned'
 
             return (
               <Box
@@ -377,19 +344,20 @@ function CompanyAdminApproverManagement() {
                 onClick={() => handleOpenAssignmentDialog(row)}
                 sx={{
                   display: 'flex',
-                  alignItems: 'baseline',
-                  justifyContent: 'space-between',
-                  gap: 2,
-                  flexWrap: 'wrap',
-                  px: 2.25,
-                  py: 1.65,
+                  alignItems: 'flex-start',
+                  gap: 1.5,
+                  px: 0.25,
+                  py: 1.5,
                   cursor: 'pointer',
                   textAlign: 'left',
-                  borderBottom: index === approverRows.length - 1 ? 0 : '1px solid',
+                  borderBottom: '1px solid',
                   borderColor: 'divider',
                   '&:hover': { backgroundColor: TABLE_ROW_HOVER_BG },
                 }}
               >
+                <Typography sx={{ fontWeight: 700, color: 'text.secondary', minWidth: 28, pt: 0.1 }}>
+                  {index + 1}.
+                </Typography>
                 <Box sx={{ minWidth: 0, flex: 1 }}>
                   <Typography sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.35 }}>
                     {emailId || '-'}
@@ -399,17 +367,10 @@ function CompanyAdminApproverManagement() {
                       {displayName}
                     </Typography>
                   ) : null}
+                  <Typography sx={{ mt: 0.35, color: 'text.secondary', fontSize: '0.8rem' }}>
+                    click to view details
+                  </Typography>
                 </Box>
-                <Typography
-                  sx={{
-                    fontWeight: 600,
-                    fontSize: '0.875rem',
-                    color: row.assigned ? 'text.primary' : 'text.secondary',
-                    flexShrink: 0,
-                  }}
-                >
-                  {scopeLabel}
-                </Typography>
               </Box>
             )
           })}

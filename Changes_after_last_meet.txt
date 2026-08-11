@@ -1,0 +1,25 @@
+1. Dynamic RACM templates per company units. 
+
+2. A new user type "Company Admin" has been added, who will create coordinator, approvers and company units; and assign them. Company Admin can also create users/process owners.
+
+3. Coordinator self-assignment. Where coordinator will upload evidence and submit RACM for approval.
+
+4. Coordinator will decide sample size according to control frequency for their assigned unit.
+
+5. Implemented an option of "No submission declaration" whene process owner do not have furthure documents.
+
+6. 3 Types of approver assignment : 1. Unit Level 2. Unit + Business process 3. RACM-specific assignment
+
+
+
+Points needs discussion
+
+1. Allow coordinator to upload documents in All RACMs by default. In some cases coordinator first verify the documents before submission, so they should be able to upload.
+
+2. Currently coordinator can set sample size, which is conflicting with normal flow. Approver should be able to decide sample size. Remove max limit in sample size.
+
+
+
+Questions from my side 
+
+1. Once coordinator assigns themselves to a RACM, can they change the assignment and assign another process owner? 
