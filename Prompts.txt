@@ -1,0 +1,5 @@
+On siteadmin pages display the controls inserted in controls library.
+
+"siteadmin/controls-library" on this url list all the inserted controls by default and provide filters for Business process and Sub-process. Enable sub-process filter only after Business Process is selected.
+
+Also give siteadmin ability to edit existing controls in library. On click open it in new page just in same manner as actual controls are diplayed. And let the siteadmin edit it. Give warning it they try to change the sub-process, because they are grouped and changing it will seperate that control from its gruop. But do not block the edit, just warn.

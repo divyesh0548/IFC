@@ -11,7 +11,8 @@ const pool = new Pool({
   max: 20,
   // Match Prisma v6-style idle lifetime so RDS idle timeouts don't kill reused clients.
   idleTimeoutMillis: 300_000,
-  connectionTimeoutMillis: 30_000,
+  // Fail faster when RDS/security-group/VPN path is blocked (ETIMEDOUT).
+  connectionTimeoutMillis: 15_000,
   allowExitOnIdle: false,
 });
 
@@ -27,15 +28,51 @@ function isPgConnectionError(error) {
     code === 'ECONNRESET' ||
     code === 'ECONNREFUSED' ||
     code === 'ETIMEDOUT' ||
+    code === 'ENOTFOUND' ||
+    code === 'EHOSTUNREACH' ||
     code === '57P01' ||
+    code === 'P1001' ||
+    code === 'P1002' ||
+    code === 'P1008' ||
     code === 'P1017' ||
     message.includes('econnreset') ||
+    message.includes('etimedout') ||
     message.includes('connection timeout') ||
+    message.includes('timeout expired') ||
     message.includes('connection terminated') ||
     message.includes('server has closed the connection') ||
     message.includes('connectionclosed') ||
-    message.includes('connection closed')
+    message.includes('connection closed') ||
+    message.includes('sockettimeout') ||
+    message.includes('operation has timed out') ||
+    message.includes("can't reach database server")
   );
+}
+
+function getDbEndpointHint() {
+  try {
+    const config = getPoolConfig();
+    if (config.connectionString) {
+      const parsed = new URL(config.connectionString);
+      return `${parsed.hostname}:${parsed.port || 5432}`;
+    }
+    return `${config.host || 'unknown'}:${config.port || 5432}`;
+  } catch {
+    return 'configured database host';
+  }
+}
+
+function formatDbConnectionError(error) {
+  const endpoint = getDbEndpointHint();
+  const code = String(error?.code || '').toUpperCase();
+  if (code === 'ETIMEDOUT' || String(error?.message || '').toLowerCase().includes('etimedout')) {
+    return (
+      `Cannot reach PostgreSQL at ${endpoint} (ETIMEDOUT). `
+      + 'Check VPN, RDS security group inbound rules for your current public IP, '
+      + 'and that the instance is publicly reachable if connecting from outside AWS.'
+    );
+  }
+  return `Database unavailable at ${endpoint}: ${error?.message || error}`;
 }
 
 function attachPgClientErrorHandler(client) {
@@ -70,7 +107,7 @@ function getDatabaseUnavailableMessage() {
   return 'Database connection was interrupted. Please try again.';
 }
 
-async function queryWithRetry(sql, params, { retries = 1 } = {}) {
+async function queryWithRetry(sql, params, { retries = 2 } = {}) {
   let lastError;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -81,11 +118,32 @@ async function queryWithRetry(sql, params, { retries = 1 } = {}) {
       if (!isPgConnectionError(error) || attempt >= retries) {
         throw error;
       }
-      console.warn(`PostgreSQL query retry after connection error (attempt ${attempt + 1}):`, error.message);
+      const delayMs = Math.min(5000, 400 * (2 ** attempt));
+      console.warn(
+        `PostgreSQL query retry after connection error (attempt ${attempt + 1}/${retries}):`,
+        error.message
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 
   throw lastError;
+}
+
+/**
+ * Lightweight connectivity probe used at startup / diagnostics.
+ */
+async function checkDatabaseConnectivity() {
+  try {
+    await queryWithRetry('SELECT 1 AS ok', [], { retries: 2 });
+    return { ok: true, message: `Database reachable at ${getDbEndpointHint()}` };
+  } catch (error) {
+    return {
+      ok: false,
+      error,
+      message: formatDbConnectionError(error),
+    };
+  }
 }
 
 module.exports = {
@@ -95,4 +153,7 @@ module.exports = {
   isPgConnectionError,
   getDatabaseUnavailableMessage,
   queryWithRetry,
+  checkDatabaseConnectivity,
+  formatDbConnectionError,
+  getDbEndpointHint,
 };

@@ -103,20 +103,30 @@ async function runBootstrap() {
   }
 
   bootstrapPromise = (async () => {
-    try {
-      await ensureDefaultBusinessProcesses();
-      await ensureAdminUserFromEnv();
-      await ensureDefaultRacmTemplates();
-    } catch (error) {
-      console.error('[bootstrap] Startup bootstrap failed:', error);
-      throw error;
+    const maxAttempts = 3;
+    let lastError;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        await ensureDefaultBusinessProcesses();
+        await ensureAdminUserFromEnv();
+        await ensureDefaultRacmTemplates();
+        return;
+      } catch (error) {
+        lastError = error;
+        console.error(`[bootstrap] Startup bootstrap failed (attempt ${attempt}/${maxAttempts}):`, error);
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+        }
+      }
     }
+
+    console.error('[bootstrap] Continuing server startup after bootstrap failure:', lastError?.message || lastError);
   })();
 
   try {
     await bootstrapPromise;
   } catch (error) {
-    // Allow retry if caller handles failure and calls again.
     bootstrapPromise = null;
     throw error;
   }

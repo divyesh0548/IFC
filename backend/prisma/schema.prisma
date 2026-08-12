@@ -550,3 +550,28 @@ model UserQuery {
   @@index([mailSentToAdmin])
   @@map("user_query")
 }
+
+model ControlsLibrary {
+  id                         Int       @id @default(autoincrement())
+  businessProcess            String    @map("business_process") @db.VarChar(255)
+  subProcess                 String?   @map("sub_process") @db.VarChar(255)
+  riskDescription            String?   @map("risk_description")
+  riskHeat                   String?   @map("risk_heat") @db.VarChar(255)
+  controlObjective           String?   @map("control_objective")
+  standardControlDescription String?   @map("standard_control_description")
+  controlTypeMa              String?   @map("control_type_ma") @db.VarChar(255)
+  controlTypeFo              String?   @map("control_type_fo") @db.VarChar(255)
+  natureOfControl            String?   @map("nature_of_control") @db.VarChar(255)
+  processWalkthrough         String?   @map("process_walkthrough")
+  keyControl                 String?   @map("key_control") @db.VarChar(255)
+  applicationName            String?   @map("application_name") @db.VarChar(255)
+  auditEvidenceAccuracy      String?   @map("audit_evidence_accuracy") @db.VarChar(255)
+  whetherFraudRisksExist     String?   @map("whether_fraud_risks_exist") @db.VarChar(255)
+  controlFrequency           String?   @map("control_frequency") @db.VarChar(255)
+  createdAt                  DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt                  DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@index([businessProcess])
+  @@index([businessProcess, subProcess])
+  @@map("controls_library")
+}

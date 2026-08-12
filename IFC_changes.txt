@@ -1,6 +1,5 @@
 Mayank sir suggested to implement dynamic User controls. Curently each user role is fixed and can't be changed. But it should be dynamic and adjusted by siteadmin or coordinator.
 
 
-
 Change the documentation according to new changes.
 Should I remove max limit of smaple size for each control frequency?

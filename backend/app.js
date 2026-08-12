@@ -15,7 +15,19 @@ const { runPendingRacmActiveUserEmails } = require('./scripts/racm_active_user_e
 const { runPendingRacmInactiveUserEmails } = require('./scripts/racm_inactive_user_email_sender');
 const { runPendingUserQueryEmails } = require('./scripts/user_query_email_sender');
 const { runBootstrap } = require('./config/bootstrap');
-require('./utils/db'); // Load shared pool (timezone set there)
+const {
+  checkDatabaseConnectivity,
+  formatDbConnectionError,
+  isPgConnectionError,
+} = require('./utils/db');
+
+function logScheduledJobError(jobName, error) {
+  if (isPgConnectionError(error)) {
+    console.warn(`[${jobName}] skipped: ${formatDbConnectionError(error)}`);
+    return;
+  }
+  console.error(`Error in ${jobName}:`, error);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,7 +44,9 @@ function buildAllowedOrigins() {
   return new Set([
     ...configuredOrigins,
     'http://localhost:5173',
+    'http://127.0.0.1:5173',
     'http://localhost:4173',
+    'http://127.0.0.1:4173',
   ]);
 }
 
@@ -116,96 +130,99 @@ app.get('/health', (req, res) => {
 });
 
 
-// Reminder emails for pending RACM submission (runs every 1 minute) 
-console.log('Starting reminder emails scheduler (runs every 1 minute)...');
-setInterval(async () => {
-  try {
-    await runReminderEmails();
-  } catch (error) {
-    console.error('Error in reminder emails job:', error);
-  }
-}, 60 * 1000);
+function startScheduledJobs() {
+  console.log('Starting reminder emails scheduler (runs every 1 minute)...');
+  setInterval(async () => {
+    try {
+      await runReminderEmails();
+    } catch (error) {
+      logScheduledJobError('reminder emails job', error);
+    }
+  }, 60 * 1000);
 
-// Reminder emails for approvers on RACMs sent for approval (runs every 1 minute)
-console.log('Starting approver reminder emails scheduler (runs every 1 minute)...');
-setInterval(async () => {
-  try {
-    await runApproverReminderEmails();
-  } catch (error) {
-    console.error('Error in approver reminder emails job:', error);
-  }
-}, 60 * 1000);
+  console.log('Starting approver reminder emails scheduler (runs every 1 minute)...');
+  setInterval(async () => {
+    try {
+      await runApproverReminderEmails();
+    } catch (error) {
+      logScheduledJobError('approver reminder emails job', error);
+    }
+  }, 60 * 1000);
 
-// Reminder emails for process owners on ineffective RACMs (runs every 1 minute)
-console.log('Starting ineffective RACM reminder emails scheduler (runs every 1 minute)...');
-setInterval(async () => {
-  try {
-    await runIneffectiveReminderEmails();
-  } catch (error) {
-    console.error('Error in ineffective reminder emails job:', error);
-  }
-}, 60 * 1000);
+  console.log('Starting ineffective RACM reminder emails scheduler (runs every 1 minute)...');
+  setInterval(async () => {
+    try {
+      await runIneffectiveReminderEmails();
+    } catch (error) {
+      logScheduledJobError('ineffective reminder emails job', error);
+    }
+  }, 60 * 1000);
 
-// Reminder emails for approvers on deficiency responses pending review (runs every 1 minute)
-console.log('Starting deficiency review reminder emails scheduler (runs every 1 minute)...');
-setInterval(async () => {
-  try {
-    await runDeficiencyReviewReminderEmails();
-  } catch (error) {
-    console.error('Error in deficiency review reminder emails job:', error);
-  }
-}, 60 * 1000);
+  console.log('Starting deficiency review reminder emails scheduler (runs every 1 minute)...');
+  setInterval(async () => {
+    try {
+      await runDeficiencyReviewReminderEmails();
+    } catch (error) {
+      logScheduledJobError('deficiency review reminder emails job', error);
+    }
+  }, 60 * 1000);
 
-// Login emails for newly created temp-login users (runs every 1 minute)
-console.log('Starting login email scheduler (runs every 1 minute)...');
-setInterval(async () => {
-  try {
-    await runPendingLoginEmails();
-  } catch (error) {
-    console.error('Error in login email job:', error);
-  }
-}, 60 * 1000);
+  console.log('Starting login email scheduler (runs every 1 minute)...');
+  setInterval(async () => {
+    try {
+      await runPendingLoginEmails();
+    } catch (error) {
+      logScheduledJobError('login email job', error);
+    }
+  }, 60 * 1000);
 
-// Active RACM assignment emails for process owners 
-console.log('Starting active RACM user email scheduler (runs every 1 minute)...');
-setInterval(async () => {
-  try {
-    await runPendingRacmActiveUserEmails();
-  } catch (error) {
-    console.error('Error in active RACM user email job:', error);
-  }
-}, 60 * 1000);
+  console.log('Starting active RACM user email scheduler (runs every 1 minute)...');
+  setInterval(async () => {
+    try {
+      await runPendingRacmActiveUserEmails();
+    } catch (error) {
+      logScheduledJobError('active RACM user email job', error);
+    }
+  }, 60 * 1000);
 
-// Inactive RACM notification emails for process owners
-console.log('Starting inactive RACM user email scheduler (runs every 1 minute)...');
-setInterval(async () => {
-  try {
-    await runPendingRacmInactiveUserEmails();
-  } catch (error) {
-    console.error('Error in inactive RACM user email job:', error);
-  }
-}, 60 * 1000);
+  console.log('Starting inactive RACM user email scheduler (runs every 1 minute)...');
+  setInterval(async () => {
+    try {
+      await runPendingRacmInactiveUserEmails();
+    } catch (error) {
+      logScheduledJobError('inactive RACM user email job', error);
+    }
+  }, 60 * 1000);
 
-// User query notification emails to siteadmin (runs every 1 minute)
-console.log('Starting user query email scheduler (runs every 1 minute)...');
-setInterval(async () => {
-  try {
-    await runPendingUserQueryEmails();
-  } catch (error) {
-    console.error('Error in user query email job:', error);
-  }
-}, 60 * 1000);
+  console.log('Starting user query email scheduler (runs every 1 minute)...');
+  setInterval(async () => {
+    try {
+      await runPendingUserQueryEmails();
+    } catch (error) {
+      logScheduledJobError('user query email job', error);
+    }
+  }, 60 * 1000);
+}
 
-// Run bootstrap tasks, then start server
+// Probe DB, run bootstrap, then start HTTP + schedulers.
 (async () => {
+  const connectivity = await checkDatabaseConnectivity();
+  if (connectivity.ok) {
+    console.log(`[db] ${connectivity.message}`);
+  } else {
+    console.warn(`[db] ${connectivity.message}`);
+  }
+
   try {
     await runBootstrap();
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-    });
   } catch (error) {
-    console.error('Server bootstrap failed. Exiting process.', error);
-    process.exit(1);
+    console.error('Server bootstrap failed. Starting anyway.', error);
   }
+
+  startScheduledJobs();
+
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
 })();
 

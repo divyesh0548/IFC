@@ -986,7 +986,7 @@ function ControlDispersionDashboard() {
             >
               {[
                 'Business Process',
-                'Total RACMs',
+                'Total Controls',
                 'Key Controls',
                 'Non-Key Controls',
                 'Preventive',
@@ -1024,7 +1024,7 @@ function ControlDispersionDashboard() {
             ) : businessProcessSummaryRows.length === 0 ? (
               <Box sx={{ px: 3, py: 4 }}>
                 <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
-                  No RACMs available.
+                  No Controls available.
                 </Typography>
               </Box>
             ) : (

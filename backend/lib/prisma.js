@@ -22,21 +22,25 @@ function isPrismaConnectionError(error) {
   if (isPgConnectionError(error)) return true;
 
   const code = String(error.code || error?.meta?.code || '').toUpperCase();
-  if (code === 'P1017' || code === 'P1001' || code === 'P1002') return true;
+  if (code === 'P1017' || code === 'P1001' || code === 'P1002' || code === 'P1008') return true;
 
   const message = String(error.message || error?.meta?.cause?.message || '').toLowerCase();
   return (
     message.includes('server has closed the connection')
     || message.includes('connectionclosed')
     || message.includes('connection closed')
+    || message.includes('connection terminated')
+    || message.includes('sockettimeout')
+    || message.includes('etimedout')
+    || message.includes('operation has timed out')
     || message.includes("can't reach database server")
   );
 }
 
 /**
- * Retry a Prisma operation once after a dropped/idle connection error.
+ * Retry a Prisma operation after a dropped/idle/unreachable connection error.
  */
-async function withPrismaRetry(operation, { retries = 1, label = 'prisma' } = {}) {
+async function withPrismaRetry(operation, { retries = 2, label = 'prisma' } = {}) {
   let lastError;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -47,10 +51,12 @@ async function withPrismaRetry(operation, { retries = 1, label = 'prisma' } = {}
       if (!isPrismaConnectionError(error) || attempt >= retries) {
         throw error;
       }
+      const delayMs = Math.min(5000, 400 * (2 ** attempt));
       console.warn(
-        `Prisma retry after connection error (${label}, attempt ${attempt + 1}):`,
+        `Prisma retry after connection error (${label}, attempt ${attempt + 1}/${retries}):`,
         error.message || error
       );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 

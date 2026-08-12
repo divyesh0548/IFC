@@ -1,14 +1,11 @@
 Plan:
-
-1. Refine the existing controls, remove duplicates, remove those with empty important fields.
-
-2. Store them in control_library DB table. Most probably siteadmin will upload these controls.
+1. Store them in control_library DB table. Most probably siteadmin will upload these controls.
 
 3. User will select existing business process and based on that sub-processes will be suggested by SQL filtering. User will also have option to search a keyword so all sub-process matching that keyword (partial matching) will be listed from the selected BP only. User will also be able to write sub-process without any selection or edit the selected sub-process. 
 
 4. Now based on selected business process list all Risk descriptions, if user selected a sub-porcess from list then display risks for that sub-process on top of the list in bold fonts with other risks for selected business proccess. Filter risks based on selected sub-porcess's id. Same rules as sub-process apply here too. 
 
-5. Same logic goes with area, control objective, Standard Control description, Process Activity and Walkthrough details, Application name.  if user selected a sub-porcess from list then display this for that sub-process on top of the list in bold font, and also display other control objective for the selected business proces.
+5. Same logic goes with control objective, Standard Control description, Process Activity and Walkthrough details, Application name.  if user selected a sub-porcess from list then display this for that sub-process on top of the list in bold font, and also display other control details for the selected business proces.
 
 6. Provide other fields solely based on user input. Like risk heat, Control type (Manual/Automated), 
 Control type (Financial/Operational), Nature of Control (Preventive/Detective), Key Control, Control Evidence to be obtained, Whether fraud risk exists? (Yes/No), Control Frequency, Control Performer, Process Owner. 

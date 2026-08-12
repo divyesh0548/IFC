@@ -34,6 +34,7 @@ import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSec
 import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX } from '../../components/AppDialog'
 import { getEffectiveSampleSizeForFrequency, getSampleSizeInputFeedback, validateSampleSizeForFrequency } from '../../utils/controlFrequencyValidation'
 import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
+import ControlsLibrarySearchField from '../../components/controls_library/ControlsLibrarySearchField'
 
 function createEmptyFormData(unitId = '') {
   return {
@@ -80,7 +81,16 @@ const EMPTY_CONTROL_NUMBER_META = {
   available: false,
 }
 
-function CreateControlForm() {
+const LIBRARY_SEARCHABLE_FIELDS = [
+  'sub_process',
+  'risk_description',
+  'control_objective',
+  'standard_control_description',
+  'process_walkthrough',
+  'application_name',
+]
+
+function CreateControlForm({ libraryMode = false }) {
   const theme = useTheme()
   const navigate = useNavigate()
   const { companyIdentifier: authCompanyIdentifier } = useAuth()
@@ -98,6 +108,8 @@ function CreateControlForm() {
   const [dynamicValues, setDynamicValues] = useState({})
   const [templateLoading, setTemplateLoading] = useState(false)
   const [templateHelpDialogOpen, setTemplateHelpDialogOpen] = useState(false)
+  const [librarySubProcessId, setLibrarySubProcessId] = useState(null)
+  const [subProcessFromLibrary, setSubProcessFromLibrary] = useState(false)
   useSyncGlobalLoading(loading || templateLoading)
 
   // Financial year options - dynamically based on current year
@@ -337,6 +349,8 @@ function CreateControlForm() {
     setControlNumberMeta(EMPTY_CONTROL_NUMBER_META)
     setAssignmentSectionKey((current) => current + 1)
     setDynamicValues({})
+    setLibrarySubProcessId(null)
+    setSubProcessFromLibrary(false)
   }, [unitOptions])
 
   useEffect(() => {
@@ -403,6 +417,11 @@ function CreateControlForm() {
       ...prev,
       [name]: value
     }))
+
+    if (name === 'business_process') {
+      setLibrarySubProcessId(null)
+      setSubProcessFromLibrary(false)
+    }
 
     if (name === 'control_number') {
       setControlNumberMeta((prev) => ({
@@ -696,6 +715,38 @@ function CreateControlForm() {
     ? `/company_co/racm-templates?unit_id=${encodeURIComponent(formData.unit_id)}`
     : '/company_co/racm-templates'
 
+  const renderLibrarySearchField = (field, label, multiline = false, gridColumn = undefined) => (
+    <ControlsLibrarySearchField
+      key={field}
+      businessProcess={formData.business_process}
+      field={field}
+      label={label}
+      value={formData[field] || ''}
+      onChange={(nextValue) => {
+        setFormData((prev) => ({
+          ...prev,
+          [field]: nextValue,
+        }))
+      }}
+      onLibraryPick={(libraryId) => {
+        if (field !== 'sub_process') return
+        if (libraryId) {
+          setLibrarySubProcessId(libraryId)
+          setSubProcessFromLibrary(true)
+        } else {
+          setLibrarySubProcessId(null)
+          setSubProcessFromLibrary(false)
+        }
+      }}
+      multiline={multiline}
+      disabled={loading}
+      prioritizeSubProcess={field !== 'sub_process' && subProcessFromLibrary}
+      subProcess={formData.sub_process}
+      librarySubProcessId={librarySubProcessId}
+      gridColumn={gridColumn}
+    />
+  )
+
   return (
     <Box 
       sx={{ 
@@ -743,7 +794,7 @@ function CreateControlForm() {
                 pl: { xs: 0, sm: 1.75 },
               }}
             >
-              Create RACM
+              {libraryMode ? 'Browse Controls Library' : 'Create RACM'}
             </Typography>
             <IconButton
               onClick={() => setTemplateHelpDialogOpen(true)}
@@ -761,6 +812,17 @@ function CreateControlForm() {
               <LightbulbOutlinedIcon />
             </IconButton>
           </Box>
+
+          {libraryMode ? (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mb: 3, lineHeight: 1.6 }}
+            >
+              Searchable fields pull suggestions from the controls library for the selected business process.
+              Values linked to your selected sub-process appear first in bold. Dropdown fields are filled manually.
+            </Typography>
+          ) : null}
 
           <form onSubmit={handleSubmit}>
             {/* Top section: Business Process, Financial Year & Unit */}
@@ -913,6 +975,15 @@ function CreateControlForm() {
                   const value = formData[field] || ''
                   const isMultiline = multilineFields.includes(field)
                   const isConfiguredDropdown = Object.prototype.hasOwnProperty.call(dropdownOptions, field)
+
+                  if (libraryMode && LIBRARY_SEARCHABLE_FIELDS.includes(field)) {
+                    return renderLibrarySearchField(
+                      field,
+                      label,
+                      isMultiline,
+                      isMultiline ? { xs: '1', md: '1 / -1' } : undefined
+                    )
+                  }
 
                   if (isConfiguredDropdown) {
                     const options = dropdownOptions[field]
@@ -1074,6 +1145,15 @@ function CreateControlForm() {
                     const sampleSizeFrequencyMeta = field === 'sample_size'
                       ? getControlFrequencySampleSizeMeta(formData.control_frequency)
                       : null
+
+                    if (libraryMode && LIBRARY_SEARCHABLE_FIELDS.includes(field)) {
+                      return renderLibrarySearchField(
+                        field,
+                        label,
+                        isMultiline,
+                        isMultiline ? { xs: '1', md: '1 / -1' } : undefined
+                      )
+                    }
 
                     if (isConfiguredDropdown) {
                       const options = dropdownOptions[field]

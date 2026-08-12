@@ -1,4 +1,4 @@
-const { prisma } = require('../lib/prisma');
+const { prisma, withPrismaRetry } = require('../lib/prisma');
 const { pool } = require('./db');
 const { createdAtUpdatedAtUtcSql } = require('./sqlUtcTimestamps');
 
@@ -220,30 +220,43 @@ async function seedDefaultBusinessProcesses(defaultRows = []) {
     return { inserted: 0, updated: 0 };
   }
 
+  const existingRows = await withPrismaRetry(
+    () => prisma.businessProcessMaster.findMany({
+      where: { companyIdentifier: null },
+    }),
+    { retries: 2, label: 'seedDefaultBusinessProcesses.findMany' }
+  );
+
+  const findExisting = (row) => {
+    const processKey = row.businessProcess.toLowerCase();
+    const codeKey = row.businessProcessCode.toLowerCase();
+    return existingRows.find((existing) => {
+      const existingProcess = normalizeBusinessProcessValue(existing.businessProcess).toLowerCase();
+      const existingCode = normalizeBusinessProcessValue(existing.businessProcessCode).toLowerCase();
+      return existingProcess === processKey || existingCode === codeKey;
+    });
+  };
+
   let inserted = 0;
   let updated = 0;
 
   for (const row of normalizedRows) {
-    const existing = await prisma.businessProcessMaster.findFirst({
-      where: {
-        companyIdentifier: null,
-        OR: [
-          toCaseInsensitiveWhere('businessProcess', row.businessProcess),
-          toCaseInsensitiveWhere('businessProcessCode', row.businessProcessCode),
-        ],
-      },
-    });
+    const existing = findExisting(row);
 
     if (!existing) {
-      await prisma.businessProcessMaster.create({
-        data: {
-          companyIdentifier: null,
-          businessProcess: row.businessProcess,
-          businessProcessCode: row.businessProcessCode,
-          isDefault: true,
-          isActive: true,
-        },
-      });
+      const created = await withPrismaRetry(
+        () => prisma.businessProcessMaster.create({
+          data: {
+            companyIdentifier: null,
+            businessProcess: row.businessProcess,
+            businessProcessCode: row.businessProcessCode,
+            isDefault: true,
+            isActive: true,
+          },
+        }),
+        { retries: 2, label: 'seedDefaultBusinessProcesses.create' }
+      );
+      existingRows.push(created);
       inserted += 1;
       continue;
     }
@@ -255,15 +268,19 @@ async function seedDefaultBusinessProcesses(defaultRows = []) {
       || existing.isActive !== true;
 
     if (shouldUpdate) {
-      await prisma.businessProcessMaster.update({
-        where: { id: existing.id },
-        data: {
-          businessProcess: row.businessProcess,
-          businessProcessCode: row.businessProcessCode,
-          isDefault: true,
-          isActive: true,
-        },
-      });
+      const updatedRow = await withPrismaRetry(
+        () => prisma.businessProcessMaster.update({
+          where: { id: existing.id },
+          data: {
+            businessProcess: row.businessProcess,
+            businessProcessCode: row.businessProcessCode,
+            isDefault: true,
+            isActive: true,
+          },
+        }),
+        { retries: 2, label: 'seedDefaultBusinessProcesses.update' }
+      );
+      Object.assign(existing, updatedRow);
       updated += 1;
     }
   }

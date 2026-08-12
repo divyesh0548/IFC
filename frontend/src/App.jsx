@@ -22,6 +22,9 @@ const CompanyDetail = lazy(() => import('./pages/siteadmin/CompanyDetail'))
 const AuditorManagement = lazy(() => import('./pages/siteadmin/AuditorManagement'))
 const Siteadmin_Dashboard = lazy(() => import('./pages/siteadmin/Siteadmin_dashboard'))
 const SiteadminBusinessProcessManagement = lazy(() => import('./pages/siteadmin/BusinessProcessManagement'))
+const ControlsLibraryUpload = lazy(() => import('./pages/siteadmin/ControlsLibraryUpload'))
+const ControlsLibrary = lazy(() => import('./pages/siteadmin/ControlsLibrary'))
+const ControlsLibraryEdit = lazy(() => import('./pages/siteadmin/ControlsLibraryEdit'))
 const UserQueries = lazy(() => import('./pages/siteadmin/UserQueries'))
 
 const AuditorHome = lazy(() => import('./pages/auditor/Auditor_Home'))
@@ -40,6 +43,7 @@ const ExcelUpload = lazy(() => import('./pages/forms/ExcelUpload'))
 const ExcelColumnMap = lazy(() => import('./pages/forms/ExcelColumnMap'))
 const FormDetail = lazy(() => import('./pages/company_co/FormDetail'))
 const CreateControlForm = lazy(() => import('./pages/company_co/CreateControlForm'))
+const CreateControlFormFromLibrary = lazy(() => import('./pages/company_co/CreateControlFormFromLibrary'))
 const RacmManagementDashboard = lazy(() => import('./pages/company_co/RacmManagementDashboard'))
 const CompanyCoIfcReport = lazy(() => import('./pages/company_co/IfcReport'))
 const RacmUserDocuments = lazy(() => import('./pages/company_co/RacmUserDocuments'))
@@ -231,6 +235,9 @@ function App() {
               <Route path="auditors" element={<AuditorManagement />} />
               <Route path="create-company" element={<CompanyCreation />} />
               <Route path="business-processes" element={<SiteadminBusinessProcessManagement />} />
+              <Route path="controls-library" element={<ControlsLibrary />} />
+              <Route path="controls-library/upload" element={<ControlsLibraryUpload />} />
+              <Route path="controls-library/:id" element={<ControlsLibraryEdit />} />
               <Route path="user-queries" element={<UserQueries />} />
               <Route path="company/:company_identifier" element={<CompanyDetail />} />
               <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.siteadmin} replace />} />
@@ -320,6 +327,7 @@ function App() {
               <Route path="control-creation" element={<ExcelUpload />} />
               <Route path="control-creation/column-map" element={<ExcelColumnMap />} />
               <Route path="manual-control-creation" element={<CreateControlForm />} />
+              <Route path="library-control-creation" element={<CreateControlFormFromLibrary />} />
               <Route path="form/:form_id" element={<FormDetail />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.company_co} replace />} />

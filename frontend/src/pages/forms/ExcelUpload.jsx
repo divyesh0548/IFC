@@ -584,6 +584,20 @@ function ExcelUpload() {
           <SampleSizeSettingsButton unitOptions={unitOptions} selectedUnitId={unitId} />
           <Button
             type="button"
+            onClick={() => navigate('/company_co/library-control-creation')}
+            variant="contained"
+            startIcon={<ChecklistRoundedIcon />}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 700,
+              borderRadius: 999,
+              px: 2.2,
+            }}
+          >
+            Browse Controls Library
+          </Button>
+          <Button
+            type="button"
             onClick={() => navigate('/company_co/manual-control-creation')}
             variant="contained"
             startIcon={<AddIcon />}

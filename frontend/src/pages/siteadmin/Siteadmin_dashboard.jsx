@@ -121,6 +121,13 @@ function Siteadmin_Dashboard() {
             accent: theme.palette.primary.main,
         },
         {
+            eyebrow: 'Control Library',
+            title: 'Controls Library',
+            description: 'Upload control-library suggestions by business process for coordinator use.',
+            path: '/siteadmin/controls-library',
+            accent: theme.palette.primary.main,
+        },
+        {
             eyebrow: 'Access',
             title: 'Auditor Management',
             description: 'Add auditors, track login email status, and manage platform access cleanly.',

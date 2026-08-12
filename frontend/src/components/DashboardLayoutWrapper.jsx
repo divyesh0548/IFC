@@ -21,6 +21,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import LibraryBooksIcon from '@mui/icons-material/LibraryBooks'
 
 const DRAWER_WIDTH = 240
 
@@ -40,6 +41,11 @@ const getNavigationForRole = (role) => {
           path: '/siteadmin/business-processes',
           title: 'Business Process',
           icon: <AccountTreeIcon />,
+        },
+        {
+          path: '/siteadmin/controls-library',
+          title: 'Controls Library',
+          icon: <LibraryBooksIcon />,
         },
         {
           path: '/siteadmin/auditors',

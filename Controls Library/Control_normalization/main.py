@@ -296,7 +296,7 @@ def write_normalized_workbook(
     header_row: int,
     mapping: dict[int, str],
     destination: Path,
-) -> int:
+    ) -> int:
     ordered_targets = [target for target in REQUIRED_COLUMNS if target in mapping.values()]
     source_by_target = {target: column for column, target in mapping.items()}
 
