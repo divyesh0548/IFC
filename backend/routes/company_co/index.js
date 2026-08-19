@@ -44,6 +44,11 @@ router.get('/unit-sample-size-config', verifyCompanyCoordinator, controller.getU
 router.put('/unit-sample-size-config', verifyCompanyCoordinator, controller.updateUnitSampleSizeConfig);
 router.post('/preview-sample-required', verifyCompanyCoordinator, controller.previewSampleRequired);
 
+const emailTemplateController = require('../../controllers/company_co/email_templates');
+router.get('/email-templates', verifyCompanyCoordinator, emailTemplateController.getEmailTemplates);
+router.post('/email-templates', verifyCompanyCoordinator, emailTemplateController.upsertEmailTemplate);
+router.delete('/email-templates/:unit_id', verifyCompanyCoordinator, emailTemplateController.deleteEmailTemplate);
+
 const racmTemplateController = require('../../controllers/company_co/racm_templates');
 router.get('/racm-templates/import-catalog', verifyCompanyCoordinator, racmTemplateController.listRacmTemplatesImportCatalog);
 router.get('/racm-templates/import-catalog/:template_id', verifyCompanyCoordinator, racmTemplateController.getRacmTemplateImportPreview);

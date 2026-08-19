@@ -643,7 +643,7 @@ function ControlDispersionDashboard() {
             Analyze the controls for your company
           </Typography>
         </Box>
-        <Button variant="contained" onClick={() => navigate('/company_co/racm-management')}>
+        <Button variant="contained" onClick={() => navigate('/company-co/racm-management')}>
           Open RACM Management
         </Button>
       </Box>
@@ -810,7 +810,7 @@ function ControlDispersionDashboard() {
               width: '100%',
             },
           }}
-          onClick={() => navigate(`/company_co/unclassified-controls${buildDashboardQueryString() ? `?${buildDashboardQueryString()}` : ''}`)}
+          onClick={() => navigate(`/company-co/unclassified-controls${buildDashboardQueryString() ? `?${buildDashboardQueryString()}` : ''}`)}
         >
           {`Found ${unclassifiedControlsCount} unclassified control${unclassifiedControlsCount === 1 ? '' : 's'}. Click to open the unclassified controls view.`}
         </Alert>
@@ -881,7 +881,7 @@ function ControlDispersionDashboard() {
             backgroundColor: 'transparent',
             valueColor: theme.palette.text.primary,
             linkLabel: 'View AI summary',
-            onClick: () => navigate('/company_co/key-manual-ai-insights'),
+            onClick: () => navigate('/company-co/key-manual-ai-insights'),
           },
           {
             label: 'Key + Automated Controls',
@@ -1125,7 +1125,7 @@ function ControlDispersionDashboard() {
             component="button"
             type="button"
             underline="hover"
-            onClick={() => navigate('/company_co/risk-analysis')}
+            onClick={() => navigate('/company-co/risk-analysis')}
             sx={{
               p: 0,
               border: 'none',

@@ -3,3 +3,11 @@ Mayank sir suggested to implement dynamic User controls. Curently each user role
 
 Change the documentation according to new changes.
 Should I remove max limit of smaple size for each control frequency?
+
+
+Provide a way to change the email body. First fetch default email then user will change it to requirement.
+
+
+ELC to be Developed = Mayank sir will provide info on this later.
+
+Add audit logs of user(all types) creation as well as approver Assignment.

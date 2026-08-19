@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Alert, Collapse } from '@mui/material'
-import { useTheme } from '@mui/material/styles'
 import { apiUrl } from '../../config/api'
+import { LIGHT_MODE_ALERT_SX } from '../../uiConstants'
 
 function buildNoticeMessage(variant, summary) {
   const templateLabel = summary
@@ -34,7 +34,6 @@ export default function ActiveRacmTemplateNotice({
   useParentSummary = false,
   sx,
 }) {
-  const theme = useTheme()
   const [open, setOpen] = useState(Boolean(unitId))
   const [fetchedSummary, setFetchedSummary] = useState(null)
 
@@ -108,9 +107,8 @@ export default function ActiveRacmTemplateNotice({
         onClose={() => setOpen(false)}
         sx={{
           borderRadius: 2,
-          boxShadow: theme.palette.mode === 'dark'
-            ? '0 8px 24px rgba(0, 0, 0, 0.24)'
-            : '0 8px 24px rgba(15, 23, 42, 0.08)',
+          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
+          ...LIGHT_MODE_ALERT_SX.info,
         }}
       >
         {buildNoticeMessage(variant, summary)}

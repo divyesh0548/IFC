@@ -17,6 +17,24 @@ const SUGGESTION_DEBOUNCE_MS = 300
 const VISIBLE_SUGGESTION_COUNT = 7
 const SUGGESTION_ROW_HEIGHT = 48
 
+const ANCHOR_FIELDS = ['sub_process', 'risk_description']
+
+function normalizeLibraryIds(ids) {
+  const seen = new Set()
+  const result = []
+  ;(Array.isArray(ids) ? ids : [ids]).forEach((id) => {
+    const numericId = Number(id)
+    if (!Number.isFinite(numericId) || numericId <= 0 || seen.has(numericId)) return
+    seen.add(numericId)
+    result.push(numericId)
+  })
+  return result
+}
+
+function suggestionValueKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
 function ControlsLibrarySearchField({
   businessProcess,
   field,
@@ -27,8 +45,11 @@ function ControlsLibrarySearchField({
   multiline = false,
   disabled = false,
   prioritizeSubProcess = false,
+  prioritizeRisk = false,
   subProcess = '',
   librarySubProcessId = null,
+  librarySubProcessIds = [],
+  libraryRiskIds = [],
   gridColumn,
 }) {
   const theme = useTheme()
@@ -37,6 +58,7 @@ function ControlsLibrarySearchField({
   const [loading, setLoading] = useState(false)
   const [draftValue, setDraftValue] = useState(value || '')
   const [pendingLibraryId, setPendingLibraryId] = useState(null)
+  const [pendingLibraryIds, setPendingLibraryIds] = useState([])
   const [pendingSelectedValue, setPendingSelectedValue] = useState('')
   const debounceRef = useRef(null)
   const requestIdRef = useRef(0)
@@ -66,6 +88,14 @@ function ControlsLibrarySearchField({
         params.set('prioritize_sub_process', 'true')
         if (subProcess) params.set('sub_process', subProcess)
         if (librarySubProcessId) params.set('library_sub_process_id', String(librarySubProcessId))
+        if (librarySubProcessIds.length > 0) {
+          params.set('library_sub_process_ids', librarySubProcessIds.join(','))
+        }
+      }
+
+      if (prioritizeRisk && libraryRiskIds.length > 0) {
+        params.set('prioritize_risk', 'true')
+        params.set('library_risk_ids', libraryRiskIds.join(','))
       }
 
       const response = await fetch(apiUrl(`/api/controls-library/suggestions?${params.toString()}`), {
@@ -90,7 +120,16 @@ function ControlsLibrarySearchField({
         setLoading(false)
       }
     }
-  }, [businessProcess, field, prioritizeSubProcess, subProcess, librarySubProcessId])
+  }, [
+    businessProcess,
+    field,
+    prioritizeSubProcess,
+    prioritizeRisk,
+    subProcess,
+    librarySubProcessId,
+    librarySubProcessIds,
+    libraryRiskIds,
+  ])
 
   const scheduleSuggestionFetch = useCallback((searchText) => {
     if (debounceRef.current) {
@@ -113,7 +152,22 @@ function ControlsLibrarySearchField({
   const openDialog = () => {
     if (isDisabled) return
     setDraftValue(displayValue)
-    setPendingLibraryId(field === 'sub_process' ? librarySubProcessId : null)
+    if (field === 'sub_process') {
+      const ids = normalizeLibraryIds(
+        librarySubProcessIds.length > 0
+          ? librarySubProcessIds
+          : (librarySubProcessId ? [librarySubProcessId] : [])
+      )
+      setPendingLibraryId(ids[0] ?? librarySubProcessId ?? null)
+      setPendingLibraryIds(ids)
+    } else if (field === 'risk_description') {
+      const ids = normalizeLibraryIds(libraryRiskIds)
+      setPendingLibraryId(ids[0] ?? null)
+      setPendingLibraryIds(ids)
+    } else {
+      setPendingLibraryId(null)
+      setPendingLibraryIds([])
+    }
     setPendingSelectedValue(displayValue)
     setDialogOpen(true)
     fetchSuggestions(displayValue)
@@ -131,13 +185,19 @@ function ControlsLibrarySearchField({
     const nextValue = String(draftValue || '')
     onChange(nextValue)
 
-    if (field === 'sub_process') {
+    if (ANCHOR_FIELDS.includes(field)) {
       const trimmedDraft = nextValue.trim()
-      const trimmedPending = String(pendingSelectedValue || '').trim()
-      if (pendingLibraryId && trimmedDraft && trimmedDraft === trimmedPending) {
-        onLibraryPick?.(pendingLibraryId)
+      const ids = trimmedDraft ? normalizeLibraryIds(pendingLibraryIds) : []
+      if (ids.length > 0) {
+        onLibraryPick?.({
+          libraryId: ids[0],
+          libraryIds: ids,
+        })
       } else {
-        onLibraryPick?.(null)
+        onLibraryPick?.({
+          libraryId: null,
+          libraryIds: [],
+        })
       }
     }
 
@@ -147,43 +207,65 @@ function ControlsLibrarySearchField({
   const handleDraftChange = (nextValue) => {
     setDraftValue(nextValue)
     scheduleSuggestionFetch(nextValue)
-
-    const trimmedNext = String(nextValue || '').trim()
-    const trimmedPending = String(pendingSelectedValue || '').trim()
-    if (!trimmedPending || trimmedNext !== trimmedPending) {
-      setPendingLibraryId(null)
-    }
   }
 
   const handleSuggestionSelect = (suggestion) => {
     const nextValue = String(suggestion?.value || '')
+    const subProcessMatchedIds = normalizeLibraryIds(suggestion?.matchedSubProcessLibraryIds)
+    const matchedIds = normalizeLibraryIds(suggestion?.matchedLibraryIds)
+    const allIds = normalizeLibraryIds(suggestion?.libraryIds)
+    const ids = field === 'risk_description'
+      ? (subProcessMatchedIds.length
+        ? subProcessMatchedIds
+        : (matchedIds.length ? matchedIds : allIds))
+      : (allIds.length ? allIds : matchedIds)
+
     setDraftValue(nextValue)
     setPendingSelectedValue(nextValue)
-    setPendingLibraryId(suggestion?.libraryIds?.[0] ?? null)
+    setPendingLibraryId(ids[0] ?? null)
+    setPendingLibraryIds(ids)
     scheduleSuggestionFetch(nextValue)
   }
 
   const groupedSuggestions = useMemo(() => {
-    const matched = []
+    const riskMatched = []
+    const subProcessMatched = []
     const other = []
+    const seenKeys = new Set()
 
     options.forEach((option) => {
-      const valueText = String(option?.value || '').trim()
-      if (!valueText) return
-      if (prioritizeSubProcess && option.matched) {
-        matched.push(option)
-      } else {
-        other.push(option)
+      const valueKey = suggestionValueKey(option?.value)
+      if (!valueKey || seenKeys.has(valueKey)) return
+      if (prioritizeRisk && option.matchedRisk) {
+        riskMatched.push(option)
+        seenKeys.add(valueKey)
       }
     })
 
-    return { matched, other }
-  }, [options, prioritizeSubProcess])
+    options.forEach((option) => {
+      const valueKey = suggestionValueKey(option?.value)
+      if (!valueKey || seenKeys.has(valueKey)) return
+      if (prioritizeSubProcess && option.matchedSubProcess) {
+        subProcessMatched.push(option)
+        seenKeys.add(valueKey)
+      }
+    })
+
+    options.forEach((option) => {
+      const valueKey = suggestionValueKey(option?.value)
+      if (!valueKey || seenKeys.has(valueKey)) return
+      other.push(option)
+      seenKeys.add(valueKey)
+    })
+
+    return { riskMatched, subProcessMatched, other }
+  }, [options, prioritizeRisk, prioritizeSubProcess])
 
   const renderSuggestionItem = (suggestion) => {
     const valueText = String(suggestion?.value || '').trim()
     const isSelected = valueText === String(draftValue || '').trim()
-    const isMatched = Boolean(suggestion.matched)
+    const isRiskMatched = Boolean(suggestion.matchedRisk)
+    const isSubProcessMatched = Boolean(suggestion.matchedSubProcess || suggestion.matched)
 
     return (
       <Box
@@ -212,7 +294,7 @@ function ControlsLibrarySearchField({
         <Typography
           variant="body2"
           sx={{
-            fontWeight: isMatched ? 700 : 400,
+            fontWeight: isRiskMatched || isSubProcessMatched ? 600 : 400,
             whiteSpace: 'normal',
             wordBreak: 'break-word',
             lineHeight: 1.45,
@@ -221,6 +303,14 @@ function ControlsLibrarySearchField({
         >
           {valueText}
         </Typography>
+        {isRiskMatched ? (
+          <Typography
+            variant="caption"
+            sx={{ display: 'block', mt: 0.25, color: 'text.secondary', fontWeight: 500 }}
+          >
+            (based on selected risk)
+          </Typography>
+        ) : null}
       </Box>
     )
   }
@@ -252,45 +342,73 @@ function ControlsLibrarySearchField({
           borderRadius: 1.5,
         }}
       >
-        {prioritizeSubProcess && groupedSuggestions.matched.length > 0 ? (
+        {prioritizeRisk && groupedSuggestions.riskMatched.length > 0 ? (
           <Box>
             <Typography
               variant="caption"
               sx={{
                 display: 'block',
+                position: 'sticky',
+                top: 0,
+                zIndex: 1,
                 px: 2,
                 py: 1,
                 fontWeight: 700,
                 color: 'text.secondary',
-                backgroundColor: alpha(theme.palette.primary.main, 0.06),
+                backgroundColor: `color-mix(in srgb, ${theme.palette.primary.main} 22%, ${theme.palette.background.paper})`,
               }}
             >
-              Suggested for selected sub-process
+              Based on selected risk
             </Typography>
-            {groupedSuggestions.matched.map(renderSuggestionItem)}
+            {groupedSuggestions.riskMatched.map(renderSuggestionItem)}
           </Box>
         ) : null}
 
-        {prioritizeSubProcess && groupedSuggestions.other.length > 0 ? (
+        {prioritizeSubProcess && groupedSuggestions.subProcessMatched.length > 0 ? (
           <Box>
             <Typography
               variant="caption"
               sx={{
                 display: 'block',
+                position: 'sticky',
+                top: 0,
+                zIndex: 1,
                 px: 2,
                 py: 1,
                 fontWeight: 700,
                 color: 'text.secondary',
-                backgroundColor: alpha(theme.palette.action.hover, 0.4),
+                backgroundColor: `color-mix(in srgb, ${theme.palette.primary.main} 12%, ${theme.palette.background.paper})`,
               }}
             >
-              Other options in this business process
+              Based on selected sub-process
+            </Typography>
+            {groupedSuggestions.subProcessMatched.map(renderSuggestionItem)}
+          </Box>
+        ) : null}
+
+        {(prioritizeSubProcess || prioritizeRisk) && groupedSuggestions.other.length > 0 ? (
+          <Box>
+            <Typography
+              variant="caption"
+              sx={{
+                display: 'block',
+                position: 'sticky',
+                top: 0,
+                zIndex: 1,
+                px: 2,
+                py: 1,
+                fontWeight: 700,
+                color: 'text.secondary',
+                backgroundColor: theme.palette.background.paper,
+              }}
+            >
+              Based on selected business process
             </Typography>
             {groupedSuggestions.other.map(renderSuggestionItem)}
           </Box>
         ) : null}
 
-        {!prioritizeSubProcess ? options.map(renderSuggestionItem) : null}
+        {!prioritizeSubProcess && !prioritizeRisk ? options.map(renderSuggestionItem) : null}
       </Box>
     )
   }

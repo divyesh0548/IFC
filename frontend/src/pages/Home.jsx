@@ -189,7 +189,7 @@ function Home() {
   const getDashboardPath = () => {
     if (!userRole) return '/login'
     if (userRole === 'user') return '/user/home'
-    if (userRole === 'company_co') return '/company_co/home'
+    if (userRole === 'company_co') return '/company-co/home'
     if (userRole === 'approver') return '/approver/home'
     return `/${userRole}/dashboard`
   }

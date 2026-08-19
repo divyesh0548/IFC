@@ -33,7 +33,7 @@ import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 
 const getHomePath = (pathname) => {
-  if (pathname.startsWith('/company_co')) return '/company_co/home'
+  if (pathname.startsWith('/company-co')) return '/company-co/home'
   if (pathname.startsWith('/company_admin')) return '/company_admin/home'
   if (pathname.startsWith('/siteadmin')) return '/siteadmin/dashboard'
   if (pathname.startsWith('/user')) return '/user/home'
@@ -43,13 +43,13 @@ const getHomePath = (pathname) => {
 }
 
 const getProfilePath = (pathname) => {
-  if (pathname.startsWith('/company_co')) return '/company_co/profile'
+  if (pathname.startsWith('/company-co')) return '/company-co/profile'
   if (pathname.startsWith('/company_admin')) return '/company_admin/profile'
   if (pathname.startsWith('/siteadmin')) return '/siteadmin/profile'
   if (pathname.startsWith('/user')) return '/user/profile'
   if (pathname.startsWith('/approver')) return '/approver/profile'
   if (pathname.startsWith('/auditor')) return '/auditor/profile'
-  return '/company_co/profile'
+  return '/company-co/profile'
 }
 
 function DashboardLayout() {
@@ -68,7 +68,7 @@ function DashboardLayout() {
   const isSiteadminRoute = location.pathname.startsWith('/siteadmin')
   const isCreateCompanyPage = location.pathname === '/siteadmin/create-company'
   const isFullWidthPage =
-    isCreateCompanyPage || location.pathname.startsWith('/company_co/control-creation')
+    isCreateCompanyPage || location.pathname.startsWith('/company-co/control-creation')
   const boundaryPaddingX = { xs: 3, sm: 4, md: 5 }
 
   useEffect(() => {

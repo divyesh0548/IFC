@@ -393,7 +393,7 @@ function RiskAnalysis() {
       return
     }
 
-    window.open(`/company_co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
+    window.open(`/company-co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
   }
 
   const renderAnalysisResponse = () => {
@@ -505,7 +505,7 @@ function RiskAnalysis() {
             Review control risks by business process and financial year.
           </Typography>
         </Box>
-        <Button variant="contained" onClick={() => navigate('/company_co/dashboard')}>
+        <Button variant="contained" onClick={() => navigate('/company-co/dashboard')}>
           Back To Dashboard
         </Button>
       </Box>

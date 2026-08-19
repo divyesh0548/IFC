@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -29,6 +30,7 @@ import InputAdornment from '@mui/material/InputAdornment'
 import SearchIcon from '@mui/icons-material/Search'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
 import { toast } from 'react-hot-toast'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
@@ -90,6 +92,7 @@ function mapDisplayEntries(rawEntries) {
 
 function CommunicationMatrix() {
   const theme = useTheme()
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [businessProcessFilter, setBusinessProcessFilter] = useState('all')
@@ -398,6 +401,14 @@ function CommunicationMatrix() {
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', flexWrap: 'wrap', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+            <Button
+              variant="outlined"
+              startIcon={<EditNoteRoundedIcon />}
+              onClick={() => navigate('/company-co/email-customization')}
+              sx={actionButtonSx}
+            >
+              Customize Email
+            </Button>
             <Button
               variant="contained"
               color="secondary"

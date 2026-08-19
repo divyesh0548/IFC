@@ -90,6 +90,24 @@ const LIBRARY_SEARCHABLE_FIELDS = [
   'application_name',
 ]
 
+const LIBRARY_FIELDS_DEPENDENT_ON_SUB_PROCESS = LIBRARY_SEARCHABLE_FIELDS.filter(
+  (field) => field !== 'sub_process'
+)
+
+function sameLibraryId(left, right) {
+  if (left == null && right == null) return true
+  if (left == null || right == null) return false
+  return Number(left) === Number(right)
+}
+
+function clearSubProcessDependentFields(prev) {
+  const next = { ...prev }
+  LIBRARY_FIELDS_DEPENDENT_ON_SUB_PROCESS.forEach((field) => {
+    next[field] = ''
+  })
+  return next
+}
+
 function CreateControlForm({ libraryMode = false }) {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -109,7 +127,9 @@ function CreateControlForm({ libraryMode = false }) {
   const [templateLoading, setTemplateLoading] = useState(false)
   const [templateHelpDialogOpen, setTemplateHelpDialogOpen] = useState(false)
   const [librarySubProcessId, setLibrarySubProcessId] = useState(null)
+  const [librarySubProcessIds, setLibrarySubProcessIds] = useState([])
   const [subProcessFromLibrary, setSubProcessFromLibrary] = useState(false)
+  const [libraryRiskIds, setLibraryRiskIds] = useState([])
   useSyncGlobalLoading(loading || templateLoading)
 
   // Financial year options - dynamically based on current year
@@ -350,7 +370,9 @@ function CreateControlForm({ libraryMode = false }) {
     setAssignmentSectionKey((current) => current + 1)
     setDynamicValues({})
     setLibrarySubProcessId(null)
+    setLibrarySubProcessIds([])
     setSubProcessFromLibrary(false)
+    setLibraryRiskIds([])
   }, [unitOptions])
 
   useEffect(() => {
@@ -420,7 +442,9 @@ function CreateControlForm({ libraryMode = false }) {
 
     if (name === 'business_process') {
       setLibrarySubProcessId(null)
+      setLibrarySubProcessIds([])
       setSubProcessFromLibrary(false)
+      setLibraryRiskIds([])
     }
 
     if (name === 'control_number') {
@@ -712,8 +736,8 @@ function CreateControlForm({ libraryMode = false }) {
   }, [unitOptions, formData.unit_id])
 
   const racmTemplatesHref = formData.unit_id
-    ? `/company_co/racm-templates?unit_id=${encodeURIComponent(formData.unit_id)}`
-    : '/company_co/racm-templates'
+    ? `/company-co/racm-templates?unit_id=${encodeURIComponent(formData.unit_id)}`
+    : '/company-co/racm-templates'
 
   const renderLibrarySearchField = (field, label, multiline = false, gridColumn = undefined) => (
     <ControlsLibrarySearchField
@@ -728,21 +752,41 @@ function CreateControlForm({ libraryMode = false }) {
           [field]: nextValue,
         }))
       }}
-      onLibraryPick={(libraryId) => {
-        if (field !== 'sub_process') return
-        if (libraryId) {
-          setLibrarySubProcessId(libraryId)
-          setSubProcessFromLibrary(true)
-        } else {
-          setLibrarySubProcessId(null)
-          setSubProcessFromLibrary(false)
+      onLibraryPick={({ libraryId = null, libraryIds = [] } = {}) => {
+        if (field === 'sub_process') {
+          const nextId = libraryId || null
+          const nextIds = Array.isArray(libraryIds) ? libraryIds : []
+          if (!sameLibraryId(nextId, librarySubProcessId)) {
+            setFormData((prev) => clearSubProcessDependentFields(prev))
+            setLibraryRiskIds([])
+          }
+          if (nextId) {
+            setLibrarySubProcessId(nextId)
+            setLibrarySubProcessIds(nextIds.length ? nextIds : [nextId])
+            setSubProcessFromLibrary(true)
+          } else {
+            setLibrarySubProcessId(null)
+            setLibrarySubProcessIds([])
+            setSubProcessFromLibrary(false)
+          }
+          return
+        }
+        if (field === 'risk_description') {
+          setLibraryRiskIds(Array.isArray(libraryIds) ? libraryIds : [])
         }
       }}
       multiline={multiline}
       disabled={loading}
       prioritizeSubProcess={field !== 'sub_process' && subProcessFromLibrary}
+      prioritizeRisk={
+        field !== 'sub_process'
+        && field !== 'risk_description'
+        && libraryRiskIds.length > 0
+      }
       subProcess={formData.sub_process}
       librarySubProcessId={librarySubProcessId}
+      librarySubProcessIds={librarySubProcessIds}
+      libraryRiskIds={libraryRiskIds}
       gridColumn={gridColumn}
     />
   )
@@ -768,7 +812,7 @@ function CreateControlForm({ libraryMode = false }) {
         >
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <IconButton
-              onClick={() => navigate('/company_co/control-creation')}
+              onClick={() => navigate('/company-co/control-creation')}
               sx={{
                 mr: 2,
                 color: theme.palette.text.primary,
@@ -794,7 +838,7 @@ function CreateControlForm({ libraryMode = false }) {
                 pl: { xs: 0, sm: 1.75 },
               }}
             >
-              {libraryMode ? 'Browse Controls Library' : 'Create RACM'}
+              {libraryMode ? 'Create control from library' : 'Create RACM'}
             </Typography>
             <IconButton
               onClick={() => setTemplateHelpDialogOpen(true)}
@@ -1502,6 +1546,8 @@ function CreateControlForm({ libraryMode = false }) {
         open={templateHelpDialogOpen}
         onClose={() => setTemplateHelpDialogOpen(false)}
         title="Missing columns on this form?"
+        titleId="missing-columns-help-dialog"
+        showTitleDivider
         actions={
           <Button
             variant="contained"

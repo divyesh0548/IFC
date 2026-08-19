@@ -39,7 +39,7 @@ const UserFormDetail = lazy(() => import('./pages/user/UserFormDetail'))
 const ControlDispersionDashboard = lazy(() => import('./pages/company_co/Company_co_control_dispersion'))
 const RacmAssignment = lazy(() => import('./pages/company_co/RacmAssignment'))
 const UserManagement = lazy(() => import('./pages/company_co/User_Management'))
-const ExcelUpload = lazy(() => import('./pages/forms/ExcelUpload'))
+const Controls_Creation = lazy(() => import('./pages/forms/Controls_Creation'))
 const ExcelColumnMap = lazy(() => import('./pages/forms/ExcelColumnMap'))
 const FormDetail = lazy(() => import('./pages/company_co/FormDetail'))
 const CreateControlForm = lazy(() => import('./pages/company_co/CreateControlForm'))
@@ -48,6 +48,7 @@ const RacmManagementDashboard = lazy(() => import('./pages/company_co/RacmManage
 const CompanyCoIfcReport = lazy(() => import('./pages/company_co/IfcReport'))
 const RacmUserDocuments = lazy(() => import('./pages/company_co/RacmUserDocuments'))
 const CommunicationMatrix = lazy(() => import('./pages/company_co/CommunicationMatrix'))
+const EmailCustomization = lazy(() => import('./pages/company_co/EmailCustomization'))
 const Company_co_home = lazy(() => import('./pages/company_co/Company_co_home'))
 const RacmTemplates = lazy(() => import('./pages/company_co/RacmTemplates'))
 const CreateUser = lazy(() => import('./pages/company_co/CreateUser'))
@@ -97,7 +98,7 @@ function GlobalLoadingStrip() {
     location.pathname.startsWith('/auditor') ||
     location.pathname.startsWith('/approver') ||
     location.pathname.startsWith('/user') ||
-    location.pathname.startsWith('/company_co') ||
+    location.pathname.startsWith('/company-co') ||
     location.pathname.startsWith('/company_admin')
   const hasMountedNavbar =
     typeof document !== 'undefined' &&
@@ -148,11 +149,17 @@ function GlobalLoadingStrip() {
 
 const ROLE_HOME_ROUTES = {
   user: '/user/home',
-  company_co: '/company_co/home',
+  company_co: '/company-co/home',
   company_admin: '/company_admin/home',
   approver: '/approver/home',
   auditor: '/auditor/home',
   siteadmin: '/siteadmin/dashboard',
+}
+
+function CompanyCoLegacyPathRedirect() {
+  const location = useLocation()
+  const nextPath = `${location.pathname.replace(/^\/company_co(?=\/|$)/, '/company-co')}${location.search}${location.hash}`
+  return <Navigate to={nextPath} replace />
 }
 
 function RouteFallbackRedirect() {
@@ -299,9 +306,11 @@ function App() {
               <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.user} replace />} />
             </Route>
 
+            <Route path="/company_co/*" element={<CompanyCoLegacyPathRedirect />} />
+
             {/* Company Coordinator Routes */}
             <Route
-              path="/company_co/*"
+              path="/company-co/*"
               element={
                 <RoleBasedProtectedRoute allowedRoles={['company_co']}>
                   <DashboardLayout />
@@ -319,12 +328,13 @@ function App() {
               <Route path="ifc-report" element={<CompanyCoIfcReport />} />
               <Route path="racm-user-documents" element={<RacmUserDocuments />} />
               <Route path="racm-communication" element={<CommunicationMatrix />} />
+              <Route path="email-customization" element={<EmailCustomization />} />
               <Route path="racm-templates" element={<RacmTemplates />} />
               <Route path="racm-assignment" element={<RacmAssignment />} />
               <Route path="user-management" element={<UserManagement />} />
               <Route path="company-details" element={<CompanyDetailsPage />} />
               <Route path="create-user" element={<CreateUser />} />
-              <Route path="control-creation" element={<ExcelUpload />} />
+              <Route path="control-creation" element={<Controls_Creation />} />
               <Route path="control-creation/column-map" element={<ExcelColumnMap />} />
               <Route path="manual-control-creation" element={<CreateControlForm />} />
               <Route path="library-control-creation" element={<CreateControlFormFromLibrary />} />

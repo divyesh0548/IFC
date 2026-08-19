@@ -22,7 +22,7 @@ import { apiUrl } from '../config/api'
 
 const ROLE_HOME_ROUTES = {
   user: '/user/home',
-  company_co: '/company_co/home',
+  company_co: '/company-co/home',
   company_admin: '/company_admin/home',
   approver: '/approver/home',
   siteadmin: '/siteadmin/dashboard',

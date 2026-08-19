@@ -102,7 +102,7 @@ function Login() {
       const roleRoutes = {
         user: '/user/home',
         company_admin: '/company_admin/home',
-        company_co: '/company_co/home',
+        company_co: '/company-co/home',
         approver: '/approver/home',
         siteadmin: '/siteadmin/dashboard',
         auditor: '/auditor/home',
@@ -166,7 +166,7 @@ function Login() {
           const roleRoutes = {
             'user': '/user/home',
             'company_admin': '/company_admin/home',
-            'company_co': '/company_co/home',
+            'company_co': '/company-co/home',
             'approver': '/approver/home',
             'siteadmin': '/siteadmin/dashboard',
             'auditor': '/auditor/home'

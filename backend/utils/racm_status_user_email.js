@@ -46,6 +46,31 @@ function resolveCoordinatorDisplayName(coordinatorName) {
   return 'Company Coordinator';
 }
 
+function replaceTemplateVariables(template, variables) {
+  return String(template || '').replace(/\{\{(\w+)\}\}/g, (match, key) => {
+    if (Object.prototype.hasOwnProperty.call(variables, key)) return variables[key] ?? '';
+    return match;
+  });
+}
+
+async function fetchCustomTemplate(companyIdentifier, unitId) {
+  if (!companyIdentifier || !unitId) return null;
+  try {
+    const result = await pool.query(
+      `SELECT email_subject, email_body FROM company_email_templates
+       WHERE company_identifier = $1 AND unit_id = $2 LIMIT 1`,
+      [companyIdentifier, unitId]
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    if (!row.email_subject && !row.email_body) return null;
+    return row;
+  } catch (err) {
+    console.error('[email-templates] fetchCustomTemplate error:', err);
+    return null;
+  }
+}
+
 function buildRacmActiveUserEmail({
   businessProcess,
   processOwnerName,
@@ -53,17 +78,43 @@ function buildRacmActiveUserEmail({
   coordinatorCompanyName,
   dueDate,
   formId,
+  customTemplate,
 }) {
   const recipientName = processOwnerName || 'Process Owner';
   const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
   const formattedDueDate = formatDueDateDisplay(dueDate);
   const formUrl = buildUserFormDetailUrl(formId);
   const portalUrl = getPortalBaseUrl();
+  const racmLink = formUrl || portalUrl || '';
+
+  if (customTemplate && (customTemplate.email_subject || customTemplate.email_body)) {
+    const vars = {
+      recipientName,
+      businessProcess: businessProcess || 'your business process',
+      formattedDueDate,
+      racmLink,
+      coordinatorCompanyName: coordinatorCompanyDisplayName,
+    };
+    return {
+      shouldSend: true,
+      subject: customTemplate.email_subject
+        ? replaceTemplateVariables(customTemplate.email_subject, vars)
+        : `Your IFC testing for ${businessProcess || 'your assignment'} is ready`,
+      text: customTemplate.email_body
+        ? replaceTemplateVariables(customTemplate.email_body, vars)
+        : buildDefaultActiveEmailBody({ recipientName, businessProcess, formattedDueDate, formUrl, portalUrl, coordinatorCompanyDisplayName }),
+    };
+  }
 
   return {
     shouldSend: true,
     subject: `Your IFC testing for ${businessProcess || 'your assignment'} is ready`,
-    text: `Hi ${recipientName},
+    text: buildDefaultActiveEmailBody({ recipientName, businessProcess, formattedDueDate, formUrl, portalUrl, coordinatorCompanyDisplayName }),
+  };
+}
+
+function buildDefaultActiveEmailBody({ recipientName, businessProcess, formattedDueDate, formUrl, portalUrl, coordinatorCompanyDisplayName }) {
+  return `Hi ${recipientName},
 
 Hope you're having a good week!
 
@@ -88,8 +139,7 @@ Thanks for cooperating.
 
 Regards,
 ${coordinatorCompanyDisplayName}
-`,
-  };
+`;
 }
 
 function buildRacmInactiveUserEmail({
@@ -217,5 +267,6 @@ module.exports = {
   buildRacmActiveUserEmail,
   buildRacmInactiveUserEmail,
   sendInactiveRacmUserEmailForFormId,
+  fetchCustomTemplate,
   RACM_STATUS_EMAIL_SELECT,
 };

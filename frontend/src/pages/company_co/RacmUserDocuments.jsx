@@ -102,7 +102,7 @@ function RacmUserDocuments() {
 
   const handleFormClick = (formId) => {
     if (!formId) return
-    window.open(`/company_co/form/${encodeURIComponent(formId)}`, '_blank', 'noopener,noreferrer')
+    window.open(`/company-co/form/${encodeURIComponent(formId)}`, '_blank', 'noopener,noreferrer')
   }
 
   const filterFormControlSx = {

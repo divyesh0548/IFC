@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 
 const ROLE_DASHBOARDS = {
   user: '/user/home',
-  company_co: '/company_co/home',
+  company_co: '/company-co/home',
   company_admin: '/company_admin/home',
   approver: '/approver/home',
   siteadmin: '/siteadmin/dashboard',

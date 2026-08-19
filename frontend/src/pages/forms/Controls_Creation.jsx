@@ -44,6 +44,7 @@ import ControlFrequencyValueMapDialog from '../../components/racm/ControlFrequen
 import { SampleSizeSettingsButton } from '../../components/company_co/UnitSampleSizeSettingsDialog'
 import ActiveRacmTemplateNotice from '../../components/company_co/ActiveRacmTemplateNotice'
 import { buildAutomaticColumnMappingForRows } from '../../utils/racmBulkImportColumnMapping'
+import { LIGHT_MODE_ALERT_SX } from '../../uiConstants'
 
 const MAX_BULK_IMPORT_ROWS = 5000
 const DUPLICATE_CONTROL_NUMBER_MESSAGE = 'Duplicate Control Number already exists for this company'
@@ -59,7 +60,7 @@ function getUnitFilterLabel(unit) {
   return templateName ? `${unitName} (${templateName})` : unitName
 }
 
-function ExcelUpload() {
+function Controls_Creation() {
   const theme = useTheme()
   const navigate = useNavigate()
   const fileInputRef = useRef(null)
@@ -538,7 +539,7 @@ function ExcelUpload() {
     }
     setMappingDialogOpen(false)
     setPendingImport(null)
-    navigate('/company_co/control-creation/column-map')
+    navigate('/company-co/control-creation/column-map')
   }
 
   const handleControlFrequencyMappingCancel = () => {
@@ -584,21 +585,7 @@ function ExcelUpload() {
           <SampleSizeSettingsButton unitOptions={unitOptions} selectedUnitId={unitId} />
           <Button
             type="button"
-            onClick={() => navigate('/company_co/library-control-creation')}
-            variant="contained"
-            startIcon={<ChecklistRoundedIcon />}
-            sx={{
-              textTransform: 'none',
-              fontWeight: 700,
-              borderRadius: 999,
-              px: 2.2,
-            }}
-          >
-            Browse Controls Library
-          </Button>
-          <Button
-            type="button"
-            onClick={() => navigate('/company_co/manual-control-creation')}
+            onClick={() => navigate('/company-co/manual-control-creation')}
             variant="contained"
             startIcon={<AddIcon />}
             sx={{
@@ -610,10 +597,24 @@ function ExcelUpload() {
           >
             Manual RACM Creation
           </Button>
+          <Button
+            type="button"
+            onClick={() => navigate('/company-co/library-control-creation')}
+            variant="contained"
+            startIcon={<ChecklistRoundedIcon />}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 700,
+              borderRadius: 999,
+              px: 2.2,
+            }}
+          >
+            Pick from Library
+          </Button>
         </Box>
         <Button
           type="button"
-          onClick={() => navigate('/company_co/dashboard')}
+          onClick={() => navigate('/company-co/dashboard')}
           variant="outlined"
           sx={{
             textTransform: 'none',
@@ -638,9 +639,8 @@ function ExcelUpload() {
           onClose={() => setShowSampleSizeNotice(false)}
           sx={{
             borderRadius: 2,
-            boxShadow: theme.palette.mode === 'dark'
-              ? '0 8px 24px rgba(0, 0, 0, 0.24)'
-              : '0 8px 24px rgba(15, 23, 42, 0.08)',
+            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
+            ...LIGHT_MODE_ALERT_SX.info,
           }}
         >
           Review the sample size for each control frequency before creating RACMs.
@@ -794,7 +794,7 @@ function ExcelUpload() {
 
         <form onSubmit={handleSubmit}>
               {duplicateControlNumberNotice ? (
-                <Alert severity="warning" sx={{ mb: 2.5 }}>
+                <Alert severity="warning" sx={{ mb: 2.5, ...LIGHT_MODE_ALERT_SX.warning }}>
                   {duplicateControlNumberNotice}
                 </Alert>
               ) : null}
@@ -1404,4 +1404,4 @@ function ExcelUpload() {
   )
 }
 
-export default ExcelUpload
+export default Controls_Creation

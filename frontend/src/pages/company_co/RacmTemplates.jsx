@@ -45,6 +45,11 @@ const SECTION_OPTIONS = [
   { key: 'others', label: 'Others' },
 ]
 
+const CUSTOM_COLUMN_SECTION_OPTIONS = SECTION_OPTIONS.filter(
+  (option) => option.key !== 'design_implementation'
+)
+const CUSTOM_COLUMN_SECTION_KEYS = new Set(CUSTOM_COLUMN_SECTION_OPTIONS.map((option) => option.key))
+
 const ASSERTION_COLUMNS_INFO =
   'Assertion columns are optional and vary by RACM. For the Assertions section, you can add columns from the predefined standard set (Completeness, Existence & Occurrence, and so on) or create your own custom text columns. Not every template needs assertion columns.'
 
@@ -140,7 +145,10 @@ function CustomColumnEditorDialog({
               <FormControl fullWidth>
                 <InputLabel>Section</InputLabel>
                 <Select value={sectionKey} label="Section" onChange={(e) => onSectionChange(e.target.value)}>
-                  {SECTION_OPTIONS.map((option) => (
+                  {CUSTOM_COLUMN_SECTION_KEYS.has(sectionKey) ? null : (
+                    <MenuItem value={sectionKey}>{getSectionLabel(sectionKey)}</MenuItem>
+                  )}
+                  {CUSTOM_COLUMN_SECTION_OPTIONS.map((option) => (
                     <MenuItem key={option.key} value={option.key}>
                       {option.label}
                     </MenuItem>
@@ -189,27 +197,47 @@ function CustomColumnEditorDialog({
   )
 }
 
-function TemplateColumnListing({ groupedFields, canEditExtras, onColumnClick }) {
+function TemplateColumnListing({ groupedFields, canEditExtras, onColumnClick, onAddColumn }) {
   return (
     <Stack spacing={2.5} divider={<Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }} />}>
       {groupedFields.map((section) => {
+        const canAddCustomColumn = Boolean(
+          canEditExtras && onAddColumn && CUSTOM_COLUMN_SECTION_KEYS.has(section.key)
+        )
         const hasFields = section.fixed.length > 0 || section.extras.length > 0
-        if (!hasFields) return null
+        if (!hasFields && !canAddCustomColumn) return null
 
         return (
           <Box key={section.key}>
-            <Typography
-              variant="subtitle2"
-              sx={{
-                fontWeight: 800,
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-                color: 'text.secondary',
-                mb: 1.25,
-              }}
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              spacing={1}
+              sx={{ mb: 1.25 }}
             >
-              {section.label}
-            </Typography>
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  color: 'text.secondary',
+                }}
+              >
+                {section.label}
+              </Typography>
+              {canAddCustomColumn ? (
+                <Button
+                  size="small"
+                  startIcon={<AddRoundedIcon />}
+                  onClick={() => onAddColumn(section.key)}
+                  sx={{ textTransform: 'none', fontWeight: 600 }}
+                >
+                  Add column
+                </Button>
+              ) : null}
+            </Stack>
 
             <Box sx={columnGridSx}>
               {section.fixed.map((field) => (
@@ -719,6 +747,10 @@ function RacmTemplates() {
       toast.error('Column label is required')
       return
     }
+    if (!CUSTOM_COLUMN_SECTION_KEYS.has(columnEditor.sectionKey)) {
+      toast.error('Custom columns cannot be added to Design and Implementation')
+      return
+    }
     if (!assertUniqueColumnLabel(label, { excludeClientId: columnEditor.clientId })) {
       return
     }
@@ -754,6 +786,10 @@ function RacmTemplates() {
 
   const appendDraftField = (sectionKey) => {
     if (isPageBusy()) return
+    if (!CUSTOM_COLUMN_SECTION_KEYS.has(sectionKey)) {
+      toast.error('Custom columns cannot be added to Design and Implementation')
+      return
+    }
     if (columnEditor.open) {
       toast.error('Close the column editor first')
       return
@@ -1344,6 +1380,7 @@ function RacmTemplates() {
                   groupedFields={groupedFields}
                   canEditExtras={canEditExtras && !loading}
                   onColumnClick={handleOpenColumnEditor}
+                  onAddColumn={appendDraftField}
                 />
 
                 {canEditExtras ? (
@@ -1661,6 +1698,8 @@ function RacmTemplates() {
         open={assertionInfoDialogOpen}
         onClose={() => setAssertionInfoDialogOpen(false)}
         title="Assertion columns"
+        titleId="assertion-columns-info-dialog"
+        showTitleDivider
         description={ASSERTION_COLUMNS_INFO}
         actions={
           <Button

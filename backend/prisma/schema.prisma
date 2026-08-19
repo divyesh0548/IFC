@@ -575,3 +575,17 @@ model ControlsLibrary {
   @@index([businessProcess, subProcess])
   @@map("controls_library")
 }
+
+model CompanyEmailTemplate {
+  id                Int       @id @default(autoincrement())
+  companyIdentifier String    @map("company_identifier") @db.VarChar(255)
+  unitId            String    @map("unit_id") @db.VarChar(255)
+  emailSubject      String?   @map("email_subject")
+  emailBody         String?   @map("email_body")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@unique([companyIdentifier, unitId])
+  @@index([companyIdentifier])
+  @@map("company_email_templates")
+}

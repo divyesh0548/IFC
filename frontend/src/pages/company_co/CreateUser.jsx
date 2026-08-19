@@ -203,7 +203,7 @@ function CreateUser() {
       if (response.ok && data.success) {
         toast.success(data.message || 'User created successfully')
         resetForm()
-        navigate('/company_co/user-management', { replace: true })
+        navigate('/company-co/user-management', { replace: true })
       } else {
         const errorMsg = data.message || 'Failed to create user'
         setError(errorMsg)
@@ -257,7 +257,7 @@ function CreateUser() {
                 </Typography>
                 <Button
                   type="button"
-                  onClick={() => navigate('/company_co/user-management', { replace: true })}
+                  onClick={() => navigate('/company-co/user-management', { replace: true })}
                   variant="outlined"
                   startIcon={<ArrowBackIcon />}
                   sx={{ textTransform: 'none', alignSelf: { xs: 'flex-start', sm: 'center' } }}

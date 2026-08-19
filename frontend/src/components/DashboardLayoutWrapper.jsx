@@ -58,17 +58,17 @@ const getNavigationForRole = (role) => {
     case 'company_co':
       baseNav.push(
         {
-          path: '/company_co/dashboard',
+          path: '/company-co/dashboard',
           title: 'Dashboard',
           icon: <DashboardIcon />,
         },
         {
-          path: '/company_co/user-management',
+          path: '/company-co/user-management',
           title: 'User Management',
           icon: <PersonAddIcon />,
         },
         {
-          path: '/company_co/control-creation',
+          path: '/company-co/control-creation',
           title: 'Upload Excel',
           icon: <UploadFileIcon />,
         }
@@ -222,7 +222,7 @@ function DashboardLayoutWrapper({ children, userRole, onLogout }) {
           {navigation.map((item) => {
             const isActive = location.pathname === item.path || 
                            (item.path !== '/siteadmin/dashboard' && 
-                            item.path !== '/company_co/dashboard' && 
+                            item.path !== '/company-co/dashboard' && 
                             item.path !== '/user/home' &&
                             item.path !== '/user/dashboard' && 
                             item.path !== '/approver/dashboard' && 

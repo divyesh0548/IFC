@@ -416,7 +416,7 @@ function UserManagement() {
   }, [mappedUnits, selectedCreateUnitIds.length])
 
   useEffect(() => {
-    if (location.pathname !== '/company_co/user-management') {
+    if (location.pathname !== '/company-co/user-management') {
       setBulkUploadLogs([])
       setBulkLogsDialogOpen(false)
       setShowBulkLogsButton(false)
@@ -696,7 +696,7 @@ function UserManagement() {
         resetForm()
         setShowCreateForm(false)
         fetchUsers()
-        navigate('/company_co/user-management', { replace: true })
+        navigate('/company-co/user-management', { replace: true })
       } else {
         const errorMsg = data.message || 'Failed to create user'
         setError(errorMsg)
@@ -1081,7 +1081,7 @@ function UserManagement() {
                     onClick={() => {
                       setShowCreateForm(false)
                       resetForm()
-                      navigate('/company_co/user-management', { replace: true })
+                      navigate('/company-co/user-management', { replace: true })
                     }}
                     variant="outlined"
                     startIcon={<ArrowBackIcon />}
@@ -1477,7 +1477,7 @@ function UserManagement() {
             <Button
               variant="contained"
               color="secondary"
-              onClick={() => navigate('/company_co/create-user')}
+              onClick={() => navigate('/company-co/create-user')}
               aria-label="Create user"
               sx={{ ...actionButtonSx, minWidth: 0, px: 1.25 }}
             >

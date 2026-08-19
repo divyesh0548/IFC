@@ -7,7 +7,7 @@ function CompanyCoIfcReport() {
       endpoint="/api/company-co/ifc-report"
       title="IFC Report"
       subtitle="Scoped to your assigned units. Live aggregates refresh on each load."
-      backPath="/company_co/racm-management"
+      backPath="/company-co/racm-management"
     />
   )
 }

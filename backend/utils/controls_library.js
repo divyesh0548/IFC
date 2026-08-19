@@ -360,12 +360,29 @@ function buildPrismaCreateRows(businessProcess, parsedRows) {
   }));
 }
 
+function normalizeLibraryIds(ids) {
+  const seen = new Set();
+  const result = [];
+
+  (Array.isArray(ids) ? ids : [ids]).forEach((id) => {
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId) || numericId <= 0 || seen.has(numericId)) return;
+    seen.add(numericId);
+    result.push(numericId);
+  });
+
+  return result;
+}
+
 function buildSuggestionsFromRows(rows, {
   field,
   searchText = '',
   subProcess = '',
   prioritizeSubProcess = false,
+  prioritizeRisk = false,
   librarySubProcessId = null,
+  librarySubProcessIds = [],
+  libraryRiskIds = [],
 }) {
   const dbField = String(field || '').trim();
   const prismaField = DB_COLUMN_TO_PRISMA_FIELD[dbField];
@@ -374,8 +391,9 @@ function buildSuggestionsFromRows(rows, {
   }
 
   const searchWords = splitSearchWords(searchText);
-  const subProcessNorm = normalizeComparableText(subProcess);
-  let anchorSubProcess = subProcessNorm;
+  let anchorSubProcess = normalizeComparableText(subProcess);
+  const subProcessIdSet = new Set(normalizeLibraryIds(librarySubProcessIds));
+  const riskIdSet = new Set(normalizeLibraryIds(libraryRiskIds));
 
   if (librarySubProcessId) {
     const anchorRow = rows.find((row) => row.id === Number(librarySubProcessId));
@@ -384,16 +402,38 @@ function buildSuggestionsFromRows(rows, {
     }
   }
 
+  const selectedRiskKeys = new Set();
+  if (prioritizeRisk && riskIdSet.size > 0) {
+    rows.forEach((row) => {
+      if (!riskIdSet.has(Number(row.id))) return;
+      const riskKey = normalizeComparableText(row.riskDescription);
+      if (riskKey) selectedRiskKeys.add(riskKey);
+    });
+  }
+
   const valueMap = new Map();
 
   rows.forEach((row) => {
     const value = normalizeCellValue(row[prismaField]);
     if (!value) return;
 
+    const rowId = Number(row.id);
     const rowSubProcessNorm = normalizeComparableText(row.subProcess);
-    const matchedSubProcess = prioritizeSubProcess
-      && anchorSubProcess
-      && rowSubProcessNorm === anchorSubProcess;
+    const rowRiskKey = normalizeComparableText(row.riskDescription);
+    const matchedSubProcess = Boolean(
+      prioritizeSubProcess
+      && (
+        (subProcessIdSet.size > 0 && subProcessIdSet.has(rowId))
+        || (anchorSubProcess && rowSubProcessNorm === anchorSubProcess)
+      )
+    );
+    const matchedRisk = Boolean(
+      prioritizeRisk
+      && (
+        riskIdSet.has(rowId)
+        || (selectedRiskKeys.size > 0 && selectedRiskKeys.has(rowRiskKey) && matchedSubProcess)
+      )
+    );
 
     if (!matchesKeywordSearch(value, searchWords)) return;
 
@@ -401,28 +441,46 @@ function buildSuggestionsFromRows(rows, {
     if (!valueMap.has(key)) {
       valueMap.set(key, {
         value,
-        matched: matchedSubProcess,
+        matchedRisk: false,
+        matchedSubProcess: false,
         libraryIds: [],
+        matchedLibraryIds: [],
+        matchedRiskLibraryIds: [],
+        matchedSubProcessLibraryIds: [],
         score: scoreKeywordSearch(value, searchWords),
       });
     }
 
     const entry = valueMap.get(key);
-    if (matchedSubProcess) entry.matched = true;
+    if (matchedRisk) entry.matchedRisk = true;
+    if (matchedSubProcess) entry.matchedSubProcess = true;
     entry.score = Math.max(entry.score, scoreKeywordSearch(value, searchWords));
-    if (row.id) entry.libraryIds.push(row.id);
+    if (row.id) {
+      entry.libraryIds.push(row.id);
+      if (matchedRisk) entry.matchedRiskLibraryIds.push(row.id);
+      if (matchedSubProcess) entry.matchedSubProcessLibraryIds.push(row.id);
+      if (matchedRisk || matchedSubProcess) {
+        entry.matchedLibraryIds.push(row.id);
+      }
+    }
   });
 
   const suggestions = [...valueMap.values()]
     .sort((a, b) => {
-      if (a.matched !== b.matched) return a.matched ? -1 : 1;
+      if (a.matchedRisk !== b.matchedRisk) return a.matchedRisk ? -1 : 1;
+      if (a.matchedSubProcess !== b.matchedSubProcess) return a.matchedSubProcess ? -1 : 1;
       if (a.score !== b.score) return b.score - a.score;
       return a.value.localeCompare(b.value, undefined, { sensitivity: 'base' });
     })
     .map((entry) => ({
       value: entry.value,
-      matched: entry.matched,
+      matched: entry.matchedSubProcess || entry.matchedRisk,
+      matchedRisk: entry.matchedRisk,
+      matchedSubProcess: entry.matchedSubProcess && !entry.matchedRisk,
       libraryIds: entry.libraryIds,
+      matchedLibraryIds: entry.matchedLibraryIds,
+      matchedRiskLibraryIds: entry.matchedRiskLibraryIds,
+      matchedSubProcessLibraryIds: entry.matchedSubProcessLibraryIds,
     }));
 
   return { ok: true, suggestions };
@@ -440,4 +498,5 @@ module.exports = {
   buildPrismaCreateRows,
   buildSuggestionsFromRows,
   normalizeComparableText,
+  normalizeLibraryIds,
 };

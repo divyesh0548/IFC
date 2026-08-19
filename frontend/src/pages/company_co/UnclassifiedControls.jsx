@@ -251,7 +251,7 @@ function UnclassifiedControls() {
   const openControlForm = (formId) => {
     const normalizedFormId = String(formId || '').trim()
     if (!normalizedFormId) return
-    window.open(`/company_co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
+    window.open(`/company-co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
   }
 
   const tableColumns = [
@@ -284,7 +284,7 @@ function UnclassifiedControls() {
             Each count indicates a control that is not classified in that particular category.
           </Typography>
         </Box>
-        <Button variant="contained" onClick={() => navigate(`/company_co/dashboard${location.search || ''}`)}>
+        <Button variant="contained" onClick={() => navigate(`/company-co/dashboard${location.search || ''}`)}>
           Back To Dashboard
         </Button>
       </Box>

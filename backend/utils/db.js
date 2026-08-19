@@ -3,17 +3,43 @@
  * Import { pool } from this module everywhere; do not create new Pool() elsewhere.
  */
 const { Pool } = require('pg');
-const { getPoolConfig } = require('./resolveDbName');
+
+/**
+ * Build `pg` Pool config:
+ * - Prefer DATABASE_URL (keeps Node pg aligned with Prisma)
+ * - Fall back to DB_* env vars for legacy/local setups
+ */
+function getPoolConfig() {
+  const url = process.env.DATABASE_URL;
+  if (url) {
+    try {
+      const u = new URL(url);
+      const host = u.hostname;
+      const isLocal = host === 'localhost' || host === '127.0.0.1';
+      // pg treats sslmode=require as certificate validation in current versions.
+      // Remove sslmode for app pool and enforce explicit TLS config below.
+      u.searchParams.delete('sslmode');
+      return {
+        connectionString: u.toString(),
+        ssl: isLocal ? false : { rejectUnauthorized: false }, // Explicitly disable/enable SSL certificate
+        options: '-c timezone=UTC',
+      };
+    } catch (error) {
+      console.error('Error parsing DATABASE_URL:', error);
+      console.error('Malformed DATABASE_URL:', url);
+    }
+  }
+
+  throw new Error('DATABASE_URL is not set');
+}
 
 const pool = new Pool({
   ...getPoolConfig(),
   keepAlive: true,
-  max: 20,
-  // Match Prisma v6-style idle lifetime so RDS idle timeouts don't kill reused clients.
-  idleTimeoutMillis: 300_000,
-  // Fail faster when RDS/security-group/VPN path is blocked (ETIMEDOUT).
-  connectionTimeoutMillis: 15_000,
-  allowExitOnIdle: false,
+  max: 20, // Maximum number of PostgreSQL clients/connections that this pool can have at once.
+  idleTimeoutMillis: 300_000,  // connection will be closed if it has been idle for 5 minutes
+  connectionTimeoutMillis: 15_000,  // connection will be closed if it takes longer than 15 seconds to establish
+  allowExitOnIdle: false,  // prevent the pool from exiting when all connections are idle
 });
 
 pool.on('error', (error) => {

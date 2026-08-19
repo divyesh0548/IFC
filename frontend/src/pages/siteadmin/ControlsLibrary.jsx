@@ -301,7 +301,7 @@ function ControlsLibrary() {
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ ...headCellSx, width: 72 }}>ID</TableCell>
-                  <TableCell sx={{ ...headCellSx, minWidth: 180, width: '18%' }}>Business Process</TableCell>
+                  <TableCell sx={{ ...headCellSx, minWidth: 120, width: '10%' }}>Business Process</TableCell>
                   <TableCell sx={headCellSx}>Sub-Process</TableCell>
                   <TableCell sx={headCellSx}>Risk Description</TableCell>
                   <TableCell sx={headCellSx}>Standard Control Description</TableCell>
@@ -319,7 +319,7 @@ function ControlsLibrary() {
                     }}
                   >
                     <TableCell sx={{ ...bodyCellSx, width: 72 }}>{row.id}</TableCell>
-                    <TableCell sx={{ ...bodyCellSx, minWidth: 220, width: '18%' }}>{row.business_process || '—'}</TableCell>
+                    <TableCell sx={{ ...bodyCellSx, minWidth: 120, width: '10%' }}>{row.business_process || '—'}</TableCell>
                     <TableCell sx={bodyCellSx}>{truncateText(row.sub_process, 80)}</TableCell>
                     <TableCell sx={bodyCellSx}>{truncateText(row.risk_description, 120)}</TableCell>
                     <TableCell sx={bodyCellSx}>{truncateText(row.standard_control_description, 100)}</TableCell>

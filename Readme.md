@@ -145,7 +145,7 @@ Cross-role API access is primarily blocked by **not mounting** another role’s 
 
 `frontend/src/App.jsx`:
 
-- Each role area is a nested route under a path prefix (`/company_co`, `/company_admin`, `/user`, `/approver`, `/auditor`, `/siteadmin`).
+- Each role area is a nested route under a path prefix (`/company-co`, `/company_admin`, `/user`, `/approver`, `/auditor`, `/siteadmin`).
 - Parent route wraps children in `RoleBasedProtectedRoute` with `allowedRoles={[...]}` and shared `DashboardLayout`.
 - Guard calls `GET /api/auth/verify` with cookies. Wrong role redirects to that user’s role home; unauthenticated users go to `/login`; `requiresPasswordUpdate` goes to `/update-password`.
 - Pages are `React.lazy`-loaded; unknown subpaths redirect to the role home.
@@ -155,7 +155,7 @@ Role home map:
 | Role | Home |
 |------|------|
 | `user` | `/user/home` |
-| `company_co` | `/company_co/home` |
+| `company_co` | `/company-co/home` |
 | `company_admin` | `/company_admin/home` |
 | `approver` | `/approver/home` |
 | `auditor` | `/auditor/home` |

@@ -3,6 +3,7 @@ const { sendEmail } = require('../utils/send_email');
 const { getCcEmailsForRacm } = require('../utils/racm_cc_recipients');
 const {
   buildRacmActiveUserEmail,
+  fetchCustomTemplate,
   RACM_STATUS_EMAIL_SELECT,
 } = require('../utils/racm_status_user_email');
 
@@ -13,6 +14,7 @@ async function runPendingRacmActiveUserEmails() {
       WHERE COALESCE(TRIM(cf.control_owner), '') <> ''
         AND COALESCE(cf.user_mail_sent, FALSE) = FALSE
         AND cf.active = TRUE
+        AND COALESCE(cf.assigned_to_coordinator, FALSE) = FALSE
       ORDER BY cf.created_at ASC NULLS LAST, cf.id ASC
     `
   );
@@ -23,6 +25,7 @@ async function runPendingRacmActiveUserEmails() {
     const processOwnerEmail = String(row.control_owner_email || '').trim().toLowerCase();
     if (!processOwnerEmail) continue;
 
+    const customTemplate = await fetchCustomTemplate(row.company_identifier, row.unit_id);
     const payload = buildRacmActiveUserEmail({
       businessProcess: row.business_process || '',
       processOwnerName: row.control_owner_name || '',
@@ -30,6 +33,7 @@ async function runPendingRacmActiveUserEmails() {
       coordinatorCompanyName: row.company_name || '',
       dueDate: row.due_date,
       formId: row.form_id,
+      customTemplate,
     });
     if (!payload.shouldSend) continue;
 

@@ -311,3 +311,21 @@ export function isMuiAlertCloseActionClick(event) {
   return Boolean(event?.target?.closest?.('.MuiAlert-action'))
 }
 
+/** Light-mode Alert colors, applied in both themes so notices stay readable. */
+export const LIGHT_MODE_ALERT_SX = {
+  info: {
+    backgroundColor: '#e5f6fd',
+    color: '#014361',
+    '& .MuiAlert-icon': { color: '#0288d1' },
+    '& .MuiAlert-message': { color: '#014361' },
+    '& .MuiAlert-action .MuiIconButton-root': { color: '#014361' },
+  },
+  warning: {
+    backgroundColor: '#fff4e5',
+    color: '#663c00',
+    '& .MuiAlert-icon': { color: '#ed6c02' },
+    '& .MuiAlert-message': { color: '#663c00' },
+    '& .MuiAlert-action .MuiIconButton-root': { color: '#663c00' },
+  },
+}
+

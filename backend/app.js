@@ -15,11 +15,7 @@ const { runPendingRacmActiveUserEmails } = require('./scripts/racm_active_user_e
 const { runPendingRacmInactiveUserEmails } = require('./scripts/racm_inactive_user_email_sender');
 const { runPendingUserQueryEmails } = require('./scripts/user_query_email_sender');
 const { runBootstrap } = require('./config/bootstrap');
-const {
-  checkDatabaseConnectivity,
-  formatDbConnectionError,
-  isPgConnectionError,
-} = require('./utils/db');
+const { checkDatabaseConnectivity, formatDbConnectionError, isPgConnectionError,} = require('./utils/db');
 
 function logScheduledJobError(jobName, error) {
   if (isPgConnectionError(error)) {
@@ -30,41 +26,29 @@ function logScheduledJobError(jobName, error) {
 }
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT;
 
 function buildAllowedOrigins() {
   const configuredOrigins = [
     process.env.VITE_FRONTEND_URL,
   ]
-    .filter(Boolean)
+    .filter(Boolean) // filter out any falsy values
     .flatMap((value) => String(value).split(','))
     .map((value) => value.trim().replace(/\/+$/, ''))
     .filter(Boolean);
-
+  
+  // using set to avoid duplicates
   return new Set([
     ...configuredOrigins,
     'http://localhost:5173',
+    'http://localhost:3000',
     'http://127.0.0.1:5173',
-    'http://localhost:4173',
-    'http://127.0.0.1:4173',
   ]);
 }
 
 const allowedOrigins = buildAllowedOrigins();
 
-// CORS configuration to allow credentials
-// app.use((req, res, next) => {
-//   res.header('Access-Control-Allow-Origin', 'http://localhost:5173'); // Vite default port
-//   res.header('Access-Control-Allow-Credentials', 'true');
-//   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-//   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  
-//   if (req.method === 'OPTIONS') {
-//     return res.sendStatus(200);
-//   }
-//   next();
-// });
-
+// CORS configuration
 app.use(cors({
   origin(origin, callback) {
     if (!origin) {
@@ -119,9 +103,9 @@ const path = require('path');
 app.use(express.static(path.join(__dirname, "../frontend/dist")));
 
 // Then catch-all for React
-// app.get(/.*/, (req, res) => {
-//   res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
-// });
+app.get(/.*/, (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
+});
 
 
 // Health check endpoint

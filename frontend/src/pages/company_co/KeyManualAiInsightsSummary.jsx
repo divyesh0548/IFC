@@ -86,7 +86,7 @@ function formatStatusLabel(status) {
 function openRacmDetail(formId) {
   const normalizedFormId = String(formId || '').trim()
   if (!normalizedFormId) return
-  window.open(`/company_co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
+  window.open(`/company-co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
 }
 
 function formatServerErrorToast(errorCode) {
@@ -415,7 +415,7 @@ function KeyManualAiInsightsSummary() {
           >
             {generating ? 'Generating AI Summary...' : 'Generate AI Summary'}
           </Button>
-          <Button variant="contained" onClick={() => navigate('/company_co/dashboard')}>
+          <Button variant="contained" onClick={() => navigate('/company-co/dashboard')}>
             Back To Dashboard
           </Button>
         </Box>

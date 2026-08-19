@@ -434,6 +434,12 @@ function validateExtraFieldDefinition(field, { existingKeys = new Set(), existin
   if (!Object.values(RACM_TEMPLATE_SECTIONS).includes(sectionKey)) {
     return { ok: false, message: 'Invalid section' };
   }
+  if (sectionKey === RACM_TEMPLATE_SECTIONS.DESIGN_IMPLEMENTATION) {
+    return {
+      ok: false,
+      message: 'Custom columns cannot be added to Design and Implementation',
+    };
+  }
 
   if (existingKeys.has(keyValidation.fieldKey)) {
     return { ok: false, message: `Duplicate field key "${keyValidation.fieldKey}"` };

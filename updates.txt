@@ -1,6 +1,0 @@
-Provide a way to change the email body. First fetch default email then user will change it to requirement.
-
-
-ELC to be Developed = Mayank sir will provide info on this later.
-
-Add audit logs of user(all types) creation as well as approver Assignment.

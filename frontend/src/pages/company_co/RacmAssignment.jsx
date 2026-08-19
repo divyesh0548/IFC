@@ -162,7 +162,7 @@ function RacmAssignment() {
   const openRacmInNewPage = (form) => {
     const normalizedFormId = String(form?.form_id || '').trim()
     if (!normalizedFormId) return
-    window.open(`/company_co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
+    window.open(`/company-co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
   }
   const showLockedRacmSelectionToast = () => {
     toast.error('This RACM cannot be re-assigned (sent for approval, approved, or no-further-submission declared).', {
@@ -1986,7 +1986,7 @@ function RacmAssignment() {
                       : (getRacmReassignmentBlockMessage(selectedForm) || 'This RACM cannot be re-assigned.')}
                   </Alert>
                 )}
-                {!isApproverMode && !isProcessOwnerAssignmentLocked(selectedForm) && Boolean(String(selectedForm?.control_owner || '').trim()) && !dismissedAssignmentAlerts.processOwnerReplace && (
+                {!isApproverMode && !isProcessOwnerAssignmentLocked(selectedForm) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(selectedForm?.control_owner || '').trim()) && !dismissedAssignmentAlerts.processOwnerReplace && (
                   <Alert
                     severity="warning"
                     onClose={() => dismissAssignmentAlert('processOwnerReplace')}

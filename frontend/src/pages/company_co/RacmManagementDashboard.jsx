@@ -462,7 +462,7 @@ function RacmManagementDashboard() {
     if (deleteMode || setActiveMode || replicateMode || setDueDateMode || (e && e.target.type === 'checkbox')) {
       return
     }
-    window.open(`/company_co/form/${encodeURIComponent(formId)}`, '_blank', 'noopener,noreferrer')
+    window.open(`/company-co/form/${encodeURIComponent(formId)}`, '_blank', 'noopener,noreferrer')
   }
 
   const handleSetDueDateModeToggle = () => {
@@ -1642,7 +1642,7 @@ function RacmManagementDashboard() {
         }}
       >
         <Button
-          onClick={() => navigate('/company_co/ifc-report')}
+          onClick={() => navigate('/company-co/ifc-report')}
           disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
           variant="contained"
           color="secondary"
@@ -1659,7 +1659,7 @@ function RacmManagementDashboard() {
         </Button>
 
         <Button
-          onClick={() => navigate('/company_co/racm-user-documents')}
+          onClick={() => navigate('/company-co/racm-user-documents')}
           disabled={deleteMode || setActiveMode || setDueDateMode || replicateMode}
           variant="contained"
           color="secondary"
@@ -3623,11 +3623,11 @@ function RacmManagementDashboard() {
                   key={`action-required-dialog-${form.form_id}`}
                   role="button"
                   tabIndex={0}
-                  onClick={() => window.open(`/company_co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')}
+                  onClick={() => window.open(`/company-co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
-                      window.open(`/company_co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')
+                      window.open(`/company-co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')
                     }
                   }}
                   sx={{
@@ -3724,11 +3724,11 @@ function RacmManagementDashboard() {
                   key={`pending-change-dialog-${form.form_id}`}
                   role="button"
                   tabIndex={0}
-                  onClick={() => window.open(`/company_co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')}
+                  onClick={() => window.open(`/company-co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
-                      window.open(`/company_co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')
+                      window.open(`/company-co/form/${encodeURIComponent(form.form_id)}`, '_blank', 'noopener,noreferrer')
                     }
                   }}
                   sx={{

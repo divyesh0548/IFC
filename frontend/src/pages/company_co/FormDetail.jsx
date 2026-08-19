@@ -1564,7 +1564,7 @@ function FormDetail() {
         setDeleteDialogOpen(false)
         // Redirect to dashboard after a short delay
         setTimeout(() => {
-          navigate('/company_co/racm-management')
+          navigate('/company-co/racm-management')
         }, 500)
       } else {
         toast.error(data.message || 'Failed to delete RACM')
@@ -1936,7 +1936,7 @@ function FormDetail() {
 
   const handleGoToReplicatedRacm = () => {
     if (newReplicatedFormId) {
-      navigate(`/company_co/form/${newReplicatedFormId}`)
+      navigate(`/company-co/form/${newReplicatedFormId}`)
     }
     setReplicateSuccessDialogOpen(false)
   }
@@ -4662,7 +4662,7 @@ function FormDetail() {
                 </Typography>
               </Box>
 
-              {Boolean((formData?.control_owner || '').trim()) && (
+              {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(formData?.control_owner || '').trim()) && (
                 <Alert severity="warning" sx={{ mb: 2 }}>
                   The current process owner will be replaced and will no longer be able to access this RACM. The new process owner will be notified by email.
                 </Alert>
