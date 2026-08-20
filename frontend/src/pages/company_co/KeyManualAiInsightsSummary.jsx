@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
@@ -9,6 +9,8 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
+import Checkbox from '@mui/material/Checkbox'
+import ListItemText from '@mui/material/ListItemText'
 import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -25,6 +27,65 @@ import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { toast } from 'react-hot-toast'
+
+function getSelectedFilterLabel(selected, options, getLabel = (value) => value) {
+  if (!Array.isArray(selected) || selected.length === 0) return 'All'
+  if (selected.length === 1) return getLabel(selected[0])
+  return `${selected.length} selected`
+}
+
+const FILTER_CONTROL_HEIGHT = 40
+
+const FILTER_SELECT_SX = {
+  minWidth: { xs: '100%', sm: 220 },
+  maxWidth: { xs: '100%', sm: 260 },
+  height: FILTER_CONTROL_HEIGHT,
+  '& .MuiInputBase-root': {
+    height: FILTER_CONTROL_HEIGHT,
+  },
+  '& .MuiSelect-select': {
+    display: 'flex',
+    alignItems: 'center',
+    py: 0,
+    height: FILTER_CONTROL_HEIGHT,
+    boxSizing: 'border-box',
+  },
+}
+
+function renderFilterValue(label) {
+  return (
+    <Typography
+      component="span"
+      variant="body2"
+      sx={{
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </Typography>
+  )
+}
+
+function parseUnitIdsFromSearchParams(searchParams) {
+  const values = [
+    ...searchParams.getAll('unit_ids'),
+    ...(searchParams.get('unit_id') ? [searchParams.get('unit_id')] : []),
+  ]
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
+}
+
+function buildAiInsightsQueryString({ runId = '', unitIds = [] } = {}) {
+  const params = new URLSearchParams()
+  const normalizedRunId = String(runId || '').trim()
+  if (normalizedRunId) params.set('run_id', normalizedRunId)
+  unitIds.forEach((unitId) => {
+    const normalized = String(unitId || '').trim()
+    if (normalized) params.append('unit_ids', normalized)
+  })
+  return params.toString()
+}
 
 function formatDateTime(value) {
   if (!value) return 'Not available'
@@ -116,11 +177,15 @@ function KeyManualAiInsightsSummary() {
   const [runs, setRuns] = useState([])
   const [run, setRun] = useState(null)
   const [rows, setRows] = useState([])
+  const [unitOptions, setUnitOptions] = useState([])
+  const [filterUnits, setFilterUnits] = useState(() => parseUnitIdsFromSearchParams(searchParams))
   const [excludedEntityLevelCount, setExcludedEntityLevelCount] = useState(0)
   const [excludedNoticeDismissed, setExcludedNoticeDismissed] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   useSyncGlobalLoading(loading)
+
+  const unitFilterKey = useMemo(() => filterUnits.slice().sort().join('|'), [filterUnits])
 
   const fetchRun = useCallback(async (runIdOverride, { shouldApply = () => true } = {}) => {
     setLoading(true)
@@ -129,10 +194,16 @@ function KeyManualAiInsightsSummary() {
       const requestedRunId = typeof runIdOverride === 'string'
         ? runIdOverride.trim()
         : String(searchParams.get('run_id') || '').trim()
-      const suffix = requestedRunId ? `?run_id=${encodeURIComponent(requestedRunId)}` : ''
-      const response = await fetch(apiUrl(`/api/company-co/ai-insights/key-manual-summary${suffix}`), {
-        credentials: 'include',
+      const suffix = buildAiInsightsQueryString({
+        runId: requestedRunId,
+        unitIds: filterUnits,
       })
+      const response = await fetch(
+        apiUrl(`/api/company-co/ai-insights/key-manual-summary${suffix ? `?${suffix}` : ''}`),
+        {
+          credentials: 'include',
+        }
+      )
       const data = await response.json()
 
       if (!response.ok || !data?.success) {
@@ -144,6 +215,7 @@ function KeyManualAiInsightsSummary() {
         setRun(data.data?.run || null)
         setRows(Array.isArray(data.data?.rows) ? data.data.rows : [])
         setExcludedEntityLevelCount(Number(data.data?.excluded_entity_level_count || 0))
+        setUnitOptions(Array.isArray(data.data?.filters?.units) ? data.data.filters.units : [])
       }
 
       return data.data || null
@@ -154,6 +226,7 @@ function KeyManualAiInsightsSummary() {
         setRun(null)
         setRows([])
         setExcludedEntityLevelCount(0)
+        setUnitOptions([])
         setErrorMessage(error.message || 'Failed to fetch AI insights summary')
       }
       return null
@@ -162,7 +235,20 @@ function KeyManualAiInsightsSummary() {
         setLoading(false)
       }
     }
+  }, [filterUnits, searchParams])
+
+  useEffect(() => {
+    const nextUnits = parseUnitIdsFromSearchParams(searchParams)
+    setFilterUnits((current) => {
+      const currentKey = current.slice().sort().join('|')
+      const nextKey = nextUnits.slice().sort().join('|')
+      return currentKey === nextKey ? current : nextUnits
+    })
   }, [searchParams])
+
+  useEffect(() => {
+    setExcludedNoticeDismissed(false)
+  }, [unitFilterKey])
 
   const fetchAiAvailability = useCallback(async ({ showUnavailableToast = false } = {}) => {
     try {
@@ -220,14 +306,20 @@ function KeyManualAiInsightsSummary() {
 
   const handleRunChange = (event) => {
     const nextRunId = String(event.target.value || '').trim()
-    const nextParams = new URLSearchParams(searchParams)
+    const nextParams = new URLSearchParams()
+    if (nextRunId) nextParams.set('run_id', nextRunId)
+    filterUnits.forEach((unitId) => nextParams.append('unit_ids', unitId))
+    setSearchParams(nextParams)
+  }
 
-    if (nextRunId) {
-      nextParams.set('run_id', nextRunId)
-    } else {
-      nextParams.delete('run_id')
-    }
-
+  const handleUnitFilterChange = (event) => {
+    const value = event.target.value
+    const nextUnits = typeof value === 'string' ? value.split(',').filter(Boolean) : value
+    const nextParams = new URLSearchParams()
+    const currentRunId = String(searchParams.get('run_id') || '').trim()
+    if (currentRunId) nextParams.set('run_id', currentRunId)
+    nextUnits.forEach((unitId) => nextParams.append('unit_ids', unitId))
+    setFilterUnits(nextUnits)
     setSearchParams(nextParams)
   }
 
@@ -249,13 +341,14 @@ function KeyManualAiInsightsSummary() {
         return
       }
 
-      const nextParams = new URLSearchParams(searchParams)
-      nextParams.delete('run_id')
-      const suffix = nextParams.toString() ? `?${nextParams.toString()}` : ''
-      const response = await fetch(apiUrl(`/api/company-co/ai-insights/key-manual-summary/generate${suffix}`), {
-        method: 'POST',
-        credentials: 'include',
-      })
+      const suffix = buildAiInsightsQueryString({ unitIds: filterUnits })
+      const response = await fetch(
+        apiUrl(`/api/company-co/ai-insights/key-manual-summary/generate${suffix ? `?${suffix}` : ''}`),
+        {
+          method: 'POST',
+          credentials: 'include',
+        }
+      )
       const data = await response.json()
 
       if (!response.ok || !data?.success) {
@@ -267,13 +360,14 @@ function KeyManualAiInsightsSummary() {
 
       const generatedRunId = String(data.data?.run_id || '').trim()
       if (generatedRunId) {
-        const updatedParams = new URLSearchParams(searchParams)
+        const updatedParams = new URLSearchParams()
         updatedParams.set('run_id', generatedRunId)
+        filterUnits.forEach((unitId) => updatedParams.append('unit_ids', unitId))
         setSearchParams(updatedParams)
         await fetchRun(generatedRunId)
       }
       toast.success(
-        `AI summary generated for ${Number(data.data?.control_count || 0)} controls using ${data.data?.model_name || 'the configured model'}. Excluded Entity Level Controls: ${Number(data.data?.excluded_entity_level_count || 0)}.`
+        `AI summary generated for ${Number(data.data?.control_count || 0)} high-risk key manual controls using ${data.data?.model_name || 'the configured model'}. Excluded Entity Level Controls: ${Number(data.data?.excluded_entity_level_count || 0)}.`
       )
     } catch (error) {
       console.error('Error generating AI summary:', error)
@@ -281,7 +375,7 @@ function KeyManualAiInsightsSummary() {
         setLlmBusy(true)
         toast('LLM Server is busy, Try again after some moments')
       } else {
-        toast.error(formatServerErrorToast(error?.serverCode))
+        toast.error(error?.message || formatServerErrorToast(error?.serverCode))
       }
     } finally {
       generatingRef.current = false
@@ -403,7 +497,7 @@ function KeyManualAiInsightsSummary() {
             High Risk Manual Key Control Summary
           </Typography>
           <Typography variant="body2" sx={PAGE_SUBHEADER_TEXT_SX}>
-            Entity Level Controls are excluded from AI insight generation because they are not treated as high risk controls in this category.
+            Scoped to your assigned units. Entity Level Controls are excluded from AI insight generation because they are not treated as high risk controls in this category.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
@@ -415,7 +509,7 @@ function KeyManualAiInsightsSummary() {
           >
             {generating ? 'Generating AI Summary...' : 'Generate AI Summary'}
           </Button>
-          <Button variant="contained" onClick={() => navigate('/company-co/dashboard')}>
+          <Button variant="contained" onClick={() => navigate('/company-co/control-dispersion-dashboard')}>
             Back To Dashboard
           </Button>
         </Box>
@@ -453,6 +547,42 @@ function KeyManualAiInsightsSummary() {
             : 'linear-gradient(135deg, rgba(248,250,252,0.98) 0%, rgba(239,246,255,0.92) 100%)',
         }}
       >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.25,
+            flexWrap: 'wrap',
+            mb: 2,
+          }}
+        >
+          <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+            <InputLabel id="ai-insights-unit-label" shrink>Unit</InputLabel>
+            <Select
+              labelId="ai-insights-unit-label"
+              multiple
+              value={filterUnits}
+              label="Unit"
+              displayEmpty
+              notched
+              onChange={handleUnitFilterChange}
+              renderValue={(selected) => renderFilterValue(
+                getSelectedFilterLabel(
+                  selected,
+                  unitOptions,
+                  (unitId) => unitOptions.find((unit) => String(unit.unit_id) === String(unitId))?.unit_name || unitId
+                )
+              )}
+            >
+              {unitOptions.map((unit) => (
+                <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                  <Checkbox checked={filterUnits.includes(unit.unit_id)} size="small" />
+                  <ListItemText primary={unit.unit_name || unit.unit_id} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
         <Box
           sx={{
             display: 'flex',

@@ -423,14 +423,14 @@ function ControlDispersionDashboard() {
     conclusion: filterConclusion,
   }
 
-  const businessProcessSummaryRows = Array.from(createBusinessProcessSummaryRows(allRacms).values())
+  const businessProcessSummaryRows = Array.from(createBusinessProcessSummaryRows(allRacms, dashboardFilters).values())
     .sort((left, right) => left.businessProcess.localeCompare(right.businessProcess))
   const businessProcessOptions = [...new Set(
     (allRacms || [])
       .map((form) => String(getFieldValue(form, 'business_process', 'businessProcess') || '').trim())
       .filter(Boolean)
   )].sort((left, right) => left.localeCompare(right))
-  const controlCombinationCounts = countControlsByCombination(allRacms)
+  const controlCombinationCounts = countControlsByCombination(allRacms, dashboardFilters)
   const locallyComputedUnclassifiedCount = countUnclassifiedControls(allRacms, dashboardFilters)
   const unclassifiedControlsCount = Math.max(
     locallyComputedUnclassifiedCount,
@@ -881,7 +881,12 @@ function ControlDispersionDashboard() {
             backgroundColor: 'transparent',
             valueColor: theme.palette.text.primary,
             linkLabel: 'View AI summary',
-            onClick: () => navigate('/company-co/key-manual-ai-insights'),
+            onClick: () => {
+              const params = new URLSearchParams()
+              if (filterUnit !== 'all') params.set('unit_ids', filterUnit)
+              const suffix = params.toString() ? `?${params.toString()}` : ''
+              navigate(`/company-co/key-manual-ai-insights${suffix}`)
+            },
           },
           {
             label: 'Key + Automated Controls',
@@ -970,7 +975,7 @@ function ControlDispersionDashboard() {
             Summary of Controls
           </Typography>
           <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
-            Company-wide counts across all RACMs (not affected by dashboard filters).
+            Counts respect the dashboard filters above (including unit).
           </Typography>
         </Box>
 

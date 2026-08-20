@@ -60,8 +60,10 @@ function hasReminderSettingsConfigured(form) {
 function canCoordinatorSelfAssignRacm(form) {
   if (!form) return false
   if (isCoordinatorAssignedRacm(form)) return false
-  if (hasValidProcessOwnerAssignment(form)) return false
   if (!hasReminderSettingsConfigured(form)) return false
+  if (hasValidProcessOwnerAssignment(form)) {
+    return !getRacmReassignmentBlockMessage(form)
+  }
   const status = String(form?.status || '').trim().toLowerCase()
   if (status === 'sent for approval' || status === 'approved') return false
   return true
@@ -72,11 +74,12 @@ function getCoordinatorSelfAssignBlockMessage(form) {
   if (isCoordinatorAssignedRacm(form)) {
     return 'This RACM is already coordinator-assigned.'
   }
-  if (hasValidProcessOwnerAssignment(form)) {
-    return 'This RACM is already assigned to a process owner.'
-  }
   if (!hasReminderSettingsConfigured(form)) {
     return 'Configure due date and reminder frequency before self-assignment.'
+  }
+  if (hasValidProcessOwnerAssignment(form)) {
+    return getRacmReassignmentBlockMessage(form)
+      || 'This RACM cannot be transferred from the process owner right now.'
   }
   const status = String(form?.status || '').trim().toLowerCase()
   if (status === 'sent for approval' || status === 'approved') {
@@ -131,9 +134,9 @@ function RacmAssignment() {
   const getFormUnitId = (form) => String(form?.unit_id || '').trim()
   const isFormActive = (form) => Boolean(form?.active)
   // A RACM can be (re-)assigned to a process owner in bulk unless it is
-  // coordinator self-assigned or locked by its approval lifecycle.
+  // locked by its approval lifecycle. Self-assigned RACMs can be transferred.
   const isBulkAssignableProcessOwnerForm = (form) => (
-    !isCoordinatorAssignedRacm(form) && !getRacmReassignmentBlockMessage(form)
+    !getRacmReassignmentBlockMessage(form)
   )
   const getFormUnitName = (form) => {
     const unitName = String(form?.unit_name || '').trim()
@@ -154,7 +157,7 @@ function RacmAssignment() {
     ? 'Assign RACM-specific approvers and manage existing approver overrides.'
     : 'Assign RACM to Process Owners and manage existing RACM assignments.'
   const isProcessOwnerAssignmentLocked = (form) => (
-    isCoordinatorAssignedRacm(form) || Boolean(getRacmReassignmentBlockMessage(form))
+    Boolean(getRacmReassignmentBlockMessage(form))
   )
   const isCurrentAssignmentLocked = (form) => (
     isApproverMode ? isApproverAssignmentStatusLocked(form) : isProcessOwnerAssignmentLocked(form)
@@ -631,6 +634,19 @@ function RacmAssignment() {
           })
         }
 
+        if (isCoordinatorAssignedRacm(selectedForm)) {
+          return fetch(`${API_BASE_URL}/api/control-forms/${selectedForm.form_id}/transfer-to-process-owner`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              control_owner: selectedUser.email_id,
+            }),
+          })
+        }
+
         return fetch(`${API_BASE_URL}/api/control-forms/${selectedForm.form_id}`, {
           method: 'PUT',
           headers: {
@@ -685,13 +701,22 @@ function RacmAssignment() {
                     : {
                         control_owner: selectedUser.email_id,
                         control_owner_name: selectedUser.emp_name || form.control_owner_name || null,
+                        assigned_to_coordinator: false,
+                        has_valid_process_owner_assignment: true,
+                        is_racm_assigned: true,
                       }),
                 }
               : form
           )
         )
         handleCloseAssignmentDialog()
-        toast.success(`Successfully updated ${isApproverMode ? 'approver' : 'RACM'} assignment`)
+        toast.success(
+          isApproverMode
+            ? 'Successfully updated approver assignment'
+            : (isCoordinatorAssignedRacm(selectedForm)
+              ? 'Self-assigned RACM transferred to process owner successfully'
+              : 'Successfully updated RACM assignment')
+        )
         fetchForms()
       } else {
         toast.error(data.message || `Failed to update ${isApproverMode ? 'approver' : 'RACM'} assignment`)
@@ -724,12 +749,17 @@ function RacmAssignment() {
 
     const currentOwner = String(selectedForm?.control_owner || '').trim()
     const nextOwner = String(selectedUser.email_id || '').trim()
+    const isTransferFromSelfAssign = isCoordinatorAssignedRacm(selectedForm)
     openConfirmDialog({
       kind: 'assign_single',
-      title: 'Confirm Process Owner Assignment',
-      description: currentOwner
-        ? `Replace the current process owner (${currentOwner}) with ${nextOwner}? The RACM will be set Active, and the new process owner will be notified by email.`
-        : `Assign ${nextOwner} as the process owner for this RACM? The RACM will be set Active.`,
+      title: isTransferFromSelfAssign
+        ? 'Transfer Self-Assigned RACM to Process Owner'
+        : 'Confirm Process Owner Assignment',
+      description: isTransferFromSelfAssign
+        ? `Transfer this self-assigned RACM to ${nextOwner}? The RACM will remain Active and the process owner will be notified by email.`
+        : (currentOwner
+          ? `Replace the current process owner (${currentOwner}) with ${nextOwner}? The RACM will be set Active, and the new process owner will be notified by email.`
+          : `Assign ${nextOwner} as the process owner for this RACM? The RACM will be set Active.`),
       confirmLabel: 'Update Assignment',
     })
   }
@@ -793,10 +823,14 @@ function RacmAssignment() {
       return
     }
 
+    const isTransferFromProcessOwner = hasValidProcessOwnerAssignment(selectedForm)
+    const currentOwner = String(selectedForm?.control_owner || '').trim()
     openConfirmDialog({
       kind: 'self_assign_single',
       title: 'Self Assign RACM',
-      description: 'Assign this RACM to yourself for document upload and submission. Process owner assignment will be disabled after self-assignment, and the RACM will be set Active.',
+      description: isTransferFromProcessOwner
+        ? `Self-assign this RACM (currently assigned to ${currentOwner}) to yourself? The RACM will remain Active.`
+        : 'Assign this RACM to yourself for document upload and submission.',
       confirmLabel: 'Self Assign',
     })
   }
@@ -855,16 +889,10 @@ function RacmAssignment() {
     if (isApproverMode || selectedForms.size === 0) return
 
     const selectedRows = selectedFormRows
-    const withValidOwnerCount = selectedRows.filter((form) => hasValidProcessOwnerAssignment(form)).length
     const eligible = selectedRows.filter((form) => canCoordinatorSelfAssignRacm(form))
+    const transferFromOwnerCount = eligible.filter((form) => hasValidProcessOwnerAssignment(form)).length
 
     if (eligible.length === 0) {
-      if (withValidOwnerCount > 0) {
-        toast.error(
-          `${withValidOwnerCount} selected RACM${withValidOwnerCount === 1 ? '' : 's'} already ${withValidOwnerCount === 1 ? 'has' : 'have'} a valid process owner and cannot be self-assigned.`
-        )
-        return
-      }
       const firstBlocked = selectedRows.find((form) => getCoordinatorSelfAssignBlockMessage(form))
       toast.error(
         getCoordinatorSelfAssignBlockMessage(firstBlocked)
@@ -875,12 +903,15 @@ function RacmAssignment() {
 
     const skipped = selectedRows.length - eligible.length
     pendingSelfAssignEligibleRef.current = eligible
+    const transferNote = transferFromOwnerCount > 0
+      ? ` ${transferFromOwnerCount} currently assigned to a process owner will be self-assigned to you.`
+      : ''
     openConfirmDialog({
       kind: 'self_assign_bulk',
       title: 'Self Assign Selected RACMs',
       description: skipped > 0
-        ? `Self-assign ${eligible.length} of ${selectedRows.length} selected RACM(s)? ${skipped} will be skipped (already assigned, locked, or missing reminder settings). Eligible RACMs will be set Active.`
-        : `Self-assign ${eligible.length} selected RACM(s) to yourself? They will be set to active.`,
+        ? `Self-assign ${eligible.length} of ${selectedRows.length} selected RACM(s)? ${skipped} will be skipped (already coordinator-assigned, locked, or missing reminder settings).${transferNote} Eligible RACMs will be set Active.`
+        : `Self-assign ${eligible.length} selected RACM(s) to yourself?${transferNote} They will be set to Active.`,
       confirmLabel: 'Self Assign',
     })
   }
@@ -992,18 +1023,29 @@ function RacmAssignment() {
       } else {
         for (const formId of targetFormIds) {
           try {
-            const response = await fetch(`${API_BASE_URL}/api/control-forms/${formId}`, {
-              method: 'PUT',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              credentials: 'include',
-              body: JSON.stringify({
-                control_owner: bulkSelectedUser.email_id,
-                active: '1',
-                modifiedFields: ['control_owner'],
-              }),
-            })
+            const form = forms.find((row) => String(row.form_id || '').trim() === String(formId || '').trim())
+            const isTransferFromSelfAssign = isCoordinatorAssignedRacm(form)
+            const response = await fetch(
+              isTransferFromSelfAssign
+                ? `${API_BASE_URL}/api/control-forms/${formId}/transfer-to-process-owner`
+                : `${API_BASE_URL}/api/control-forms/${formId}`,
+              {
+                method: isTransferFromSelfAssign ? 'POST' : 'PUT',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify(
+                  isTransferFromSelfAssign
+                    ? { control_owner: bulkSelectedUser.email_id }
+                    : {
+                        control_owner: bulkSelectedUser.email_id,
+                        active: '1',
+                        modifiedFields: ['control_owner'],
+                      }
+                ),
+              }
+            )
 
             const data = await response.json()
             if (response.ok && data.success) {
@@ -1037,6 +1079,9 @@ function RacmAssignment() {
                   ...form,
                   control_owner: bulkSelectedUser.email_id,
                   control_owner_name: bulkSelectedUser.emp_name || form.control_owner_name || null,
+                  assigned_to_coordinator: false,
+                  has_valid_process_owner_assignment: true,
+                  is_racm_assigned: true,
                 }
               : form
           )
@@ -1070,10 +1115,15 @@ function RacmAssignment() {
       return
     }
 
+    const selectedSelfAssignedCount = selectedFormRows.filter((form) => isCoordinatorAssignedRacm(form)).length
     openConfirmDialog({
       kind: 'assign_bulk',
-      title: 'Confirm Process Owner Assignment',
-      description: `Assign ${bulkSelectedUser.email_id} as the process owner for ${selectedForms.size} selected RACM${selectedForms.size === 1 ? '' : 's'}? Current process owners will be replaced, RACMs will be set Active, and the new process owner will be notified by email.`,
+      title: selectedSelfAssignedCount > 0
+        ? 'Confirm Process Owner Assignment / Transfer'
+        : 'Confirm Process Owner Assignment',
+      description: selectedSelfAssignedCount > 0
+        ? `Assign ${bulkSelectedUser.email_id} as the process owner for ${selectedForms.size} selected RACM${selectedForms.size === 1 ? '' : 's'}? ${selectedSelfAssignedCount} self-assigned RACM${selectedSelfAssignedCount === 1 ? '' : 's'} will be transferred (and remain Active). Other RACMs will be set Active, and the process owner will be notified by email.`
+        : `Assign ${bulkSelectedUser.email_id} as the process owner for ${selectedForms.size} selected RACM${selectedForms.size === 1 ? '' : 's'}? Current process owners will be replaced, RACMs will be set Active, and the new process owner will be notified by email.`,
       confirmLabel: 'Update Assignments',
     })
   }
@@ -1532,7 +1582,7 @@ function RacmAssignment() {
             mb: 3,
             minWidth: 0,
           }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0, pr: { sm: 2, md: 3 }, mr: { sm: 1 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                 <Typography 
                   variant="h5" 
@@ -1556,11 +1606,6 @@ function RacmAssignment() {
                   </Tooltip>
                 ) : null}
               </Box>
-              <Typography
-                sx={PAGE_SUBHEADER_TEXT_SX}
-              >
-                {assignmentPageDescription}
-              </Typography>
             </Box>
             
             {/* Filter Options */}
@@ -1727,13 +1772,16 @@ function RacmAssignment() {
             <Box
               sx={{
                 display: 'flex',
-                justifyContent: 'flex-end',
+                justifyContent: 'space-between',
                 alignItems: 'center',
                 mb: 1.5,
                 flexWrap: 'wrap',
                 gap: 1,
               }}
             >
+              <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, flex: '1 1 240px', minWidth: 0, pr: { sm: 2 } }}>
+                {assignmentPageDescription}
+              </Typography>
               <FormControlLabel
                 control={
                   <Switch
@@ -1748,6 +1796,7 @@ function RacmAssignment() {
                 sx={{
                   mr: 0,
                   userSelect: 'none',
+                  flex: '0 0 auto',
                   '& .MuiFormControlLabel-label': {
                     fontSize: '0.8125rem',
                     color: theme.palette.text.secondary,
@@ -1981,18 +2030,25 @@ function RacmAssignment() {
                     onClose={() => dismissAssignmentAlert('processOwnerLocked')}
                     sx={assignmentDialogAlertSx}
                   >
-                    {isCoordinatorAssignedRacm(selectedForm)
-                      ? 'This RACM is coordinator self-assigned and cannot be assigned to a process owner.'
-                      : (getRacmReassignmentBlockMessage(selectedForm) || 'This RACM cannot be re-assigned.')}
+                    {getRacmReassignmentBlockMessage(selectedForm) || 'This RACM cannot be re-assigned.'}
                   </Alert>
                 )}
-                {!isApproverMode && !isProcessOwnerAssignmentLocked(selectedForm) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(selectedForm?.control_owner || '').trim()) && !dismissedAssignmentAlerts.processOwnerReplace && (
+                {!isApproverMode && !isProcessOwnerAssignmentLocked(selectedForm) && isCoordinatorAssignedRacm(selectedForm) && !dismissedAssignmentAlerts.processOwnerTransfer && (
+                  <Alert
+                    severity="info"
+                    onClose={() => dismissAssignmentAlert('processOwnerTransfer')}
+                    sx={assignmentDialogAlertSx}
+                  >
+                    This RACM is currently self-assigned to a coordinator. Assigning a process owner will transfer ownership.
+                  </Alert>
+                )}
+                {!isApproverMode && !isProcessOwnerAssignmentLocked(selectedForm) && !isCoordinatorAssignedRacm(selectedForm) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(selectedForm?.control_owner || '').trim()) && !dismissedAssignmentAlerts.processOwnerReplace && (
                   <Alert
                     severity="warning"
                     onClose={() => dismissAssignmentAlert('processOwnerReplace')}
                     sx={assignmentDialogAlertSx}
                   >
-                    The current process owner will be replaced and will no longer be able to access this RACM. The new process owner will be notified by email.
+                    The current process owner will be replaced and will no longer be able to access this RACM.
                   </Alert>
                 )}
                 {isApproverMode && singleRacmHasSpecificApprover && !dismissedAssignmentAlerts.approverReplace && (
@@ -2061,7 +2117,7 @@ function RacmAssignment() {
             <Button onClick={handleCloseAssignmentDialog} disabled={updatingAssignment}>
               Cancel
             </Button>
-            {!isApproverMode && (
+            {!isApproverMode && !selectedUser?.email_id && (
               <Button
                 variant="outlined"
                 color="primary"
@@ -2135,7 +2191,7 @@ function RacmAssignment() {
               </Box>
               {!isApproverMode ? (
                 <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-                  The selected user will replace the current Process Owner for all selected RACMs. Replaced process owners will no longer be able to access those RACMs, and the new process owner will be notified by email.
+                  The selected user will become the Process Owner for all selected RACMs. Self-assigned RACMs will be transferred (and remain Active). Existing process owners will be replaced and will no longer be able to access those RACMs. The new process owner will be notified by email.
                 </Typography>
               ) : null}
 
@@ -2164,7 +2220,7 @@ function RacmAssignment() {
             <Button onClick={handleCloseBulkAssignmentDialog} disabled={updatingAssignment}>
               Cancel
             </Button>
-            {!isApproverMode && (
+            {!isApproverMode && !bulkSelectedUser?.email_id && (
               <Button
                 variant="outlined"
                 color="primary"

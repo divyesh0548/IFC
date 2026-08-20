@@ -174,11 +174,11 @@ export function getRacmReassignmentBlockMessage(form) {
     return 'This RACM has been approved (Effective / Accepted Under Deviation) and cannot be re-assigned.'
   }
   if (isDeficiencyResponseSubmitted(form)) {
-    return 'A deficiency response has been submitted for this RACM and it cannot be re-assigned.'
+    return 'Mitigation/Compensatory Plans has been submitted for this RACM and it cannot be re-assigned.'
   }
   const declaredNoFurther = form?.no_further_submission_declared ?? form?.process_owner_declaration?.no_furthure_submission
   if (parseTruthyApiBoolean(declaredNoFurther)) {
-    return 'The process owner has declared no further submission for this RACM, so it cannot be re-assigned.'
+    return 'The process owner has declared no further submission, so it cannot be re-assigned.'
   }
   return ''
 }

@@ -32,10 +32,12 @@ export default function ActiveRacmTemplateNotice({
   variant = 'bulk',
   templateSummary = null,
   useParentSummary = false,
+  onLoadingChange,
   sx,
 }) {
   const [open, setOpen] = useState(Boolean(unitId))
   const [fetchedSummary, setFetchedSummary] = useState(null)
+  const [loading, setLoading] = useState(false)
 
   const normalizedUnitId = String(unitId || '').trim()
 
@@ -46,12 +48,21 @@ export default function ActiveRacmTemplateNotice({
   }, [normalizedUnitId])
 
   useEffect(() => {
-    if (useParentSummary || !normalizedUnitId) {
-      if (!normalizedUnitId) setFetchedSummary(null)
+    if (useParentSummary) {
+      onLoadingChange?.(false)
+      return undefined
+    }
+
+    if (!normalizedUnitId) {
+      setFetchedSummary(null)
+      setLoading(false)
+      onLoadingChange?.(false)
       return undefined
     }
 
     let cancelled = false
+    setLoading(true)
+    onLoadingChange?.(true)
     ;(async () => {
       try {
         const response = await fetch(
@@ -76,13 +87,18 @@ export default function ActiveRacmTemplateNotice({
           console.error('Failed to load active template notice:', error)
           setFetchedSummary(null)
         }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          onLoadingChange?.(false)
+        }
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [normalizedUnitId, useParentSummary])
+  }, [normalizedUnitId, useParentSummary, onLoadingChange])
 
   const summary = useMemo(() => {
     if (useParentSummary) {
@@ -111,7 +127,11 @@ export default function ActiveRacmTemplateNotice({
           ...LIGHT_MODE_ALERT_SX.info,
         }}
       >
-        {buildNoticeMessage(variant, summary)}
+        {loading && !summary
+          ? (variant === 'manual'
+            ? 'Loading active RACM template for the selected unit…'
+            : 'Loading active RACM template for the selected unit…')
+          : buildNoticeMessage(variant, summary)}
       </Alert>
     </Collapse>
   )

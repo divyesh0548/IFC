@@ -244,7 +244,7 @@ function UnitSampleSizeSettingsDialog({ open, onClose, unitOptions = [], initial
   )
 }
 
-export function SampleSizeSettingsButton({ unitOptions, selectedUnitId, sx }) {
+export function SampleSizeSettingsButton({ unitOptions, selectedUnitId, disabled = false, sx }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -254,6 +254,7 @@ export function SampleSizeSettingsButton({ unitOptions, selectedUnitId, sx }) {
         variant="outlined"
         startIcon={<SettingsRoundedIcon />}
         onClick={() => setOpen(true)}
+        disabled={disabled}
         sx={{ textTransform: 'none', fontWeight: 700, ...sx }}
       >
         Sample Size Settings

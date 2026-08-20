@@ -466,7 +466,7 @@ function ApproverDashboard() {
             gap: 2,
           }}
         >
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pr: { sm: 2, md: 3 }, mr: { sm: 1 } }}>
             <Typography
               variant="h5"
               component="h2"
@@ -481,9 +481,6 @@ function ApproverDashboard() {
                 : filterStatus === 'rejected'
                 ? 'Rejected RACM'
               : 'All RACMs'}
-            </Typography>
-            <Typography sx={PAGE_SUBHEADER_TEXT_SX}>
-              Review active RACMs, and open a control to approve or reject.
             </Typography>
           </Box>
 
@@ -595,16 +592,41 @@ function ApproverDashboard() {
           </Box>
         ) : (
           <Box>
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                mb: 1.5,
-                flexWrap: 'wrap',
-                gap: 1,
-              }}
-            >
+            <Box sx={{ mb: 1.5 }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  mb: 1.5,
+                  flexWrap: 'wrap',
+                  gap: 1,
+                }}
+              >
+                <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, flex: '1 1 240px', minWidth: 0, pr: { sm: 2 } }}>
+                  Review active RACMs, and open a control to approve or reject.
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={cellWordWrap}
+                      onChange={(e) => setCellWordWrap(e.target.checked)}
+                      size="small"
+                      color="primary"
+                    />
+                  }
+                  label="Word wrap"
+                  sx={{
+                    mr: 0,
+                    userSelect: 'none',
+                    flex: '0 0 auto',
+                    '& .MuiFormControlLabel-label': {
+                      fontSize: '0.875rem',
+                      color: 'text.secondary',
+                    },
+                  }}
+                />
+              </Box>
               <Box
                 component="form"
                 onSubmit={handleControlNumberSearchSubmit}
@@ -630,34 +652,16 @@ function ApproverDashboard() {
                 <Button type="submit" variant="contained">
                   Search
                 </Button>
-                <Button
-                  type="button"
-                  variant="outlined"
-                  onClick={handleControlNumberSearchClear}
-                  disabled={!controlNumberInput && !controlNumberFilter}
-                >
-                  Clear
-                </Button>
+                {(controlNumberInput || controlNumberFilter) ? (
+                  <Button
+                    type="button"
+                    variant="outlined"
+                    onClick={handleControlNumberSearchClear}
+                  >
+                    Clear
+                  </Button>
+                ) : null}
               </Box>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={cellWordWrap}
-                    onChange={(e) => setCellWordWrap(e.target.checked)}
-                    size="small"
-                    color="primary"
-                  />
-                }
-                label="Word wrap"
-                sx={{
-                  mr: 0,
-                  userSelect: 'none',
-                  '& .MuiFormControlLabel-label': {
-                    fontSize: '0.875rem',
-                    color: 'text.secondary',
-                  },
-                }}
-              />
             </Box>
             {formsToDisplay.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4 }}>

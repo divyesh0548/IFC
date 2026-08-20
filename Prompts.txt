@@ -1,1 +1,9 @@
-"company-co/library-control-creation" in this page if user has already filled or selected some form fields then display basic js alert on reload, On clicking Ok reload the page.
+For some status of the RACM we have blocked the RACM re-assignment. So in that case do not disable the RACM Assignment button in form details page. On click display pop-up and display the notice in same as displayed in RACM assignment page.
+
+"/company-co/unclassified-controls" on this page there is a button back to dashboard which takes user to home. It should redirect user to "/company-co/control-dispersion-dashboard".
+
+"company-co/control-dispersion-dashboard" in this page changing units should chnage the counts of "Summary of Controls" and those three tiles.
+
+Also tell me that wether "High Risk Manual Key Control Summary" this section includes controls of all units or just those which are linked to coordinator. If not then provide unit filter here too. Just like it is present in "Risk Analysis" page.
+
+A coordinator can only generate AI Summary for high risk key manual controls which are under their unit.

@@ -309,12 +309,9 @@ function User_dashboard() {
             gap: 2,
           }}
         >
-          <Box>
+          <Box sx={{ pr: { sm: 2, md: 3 }, mr: { sm: 1 } }}>
             <Typography variant="h5" component="h2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
               Assigned RACMs
-            </Typography>
-            <Typography variant="body2" sx={PAGE_SUBHEADER_TEXT_SX}>
-              Track your assigned RACMs, filter by status, and open any item to review details.
             </Typography>
           </Box>
 
@@ -398,16 +395,34 @@ function User_dashboard() {
           </Box>
         </Box>
 
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            mb: 1.5,
-            flexWrap: 'wrap',
-            gap: 1,
-          }}
-        >
+        <Box sx={{ mb: 1.5 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              mb: 1.5,
+              flexWrap: 'wrap',
+              gap: 1,
+            }}
+          >
+            <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, flex: '1 1 240px', minWidth: 0, pr: { sm: 2 } }}>
+              Track your assigned RACMs, filter by status, and open any item to review details.
+            </Typography>
+            <FormControlLabel
+              control={<Switch checked={cellWordWrap} onChange={(e) => setCellWordWrap(e.target.checked)} size="small" color="primary" />}
+              label="Word wrap"
+              sx={{
+                mr: 0,
+                userSelect: 'none',
+                flex: '0 0 auto',
+                '& .MuiFormControlLabel-label': {
+                  fontSize: '0.8125rem',
+                  color: theme.palette.text.secondary,
+                },
+              }}
+            />
+          </Box>
           <Box
             component="form"
             onSubmit={handleControlNumberSearchSubmit}
@@ -433,23 +448,12 @@ function User_dashboard() {
             <Button type="submit" variant="contained">
               Search
             </Button>
-            <Button type="button" variant="outlined" onClick={handleControlNumberSearchClear} disabled={!controlNumberInput && !controlNumberFilter}>
-              Clear
-            </Button>
+            {(controlNumberInput || controlNumberFilter) ? (
+              <Button type="button" variant="outlined" onClick={handleControlNumberSearchClear}>
+                Clear
+              </Button>
+            ) : null}
           </Box>
-
-          <FormControlLabel
-            control={<Switch checked={cellWordWrap} onChange={(e) => setCellWordWrap(e.target.checked)} size="small" color="primary" />}
-            label="Word wrap"
-            sx={{
-              mr: 0,
-              userSelect: 'none',
-              '& .MuiFormControlLabel-label': {
-                fontSize: '0.8125rem',
-                color: theme.palette.text.secondary,
-              },
-            }}
-          />
         </Box>
 
         {loading ? (

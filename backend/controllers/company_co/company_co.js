@@ -459,6 +459,79 @@ function filterKeyManualControls(rows) {
   ));
 }
 
+function isHighRiskHeatValue(value) {
+  return String(value || '').trim().toLowerCase().includes('high');
+}
+
+function filterHighRiskKeyManualControls(rows) {
+  return filterKeyManualControls(rows).filter((row) => isHighRiskHeatValue(row?.risk_heat));
+}
+
+function normalizeRequestedUnitIds(query) {
+  const values = Array.isArray(query?.unit_ids)
+    ? query.unit_ids
+    : query?.unit_ids != null
+      ? [query.unit_ids]
+      : [];
+  if (query?.unit_id != null) {
+    values.push(query.unit_id);
+  }
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
+async function getCoordinatorAssignedUnitScopedRacmRows({
+  companyIdentifier,
+  coordinatorEmail,
+  requestedUnitIds = [],
+}) {
+  const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+  const mappedUnitIds = mappedUnits
+    .map((row) => String(row?.unit_id || '').trim())
+    .filter(Boolean);
+
+  if (!companyIdentifier || mappedUnitIds.length === 0) {
+    return {
+      units: mappedUnits,
+      rows: [],
+      effectiveUnitIds: [],
+    };
+  }
+
+  const allowedUnitIdSet = new Set(mappedUnitIds.map((unitId) => unitId.toLowerCase()));
+  const filteredRequestedUnitIds = requestedUnitIds.filter((unitId) =>
+    allowedUnitIdSet.has(String(unitId || '').trim().toLowerCase())
+  );
+  const effectiveUnitIds = filteredRequestedUnitIds.length > 0
+    ? filteredRequestedUnitIds
+    : mappedUnitIds;
+
+  const result = await pool.query(
+    `
+      SELECT
+        cf.*,
+        ${controlFormsUtcOverridesSql('cf')}
+      FROM control_forms cf
+      WHERE cf.company_identifier = $1
+        AND NULLIF(TRIM(cf.unit_id), '') IS NOT NULL
+        AND cf.unit_id = ANY($2::text[])
+      ORDER BY
+        LOWER(TRIM(COALESCE(cf.business_process, ''))) ASC,
+        cf.id ASC
+    `,
+    [companyIdentifier, effectiveUnitIds]
+  );
+
+  return {
+    units: mappedUnits,
+    effectiveUnitIds,
+    rows: result.rows.map((row) => ({
+      ...row,
+      key_control_classification: classifyKeyControlValue(row?.key_control),
+      control_type_classification: classifyDashboardControlType(row?.control_type_ma),
+    })),
+  };
+}
+
 function isEntityLevelControlsBusinessProcess(value) {
   return String(value || '').trim().toLowerCase() === 'entity level controls';
 }
@@ -2095,29 +2168,43 @@ async function generateKeyManualAiInsightsRun(req, res) {
       });
     }
 
-    const scope = await getCoordinatorDashboardScope(req);
-    if (!scope.companyIdentifier) {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim() || null;
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    if (!companyIdentifier) {
       return res.status(400).json({
         success: false,
         message: 'Company identifier is required',
       });
     }
 
-    const dashboardRows = await getCoordinatorDashboardRacmRows(scope);
-    const manualKeyControls = filterKeyManualControls(dashboardRows);
-    const excludedEntityLevelCount = countEntityLevelControls(manualKeyControls);
-    const filteredControls = excludeEntityLevelControls(manualKeyControls);
+    const requestedUnitIds = normalizeRequestedUnitIds(req.query);
+    const { rows: dashboardRows, units: mappedUnits } = await getCoordinatorAssignedUnitScopedRacmRows({
+      companyIdentifier,
+      coordinatorEmail,
+      requestedUnitIds,
+    });
+
+    if (mappedUnits.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No units are mapped to your coordinator account.',
+      });
+    }
+
+    const highRiskKeyManualControls = filterHighRiskKeyManualControls(dashboardRows);
+    const excludedEntityLevelCount = countEntityLevelControls(highRiskKeyManualControls);
+    const filteredControls = excludeEntityLevelControls(highRiskKeyManualControls);
 
     if (filteredControls.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'No eligible Key + Manual Controls found after excluding Entity Level Controls',
+        message: 'No eligible High Risk + Key + Manual Controls found in your assigned units after excluding Entity Level Controls',
       });
     }
 
     const run = await prisma.keyManualAiInsightsRunTable.create({
       data: {
-        companyIdentifier: scope.companyIdentifier,
+        companyIdentifier,
         modelName: OLLAMA_MODEL,
         promptVersion: KEY_MANUAL_AI_PROMPT_VERSION,
         status: 'in_progress',
@@ -2135,7 +2222,7 @@ async function generateKeyManualAiInsightsRun(req, res) {
       const businessProcess = String(row?.business_process || '').trim() || 'Unspecified Business Process';
       const llmInputControl = shapeControlForAi(row);
       const llmResult = await requestControlSummary({
-        companyIdentifier: scope.companyIdentifier,
+        companyIdentifier,
         businessProcess,
         control: llmInputControl,
       });
@@ -2148,7 +2235,7 @@ async function generateKeyManualAiInsightsRun(req, res) {
 
       rowDataToCreate.push({
         runId: createdRunId,
-        companyIdentifier: scope.companyIdentifier,
+        companyIdentifier,
         formId: row.form_id ? String(row.form_id).trim() : null,
         controlNumber: String(llmResult.controlNumber || '').trim(),
         businessProcess: businessProcess || null,
@@ -2238,17 +2325,23 @@ async function getKeyManualAiInsightsAvailability(req, res) {
 
 async function getKeyManualAiInsightsRun(req, res) {
   try {
-    const scope = await getCoordinatorDashboardScope(req);
-    if (!scope.companyIdentifier) {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim() || null;
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    if (!companyIdentifier) {
       return res.status(400).json({
         success: false,
         message: 'Company identifier is required',
       });
     }
 
-    const dashboardRows = await getCoordinatorDashboardRacmRows(scope);
-    const manualKeyControls = filterKeyManualControls(dashboardRows);
-    const excludedEntityLevelCount = countEntityLevelControls(manualKeyControls);
+    const requestedUnitIds = normalizeRequestedUnitIds(req.query);
+    const { rows: dashboardRows, units: mappedUnits } = await getCoordinatorAssignedUnitScopedRacmRows({
+      companyIdentifier,
+      coordinatorEmail,
+      requestedUnitIds,
+    });
+    const highRiskKeyManualControls = filterHighRiskKeyManualControls(dashboardRows);
+    const excludedEntityLevelCount = countEntityLevelControls(highRiskKeyManualControls);
 
     const requestedRunId = String(req.query?.run_id || '').trim();
     let parsedRunId = null;
@@ -2266,7 +2359,7 @@ async function getKeyManualAiInsightsRun(req, res) {
     const runs = await withPrismaRetry(
       () => prisma.keyManualAiInsightsRunTable.findMany({
         where: {
-          companyIdentifier: scope.companyIdentifier,
+          companyIdentifier,
         },
         orderBy: [
           { createdAt: 'desc' },
@@ -2291,6 +2384,10 @@ async function getKeyManualAiInsightsRun(req, res) {
           run: null,
           rows: [],
           excluded_entity_level_count: excludedEntityLevelCount,
+          filters: {
+            units: mappedUnits,
+          },
+          eligible_control_count: excludeEntityLevelControls(highRiskKeyManualControls).length,
         },
       });
     }
@@ -2300,7 +2397,7 @@ async function getKeyManualAiInsightsRun(req, res) {
       () => prisma.keyManualAiInsightsRunTable.findFirst({
         where: {
           id: selectedRunId,
-          companyIdentifier: scope.companyIdentifier,
+          companyIdentifier,
         },
         include: {
           rows: {
@@ -2321,6 +2418,80 @@ async function getKeyManualAiInsightsRun(req, res) {
       });
     }
 
+    const mappedUnitIdSet = new Set(
+      mappedUnits.map((unit) => String(unit?.unit_id || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const requestedUnitIdSet = new Set(
+      requestedUnitIds.map((unitId) => String(unitId || '').trim().toLowerCase()).filter(Boolean)
+    );
+
+    let shapedRows = run.rows.map((row) => ({
+      id: String(row.id),
+      run_id: String(row.runId),
+      company_identifier: row.companyIdentifier,
+      form_id: row.formId,
+      control_number: row.controlNumber,
+      business_process: row.businessProcess,
+      rationalisation_opportunity: row.rationalisationOpportunity,
+      unit_id: null,
+      unit_name: null,
+    }));
+
+    const formIds = [...new Set(
+      shapedRows
+        .map((row) => String(row.form_id || '').trim())
+        .filter(Boolean)
+    )];
+
+    if (formIds.length > 0) {
+      const formUnitResult = await pool.query(
+        `
+          SELECT
+            cf.form_id,
+            NULLIF(TRIM(cf.unit_id), '') AS unit_id,
+            NULLIF(TRIM(cum.unit_name), '') AS unit_name
+          FROM control_forms cf
+          LEFT JOIN company_unit_master cum
+            ON cum.company_identifier = cf.company_identifier
+           AND cum.unit_id = cf.unit_id
+          WHERE cf.company_identifier = $1
+            AND cf.form_id = ANY($2::text[])
+        `,
+        [companyIdentifier, formIds]
+      );
+      const formUnitById = new Map(
+        formUnitResult.rows.map((row) => [
+          String(row.form_id || '').trim(),
+          {
+            unit_id: String(row.unit_id || '').trim() || null,
+            unit_name: String(row.unit_name || '').trim() || null,
+          },
+        ])
+      );
+
+      shapedRows = shapedRows.map((row) => {
+        const formMeta = formUnitById.get(String(row.form_id || '').trim()) || {};
+        return {
+          ...row,
+          unit_id: formMeta.unit_id || null,
+          unit_name: formMeta.unit_name || null,
+        };
+      });
+    }
+
+    // Only show rows for controls that belong to the coordinator's assigned units
+    // (and optional unit filter), so coordinators never see other units' summaries.
+    shapedRows = shapedRows.filter((row) => {
+      const unitId = String(row.unit_id || '').trim().toLowerCase();
+      if (!unitId || !mappedUnitIdSet.has(unitId)) {
+        return false;
+      }
+      if (requestedUnitIdSet.size > 0 && !requestedUnitIdSet.has(unitId)) {
+        return false;
+      }
+      return true;
+    });
+
     return res.status(200).json({
       success: true,
       data: {
@@ -2338,29 +2509,21 @@ async function getKeyManualAiInsightsRun(req, res) {
           model_name: run.modelName,
           status: run.status,
           created_at: run.createdAt,
-          row_count: run.rows.length,
+          row_count: shapedRows.length,
         },
         excluded_entity_level_count: excludedEntityLevelCount,
-        rows: run.rows.map((row) => ({
-          id: String(row.id),
-          run_id: String(row.runId),
-          company_identifier: row.companyIdentifier,
-          form_id: row.formId,
-          control_number: row.controlNumber,
-          business_process: row.businessProcess,
-          rationalisation_opportunity: row.rationalisationOpportunity,
-          created_at: row.createdAt,
-          updated_at: row.updatedAt,
-        })),
+        eligible_control_count: excludeEntityLevelControls(highRiskKeyManualControls).length,
+        filters: {
+          units: mappedUnits,
+        },
+        rows: shapedRows,
       },
     });
   } catch (error) {
     console.error('Company coordinator key manual AI insights run error:', error);
-    return res.status(isPrismaConnectionError(error) ? 503 : 500).json({
+    return res.status(500).json({
       success: false,
-      message: isPrismaConnectionError(error)
-        ? getDatabaseUnavailableMessage()
-        : 'Failed to fetch AI insights run',
+      message: error?.message || 'Failed to fetch AI insights summary',
     });
   }
 }
@@ -4279,7 +4442,7 @@ async function getRacmAuditLogs(req, res) {
     if (!hasUnitAccess) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied. You are not assigned to this RACM unit.',
+        message: 'Access denied. You are not assigned to this unit.',
       });
     }
 

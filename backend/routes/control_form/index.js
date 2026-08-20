@@ -29,6 +29,7 @@ router.post('/replicate', controller.verifyAuth, controller.replicateControlForm
 router.delete('/:form_id', controller.verifyAuth, controller.deleteControlForm);
 router.get('/:form_id/approver-status', verifyUserAuth, controller.getApproverStatus);
 router.post('/:form_id/self-assign', controller.verifyAuth, controller.selfAssignRacm);
+router.post('/:form_id/transfer-to-process-owner', controller.verifyAuth, controller.transferSelfAssignedRacmToProcessOwner);
 router.post('/:form_id/upload-document', controller.verifyAuth, controller.handleUserDocumentUpload, controller.uploadUserDocument);
 router.get('/:form_id/check-sampling-exists', controller.verifyAuth, controller.checkSamplingExists);
 router.delete('/:form_id/user-doc', controller.verifyAuth, controller.deleteUserDocument);

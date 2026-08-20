@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { alpha, useTheme } from '@mui/material/styles'
+import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
@@ -28,11 +28,11 @@ import {
 } from '../../uiConstants'
 
 const AVAILABLE_VARIABLES = [
-  { key: 'recipientName', label: 'Recipient Name', example: 'John Doe' },
-  { key: 'businessProcess', label: 'Business Process', example: 'Procurement' },
+  { key: 'recipientName', label: 'Recipient Name', example: 'Divyesh Parmar' },
+  { key: 'businessProcess', label: 'Business Process', example: 'Hire to Retire' },
   { key: 'formattedDueDate', label: 'Due Date', example: '15th September, 2026' },
   { key: 'racmLink', label: 'RACM Link', example: 'https://portal.example.com/user/form/123' },
-  { key: 'coordinatorCompanyName', label: 'Company Name', example: 'Acme Corp' },
+  { key: 'coordinatorCompanyName', label: 'Company Name', example: 'Sharp and Tannan Associates' },
 ]
 
 const DEFAULT_SUBJECT = 'Your IFC testing for {{businessProcess}} is ready'
@@ -73,6 +73,19 @@ function replacePreviewVars(text) {
   return result
 }
 
+function formatUpdatedAt(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function EmailCustomization() {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -84,6 +97,7 @@ function EmailCustomization() {
   const [subject, setSubject] = useState(DEFAULT_SUBJECT)
   const [body, setBody] = useState(DEFAULT_BODY)
   const [hasCustomTemplate, setHasCustomTemplate] = useState(false)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null)
   const [showPreview, setShowPreview] = useState(false)
   const [infoDialogOpen, setInfoDialogOpen] = useState(false)
 
@@ -117,6 +131,7 @@ function EmailCustomization() {
       setSubject(DEFAULT_SUBJECT)
       setBody(DEFAULT_BODY)
       setHasCustomTemplate(false)
+      setLastUpdatedAt(null)
       return
     }
     const existing = templates.find((t) => t.unit_id === selectedUnitId)
@@ -124,10 +139,12 @@ function EmailCustomization() {
       setSubject(existing.email_subject || DEFAULT_SUBJECT)
       setBody(existing.email_body || DEFAULT_BODY)
       setHasCustomTemplate(true)
+      setLastUpdatedAt(existing.updated_at || null)
     } else {
       setSubject(DEFAULT_SUBJECT)
       setBody(DEFAULT_BODY)
       setHasCustomTemplate(false)
+      setLastUpdatedAt(null)
     }
     setShowPreview(false)
   }, [selectedUnitId, templates])
@@ -185,8 +202,10 @@ function EmailCustomization() {
 
   const previewSubject = useMemo(() => replacePreviewVars(subject), [subject])
   const previewBody = useMemo(() => replacePreviewVars(body), [body])
+  const formattedLastUpdated = useMemo(() => formatUpdatedAt(lastUpdatedAt), [lastUpdatedAt])
 
   const isDark = theme.palette.mode === 'dark'
+  const inputFieldBg = isDark ? 'rgba(30, 41, 59, 0.72)' : 'rgba(248, 250, 252, 1)'
 
   return (
     <Box sx={DASHBOARD_PAGE_OUTER_SX}>
@@ -208,7 +227,7 @@ function EmailCustomization() {
             mb: 2,
           }}
         >
-          <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ minWidth: 0, flex: 1, width: '100%' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <Button
                 variant="text"
@@ -220,26 +239,55 @@ function EmailCustomization() {
                 Back
               </Button>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
-              <Typography
-                component="h1"
-                sx={{ fontSize: { xs: '1.45rem', sm: '1.7rem' }, fontWeight: 850, color: 'text.primary', lineHeight: 1.15 }}
-              >
-                Email Template Customization
-              </Typography>
-              <Button
-                size="small"
-                variant="text"
-                startIcon={<LightbulbOutlinedIcon fontSize="small" />}
-                onClick={() => setInfoDialogOpen(true)}
-                sx={{ textTransform: 'none', fontWeight: 600, color: 'text.secondary', px: 1 }}
-              >
-                Info
-              </Button>
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: { xs: 'stretch', md: 'flex-start' },
+                justifyContent: 'space-between',
+                gap: 2,
+                mt: 1,
+                flexDirection: { xs: 'column', md: 'row' },
+              }}
+            >
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <Typography
+                    component="h1"
+                    sx={{ fontSize: { xs: '1.45rem', sm: '1.7rem' }, fontWeight: 850, color: 'text.primary', lineHeight: 1.15 }}
+                  >
+                    Email Template Customization
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="text"
+                    startIcon={<LightbulbOutlinedIcon fontSize="small" />}
+                    onClick={() => setInfoDialogOpen(true)}
+                    sx={{ textTransform: 'none', fontWeight: 600, color: 'text.secondary', px: 1 }}
+                  >
+                    Info
+                  </Button>
+                </Box>
+                <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, mt: 0.75, maxWidth: '100%' }}>
+                  Customize the email subject and body sent to process owners when RACMs are assigned. Use variables to insert dynamic values.
+                </Typography>
+              </Box>
+
+              {!loading && units.length > 0 && (
+                <FormControl size="small" sx={{ minWidth: 220, maxWidth: 320, flex: '0 0 auto', alignSelf: { xs: 'stretch', md: 'flex-start' } }}>
+                  <InputLabel id="unit-select-label">Select Unit</InputLabel>
+                  <Select
+                    labelId="unit-select-label"
+                    value={selectedUnitId}
+                    label="Select Unit"
+                    onChange={(e) => setSelectedUnitId(e.target.value)}
+                  >
+                    {units.map((u) => (
+                      <MenuItem key={u.unit_id} value={u.unit_id}>{u.unit_name || u.unit_id}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
             </Box>
-            <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, mt: 0.75, maxWidth: 760 }}>
-              Customize the email subject and body sent to process owners when RACMs are assigned. Use variables to insert dynamic values.
-            </Typography>
           </Box>
         </Box>
 
@@ -251,20 +299,6 @@ function EmailCustomization() {
           <Alert severity="info" sx={{ mt: 2 }}>No units are assigned to you.</Alert>
         ) : (
           <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <FormControl size="small" sx={{ minWidth: 260, maxWidth: 340 }}>
-              <InputLabel id="unit-select-label">Select Unit</InputLabel>
-              <Select
-                labelId="unit-select-label"
-                value={selectedUnitId}
-                label="Select Unit"
-                onChange={(e) => setSelectedUnitId(e.target.value)}
-              >
-                {units.map((u) => (
-                  <MenuItem key={u.unit_id} value={u.unit_id}>{u.unit_name || u.unit_id}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
             {selectedUnitId && (
               <>
                 <Box>
@@ -273,9 +307,9 @@ function EmailCustomization() {
                   </Typography>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
                     {AVAILABLE_VARIABLES.map((v) => (
-                      <Tooltip key={v.key} title={`Example: ${v.example}`} arrow>
+                      <Tooltip key={v.key} title={`Inserts {{${v.key}}} — Example: ${v.example}`} arrow>
                         <Chip
-                          label={`{{${v.key}}}`}
+                          label={v.key}
                           size="small"
                           variant="outlined"
                           onClick={() => insertVariable('body', v.key)}
@@ -286,13 +320,24 @@ function EmailCustomization() {
                   </Box>
                 </Box>
 
+                {formattedLastUpdated && (
+                  <Typography sx={{ fontSize: '0.875rem', color: 'text.secondary', fontWeight: 600 }}>
+                    Last updated: {formattedLastUpdated}
+                  </Typography>
+                )}
+
                 <TextField
                   label="Email Subject"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   fullWidth
                   size="small"
-                  sx={{ maxWidth: 700 }}
+                  sx={{
+                    maxWidth: 900,
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: inputFieldBg,
+                    },
+                  }}
                 />
 
                 <TextField
@@ -305,6 +350,11 @@ function EmailCustomization() {
                   maxRows={30}
                   InputProps={{
                     sx: { fontFamily: 'monospace', fontSize: '0.875rem', whiteSpace: 'pre-wrap' },
+                  }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: inputFieldBg,
+                    },
                   }}
                 />
 
@@ -333,61 +383,67 @@ function EmailCustomization() {
                   )}
                   <Button
                     variant="outlined"
-                    onClick={() => setShowPreview((p) => !p)}
+                    onClick={() => setShowPreview(true)}
                     sx={{ textTransform: 'none', fontWeight: 600 }}
                   >
-                    {showPreview ? 'Hide Preview' : 'Preview'}
+                    Preview
                   </Button>
                 </Box>
-
-                {showPreview && (
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      p: 3,
-                      mt: 1,
-                      borderRadius: 2,
-                      backgroundColor: isDark ? 'rgba(15, 23, 42, 0.7)' : 'rgba(248, 250, 252, 1)',
-                    }}
-                  >
-                    <Typography sx={{ fontWeight: 700, fontSize: '0.95rem', mb: 0.5 }}>Preview</Typography>
-                    <Typography sx={{ fontWeight: 600, fontSize: '0.875rem', color: 'text.secondary', mb: 1.5 }}>
-                      Unit: {selectedUnitName}
-                    </Typography>
-                    <Box
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 1.5,
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        backgroundColor: isDark ? 'rgba(30, 41, 59, 0.8)' : '#fff',
-                      }}
-                    >
-                      <Typography sx={{ fontWeight: 700, fontSize: '0.95rem', mb: 1.5 }}>
-                        Subject: {previewSubject}
-                      </Typography>
-                      <Typography
-                        component="pre"
-                        sx={{
-                          fontFamily: 'inherit',
-                          fontSize: '0.875rem',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word',
-                          lineHeight: 1.7,
-                          m: 0,
-                          color: 'text.primary',
-                        }}
-                      >
-                        {previewBody}
-                      </Typography>
-                    </Box>
-                  </Paper>
-                )}
               </>
             )}
           </Box>
         )}
       </Paper>
+
+      <AppDialog
+        open={showPreview}
+        onClose={() => setShowPreview(false)}
+        title="Email Preview"
+        titleId="email-template-preview-dialog"
+        showTitleDivider
+        maxWidth="md"
+        fullWidth
+        actions={
+          <Button
+            variant="contained"
+            onClick={() => setShowPreview(false)}
+            sx={APP_DIALOG_PRIMARY_BUTTON_SX}
+          >
+            Close
+          </Button>
+        }
+      >
+        <Typography sx={{ fontWeight: 600, fontSize: '0.875rem', color: 'text.secondary', mb: 1.5 }}>
+          Unit: {selectedUnitName}
+        </Typography>
+        <Box
+          sx={{
+            p: 2.5,
+            borderRadius: 1.5,
+            border: '1px solid',
+            borderColor: 'divider',
+            backgroundColor: isDark ? 'rgba(30, 41, 59, 0.8)' : 'rgba(248, 250, 252, 1)',
+          }}
+        >
+          <Typography sx={{ fontWeight: 700, fontSize: '0.95rem', mb: 1.5 }}>
+            Subject: {previewSubject}
+          </Typography>
+          <Typography
+            component="pre"
+            sx={{
+              fontFamily: 'inherit',
+              fontSize: '0.875rem',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              lineHeight: 1.7,
+              m: 0,
+              color: 'text.primary',
+            }}
+          >
+            {previewBody}
+          </Typography>
+        </Box>
+      </AppDialog>
 
       <AppDialog
         open={infoDialogOpen}
@@ -401,7 +457,7 @@ function EmailCustomization() {
           'Only the "RACM Active Assignment" email — the one sent to process owners when a coordinator activates an RACM and assigns it. No other emails on the platform (e.g. inactive notifications, approval emails, deficiency reminders) are affected by this template.\n\n' +
           'How to edit:\n' +
           '1. Select the unit for which you want to customize the template.\n' +
-          '2. Edit the Subject and Body fields. Use the variable chips (e.g. {{recipientName}}, {{businessProcess}}) to insert dynamic values that will be replaced with real data when the email is sent.\n' +
+          '2. Edit the Subject and Body fields. Use the variable chips (e.g. recipientName, businessProcess) to insert dynamic values that will be replaced with real data when the email is sent.\n' +
           '3. Click "Preview" to see how the email will look with sample values.\n' +
           '4. Click "Save Template" to apply your changes.\n\n' +
           'To revert to the original default email, click "Reset to Default".\n\n' +

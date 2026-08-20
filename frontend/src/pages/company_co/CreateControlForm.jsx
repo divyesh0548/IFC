@@ -35,6 +35,7 @@ import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX } from '../../components/AppDia
 import { getEffectiveSampleSizeForFrequency, getSampleSizeInputFeedback, validateSampleSizeForFrequency } from '../../utils/controlFrequencyValidation'
 import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
 import ControlsLibrarySearchField from '../../components/controls_library/ControlsLibrarySearchField'
+import { useUnsavedChangesWarning } from '../../utils/useUnsavedChangesWarning'
 
 function createEmptyFormData(unitId = '') {
   return {
@@ -124,13 +125,16 @@ function CreateControlForm({ libraryMode = false }) {
   const [extraTemplateFields, setExtraTemplateFields] = useState([])
   const [sectionLabels, setSectionLabels] = useState(DEFAULT_SECTION_LABELS)
   const [dynamicValues, setDynamicValues] = useState({})
-  const [templateLoading, setTemplateLoading] = useState(false)
+  const [unitsLoading, setUnitsLoading] = useState(true)
+  const [templateLoading, setTemplateLoading] = useState(true)
   const [templateHelpDialogOpen, setTemplateHelpDialogOpen] = useState(false)
   const [librarySubProcessId, setLibrarySubProcessId] = useState(null)
   const [librarySubProcessIds, setLibrarySubProcessIds] = useState([])
   const [subProcessFromLibrary, setSubProcessFromLibrary] = useState(false)
   const [libraryRiskIds, setLibraryRiskIds] = useState([])
-  useSyncGlobalLoading(loading || templateLoading)
+  useSyncGlobalLoading(loading || unitsLoading || templateLoading)
+
+  const formLocked = unitsLoading || templateLoading
 
   // Financial year options - dynamically based on current year
   // Example: if current year is 2026 -> [ '2025-26', '2026-27' ]
@@ -159,6 +163,53 @@ function CreateControlForm({ libraryMode = false }) {
   const [dropdownSelections, setDropdownSelections] = useState({})
   const [otherValues, setOtherValues] = useState({})
   const [unitSampleSizeSettings, setUnitSampleSizeSettings] = useState([])
+
+  const hasFilledLibraryFormFields = useMemo(() => {
+    if (!libraryMode) return false
+
+    const defaultUnitId = String(unitOptions[0]?.unit_id || '').trim()
+    const hasMeaningfulFormField = Object.entries(formData).some(([key, value]) => {
+      const trimmed = String(value || '').trim()
+      if (!trimmed) return false
+      // Auto-selected default unit alone should not count as user progress.
+      if (key === 'unit_id' && trimmed === defaultUnitId) return false
+      return true
+    })
+    if (hasMeaningfulFormField) return true
+
+    const hasDynamic = Object.values(dynamicValues).some((value) => String(value || '').trim() !== '')
+    if (hasDynamic) return true
+
+    const hasDropdown = Object.values(dropdownSelections).some((value) => String(value || '').trim() !== '')
+    if (hasDropdown) return true
+
+    const hasOther = Object.values(otherValues).some((value) => String(value || '').trim() !== '')
+    if (hasOther) return true
+
+    return Boolean(
+      librarySubProcessId ||
+      librarySubProcessIds.length > 0 ||
+      subProcessFromLibrary ||
+      libraryRiskIds.length > 0
+    )
+  }, [
+    libraryMode,
+    formData,
+    dynamicValues,
+    dropdownSelections,
+    otherValues,
+    unitOptions,
+    librarySubProcessId,
+    librarySubProcessIds,
+    subProcessFromLibrary,
+    libraryRiskIds,
+  ])
+
+  useUnsavedChangesWarning(
+    hasFilledLibraryFormFields,
+    'You have unsaved form progress. Click OK to leave this page, or Cancel to stay.'
+  )
+
   const hasReminderValues =
     String(formData.due_date || '').trim() !== '' ||
     String(formData.reminder_frequency || '').trim() !== ''
@@ -192,6 +243,7 @@ function CreateControlForm({ libraryMode = false }) {
     let cancelled = false
 
     const fetchUnits = async () => {
+      setUnitsLoading(true)
       try {
         const response = await fetch(apiUrl('/api/company-co/assigned-units'), {
           method: 'GET',
@@ -206,11 +258,22 @@ function CreateControlForm({ libraryMode = false }) {
             ...prev,
             unit_id: prev.unit_id || units[0]?.unit_id || '',
           }))
+          if (units.length === 0) {
+            setTemplateLoading(false)
+          }
+        } else if (!cancelled) {
+          setUnitOptions([])
+          setTemplateLoading(false)
         }
       } catch (error) {
         console.error('Error fetching coordinator units:', error)
         if (!cancelled) {
           setUnitOptions([])
+          setTemplateLoading(false)
+        }
+      } finally {
+        if (!cancelled) {
+          setUnitsLoading(false)
         }
       }
     }
@@ -268,6 +331,9 @@ function CreateControlForm({ libraryMode = false }) {
       setExtraTemplateFields([])
       setDynamicValues({})
       setSectionLabels(DEFAULT_SECTION_LABELS)
+      if (!unitsLoading) {
+        setTemplateLoading(false)
+      }
       return undefined
     }
 
@@ -320,7 +386,7 @@ function CreateControlForm({ libraryMode = false }) {
     return () => {
       cancelled = true
     }
-  }, [formData.unit_id])
+  }, [formData.unit_id, unitsLoading])
 
   const groupedExtraTemplateFields = useMemo(() => {
     const groups = {}
@@ -776,7 +842,7 @@ function CreateControlForm({ libraryMode = false }) {
         }
       }}
       multiline={multiline}
-      disabled={loading}
+      disabled={loading || formLocked}
       prioritizeSubProcess={field !== 'sub_process' && subProcessFromLibrary}
       prioritizeRisk={
         field !== 'sub_process'
@@ -843,6 +909,7 @@ function CreateControlForm({ libraryMode = false }) {
             <IconButton
               onClick={() => setTemplateHelpDialogOpen(true)}
               aria-label="Template column help"
+              disabled={formLocked}
               sx={{
                 color: 'text.secondary',
                 '&:hover': {
@@ -935,6 +1002,7 @@ function CreateControlForm({ libraryMode = false }) {
                       variant="outlined"
                       disabled={
                         loading ||
+                        formLocked ||
                         (field === 'unit_id' && unitOptions.length === 0) ||
                         (field === 'business_process' && businessProcessesLoading)
                       }
@@ -1036,7 +1104,7 @@ function CreateControlForm({ libraryMode = false }) {
 
                     return (
                       <Box key={field}>
-                        <FormControl fullWidth disabled={loading}>
+                        <FormControl fullWidth disabled={loading || formLocked}>
                           <InputLabel id={`${field}-label`}>{label}</InputLabel>
                           <Select
                             labelId={`${field}-label`}
@@ -1061,7 +1129,7 @@ function CreateControlForm({ libraryMode = false }) {
                             label={`${label} (Other)`}
                             value={otherValues[field] || value || ''}
                             onChange={(e) => handleOtherValueChange(field, e.target.value)}
-                            disabled={loading}
+                            disabled={loading || formLocked}
                           />
                         )}
                       </Box>
@@ -1079,7 +1147,7 @@ function CreateControlForm({ libraryMode = false }) {
                       multiline={isMultiline}
                       rows={isMultiline ? 4 : 1}
                       variant="outlined"
-                      disabled={loading}
+                      disabled={loading || formLocked}
                       sx={{
                         gridColumn: isMultiline
                           ? {
@@ -1099,7 +1167,7 @@ function CreateControlForm({ libraryMode = false }) {
                   values={dynamicValues}
                   isEditMode
                   onChange={handleDynamicFieldChange}
-                  disabled={loading || templateLoading}
+                  disabled={loading || formLocked}
                 />
               </Box>
             </Box>
@@ -1143,7 +1211,7 @@ function CreateControlForm({ libraryMode = false }) {
                     values={dynamicValues}
                     isEditMode
                     onChange={handleDynamicFieldChange}
-                    disabled={loading || templateLoading}
+                    disabled={loading || formLocked}
                   />
                 </Box>
               </Box>
@@ -1209,7 +1277,7 @@ function CreateControlForm({ libraryMode = false }) {
                           <FormControl
                             fullWidth
                             required={field === 'control_frequency'}
-                            disabled={loading}
+                            disabled={loading || formLocked}
                           >
                             <InputLabel id={`${field}-label`}>{label}</InputLabel>
                             <Select
@@ -1238,7 +1306,7 @@ function CreateControlForm({ libraryMode = false }) {
                               label={`${label} (Other)`}
                               value={otherValues[field] || value || ''}
                               onChange={(e) => handleOtherValueChange(field, e.target.value)}
-                              disabled={loading}
+                              disabled={loading || formLocked}
                             />
                           )}
                         </Box>
@@ -1261,7 +1329,7 @@ function CreateControlForm({ libraryMode = false }) {
                           fullWidth
                           type="number"
                           variant="outlined"
-                          disabled={loading || !String(formData.control_frequency || '').trim()}
+                          disabled={loading || formLocked || !String(formData.control_frequency || '').trim()}
                           required
                           error={Boolean(sampleSizeFeedback.warning)}
                           inputProps={{
@@ -1296,7 +1364,7 @@ function CreateControlForm({ libraryMode = false }) {
                         multiline={isMultiline}
                         rows={isMultiline ? 4 : 1}
                         variant="outlined"
-                        disabled={loading}
+                        disabled={loading || formLocked}
                         error={field === 'control_number' && controlNumberMeta.duplicate}
                         helperText={field === 'control_number' && controlNumberMeta.duplicate
                           ? 'Control Number already exists'
@@ -1317,7 +1385,7 @@ function CreateControlForm({ libraryMode = false }) {
                               <Button
                                 size="small"
                                 variant="text"
-                                disabled={loading || businessProcessesLoading || controlNumberMeta.checkingDuplicate}
+                                disabled={loading || formLocked || businessProcessesLoading || controlNumberMeta.checkingDuplicate}
                                 onMouseDown={(event) => event.preventDefault()}
                                 onClick={handleGenerateControlNumber}
                                 sx={{ minWidth: 'auto', px: 1, textTransform: 'none', fontWeight: 700 }}
@@ -1346,7 +1414,7 @@ function CreateControlForm({ libraryMode = false }) {
                   values={dynamicValues}
                   isEditMode
                   onChange={handleDynamicFieldChange}
-                  disabled={loading || templateLoading}
+                  disabled={loading || formLocked}
                 />
               </Box>
             </Box>
@@ -1390,7 +1458,7 @@ function CreateControlForm({ libraryMode = false }) {
                     values={dynamicValues}
                     isEditMode
                     onChange={handleDynamicFieldChange}
-                    disabled={loading || templateLoading}
+                    disabled={loading || formLocked}
                   />
                 </Box>
               </Box>
@@ -1408,6 +1476,7 @@ function CreateControlForm({ libraryMode = false }) {
                 setFormData((prev) => ({ ...prev, control_performer: email }))
               }
               loading={loading}
+              disabled={formLocked}
             />
 
             {/* Reminder settings section */}
@@ -1451,7 +1520,7 @@ function CreateControlForm({ libraryMode = false }) {
                   variant="outlined"
                   size="small"
                   onClick={handleResetReminderSettings}
-                  disabled={loading || !hasReminderValues}
+                  disabled={loading || formLocked || !hasReminderValues}
                   sx={{
                     textTransform: 'none',
                     borderRadius: 2,
@@ -1480,7 +1549,7 @@ function CreateControlForm({ libraryMode = false }) {
                       setFormData((prev) => ({ ...prev, due_date: newValue.format('YYYY-MM-DD') }))
                     }}
                     minDate={dayjs(getTomorrowDateString())}
-                    disabled={loading}
+                    disabled={loading || formLocked}
                     slotProps={{
                       textField: {
                         fullWidth: true,
@@ -1489,7 +1558,7 @@ function CreateControlForm({ libraryMode = false }) {
                   />
                 </LocalizationProvider>
 
-                <FormControl fullWidth disabled={loading} variant="outlined">
+                <FormControl fullWidth disabled={loading || formLocked} variant="outlined">
                   <InputLabel id="manual-reminder-frequency-label">Reminder Frequency</InputLabel>
                   <Select
                     labelId="manual-reminder-frequency-label"
@@ -1516,6 +1585,7 @@ function CreateControlForm({ libraryMode = false }) {
                 type="submit"
                 disabled={
                   loading ||
+                  formLocked ||
                   businessProcessesLoading ||
                   !formData.business_process ||
                   !formData.financial_year ||

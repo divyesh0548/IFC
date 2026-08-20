@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { alpha, useTheme } from '@mui/material/styles'
 import { useNavigate } from 'react-router-dom'
 import Button from '@mui/material/Button'
@@ -71,6 +71,8 @@ function Controls_Creation() {
   const [businessProcess, setBusinessProcess] = useState('')
   const [unitId, setUnitId] = useState('')
   const [unitOptions, setUnitOptions] = useState([])
+  const [unitsLoading, setUnitsLoading] = useState(true)
+  const [templateLoading, setTemplateLoading] = useState(true)
   const [financialYear, setFinancialYear] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [reminderFrequency, setReminderFrequency] = useState('')
@@ -105,6 +107,23 @@ function Controls_Creation() {
     String(headerRowNumber || '').trim() !== '' ||
     !!pendingImport
   const hasReminderValues = String(dueDate || '').trim() !== '' || String(reminderFrequency || '').trim() !== ''
+  const formLocked = unitsLoading || templateLoading
+
+  const handleTemplateLoadingChange = useCallback((isLoading) => {
+    setTemplateLoading(Boolean(isLoading))
+  }, [])
+
+  useEffect(() => {
+    if (String(unitId || '').trim()) {
+      setTemplateLoading(true)
+    } else if (!unitsLoading) {
+      setTemplateLoading(false)
+    }
+  }, [unitId, unitsLoading])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [])
 
   useUnsavedChangesWarning(
     hasAnyProgress,
@@ -131,6 +150,7 @@ function Controls_Creation() {
     let cancelled = false
 
     const fetchUnits = async () => {
+      setUnitsLoading(true)
       try {
         const response = await fetch(apiUrl('/api/company-co/assigned-units'), {
           credentials: 'include',
@@ -141,9 +161,23 @@ function Controls_Creation() {
           const units = Array.isArray(result.units) ? result.units : []
           setUnitOptions(units)
           setUnitId((current) => current || units[0]?.unit_id || '')
+          if (units.length === 0) {
+            setTemplateLoading(false)
+          }
+        } else if (!cancelled) {
+          setUnitOptions([])
+          setTemplateLoading(false)
         }
       } catch (error) {
         console.error('Failed to fetch units for RACM upload:', error)
+        if (!cancelled) {
+          setUnitOptions([])
+          setTemplateLoading(false)
+        }
+      } finally {
+        if (!cancelled) {
+          setUnitsLoading(false)
+        }
       }
     }
 
@@ -576,17 +610,22 @@ function Controls_Creation() {
         sx={{
           display: 'flex',
           flexDirection: { xs: 'column', sm: 'row' },
-          justifyContent: 'space-between',
+          justifyContent: 'flex-start',
           alignItems: { xs: 'stretch', sm: 'center' },
           gap: 1.5,
         }}
       >
         <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', alignItems: 'center' }}>
-          <SampleSizeSettingsButton unitOptions={unitOptions} selectedUnitId={unitId} />
+          <SampleSizeSettingsButton
+            unitOptions={unitOptions}
+            selectedUnitId={unitId}
+            disabled={formLocked}
+          />
           <Button
             type="button"
             onClick={() => navigate('/company-co/manual-control-creation')}
             variant="contained"
+            disabled={formLocked}
             startIcon={<AddIcon />}
             sx={{
               textTransform: 'none',
@@ -601,6 +640,7 @@ function Controls_Creation() {
             type="button"
             onClick={() => navigate('/company-co/library-control-creation')}
             variant="contained"
+            disabled={formLocked}
             startIcon={<ChecklistRoundedIcon />}
             sx={{
               textTransform: 'none',
@@ -612,25 +652,6 @@ function Controls_Creation() {
             Pick from Library
           </Button>
         </Box>
-        <Button
-          type="button"
-          onClick={() => navigate('/company-co/dashboard')}
-          variant="outlined"
-          sx={{
-            textTransform: 'none',
-            fontWeight: 400,
-            borderRadius: 999,
-            px: 2,
-            alignSelf: { xs: 'flex-start', sm: 'center' },
-            borderColor:
-              theme.palette.mode === 'dark'
-                ? alpha(theme.palette.common.white, 0.16)
-                : alpha(theme.palette.text.primary, 0.14),
-            color: theme.palette.text.primary,
-          }}
-        >
-          Back to Dashboard
-        </Button>
       </Box>
 
       <Collapse in={showSampleSizeNotice}>
@@ -647,7 +668,11 @@ function Controls_Creation() {
         </Alert>
       </Collapse>
 
-      <ActiveRacmTemplateNotice unitId={unitId} variant="bulk" />
+      <ActiveRacmTemplateNotice
+        unitId={unitId}
+        variant="bulk"
+        onLoadingChange={handleTemplateLoadingChange}
+      />
 
       <Box
         sx={{
@@ -807,7 +832,7 @@ function Controls_Creation() {
                 name="excelFile"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={handleFileChange}
-                disabled={loading}
+                disabled={loading || formLocked}
                 style={{ display: 'none' }}
                 required
               />
@@ -816,10 +841,10 @@ function Controls_Creation() {
               {!preview ? (
                 <Paper
                   elevation={0}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={loading ? undefined : handleFileSelect}
+                  onDragOver={formLocked || loading ? undefined : handleDragOver}
+                  onDragLeave={formLocked || loading ? undefined : handleDragLeave}
+                  onDrop={formLocked || loading ? undefined : handleDrop}
+                  onClick={formLocked || loading ? undefined : handleFileSelect}
                   sx={{
                     p: { xs: 3, sm: 4 },
                     mb: 3,
@@ -827,14 +852,15 @@ function Controls_Creation() {
                     borderColor: isDragging ? accentColor : alpha(theme.palette.divider, 0.95),
                     borderRadius: 2,
                     textAlign: 'center',
-                    cursor: loading ? 'not-allowed' : 'pointer',
+                    cursor: formLocked || loading ? 'not-allowed' : 'pointer',
+                    opacity: formLocked ? 0.7 : 1,
                     background: isDragging
                       ? `linear-gradient(180deg, ${alpha(accentColor, theme.palette.mode === 'dark' ? 0.18 : 0.08)} 0%, transparent 100%)`
                       : theme.palette.mode === 'dark'
                         ? alpha(theme.palette.common.white, 0.02)
                         : alpha('#f8fafc', 0.9),
                     transition: 'border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease',
-                    '&:hover': loading
+                    '&:hover': formLocked || loading
                       ? {}
                       : {
                           borderColor: alpha(accentColor, 0.8),
@@ -911,7 +937,7 @@ function Controls_Creation() {
                     </Box>
                     <IconButton
                       onClick={handleRemoveFile}
-                      disabled={loading}
+                      disabled={loading || formLocked}
                       size="small"
                       sx={{
                         color: theme.palette.text.primary,
@@ -933,7 +959,7 @@ function Controls_Creation() {
                   mb: 2.5,
                 }}
               >
-                <FormControl fullWidth required disabled={loading || businessProcessesLoading} variant="outlined">
+                <FormControl fullWidth required disabled={loading || formLocked || businessProcessesLoading} variant="outlined">
                   <InputLabel id="business-process-label">Business Process</InputLabel>
                   <Select
                     labelId="business-process-label"
@@ -950,7 +976,7 @@ function Controls_Creation() {
                   </Select>
                 </FormControl>
 
-                <FormControl fullWidth required disabled={loading || unitOptions.length === 0} variant="outlined">
+                <FormControl fullWidth required disabled={loading || formLocked || unitOptions.length === 0} variant="outlined">
                   <InputLabel id="unit-label">Unit</InputLabel>
                   <Select
                     labelId="unit-label"
@@ -971,7 +997,7 @@ function Controls_Creation() {
                   </Select>
                 </FormControl>
 
-                <FormControl fullWidth required disabled={loading} variant="outlined">
+                <FormControl fullWidth required disabled={loading || formLocked} variant="outlined">
                   <InputLabel id="financial-year-label">Financial Year</InputLabel>
                   <Select
                     labelId="financial-year-label"
@@ -1029,7 +1055,7 @@ function Controls_Creation() {
                     variant="outlined"
                     size="small"
                     onClick={handleResetReminderSettings}
-                    disabled={loading || !hasReminderValues}
+                    disabled={loading || formLocked || !hasReminderValues}
                     sx={{
                       textTransform: 'none',
                       borderRadius: 2,
@@ -1058,7 +1084,7 @@ function Controls_Creation() {
                         setDueDate(newValue.format('YYYY-MM-DD'))
                       }}
                       minDate={dayjs(getTomorrowDateString())}
-                      disabled={loading}
+                      disabled={loading || formLocked}
                       slotProps={{
                         textField: {
                           fullWidth: true,
@@ -1067,7 +1093,7 @@ function Controls_Creation() {
                     />
                   </LocalizationProvider>
 
-                  <FormControl fullWidth disabled={loading} variant="outlined">
+                  <FormControl fullWidth disabled={loading || formLocked} variant="outlined">
                     <InputLabel id="reminder-frequency-label">Reminder Frequency</InputLabel>
                     <Select
                       labelId="reminder-frequency-label"
@@ -1107,7 +1133,7 @@ function Controls_Creation() {
                     alignItems: 'start',
                   }}
                 >
-                  <FormControl fullWidth disabled={loading} variant="outlined">
+                  <FormControl fullWidth disabled={loading || formLocked} variant="outlined">
                     <InputLabel id="header-mode-label">Header Location</InputLabel>
                     <Select
                       labelId="header-mode-label"
@@ -1127,7 +1153,7 @@ function Controls_Creation() {
                     type="number"
                     value={headerRowNumber}
                     onChange={(e) => setHeaderRowNumber(e.target.value)}
-                    disabled={loading || headerMode === 'auto'}
+                    disabled={loading || formLocked || headerMode === 'auto'}
                     required={headerMode === 'manual'}
                     inputProps={{ min: 1, step: 1 }}
                     helperText="Use Excel row numbering, starting from 1."
@@ -1147,6 +1173,7 @@ function Controls_Creation() {
                   type="submit"
                   disabled={
                     loading ||
+                    formLocked ||
                     businessProcessesLoading ||
                     mappingDialogOpen ||
                     !file ||
@@ -1173,7 +1200,7 @@ function Controls_Creation() {
                   type="button"
                   onClick={handleFileSelect}
                   variant="outlined"
-                  disabled={loading}
+                  disabled={loading || formLocked}
                   sx={{
                     py: 1.45,
                     px: 2.2,
@@ -1321,7 +1348,7 @@ function Controls_Creation() {
           <Button
             onClick={handleAutomaticColumnMapping}
             variant="outlined"
-            disabled={loading}
+            disabled={loading || formLocked}
             sx={{
               textTransform: 'none',
               px: 3,
@@ -1341,7 +1368,7 @@ function Controls_Creation() {
             onClick={handleCustomColumnMapping}
             variant="contained"
             color="secondary"
-            disabled={loading}
+            disabled={loading || formLocked}
             autoFocus
             sx={{
               textTransform: 'none',

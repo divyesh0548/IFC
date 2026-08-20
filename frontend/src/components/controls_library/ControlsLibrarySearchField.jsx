@@ -415,35 +415,53 @@ function ControlsLibrarySearchField({
 
   return (
     <Box sx={{ gridColumn, width: '100%' }}>
-      <TextField
-        fullWidth
-        label={label}
-        value={displayValue}
-        variant="outlined"
-        disabled={isDisabled}
-        multiline={multiline}
-        minRows={multiline ? 3 : undefined}
-        helperText={
-          isDisabled
-            ? 'Select a business process to browse controls library'
-            : 'Click to browse controls library suggestions'
-        }
+      <Box
         onClick={openDialog}
-        InputProps={{
-          readOnly: true,
-          endAdornment: (
-            <InputAdornment position="end">
-              <SearchRoundedIcon color={isDisabled ? 'disabled' : 'action'} />
-            </InputAdornment>
-          ),
-          sx: { cursor: isDisabled ? 'default' : 'pointer' },
-        }}
         sx={{
-          '& .MuiInputBase-root': {
-            cursor: isDisabled ? 'default' : 'pointer',
+          cursor: isDisabled ? 'default' : 'pointer',
+          '& .MuiTextField-root': {
+            pointerEvents: 'none',
           },
         }}
-      />
+      >
+        <TextField
+          fullWidth
+          label={label}
+          value={displayValue}
+          variant="outlined"
+          disabled
+          multiline={multiline}
+          minRows={multiline ? 3 : undefined}
+          placeholder={isDisabled ? undefined : 'Click to browse library'}
+          helperText={
+            isDisabled
+              ? 'Select a business process to browse controls library'
+              : 'Click to browse controls library suggestions'
+          }
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <SearchRoundedIcon color={isDisabled ? 'disabled' : 'action'} />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            '& .MuiInputBase-input.Mui-disabled': {
+              WebkitTextFillColor: theme.palette.text.primary,
+              color: theme.palette.text.primary,
+              opacity: displayValue ? 1 : 0.55,
+            },
+            '& .MuiFormLabel-root.Mui-disabled': {
+              color: theme.palette.text.secondary,
+            },
+            '& .MuiOutlinedInput-root.Mui-disabled .MuiOutlinedInput-notchedOutline': {
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.23)'
+                : 'rgba(0, 0, 0, 0.23)',
+            },
+          }}
+        />
+      </Box>
 
       <AppDialog
         open={dialogOpen}

@@ -640,12 +640,9 @@ function RacmUserDocuments() {
             minWidth: 0,
           }}
         >
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0, pr: { sm: 2, md: 3 }, mr: { sm: 1 } }}>
             <Typography variant="h5" component="h2" sx={{ fontWeight: 700 }}>
               RACM Document Uploads
-            </Typography>
-            <Typography sx={PAGE_SUBHEADER_TEXT_SX}>
-              View user-uploaded documents for assigned RACMs.
             </Typography>
           </Box>
 
@@ -783,16 +780,42 @@ function RacmUserDocuments() {
         </Box>
 
         <Box sx={{ width: '100%', minWidth: 0 }}>
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              mb: 1.5,
-              flexWrap: 'wrap',
-              gap: 1,
-            }}
-          >
+          <Box sx={{ mb: 1.5 }}>
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                mb: 1.5,
+                flexWrap: 'wrap',
+                gap: 1,
+              }}
+            >
+              <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, flex: '1 1 240px', minWidth: 0, pr: { sm: 2 } }}>
+                View user-uploaded documents for assigned RACMs.
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={cellWordWrap}
+                    onChange={(e) => setCellWordWrap(e.target.checked)}
+                    size="small"
+                    color="primary"
+                    disabled={loading}
+                  />
+                }
+                label="Word wrap"
+                sx={{
+                  mr: 0,
+                  userSelect: 'none',
+                  flex: '0 0 auto',
+                  '& .MuiFormControlLabel-label': {
+                    fontSize: '0.8125rem',
+                    color: theme.palette.text.secondary,
+                  },
+                }}
+              />
+            </Box>
             <Box
               component="form"
               onSubmit={handleControlNumberSearchSubmit}
@@ -819,35 +842,17 @@ function RacmUserDocuments() {
               <Button type="submit" variant="contained" disabled={loading}>
                 Search
               </Button>
-              <Button
-                type="button"
-                variant="outlined"
-                onClick={handleControlNumberSearchClear}
-                disabled={loading || (!controlNumberInput && !controlNumberFilter)}
-              >
-                Clear
-              </Button>
-            </Box>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={cellWordWrap}
-                  onChange={(e) => setCellWordWrap(e.target.checked)}
-                  size="small"
-                  color="primary"
+              {(controlNumberInput || controlNumberFilter) ? (
+                <Button
+                  type="button"
+                  variant="outlined"
+                  onClick={handleControlNumberSearchClear}
                   disabled={loading}
-                />
-              }
-              label="Word wrap"
-              sx={{
-                mr: 0,
-                userSelect: 'none',
-                '& .MuiFormControlLabel-label': {
-                  fontSize: '0.8125rem',
-                  color: theme.palette.text.secondary,
-                },
-              }}
-            />
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </Box>
           </Box>
 
           <Box sx={DASHBOARD_TABLE_WRAP_SX}>

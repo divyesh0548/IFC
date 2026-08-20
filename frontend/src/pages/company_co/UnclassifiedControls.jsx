@@ -284,7 +284,10 @@ function UnclassifiedControls() {
             Each count indicates a control that is not classified in that particular category.
           </Typography>
         </Box>
-        <Button variant="contained" onClick={() => navigate(`/company-co/dashboard${location.search || ''}`)}>
+        <Button
+          variant="contained"
+          onClick={() => navigate(`/company-co/control-dispersion-dashboard${location.search || ''}`)}
+        >
           Back To Dashboard
         </Button>
       </Box>

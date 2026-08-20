@@ -330,12 +330,9 @@ function CompanyAdminRacmDashboard() {
             mb: 0.5,
           }}
         >
-          <Box>
+          <Box sx={{ pr: { sm: 2, md: 3 }, mr: { sm: 1 } }}>
             <Typography variant="h5" component="h1" sx={{ fontWeight: 700, mb: 0.5 }}>
               RACM Dashboard
-            </Typography>
-            <Typography sx={PAGE_SUBHEADER_TEXT_SX}>
-              View and filter RACMs across your company units.
             </Typography>
           </Box>
           <Button
@@ -476,15 +473,40 @@ function CompanyAdminRacmDashboard() {
 
           </Box>
 
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: 1,
-            }}
-          >
+          <Box>
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 1,
+                mb: 1.5,
+              }}
+            >
+              <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, flex: '1 1 240px', minWidth: 0, pr: { sm: 2 } }}>
+                View and filter RACMs across your company units.
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={cellWordWrap}
+                    onChange={(e) => setCellWordWrap(e.target.checked)}
+                    size="small"
+                  />
+                }
+                label="Word wrap"
+                sx={{
+                  mr: 0,
+                  flexShrink: 0,
+                  userSelect: 'none',
+                  '& .MuiFormControlLabel-label': {
+                    fontSize: '0.8125rem',
+                    color: theme.palette.text.secondary,
+                  },
+                }}
+              />
+            </Box>
             <Box
               component="form"
               onSubmit={handleControlNumberSearchSubmit}
@@ -493,8 +515,6 @@ function CompanyAdminRacmDashboard() {
                 flexDirection: { xs: 'column', sm: 'row' },
                 gap: 1,
                 alignItems: { xs: 'stretch', sm: 'center' },
-                flex: 1,
-                minWidth: 0,
               }}
             >
               <TextField
@@ -507,32 +527,12 @@ function CompanyAdminRacmDashboard() {
               <Button type="submit" variant="contained">
                 Search
               </Button>
-              {controlNumberFilter ? (
+              {(controlNumberInput || controlNumberFilter) ? (
                 <Button type="button" variant="outlined" onClick={handleControlNumberSearchClear}>
                   Clear
                 </Button>
               ) : null}
             </Box>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={cellWordWrap}
-                  onChange={(e) => setCellWordWrap(e.target.checked)}
-                  size="small"
-                />
-              }
-              label="Word wrap"
-              sx={{
-                mr: 0,
-                ml: { xs: 0, sm: 2 },
-                flexShrink: 0,
-                userSelect: 'none',
-                '& .MuiFormControlLabel-label': {
-                  fontSize: '0.8125rem',
-                  color: theme.palette.text.secondary,
-                },
-              }}
-            />
           </Box>
 
           {loading ? (

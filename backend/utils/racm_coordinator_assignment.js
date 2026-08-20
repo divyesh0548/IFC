@@ -86,11 +86,13 @@ async function getControlFormCoordinatorContext(clientOrPool, formId) {
         control_owner,
         active,
         status,
+        control_design_conclusion,
         due_date,
         reminder_frequency,
         assigned_to_coordinator,
         coordinator_assigned_by,
-        coordinator_assigned_at
+        coordinator_assigned_at,
+        deficiency_response_status
       FROM control_forms
       WHERE form_id = $1
       LIMIT 1

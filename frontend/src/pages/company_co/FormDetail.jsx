@@ -736,17 +736,6 @@ function FormDetail() {
   }
 
   const handleOpenAssignmentDialog = () => {
-    if (Boolean(formData?.assigned_to_coordinator)) {
-      toast.error('This RACM is coordinator-assigned and cannot be assigned to a process owner')
-      return
-    }
-
-    const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
-    if (reassignmentBlockMessage) {
-      toast.error(reassignmentBlockMessage)
-      return
-    }
-
     setSelectedUser(null)
     setAssignmentDialogOpen(true)
   }
@@ -766,6 +755,8 @@ function FormDetail() {
 
     if (!form_id || !selectedUser?.email_id) return
 
+    const isTransferFromSelfAssign = Boolean(formData?.assigned_to_coordinator)
+
     // Already-active RACMs are being re-assigned (owner swap). Do not re-send
     // the active flag so the RACM is never toggled inactive mid-operation.
     const alreadyActive = Boolean(formData?.active)
@@ -776,30 +767,43 @@ function FormDetail() {
       String(formData.reminder_frequency).trim() !== ''
     const hasReminderSettings = hasDueDate && hasReminderFrequency
     const hasSampleDoc = hasSampleDocs()
-    const canAutoActivate = !alreadyActive && hasReminderSettings
+    const canAutoActivate = !alreadyActive && hasReminderSettings && !isTransferFromSelfAssign
 
     setUpdating(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/api/control-forms/${form_id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          control_owner: selectedUser.email_id,
-          ...(canAutoActivate ? { active: '1' } : {}),
-          modifiedFields: ['control_owner'],
-        }),
-      })
+      const response = await fetch(
+        isTransferFromSelfAssign
+          ? `${API_BASE_URL}/api/control-forms/${form_id}/transfer-to-process-owner`
+          : `${API_BASE_URL}/api/control-forms/${form_id}`,
+        {
+          method: isTransferFromSelfAssign ? 'POST' : 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify(
+            isTransferFromSelfAssign
+              ? { control_owner: selectedUser.email_id }
+              : {
+                  control_owner: selectedUser.email_id,
+                  ...(canAutoActivate ? { active: '1' } : {}),
+                  modifiedFields: ['control_owner'],
+                }
+          ),
+        }
+      )
 
       const data = await response.json()
       if (response.ok && data.success) {
-        toast.success('Sucessfully Updated RACM Assignment')
-        if (canAutoActivate && !hasSampleDoc) {
+        toast.success(
+          isTransferFromSelfAssign
+            ? (data.message || 'Self-assigned RACM transferred to process owner successfully')
+            : 'Sucessfully Updated RACM Assignment'
+        )
+        if (!isTransferFromSelfAssign && canAutoActivate && !hasSampleDoc) {
           toast('Sample document is missing. RACM was set Active.')
         }
-        if (!alreadyActive && !canAutoActivate) {
+        if (!isTransferFromSelfAssign && !alreadyActive && !canAutoActivate) {
           const missing = []
           if (!hasReminderSettings) missing.push('Reminder settings')
           toast.error(`RACM assigned, but could not set Active. Missing: ${missing.join(', ')}`)
@@ -1635,28 +1639,6 @@ function FormDetail() {
     setReplicateDialogOpen(true)
   }
 
-  const handleChooseSelfAssignFromMore = () => {
-    if (isCoordinatorAssigned) {
-      toast.error('This RACM is already coordinator-assigned')
-      return
-    }
-    if (validProcessOwnerAssigned) {
-      toast.error('This RACM is already assigned to a process owner')
-      return
-    }
-    if (!hasReminderSettings) {
-      toast.error('Configure due date and reminder frequency before self-assignment')
-      return
-    }
-    if (isSentForApproval || isApprovedRacm) {
-      toast.error('This RACM cannot be self-assigned in its current approval status')
-      return
-    }
-
-    setMoreActionsDialogOpen(false)
-    setSelfAssignConfirmDialogOpen(true)
-  }
-
   const handleChooseApproverAssignmentFromMore = () => {
     const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
     if (reassignmentBlockMessage) {
@@ -1719,6 +1701,28 @@ function FormDetail() {
     setSelfAssignConfirmDialogOpen(false)
   }
 
+  const handleSelfAssignFromAssignmentDialog = () => {
+    if (isCoordinatorAssigned) {
+      toast.error('This RACM is already coordinator-assigned')
+      return
+    }
+    if (!hasReminderSettings) {
+      toast.error('Configure due date and reminder frequency before self-assignment')
+      return
+    }
+    if (validProcessOwnerAssigned) {
+      if (reassignmentBlockMessage) {
+        toast.error(reassignmentBlockMessage)
+        return
+      }
+    } else if (isSentForApproval || isApprovedRacm) {
+      toast.error('This RACM cannot be self-assigned in its current approval status')
+      return
+    }
+
+    setSelfAssignConfirmDialogOpen(true)
+  }
+
   const handleSelfAssignConfirm = async () => {
     if (!form_id) return
 
@@ -1733,6 +1737,7 @@ function FormDetail() {
       if (response.ok && data.success) {
         toast.success(data.message || 'RACM self-assigned successfully')
         setSelfAssignConfirmDialogOpen(false)
+        handleCloseAssignmentDialog()
         await fetchFormData()
       } else {
         toast.error(data.message || 'Failed to self-assign RACM')
@@ -2170,14 +2175,19 @@ function FormDetail() {
   const isActive = Boolean(formData?.active)
   const isCoordinatorAssigned = isCoordinatorAssignedRacm(formData)
   const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
-  const isAssignmentDisabled = isEditMode || updating || isCoordinatorAssigned || Boolean(reassignmentBlockMessage)
+  const isAssignmentInteractionDisabled = isEditMode || updating
+  const isProcessOwnerAssignmentLocked = Boolean(reassignmentBlockMessage)
   const racmStatus = String(formData?.status || '').trim().toLowerCase()
   const isSentForApproval = racmStatus === 'sent for approval'
   const isApprovedRacm = racmStatus === 'approved'
   const isRejectedRacm = racmStatus === 'rejected'
   const isApprovedNotEffective = isApprovedRacm && String(formData?.control_design_conclusion || '').trim().toLowerCase() === 'not effective'
   const hasReminderSettings = Boolean(String(formData?.due_date || '').trim()) && Boolean(String(formData?.reminder_frequency || '').trim())
-  const showSelfAssignButton = !isCoordinatorAssigned && !validProcessOwnerAssigned
+  const canSelfAssignFromDialog = !isCoordinatorAssigned
+    && hasReminderSettings
+    && !(validProcessOwnerAssigned
+      ? Boolean(reassignmentBlockMessage)
+      : (isSentForApproval || isApprovedRacm))
   const canCoordinatorSubmit = isCoordinatorAssigned && isActive && !isSentForApproval && !isApprovedRacm && !hasProcessOwnerDeclaration
   const canDeclareNoFurtherSubmission = !hasProcessOwnerDeclaration && ((isCoordinatorAssigned && isRejectedRacm) || isApprovedNotEffective)
   const showRemarksByUser = canCoordinatorSubmit || (formData?.remarks_by_user || '').trim() !== ''
@@ -2701,14 +2711,14 @@ function FormDetail() {
                   >
                     <Box
                       onClick={() => {
-                        if (!isAssignmentDisabled) {
+                        if (!isAssignmentInteractionDisabled) {
                           handleOpenAssignmentDialog()
                         }
                       }}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
-                        if ((e.key === 'Enter' || e.key === ' ') && !isAssignmentDisabled) {
+                        if ((e.key === 'Enter' || e.key === ' ') && !isAssignmentInteractionDisabled) {
                           e.preventDefault()
                           handleOpenAssignmentDialog()
                         }
@@ -2724,11 +2734,11 @@ function FormDetail() {
                         alignItems: 'flex-start',
                         justifyContent: 'center',
                         gap: 1,
-                        cursor: isAssignmentDisabled ? 'not-allowed' : 'pointer',
-                        opacity: isAssignmentDisabled ? 0.65 : 1,
+                        cursor: isAssignmentInteractionDisabled ? 'not-allowed' : 'pointer',
+                        opacity: isAssignmentInteractionDisabled ? 0.65 : 1,
                         transition: 'all 0.2s ease',
                         minHeight: '100%',
-                        '&:hover': isAssignmentDisabled ? {} : {
+                        '&:hover': isAssignmentInteractionDisabled ? {} : {
                           backgroundColor: theme.palette.mode === 'dark'
                             ? 'rgba(255, 255, 255, 0.03)'
                             : 'rgba(0, 0, 0, 0.02)',
@@ -4638,7 +4648,9 @@ function FormDetail() {
             color: theme.palette.text.primary,
           }}
         >
-          RACM Assignment
+          {Boolean(formData?.assigned_to_coordinator)
+            ? 'Transfer Self-Assigned RACM to Process Owner'
+            : 'RACM Assignment'}
         </DialogTitle>
         <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
           {formData && (
@@ -4662,9 +4674,21 @@ function FormDetail() {
                 </Typography>
               </Box>
 
-              {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(formData?.control_owner || '').trim()) && (
+              {isProcessOwnerAssignmentLocked && (
                 <Alert severity="warning" sx={{ mb: 2 }}>
-                  The current process owner will be replaced and will no longer be able to access this RACM. The new process owner will be notified by email.
+                  {reassignmentBlockMessage || 'This RACM cannot be re-assigned.'}
+                </Alert>
+              )}
+
+              {!isProcessOwnerAssignmentLocked && Boolean(formData?.assigned_to_coordinator) && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  This RACM is currently self-assigned to a coordinator. Assigning a process owner will transfer ownership.
+                </Alert>
+              )}
+
+              {!isProcessOwnerAssignmentLocked && !Boolean(formData?.assigned_to_coordinator) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(formData?.control_owner || '').trim()) && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  The current process owner will be replaced and will no longer be able to access this RACM.
                 </Alert>
               )}
 
@@ -4676,12 +4700,13 @@ function FormDetail() {
                 }}
                 excludeEmails={[formData?.control_owner]}
                 prefetch={assignmentDialogOpen}
+                disabled={isProcessOwnerAssignmentLocked}
                 helperText={
                   selectedUser?.email_id ||
                   `Users from ${(formData?.unit_name || formData?.unit_id || 'this unit').toString().trim() || 'this unit'} only`
                 }
               />
-              {!isActive && (
+              {!isActive && !isProcessOwnerAssignmentLocked && (
                 <Typography
                   variant="caption"
                   sx={{
@@ -4697,16 +4722,26 @@ function FormDetail() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={handleCloseAssignmentDialog} disabled={updating}>
+        <DialogActions sx={{ px: 3, py: 2, gap: 1, flexWrap: 'wrap' }}>
+          <Button onClick={handleCloseAssignmentDialog} disabled={updating || selfAssigning}>
             Cancel
           </Button>
+          {!selectedUser?.email_id && (
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={handleSelfAssignFromAssignmentDialog}
+              disabled={updating || selfAssigning || isProcessOwnerAssignmentLocked || !canSelfAssignFromDialog}
+            >
+              {selfAssigning ? 'Assigning...' : 'Self Assign'}
+            </Button>
+          )}
           {selectedUser?.email_id && (
             <Button
               variant="contained"
               color="secondary"
               onClick={handleUpdateAssignment}
-              disabled={updating}
+              disabled={updating || selfAssigning || isProcessOwnerAssignmentLocked}
             >
               {updating ? 'Updating...' : 'Update Assignment'}
             </Button>
@@ -4978,16 +5013,6 @@ function FormDetail() {
             Choose an action for this RACM.
           </DialogContentText>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {showSelfAssignButton ? (
-              <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
-                  Self Assign
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Assign this RACM to yourself for document upload and submission. Process owner assignment will be disabled after self-assignment. Due date and reminder frequency must already be configured.
-                </Typography>
-              </Box>
-            ) : null}
             <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
                 Delete
@@ -5030,11 +5055,6 @@ function FormDetail() {
           <Button onClick={handleMoreActionsClose} variant="outlined" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
             Cancel
           </Button>
-          {showSelfAssignButton ? (
-            <Button onClick={handleChooseSelfAssignFromMore} variant="contained" color="primary" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
-              Self Assign
-            </Button>
-          ) : null}
           <Button onClick={handleChooseApproverAssignmentFromMore} variant="outlined" color="primary" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
             Approver Assignment
           </Button>
@@ -5067,7 +5087,9 @@ function FormDetail() {
         </DialogTitle>
         <DialogContent sx={{ px: 3, pt: 1, pb: 3 }}>
           <DialogContentText id="self-assign-dialog-description" sx={{ color: 'text.secondary', fontSize: '0.9375rem', lineHeight: 1.5, mt: 2 }}>
-            Assign this RACM to yourself for document upload and submission. Process owner assignment will be disabled after self-assignment. 
+            {validProcessOwnerAssigned
+              ? `Self-assign this RACM (currently assigned to ${String(formData?.control_owner || '').trim()}) to yourself? The RACM will remain Active.`
+              : 'Assign this RACM to yourself for document upload and submission.'}
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3, gap: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
