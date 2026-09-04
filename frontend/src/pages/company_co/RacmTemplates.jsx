@@ -117,83 +117,88 @@ function CustomColumnEditorDialog({
   onLabelChange,
   onSectionChange,
 }) {
+  const theme = useTheme()
   const isEditing = mode === 'edit'
   const showSectionPicker = isEditing && canEditSection
 
+  const actions = isEditing ? (
+    <>
+      <Button onClick={onCancelEdit} disabled={actionsDisabled} variant="outlined" sx={getAppDialogCancelButtonSx(theme)}>
+        Cancel
+      </Button>
+      <Button variant="contained" onClick={onSave} disabled={actionsDisabled} sx={APP_DIALOG_PRIMARY_BUTTON_SX}>
+        Save
+      </Button>
+    </>
+  ) : (
+    <>
+      {canDelete ? (
+        <Button color="error" onClick={onDelete} disabled={actionsDisabled} sx={{ textTransform: 'none' }}>
+          Delete
+        </Button>
+      ) : null}
+      {canEditLabel || canEditSection ? (
+        <Button variant="contained" onClick={onEdit} disabled={actionsDisabled} sx={APP_DIALOG_PRIMARY_BUTTON_SX}>
+          Edit
+        </Button>
+      ) : null}
+    </>
+  )
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ px: 3, pt: 2.5, pb: 2, fontWeight: 700 }}>
-        {isEditing ? 'Edit custom column' : 'Custom column'}
-      </DialogTitle>
-      <DialogContent sx={{ px: 3, mt: 1.5 }}>
-        {isEditing ? (
-          <Stack spacing={2}>
-            <TextField
-              label="Column label"
-              value={label}
-              onChange={(e) => onLabelChange(e.target.value)}
-              fullWidth
-              autoFocus
-              disabled={!canEditLabel}
-              helperText={
-                saveRequiresNewVersion
-                  ? 'You can edit here; saving template changes will require a new version or new template.'
-                  : undefined
-              }
-            />
-            {showSectionPicker ? (
-              <FormControl fullWidth>
-                <InputLabel>Section</InputLabel>
-                <Select value={sectionKey} label="Section" onChange={(e) => onSectionChange(e.target.value)}>
-                  {CUSTOM_COLUMN_SECTION_KEYS.has(sectionKey) ? null : (
-                    <MenuItem value={sectionKey}>{getSectionLabel(sectionKey)}</MenuItem>
-                  )}
-                  {CUSTOM_COLUMN_SECTION_OPTIONS.map((option) => (
-                    <MenuItem key={option.key} value={option.key}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            ) : null}
-          </Stack>
-        ) : (
-          <Stack spacing={1}>
-            <Typography variant="body1" sx={{ fontWeight: 600 }}>
-              {String(label || '').trim() || 'New column'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Section: {getSectionLabel(sectionKey)}
-            </Typography>
-          </Stack>
-        )}
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pt: 1, pb: 2.5 }}>
-        {isEditing ? (
-          <Stack direction="row" spacing={1} sx={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={onCancelEdit} disabled={actionsDisabled}>
-              Cancel
-            </Button>
-            <Button variant="contained" onClick={onSave} disabled={actionsDisabled}>
-              Save
-            </Button>
-          </Stack>
-        ) : (
-          <Stack direction="row" spacing={1} sx={{ width: '100%', justifyContent: 'flex-end' }}>
-            {canDelete ? (
-              <Button color="error" onClick={onDelete} disabled={actionsDisabled}>
-                Delete
-              </Button>
-            ) : null}
-            {canEditLabel || canEditSection ? (
-              <Button variant="contained" onClick={onEdit} disabled={actionsDisabled}>
-                Edit
-              </Button>
-            ) : null}
-          </Stack>
-        )}
-      </DialogActions>
-    </Dialog>
+    <AppDialog
+      open={open}
+      onClose={onClose}
+      maxWidth="xs"
+      fullWidth
+      titleId="custom-column-editor-title"
+      title={isEditing ? 'Edit custom column' : 'Custom column'}
+      titleSx={{ fontWeight: 700 }}
+      showTitleDivider
+      actions={actions}
+    >
+      {isEditing ? (
+        <Stack spacing={2}>
+          <TextField
+            label="Column label"
+            value={label}
+            onChange={(e) => onLabelChange(e.target.value)}
+            fullWidth
+            autoFocus
+            disabled={!canEditLabel}
+            helperText={
+              saveRequiresNewVersion
+                ? 'You can edit here; saving template changes will require a new version or new template.'
+                : undefined
+            }
+          />
+          {showSectionPicker ? (
+            <FormControl fullWidth>
+              <InputLabel>Section</InputLabel>
+              <Select value={sectionKey} label="Section" onChange={(e) => onSectionChange(e.target.value)}>
+                {CUSTOM_COLUMN_SECTION_KEYS.has(sectionKey) ? null : (
+                  <MenuItem value={sectionKey}>{getSectionLabel(sectionKey)}</MenuItem>
+                )}
+                {CUSTOM_COLUMN_SECTION_OPTIONS.map((option) => (
+                  <MenuItem key={option.key} value={option.key}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          ) : null}
+        </Stack>
+      ) : (
+        <Stack spacing={1}>
+          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+            {String(label || '').trim() || 'New column'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Section: {getSectionLabel(sectionKey)}
+          </Typography>
+        </Stack>
+      )}
+    </AppDialog>
   )
 }
 
@@ -1294,6 +1299,18 @@ function RacmTemplates() {
             </Button>
           </Box>
 
+          {requiresVersionedSave ? (
+            <Collapse in={versionedSaveNoticeOpen}>
+              <Alert
+                severity="warning"
+                onClose={() => setVersionedSaveNoticeOpen(false)}
+                sx={{ mb: 2, alignItems: 'flex-start' }}
+              >
+                RACMs use this template version, editing it requires a new version or new template.
+              </Alert>
+            </Collapse>
+          ) : null}
+
           <Box
             sx={{
               width: '100%',
@@ -1363,17 +1380,6 @@ function RacmTemplates() {
                         : 'Active template — no RACMs are linked yet. You may update in place or create a new version.'
                       : 'Archived template — read-only view.'}
                   </Typography>
-                  {requiresVersionedSave ? (
-                    <Collapse in={versionedSaveNoticeOpen}>
-                      <Alert
-                        severity="warning"
-                        onClose={() => setVersionedSaveNoticeOpen(false)}
-                        sx={{ mt: 1, alignItems: 'flex-start' }}
-                      >
-                        RACMs use this template version. You can edit labels and remove columns, but saving changes requires a new version or new template.
-                      </Alert>
-                    </Collapse>
-                  ) : null}
                 </Box>
 
                 <TemplateColumnListing

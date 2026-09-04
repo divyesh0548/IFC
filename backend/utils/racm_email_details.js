@@ -14,7 +14,6 @@ function buildRacmDetailsSection(formLike, extraFields = [], heading = 'RACM Det
 
   const primaryFields = [
     ['Business Process', formLike?.business_process ?? formLike?.businessProcess],
-    ['Standard Control Description', formLike?.standard_control_description ?? formLike?.standardControlDescription],
     ['Financial Year', formLike?.financial_year ?? formLike?.financialYear],
   ];
 

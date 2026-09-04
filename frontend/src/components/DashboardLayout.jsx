@@ -12,10 +12,10 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import Divider from '@mui/material/Divider'
-import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
-import LogoutIcon from '@mui/icons-material/Logout'
 import AccountCircleIcon from '@mui/icons-material/AccountCircle'
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline'
+import LogoutIcon from '@mui/icons-material/Logout'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import { useThemeMode } from '../contexts/ThemeContext'
@@ -31,6 +31,8 @@ import { apiUrl } from '../config/api'
 import { useAuth } from '../contexts/AuthContext'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
+import AppBreadcrumbs from './AppBreadcrumbs'
+import { getDashboardBreadcrumbItems } from '../utils/dashboardBreadcrumbs'
 
 const getHomePath = (pathname) => {
   if (pathname.startsWith('/company-co')) return '/company-co/home'
@@ -64,7 +66,7 @@ function DashboardLayout() {
   const { mode, toggleTheme } = useThemeMode()
   const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || '')
   const homePath = getHomePath(location.pathname)
-  const isAtHome = location.pathname === homePath
+  const breadcrumbItems = getDashboardBreadcrumbItems(location.pathname)
   const isSiteadminRoute = location.pathname.startsWith('/siteadmin')
   const isCreateCompanyPage = location.pathname === '/siteadmin/create-company'
   const isFullWidthPage =
@@ -265,8 +267,23 @@ function DashboardLayout() {
                   elevation: 3,
                   sx: {
                     mt: 1,
+                    width: 200,
                     minWidth: 200,
                     borderRadius: 2,
+                    overflow: 'hidden',
+                  },
+                },
+                list: {
+                  sx: {
+                    py: 0,
+                    '& .MuiMenuItem-root': {
+                      py: 1.25,
+                      px: 2,
+                      minHeight: 44,
+                    },
+                    '& .MuiDivider-root': {
+                      my: 0,
+                    },
                   },
                 },
               }}
@@ -305,81 +322,132 @@ function DashboardLayout() {
         aria-labelledby="logout-dialog-title"
         aria-describedby="logout-dialog-description"
         maxWidth={false}
+        slotProps={{
+          backdrop: {
+            sx: {
+              backgroundColor: alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.62 : 0.42),
+              backdropFilter: 'blur(6px)',
+            },
+          },
+        }}
         PaperProps={{
           sx: {
             position: 'relative',
-            borderRadius: 4,
-            width: { xs: 'calc(100% - 40px)', sm: 460 },
-            maxWidth: 460,
-            mx: 2.5,
+            borderRadius: 5,
+            width: { xs: 'calc(100% - 48px)', sm: 400 },
+            maxWidth: 400,
+            mx: 3,
             p: 0,
-            overflow: 'visible',
-            boxShadow: theme.palette.mode === 'dark'
-              ? '0 24px 64px rgba(0, 0, 0, 0.55)'
-              : '0 24px 64px rgba(15, 23, 42, 0.14)',
+            overflow: 'hidden',
+            border: '1px solid',
+            borderColor:
+              theme.palette.mode === 'dark'
+                ? alpha(theme.palette.common.white, 0.1)
+                : alpha(theme.palette.divider, 0.9),
+            backgroundColor: theme.palette.background.paper,
+            boxShadow:
+              theme.palette.mode === 'dark'
+                ? '0 28px 64px rgba(0, 0, 0, 0.55)'
+                : '0 28px 64px rgba(15, 23, 42, 0.16)',
           },
         }}
       >
+        <IconButton
+          aria-label="Close"
+          onClick={() => setLogoutDialogOpen(false)}
+          size="small"
+          sx={{
+            position: 'absolute',
+            top: 12,
+            right: 12,
+            color: 'text.secondary',
+            zIndex: 1,
+            '&:hover': {
+              backgroundColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.08 : 0.05),
+            },
+          }}
+        >
+          <CloseRoundedIcon fontSize="small" />
+        </IconButton>
+
         <DialogContent
           sx={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             textAlign: 'center',
-            px: { xs: 3, sm: 4 },
-            pb: { xs: 3, sm: 3.5 },
+            px: { xs: 3, sm: 3.5 },
+            pb: { xs: 3, sm: 3.25 },
             '&&': {
-              paddingTop: theme.spacing(5),
+              paddingTop: theme.spacing(3.5),
             },
           }}
         >
+          <Box
+            sx={{
+              width: 72,
+              height: 72,
+              borderRadius: '50%',
+              display: 'grid',
+              placeItems: 'center',
+              mb: 2.25,
+              color: theme.palette.mode === 'dark' ? '#ffffff' : theme.palette.secondary.main,
+              backgroundColor: alpha(theme.palette.secondary.main, theme.palette.mode === 'dark' ? 0.18 : 0.12),
+              border: `1px solid ${alpha(theme.palette.secondary.main, theme.palette.mode === 'dark' ? 0.28 : 0.18)}`,
+            }}
+          >
+            <LogoutIcon sx={{ fontSize: 32 }} />
+          </Box>
+
           <Typography
             id="logout-dialog-title"
             component="h2"
             sx={{
-              fontWeight: 700,
-              fontSize: { xs: '1.35rem', sm: '1.5rem' },
+              fontWeight: 800,
+              fontSize: { xs: '1.28rem', sm: '1.4rem' },
               lineHeight: 1.25,
               letterSpacing: '-0.02em',
               color: 'text.primary',
-              maxWidth: 380,
+              maxWidth: 320,
             }}
           >
-            Are you sure you want to log out?
+            Log out of your account?
           </Typography>
           <Typography
             id="logout-dialog-description"
             sx={{
-              mt: 1.5,
+              mt: 1,
               mb: 0,
               color: 'text.secondary',
-              fontSize: '0.95rem',
-              lineHeight: 1.6,
-              maxWidth: 380,
+              fontSize: '0.92rem',
+              lineHeight: 1.55,
+              maxWidth: 300,
             }}
           >
-            You will need to sign in again to access your account.
+            You will need to sign in again to continue.
           </Typography>
 
           <Box
             sx={{
-              mt: 3.5,
+              mt: 3,
               width: '100%',
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 1.5,
+              display: 'flex',
+              justifyContent: 'center',
+              gap: 1.25,
             }}
           >
             <Button
               onClick={() => setLogoutDialogOpen(false)}
               variant="outlined"
-              fullWidth
               sx={{
                 textTransform: 'none',
                 fontWeight: 600,
-                fontSize: '0.95rem',
-                py: 1.15,
-                borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.28 : 0.18),
+                fontSize: '0.9rem',
+                py: 1,
+                px: 2.5,
+                minWidth: 104,
+                borderRadius: 2.5,
+                borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.28 : 0.16),
                 color: 'text.primary',
                 '&:hover': {
                   borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.4 : 0.28),
@@ -397,12 +465,14 @@ function DashboardLayout() {
               variant="contained"
               color="secondary"
               autoFocus
-              fullWidth
               sx={{
                 textTransform: 'none',
                 fontWeight: 700,
-                fontSize: '0.95rem',
-                py: 1.15,
+                fontSize: '0.9rem',
+                py: 1,
+                px: 2.5,
+                minWidth: 104,
+                borderRadius: 2.5,
                 boxShadow: 'none',
                 '&:hover': {
                   boxShadow: 'none',
@@ -433,41 +503,16 @@ function DashboardLayout() {
           sx={{
             display: 'flex',
             flexDirection: 'column',
-            gap: DASHBOARD_SECTION_GAP,
-            pt: DASHBOARD_SECTION_GAP,
+            gap: breadcrumbItems ? 2 : DASHBOARD_SECTION_GAP,
+            pt: breadcrumbItems ? 2 : DASHBOARD_SECTION_GAP,
             width: '100%',
             minWidth: 0,
             alignItems: 'stretch',
           }}
         >
-          {!isAtHome && (
-            <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
-              <Button
-                variant="text"
-                startIcon={<HomeRoundedIcon />}
-                onClick={() => navigate(homePath)}
-                sx={{
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  color: theme.palette.text.primary,
-                  backgroundColor: theme.palette.background.paper,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 2,
-                  px: 2,
-                  py: 0.75,
-                  '&:hover': {
-                    backgroundColor:
-                      theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(0, 0, 0, 0.04)',
-                  },
-                }}
-              >
-                Back to Home
-              </Button>
-            </Box>
-          )}
+          {breadcrumbItems ? (
+            <AppBreadcrumbs items={breadcrumbItems} sx={{ my: 0, mb: 0 }} />
+          ) : null}
           <Outlet />
         </Box>
       </Box>

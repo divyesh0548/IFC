@@ -4,14 +4,10 @@ import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import FormControl from '@mui/material/FormControl'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
-import Switch from '@mui/material/Switch'
 import Badge from '@mui/material/Badge'
-import Button from '@mui/material/Button'
-import TextField from '@mui/material/TextField'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import TablePagination from '@mui/material/TablePagination'
@@ -22,7 +18,6 @@ import {
   DASHBOARD_PAPER_SX,
   DASHBOARD_TABLE_WRAP_SX,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
-  PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   toRacmApprovalStatusQueryParam,
@@ -33,6 +28,7 @@ import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { getRacmProcessOwnerDisplayValue } from '../../racmFormDetailFields'
 import RacmUserDocumentsDialog from '../../components/racm/RacmUserDocumentsDialog'
+import ControlNumberSearchRow from '../../components/ControlNumberSearchRow'
 
 const DEFAULT_ROWS_PER_PAGE = 10
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50]
@@ -623,7 +619,9 @@ function RacmUserDocuments() {
         elevation={0}
         sx={{
           ...DASHBOARD_PAPER_SX,
-          p: { xs: 2, sm: 3 },
+          pt: 3.5,
+          px: { xs: 2, sm: 3 },
+          pb: { xs: 2, sm: 3 },
           borderRadius: 2,
           border: '1px solid',
           borderColor: 'divider',
@@ -636,7 +634,7 @@ function RacmUserDocuments() {
             justifyContent: 'space-between',
             alignItems: { xs: 'stretch', lg: 'flex-start' },
             gap: 2,
-            mb: 3,
+            mb: 2,
             minWidth: 0,
           }}
         >
@@ -660,7 +658,7 @@ function RacmUserDocuments() {
             }}
           >
             {showUnitFilter && (
-              <FormControl variant="outlined" sx={filterFormControlSx}>
+              <FormControl variant="outlined" size="small" sx={filterFormControlSx}>
                 <InputLabel id="unit-filter-label">Unit</InputLabel>
                 <Select
                   labelId="unit-filter-label"
@@ -681,7 +679,7 @@ function RacmUserDocuments() {
               </FormControl>
             )}
 
-            <FormControl variant="outlined" sx={filterFormControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterFormControlSx}>
               <InputLabel id="business-process-filter-label">Business Process</InputLabel>
               <Select
                 labelId="business-process-filter-label"
@@ -701,7 +699,7 @@ function RacmUserDocuments() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterFormControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterFormControlSx}>
               <InputLabel id="financial-year-filter-label">Financial Year</InputLabel>
               <Select
                 labelId="financial-year-filter-label"
@@ -721,7 +719,7 @@ function RacmUserDocuments() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterFormControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterFormControlSx}>
               <InputLabel id="activity-filter-label">Activity</InputLabel>
               <Select
                 labelId="activity-filter-label"
@@ -738,7 +736,7 @@ function RacmUserDocuments() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterFormControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterFormControlSx}>
               <InputLabel id="status-filter-label">Status</InputLabel>
               <Select
                 labelId="status-filter-label"
@@ -757,7 +755,7 @@ function RacmUserDocuments() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterFormControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterFormControlSx}>
               <InputLabel id="conclusion-filter-label">Conclusion</InputLabel>
               <Select
                 labelId="conclusion-filter-label"
@@ -781,78 +779,17 @@ function RacmUserDocuments() {
 
         <Box sx={{ width: '100%', minWidth: 0 }}>
           <Box sx={{ mb: 1.5 }}>
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                mb: 1.5,
-                flexWrap: 'wrap',
-                gap: 1,
-              }}
-            >
-              <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, flex: '1 1 240px', minWidth: 0, pr: { sm: 2 } }}>
-                View user-uploaded documents for assigned RACMs.
-              </Typography>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={cellWordWrap}
-                    onChange={(e) => setCellWordWrap(e.target.checked)}
-                    size="small"
-                    color="primary"
-                    disabled={loading}
-                  />
-                }
-                label="Word wrap"
-                sx={{
-                  mr: 0,
-                  userSelect: 'none',
-                  flex: '0 0 auto',
-                  '& .MuiFormControlLabel-label': {
-                    fontSize: '0.8125rem',
-                    color: theme.palette.text.secondary,
-                  },
-                }}
-              />
-            </Box>
-            <Box
-              component="form"
+            <ControlNumberSearchRow
+              value={controlNumberInput}
+              onChange={(e) => setControlNumberInput(e.target.value)}
               onSubmit={handleControlNumberSearchSubmit}
-              sx={{
-                display: 'flex',
-                flexDirection: { xs: 'column', sm: 'row' },
-                gap: 1,
-                alignItems: { xs: 'stretch', sm: 'center' },
-              }}
-            >
-              <TextField
-                label="Control Number"
-                value={controlNumberInput}
-                onChange={(e) => setControlNumberInput(e.target.value)}
-                disabled={loading}
-                size="small"
-                sx={{
-                  minWidth: { xs: '100%', sm: 260 },
-                  '& .MuiOutlinedInput-root': {
-                    backgroundColor: 'transparent',
-                  },
-                }}
-              />
-              <Button type="submit" variant="contained" disabled={loading}>
-                Search
-              </Button>
-              {(controlNumberInput || controlNumberFilter) ? (
-                <Button
-                  type="button"
-                  variant="outlined"
-                  onClick={handleControlNumberSearchClear}
-                  disabled={loading}
-                >
-                  Clear
-                </Button>
-              ) : null}
-            </Box>
+              onClear={handleControlNumberSearchClear}
+              showClear={Boolean(controlNumberInput || controlNumberFilter)}
+              disabled={loading}
+              wordWrapDisabled={loading}
+              cellWordWrap={cellWordWrap}
+              onCellWordWrapChange={(e) => setCellWordWrap(e.target.checked)}
+            />
           </Box>
 
           <Box sx={DASHBOARD_TABLE_WRAP_SX}>

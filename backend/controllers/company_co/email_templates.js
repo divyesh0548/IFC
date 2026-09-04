@@ -1,4 +1,5 @@
 const { queryWithRetry } = require('../../utils/db');
+const { utcTs } = require('../../utils/sqlUtcTimestamps');
 
 async function getEmailTemplates(req, res) {
   try {
@@ -22,7 +23,14 @@ async function getEmailTemplates(req, res) {
     let templates = [];
     if (unitIds.length > 0) {
       const templatesResult = await queryWithRetry(
-        `SELECT id, company_identifier, unit_id, email_subject, email_body, created_at, updated_at
+        `SELECT
+           id,
+           company_identifier,
+           unit_id,
+           email_subject,
+           email_body,
+           ${utcTs('created_at')},
+           ${utcTs('updated_at')}
          FROM company_email_templates
          WHERE company_identifier = $1 AND unit_id = ANY($2)
          ORDER BY updated_at DESC NULLS LAST`,
@@ -71,12 +79,19 @@ async function upsertEmailTemplate(req, res) {
 
     const result = await queryWithRetry(
       `INSERT INTO company_email_templates (company_identifier, unit_id, email_subject, email_body, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP AT TIME ZONE 'UTC', CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
        ON CONFLICT (company_identifier, unit_id)
        DO UPDATE SET email_subject = EXCLUDED.email_subject,
                      email_body = EXCLUDED.email_body,
-                     updated_at = CURRENT_TIMESTAMP
-       RETURNING id, company_identifier, unit_id, email_subject, email_body, created_at, updated_at`,
+                     updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+       RETURNING
+         id,
+         company_identifier,
+         unit_id,
+         email_subject,
+         email_body,
+         ${utcTs('created_at')},
+         ${utcTs('updated_at')}`,
       [companyIdentifier, normalizedUnitId, email_subject ?? null, email_body ?? null]
     );
 

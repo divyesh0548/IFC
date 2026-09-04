@@ -61,6 +61,8 @@ function AppDialog({
   ...dialogProps
 }) {
   const theme = useTheme()
+  const chromePy = 1.75
+  const contentPy = 2
 
   return (
     <Dialog
@@ -82,6 +84,8 @@ function AppDialog({
       <DialogTitle
         id={titleId}
         sx={{
+          px: 3,
+          py: chromePy,
           borderBottom: showTitleDivider ? `1px solid ${theme.palette.divider}` : 0,
           ...titleSx,
         }}
@@ -94,10 +98,10 @@ function AppDialog({
           flexDirection: 'column',
           gap: 2,
           px: 3,
-          pb: 2.25,
-          // MUI zeroes padding-top when DialogContent follows DialogTitle; keep room for outlined labels.
+          // MUI zeroes padding-top when DialogContent follows DialogTitle.
           '&&': {
-            paddingTop: theme.spacing(2.75),
+            paddingTop: theme.spacing(contentPy),
+            paddingBottom: theme.spacing(contentPy),
           },
           ...contentSx,
         }}
@@ -121,8 +125,8 @@ function AppDialog({
         <DialogActions
           sx={{
             px: 3,
-            pt: 2,
-            pb: 2.5,
+            py: chromePy,
+            borderTop: showTitleDivider ? `1px solid ${theme.palette.divider}` : 0,
             ...actionsSx,
           }}
         >

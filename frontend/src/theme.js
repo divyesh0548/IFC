@@ -1,4 +1,5 @@
 import { alpha, createTheme, darken } from '@mui/material/styles'
+import colorPalettes from './theme/colorPalettes.json'
 
 /**
  * Global corner radius — edit only here to update the whole app.
@@ -13,62 +14,49 @@ export const APP_SHAPE = {
   dialog: 4,
 }
 
+/** Switch themes by changing `activePaletteId` in `src/theme/colorPalettes.json`. */
+export const COLOR_PALETTE_CATALOG = colorPalettes
+export const ACTIVE_COLOR_PALETTE_ID = colorPalettes.activePaletteId || 'original'
+
+function resolvePalette(paletteId = ACTIVE_COLOR_PALETTE_ID) {
+  const palette = colorPalettes.palettes?.[paletteId] || colorPalettes.palettes?.original
+  if (!palette?.light || !palette?.dark) {
+    throw new Error(`Color palette "${paletteId}" is missing light/dark tokens.`)
+  }
+  return palette
+}
+
+const activePalette = resolvePalette(ACTIVE_COLOR_PALETTE_ID)
+
+/** Active light/dark token sets used by createAppTheme (and legacy blueTheme consumers). */
 export const BLUE_THEME_TOKENS = {
-  light: {
-    background: '#eef4fb',
-    backgroundAlt: '#e3edf8',
-    paper: '#ffffff',
-    surface: '#d7e6f5',
-    surfaceStrong: '#bfd5eb',
-    primary: '#123458',
-    primarySoft: '#315f8a',
-    primaryDeep: '#0b2239',
-    accent: '#4f86c6',
-    text: '#183b63',
-    textMuted: '#45627f',
-    divider: '#c9d9ea',
-    navbarBg: '#ffffff',
-    navbarFg: '#0b2239',
-    appBarBg: '#bfd5eb',
-    appBarFg: '#0b2239',
-    navbarBorder: '#c9d9ea',
-    heroGradientStart: '#dcecff',
-    heroGradientEnd: '#edf5ff',
-    heroGlow: '#60a5fa',
-    boxTint: '#eaf3fd',
-  },
-  dark: {
-    background: '#0b1420',
-    backgroundAlt: '#0f1c2c',
-    paper: '#132235',
-    surface: '#18304a',
-    surfaceStrong: '#20405f',
-    primary: '#8bb8e8',
-    primarySoft: '#5f93cb',
-    primaryDeep: '#d6e8fb',
-    accent: '#60a5fa',
-    text: '#edf4fb',
-    textMuted: '#b8cbe0',
-    divider: 'rgba(173, 203, 232, 0.18)',
-    navbarBg: '#030303',
-    navbarFg: '#eef4fb',
-    appBarBg: '#18304a',
-    appBarFg: '#edf4fb',
-    navbarBorder: 'rgba(173, 203, 232, 0.22)',
-    heroGradientStart: '#16314d',
-    heroGradientEnd: '#0f1b2d',
-    heroGlow: '#60a5fa',
-    boxTint: '#11253a',
-  },
+  light: activePalette.light,
+  dark: activePalette.dark,
+}
+
+export function getColorPaletteIds() {
+  return Object.keys(colorPalettes.palettes || {})
+}
+
+export function getColorPaletteMeta(paletteId = ACTIVE_COLOR_PALETTE_ID) {
+  const palette = resolvePalette(paletteId)
+  return {
+    id: palette.id,
+    label: palette.label,
+    description: palette.description,
+    source: palette.source || null,
+    swatches: palette.swatches || null,
+  }
+}
+
+function buildHeroGradient(tokens) {
+  return `linear-gradient(145deg, ${alpha(tokens.heroGradientStart, 0.9)} 0%, ${alpha(tokens.paper, 0.94)} 52%, ${alpha(tokens.heroGradientEnd, 0.96)} 100%)`
 }
 
 export const BLUE_GRADIENTS = {
-  lightHero: `linear-gradient(145deg, ${alpha(BLUE_THEME_TOKENS.light.heroGradientStart, 0.9)} 0%, ${alpha(BLUE_THEME_TOKENS.light.paper, 0.98)} 48%, ${alpha(BLUE_THEME_TOKENS.light.heroGradientEnd, 0.9)} 100%)`,
-  darkHero: `linear-gradient(145deg, ${alpha(BLUE_THEME_TOKENS.dark.heroGradientStart, 0.9)} 0%, ${alpha(BLUE_THEME_TOKENS.dark.paper, 0.94)} 52%, ${alpha(BLUE_THEME_TOKENS.dark.heroGradientEnd, 0.96)} 100%)`,
+  lightHero: buildHeroGradient(BLUE_THEME_TOKENS.light),
+  darkHero: buildHeroGradient(BLUE_THEME_TOKENS.dark),
 }
-
-const NAVBAR_BG_DARK = '#030303'
-const NAVBAR_BG_LIGHT = BLUE_THEME_TOKENS.light.navbarBg
 
 const radiusComponentOverrides = {
   MuiButton: {
@@ -210,9 +198,11 @@ const radiusComponentOverrides = {
   },
 }
 
-export function createAppTheme(mode = 'light') {
+export function createAppTheme(mode = 'light', paletteId = ACTIVE_COLOR_PALETTE_ID) {
   const isDark = mode === 'dark'
-  const paletteSet = isDark ? BLUE_THEME_TOKENS.dark : BLUE_THEME_TOKENS.light
+  const paletteDef = resolvePalette(paletteId)
+  const paletteSet = isDark ? paletteDef.dark : paletteDef.light
+  const heroGradient = buildHeroGradient(paletteSet)
 
   return createTheme({
     shape: {
@@ -225,7 +215,7 @@ export function createAppTheme(mode = 'light') {
         main: paletteSet.primary,
         light: paletteSet.primarySoft,
         dark: paletteSet.primaryDeep,
-        contrastText: isDark ? paletteSet.background : '#ffffff',
+        contrastText: isDark ? paletteSet.text : '#ffffff',
       },
       secondary: {
         main: paletteSet.surfaceStrong,
@@ -247,14 +237,21 @@ export function createAppTheme(mode = 'light') {
         fg: paletteSet.appBarFg,
       },
       navbar: {
-        bg: isDark ? NAVBAR_BG_DARK : NAVBAR_BG_LIGHT,
-        fg: isDark ? NAVBAR_BG_LIGHT : NAVBAR_BG_DARK,
+        bg: paletteSet.navbarBg,
+        fg: paletteSet.navbarFg,
         bottomBorder: paletteSet.navbarBorder,
       },
       gradients: {
-        hero: isDark ? BLUE_GRADIENTS.darkHero : BLUE_GRADIENTS.lightHero,
+        hero: heroGradient,
       },
-      blueTheme: BLUE_THEME_TOKENS,
+      blueTheme: {
+        light: paletteDef.light,
+        dark: paletteDef.dark,
+      },
+      colorPalette: {
+        id: paletteDef.id,
+        label: paletteDef.label,
+      },
     },
     typography: {
       fontFamily: [
@@ -340,40 +337,40 @@ export function createAppTheme(mode = 'light') {
       MuiButton: {
         styleOverrides: {
           ...radiusComponentOverrides.MuiButton.styleOverrides,
-          containedPrimary: ({ theme }) => ({
-            backgroundColor: theme.palette.primary.main,
-            color:
-              theme.palette.mode === 'dark'
-                ? theme.palette.background.default
-                : theme.palette.primary.contrastText,
-            '&:hover': {
-              backgroundColor:
-                theme.palette.mode === 'dark'
-                  ? darken(theme.palette.primary.main, 0.12)
-                  : darken(theme.palette.primary.main, 0.2),
-              color:
-                theme.palette.mode === 'dark'
-                  ? theme.palette.background.default
-                  : theme.palette.primary.contrastText,
-            },
-          }),
-          containedSecondary: ({ theme }) => ({
-            backgroundColor: theme.palette.primary.main,
-            color:
-              theme.palette.mode === 'dark'
-                ? theme.palette.background.default
-                : theme.palette.common.white,
-            '&:hover': {
-              backgroundColor:
-                theme.palette.mode === 'dark'
-                  ? darken(theme.palette.primary.main, 0.12)
-                  : darken(theme.palette.primary.main, 0.16),
-              color:
-                theme.palette.mode === 'dark'
-                  ? theme.palette.background.default
-                  : theme.palette.common.white,
-            },
-          }),
+          containedPrimary: ({ theme }) => {
+            const isDark = theme.palette.mode === 'dark'
+            const tokens = theme.palette.blueTheme?.[isDark ? 'dark' : 'light']
+            const bg = isDark ? (tokens?.buttonBg || '#0F4C75') : theme.palette.primary.main
+            const bgHover = isDark
+              ? (tokens?.buttonBgHover || darken(bg, 0.12))
+              : darken(theme.palette.primary.main, 0.2)
+            const fg = isDark ? '#ffffff' : theme.palette.primary.contrastText
+            return {
+              backgroundColor: bg,
+              color: fg,
+              '&:hover': {
+                backgroundColor: bgHover,
+                color: fg,
+              },
+            }
+          },
+          containedSecondary: ({ theme }) => {
+            const isDark = theme.palette.mode === 'dark'
+            const tokens = theme.palette.blueTheme?.[isDark ? 'dark' : 'light']
+            const bg = isDark ? (tokens?.buttonBg || '#0F4C75') : theme.palette.primary.main
+            const bgHover = isDark
+              ? (tokens?.buttonBgHover || darken(bg, 0.12))
+              : darken(theme.palette.primary.main, 0.16)
+            const fg = isDark ? '#ffffff' : theme.palette.common.white
+            return {
+              backgroundColor: bg,
+              color: fg,
+              '&:hover': {
+                backgroundColor: bgHover,
+                color: fg,
+              },
+            }
+          },
           outlinedPrimary: ({ theme }) => ({
             borderColor: alpha(theme.palette.primary.main, 0.35),
             color: theme.palette.text.primary,

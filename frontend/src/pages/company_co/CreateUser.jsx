@@ -11,7 +11,6 @@ import Button from '@mui/material/Button'
 import InputAdornment from '@mui/material/InputAdornment'
 import Checkbox from '@mui/material/Checkbox'
 import ListItemText from '@mui/material/ListItemText'
-import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded'
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
@@ -26,6 +25,7 @@ import {
   useOrganizationEmailWarning,
 } from '../../hooks/useOrganizationEmailWarning'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
+import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX } from '../../uiConstants'
 
 function CreateUser() {
   const theme = useTheme()
@@ -220,52 +220,59 @@ function CreateUser() {
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: 'calc(100vh - 4rem)',
-        px: 0,
-        py: { xs: 1, md: 2 },
-      }}
-    >
-      <Box sx={{ width: '100%', maxWidth: '880px', mx: 'auto' }}>
-        <Paper
+    <Box sx={DASHBOARD_PAGE_OUTER_SX}>
+      <Paper
+        elevation={0}
+        sx={{
+          ...DASHBOARD_PAPER_SX,
+          overflow: 'visible',
+          backgroundColor: 'transparent',
+          boxShadow: 'none',
+          borderRadius: 0,
+        }}
+      >
+        <Box
           sx={{
-            overflow: 'hidden',
-            borderRadius: 4,
-            border: '1px solid',
-            borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.12),
-            backgroundColor: theme.palette.background.paper,
-            boxShadow:
-              theme.palette.mode === 'dark'
-                ? '0 12px 32px rgba(0,0,0,0.4)'
-                : '0 10px 26px rgba(15,23,42,0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            px: { xs: 0, sm: 0.5 },
+            pt: 0,
+            pb: 2.5,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            mb: 3,
           }}
         >
-          <Box sx={{ p: { xs: 2.5, sm: 3.5 } }}>
-            <Stack spacing={2.5}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: { xs: 'flex-start', sm: 'center' },
-                  justifyContent: 'space-between',
-                  flexDirection: { xs: 'column', sm: 'row' },
-                  gap: 1.5,
-                }}
-              >
-                <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                  Create User
-                </Typography>
-                <Button
-                  type="button"
-                  onClick={() => navigate('/company-co/user-management', { replace: true })}
-                  variant="outlined"
-                  startIcon={<ArrowBackIcon />}
-                  sx={{ textTransform: 'none', alignSelf: { xs: 'flex-start', sm: 'center' } }}
-                >
-                  Back to List
-                </Button>
-              </Box>
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: { xs: '1.45rem', sm: '1.7rem' },
+              fontWeight: 850,
+              color: 'text.primary',
+              lineHeight: 1.15,
+            }}
+          >
+            Create User
+          </Typography>
+        </Box>
 
+        <Box sx={{ width: '100%', maxWidth: 720, px: { xs: 0, sm: 0.5 } }}>
+          <Paper
+            sx={{
+              overflow: 'hidden',
+              borderRadius: 4,
+              border: '1px solid',
+              borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.12),
+              backgroundColor: theme.palette.background.paper,
+              boxShadow:
+                theme.palette.mode === 'dark'
+                  ? '0 12px 32px rgba(0,0,0,0.4)'
+                  : '0 10px 26px rgba(15,23,42,0.08)',
+            }}
+          >
+            <Box sx={{ p: { xs: 2.5, sm: 3.5 } }}>
+              <Stack spacing={2.5}>
                 <form onSubmit={handleSubmit}>
                   <Box
                     sx={{
@@ -499,10 +506,11 @@ function CreateUser() {
                   </Button>
                 </Box>
               </form>
-            </Stack>
-          </Box>
-        </Paper>
-      </Box>
+              </Stack>
+            </Box>
+          </Paper>
+        </Box>
+      </Paper>
     </Box>
   )
 }

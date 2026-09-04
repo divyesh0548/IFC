@@ -27,7 +27,6 @@ import {
   DASHBOARD_PAPER_SX,
   DASHBOARD_TABLE_WRAP_SX,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
-  PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   getApprovalStatusBadgeSolidColors,
@@ -153,9 +152,6 @@ function RacmAssignment() {
   const isApproverMode = assignmentTarget === 'approver'
   const assignmentSubjectLabel = isApproverMode ? 'Approver' : 'Process Owner'
   const assignmentPageTitle = isApproverMode ? 'Approver Assignment' : 'RACM Assignment'
-  const assignmentPageDescription = isApproverMode
-    ? 'Assign RACM-specific approvers and manage existing approver overrides.'
-    : 'Assign RACM to Process Owners and manage existing RACM assignments.'
   const isProcessOwnerAssignmentLocked = (form) => (
     Boolean(getRacmReassignmentBlockMessage(form))
   )
@@ -1568,18 +1564,20 @@ function RacmAssignment() {
           ref={bulkAssignmentContainerRef}
           sx={{
             ...DASHBOARD_PAPER_SX,
-            p: 3,
+            pt: 3.5,
+            px: 3,
+            pb: 3,
             backgroundColor: theme.palette.background.paper,
             borderRadius: 2,
           }}
         >
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: { xs: 'column', lg: 'row' }, 
-            justifyContent: 'space-between', 
+          <Box sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', lg: 'row' },
+            justifyContent: 'space-between',
             alignItems: { xs: 'stretch', lg: 'flex-start' },
             gap: 2,
-            mb: 3,
+            mb: 2,
             minWidth: 0,
           }}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0, pr: { sm: 2, md: 3 }, mr: { sm: 1 } }}>
@@ -1622,6 +1620,7 @@ function RacmAssignment() {
             }}>
               <FormControl
                 variant="outlined"
+                size="small"
                 sx={filterFormControlSx}
               >
                 <InputLabel id="assignment-target-filter-label">Assignment Type</InputLabel>
@@ -1639,6 +1638,7 @@ function RacmAssignment() {
               {hasMultipleCoordinatorUnits && (
                 <FormControl
                   variant="outlined"
+                  size="small"
                   sx={filterFormControlSx}
                 >
                   <InputLabel id="unit-filter-label">Unit</InputLabel>
@@ -1661,7 +1661,8 @@ function RacmAssignment() {
 
               {/* Financial Year Filter */}
               <FormControl 
-                variant="outlined" 
+                variant="outlined"
+                size="small" 
                 sx={filterFormControlSx}
               >
                 <InputLabel id="financial-year-filter-label">Financial Year</InputLabel>
@@ -1683,7 +1684,8 @@ function RacmAssignment() {
 
               {/* Business Process Filter */}
               <FormControl 
-                variant="outlined" 
+                variant="outlined"
+                size="small" 
                 sx={filterFormControlSx}
               >
                 <InputLabel id="business-process-filter-label">Business Process</InputLabel>
@@ -1705,7 +1707,8 @@ function RacmAssignment() {
 
               {/* Assignment Filter */}
               <FormControl 
-                variant="outlined" 
+                variant="outlined"
+                size="small" 
                 sx={filterFormControlSx}
               >
                 <InputLabel id="assignment-filter-label">Assignment</InputLabel>
@@ -1724,6 +1727,7 @@ function RacmAssignment() {
 
               <FormControl
                 variant="outlined"
+                size="small"
                 sx={filterFormControlSx}
               >
                 <InputLabel id="activity-filter-label">Activity</InputLabel>
@@ -1742,6 +1746,7 @@ function RacmAssignment() {
 
               <FormControl
                 variant="outlined"
+                size="small"
                 sx={filterFormControlSx}
               >
                 <InputLabel id="approval-status-filter-label">Status</InputLabel>
@@ -1772,16 +1777,13 @@ function RacmAssignment() {
             <Box
               sx={{
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent: 'flex-end',
                 alignItems: 'center',
                 mb: 1.5,
                 flexWrap: 'wrap',
                 gap: 1,
               }}
             >
-              <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, flex: '1 1 240px', minWidth: 0, pr: { sm: 2 } }}>
-                {assignmentPageDescription}
-              </Typography>
               <FormControlLabel
                 control={
                   <Switch

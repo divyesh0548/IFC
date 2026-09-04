@@ -16,7 +16,7 @@ function buildNoticeMessage(variant, summary) {
     }`
   }
 
-  return `Bulk import uses the active RACM template for the selected unit${templateLabel}. Standard columns are matched from Excel headers automatically; custom and assertion columns defined on that template are detected using template keywords during automatic or manual column mapping. Imported RACMs are linked to this template version.${
+  return `Bulk import uses the active RACM template for the selected unit${templateLabel}. It is recommended to adjust column mapping to match the template columns. ${
     summary?.extraFieldCount === 0
       ? ' This template has no extra columns yet — only fixed fields will be imported unless you add columns in RACM Templates.'
       : ''

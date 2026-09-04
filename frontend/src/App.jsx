@@ -20,7 +20,7 @@ const Company_Management = lazy(() => import('./pages/siteadmin/Company_Manageme
 const CompanyCreation = lazy(() => import('./pages/siteadmin/CompanyCreation'))
 const CompanyDetail = lazy(() => import('./pages/siteadmin/CompanyDetail'))
 const AuditorManagement = lazy(() => import('./pages/siteadmin/AuditorManagement'))
-const Siteadmin_Dashboard = lazy(() => import('./pages/siteadmin/Siteadmin_dashboard'))
+const Siteadmin_Dashboard = lazy(() => import('./pages/siteadmin/Siteadmin_Dashboard'))
 const SiteadminBusinessProcessManagement = lazy(() => import('./pages/siteadmin/BusinessProcessManagement'))
 const ControlsLibraryUpload = lazy(() => import('./pages/siteadmin/ControlsLibraryUpload'))
 const ControlsLibrary = lazy(() => import('./pages/siteadmin/ControlsLibrary'))
@@ -332,8 +332,9 @@ function App() {
               <Route path="racm-templates" element={<RacmTemplates />} />
               <Route path="racm-assignment" element={<RacmAssignment />} />
               <Route path="user-management" element={<UserManagement />} />
+              <Route path="user-management/create-user" element={<CreateUser />} />
+              <Route path="create-user" element={<Navigate to="/company-co/user-management/create-user" replace />} />
               <Route path="company-details" element={<CompanyDetailsPage />} />
-              <Route path="create-user" element={<CreateUser />} />
               <Route path="control-creation" element={<Controls_Creation />} />
               <Route path="control-creation/column-map" element={<ExcelColumnMap />} />
               <Route path="manual-control-creation" element={<CreateControlForm />} />

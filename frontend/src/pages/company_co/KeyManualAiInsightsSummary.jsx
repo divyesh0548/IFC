@@ -16,7 +16,9 @@ import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
-import { useTheme } from '@mui/material/styles'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import { alpha, useTheme } from '@mui/material/styles'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import PsychologyAltRoundedIcon from '@mui/icons-material/PsychologyAltRounded'
 import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded'
@@ -180,7 +182,9 @@ function KeyManualAiInsightsSummary() {
   const [unitOptions, setUnitOptions] = useState([])
   const [filterUnits, setFilterUnits] = useState(() => parseUnitIdsFromSearchParams(searchParams))
   const [excludedEntityLevelCount, setExcludedEntityLevelCount] = useState(0)
+  const [pendingControlCount, setPendingControlCount] = useState(0)
   const [excludedNoticeDismissed, setExcludedNoticeDismissed] = useState(false)
+  const [pendingNoticeDismissed, setPendingNoticeDismissed] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   useSyncGlobalLoading(loading)
@@ -215,6 +219,7 @@ function KeyManualAiInsightsSummary() {
         setRun(data.data?.run || null)
         setRows(Array.isArray(data.data?.rows) ? data.data.rows : [])
         setExcludedEntityLevelCount(Number(data.data?.excluded_entity_level_count || 0))
+        setPendingControlCount(Number(data.data?.pending_control_count || 0))
         setUnitOptions(Array.isArray(data.data?.filters?.units) ? data.data.filters.units : [])
       }
 
@@ -226,6 +231,7 @@ function KeyManualAiInsightsSummary() {
         setRun(null)
         setRows([])
         setExcludedEntityLevelCount(0)
+        setPendingControlCount(0)
         setUnitOptions([])
         setErrorMessage(error.message || 'Failed to fetch AI insights summary')
       }
@@ -248,6 +254,7 @@ function KeyManualAiInsightsSummary() {
 
   useEffect(() => {
     setExcludedNoticeDismissed(false)
+    setPendingNoticeDismissed(false)
   }, [unitFilterKey])
 
   const fetchAiAvailability = useCallback(async ({ showUnavailableToast = false } = {}) => {
@@ -531,168 +538,170 @@ function KeyManualAiInsightsSummary() {
         </Alert>
       ) : null}
 
-      <Paper
-        elevation={3}
+      {pendingControlCount > 0 && !pendingNoticeDismissed ? (
+        <Alert
+          severity="warning"
+          onClose={() => setPendingNoticeDismissed(true)}
+          sx={{ mb: 3 }}
+        >
+          {pendingControlCount} High Risk Key Manual Control{pendingControlCount === 1 ? '' : 's'} pending AI rationalisation summary. They are listed below with generated controls.
+        </Alert>
+      ) : null}
+
+      <Box
         sx={{
-          ...DASHBOARD_PAPER_SX,
-          p: 3,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.25,
+          flexWrap: 'wrap',
           mb: 3,
-          borderRadius: 3,
-          border: `1px solid ${theme.palette.divider}`,
-          boxShadow: theme.palette.mode === 'dark'
-            ? '0 10px 28px rgba(0, 0, 0, 0.28)'
-            : '0 12px 30px rgba(15, 23, 42, 0.08)',
-          background: theme.palette.mode === 'dark'
-            ? 'linear-gradient(135deg, rgba(15,23,42,0.96) 0%, rgba(15,23,42,0.82) 100%)'
-            : 'linear-gradient(135deg, rgba(248,250,252,0.98) 0%, rgba(239,246,255,0.92) 100%)',
         }}
       >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.25,
-            flexWrap: 'wrap',
-            mb: 2,
-          }}
-        >
-          <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
-            <InputLabel id="ai-insights-unit-label" shrink>Unit</InputLabel>
-            <Select
-              labelId="ai-insights-unit-label"
-              multiple
-              value={filterUnits}
-              label="Unit"
-              displayEmpty
-              notched
-              onChange={handleUnitFilterChange}
-              renderValue={(selected) => renderFilterValue(
-                getSelectedFilterLabel(
-                  selected,
-                  unitOptions,
-                  (unitId) => unitOptions.find((unit) => String(unit.unit_id) === String(unitId))?.unit_name || unitId
-                )
-              )}
-            >
-              {unitOptions.map((unit) => (
-                <MenuItem key={unit.unit_id} value={unit.unit_id}>
-                  <Checkbox checked={filterUnits.includes(unit.unit_id)} size="small" />
-                  <ListItemText primary={unit.unit_name || unit.unit_id} />
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            flexDirection: { xs: 'column', sm: 'row' },
-          }}
-        >
-          <FormControl fullWidth size="small">
-            <InputLabel id="ai-run-select-label">Select Run</InputLabel>
-            <Select
-              labelId="ai-run-select-label"
-              id="ai-run-select"
-              value={run?.id || ''}
-              label="Select Run"
-              onChange={handleRunChange}
-              displayEmpty
-              renderValue={(selected) => {
-                if (!selected) return 'Select run'
-                const selectedRun = runs.find((item) => item.id === selected)
-                if (!selectedRun) return `Run ${selected}`
-                return (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: 600,
-                        color: theme.palette.text.primary,
-                        minWidth: 0,
-                        flex: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {formatRunOptionLabel(selectedRun)}
-                    </Typography>
-                    <Chip
-                      label={formatStatusLabel(selectedRun.status)}
-                      size="small"
-                      variant="outlined"
-                      sx={{
-                        fontWeight: 700,
-                        height: 24,
-                        ...getStatusChipSx(theme, selectedRun.status),
-                      }}
-                    />
-                  </Box>
-                )
+        <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+          <InputLabel id="ai-insights-unit-label" shrink>Unit</InputLabel>
+          <Select
+            labelId="ai-insights-unit-label"
+            multiple
+            value={filterUnits}
+            label="Unit"
+            displayEmpty
+            notched
+            onChange={handleUnitFilterChange}
+            renderValue={(selected) => renderFilterValue(
+              getSelectedFilterLabel(
+                selected,
+                unitOptions,
+                (unitId) => unitOptions.find((unit) => String(unit.unit_id) === String(unitId))?.unit_name || unitId
+              )
+            )}
+          >
+            {unitOptions.map((unit) => (
+              <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                <Checkbox checked={filterUnits.includes(unit.unit_id)} size="small" />
+                <ListItemText primary={unit.unit_name || unit.unit_id} />
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" variant="outlined" sx={{ ...FILTER_SELECT_SX, minWidth: { xs: '100%', sm: 320 }, flex: { sm: '1 1 280px' } }}>
+          <InputLabel id="ai-run-select-label">Select Run</InputLabel>
+          <Select
+            labelId="ai-run-select-label"
+            id="ai-run-select"
+            value={run?.id || ''}
+            label="Select Run"
+            onChange={handleRunChange}
+            displayEmpty
+            renderValue={(selected) => {
+              if (!selected) return 'Select run'
+              const selectedRun = runs.find((item) => item.id === selected)
+              if (!selectedRun) return `Run ${selected}`
+              return (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontWeight: 600,
+                      color: theme.palette.text.primary,
+                      minWidth: 0,
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {formatRunOptionLabel(selectedRun)}
+                  </Typography>
+                  <Chip
+                    label={formatStatusLabel(selectedRun.status)}
+                    size="small"
+                    variant="outlined"
+                    sx={{
+                      fontWeight: 700,
+                      height: 24,
+                      ...getStatusChipSx(theme, selectedRun.status),
+                    }}
+                  />
+                </Box>
+              )
+            }}
+          >
+            {runs.map((item) => (
+              <MenuItem key={item.id} value={item.id}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', minWidth: 0 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: theme.palette.text.primary,
+                      fontWeight: 500,
+                      minWidth: 0,
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {formatRunOptionLabel(item)}
+                  </Typography>
+                  <Chip
+                    label={formatStatusLabel(item.status)}
+                    size="small"
+                    variant="outlined"
+                    sx={{
+                      fontWeight: 700,
+                      height: 24,
+                      ...getStatusChipSx(theme, item.status),
+                    }}
+                  />
+                </Box>
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <Tooltip title={refreshingRuns ? 'Refreshing…' : 'Refresh Runs'}>
+          <span>
+            <IconButton
+              onClick={handleRefreshRuns}
+              disabled={refreshingRuns}
+              aria-label="Refresh runs"
+              sx={{
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1.5,
+                color: 'text.secondary',
               }}
             >
-              {runs.map((item) => (
-                <MenuItem key={item.id} value={item.id}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', minWidth: 0 }}>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: theme.palette.text.primary,
-                        fontWeight: 500,
-                        minWidth: 0,
-                        flex: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {formatRunOptionLabel(item)}
-                    </Typography>
-                    <Chip
-                      label={formatStatusLabel(item.status)}
-                      size="small"
-                      variant="outlined"
-                      sx={{
-                        fontWeight: 700,
-                        height: 24,
-                        ...getStatusChipSx(theme, item.status),
-                      }}
-                    />
-                  </Box>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshRoundedIcon />}
-            onClick={handleRefreshRuns}
-            disabled={refreshingRuns}
-            sx={{ minWidth: { xs: '100%', sm: 132 }, whiteSpace: 'nowrap' }}
-          >
-            {refreshingRuns ? 'Refreshing...' : 'Refresh Runs'}
-          </Button>
-          <Button
-            variant="outlined"
-            color="error"
-            startIcon={<DeleteOutlineRoundedIcon />}
-            onClick={() => {
-              if (isInProgressStatus(run?.status)) {
-                toast('In-progress AI insights runs cannot be deleted. Try again after generation completes.')
-                return
-              }
-              setDeleteDialogOpen(true)
-            }}
-            disabled={!run || deleting}
-            sx={{ minWidth: { xs: '100%', sm: 140 }, whiteSpace: 'nowrap' }}
-          >
-            {deleting ? 'Deleting…' : 'Delete Run'}
-          </Button>
-        </Box>
-      </Paper>
+              <RefreshRoundedIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        <Tooltip title={deleting ? 'Deleting…' : 'Delete Run'}>
+          <span>
+            <IconButton
+              color="error"
+              onClick={() => {
+                if (isInProgressStatus(run?.status)) {
+                  toast('In-progress AI insights runs cannot be deleted. Try again after generation completes.')
+                  return
+                }
+                setDeleteDialogOpen(true)
+              }}
+              disabled={!run || deleting}
+              aria-label="Delete run"
+              sx={{
+                border: '1px solid',
+                borderColor: (t) => alpha(t.palette.error.main, 0.4),
+                borderRadius: 1.5,
+              }}
+            >
+              <DeleteOutlineRoundedIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
 
       <Dialog
         open={deleteDialogOpen}
@@ -813,7 +822,7 @@ function KeyManualAiInsightsSummary() {
               {formatModelName(run.model_name)}
             </Typography>
             <Chip
-              label={`${run.row_count} controls`}
+              label={`${run.row_count} generated`}
               size="small"
               variant="outlined"
               sx={{
@@ -823,6 +832,39 @@ function KeyManualAiInsightsSummary() {
                 backgroundColor: theme.palette.mode === 'dark' ? 'rgba(226,232,240,0.10)' : 'rgba(15,23,42,0.06)',
               }}
             />
+            {pendingControlCount > 0 ? (
+              <Chip
+                label={`${pendingControlCount} pending`}
+                size="small"
+                color="warning"
+                variant="outlined"
+                sx={{ fontWeight: 700 }}
+              />
+            ) : null}
+          </Box>
+        </Paper>
+      ) : pendingControlCount > 0 ? (
+        <Paper
+          elevation={3}
+          sx={{
+            ...DASHBOARD_PAPER_SX,
+            p: 2.5,
+            mb: 3,
+            borderRadius: 3,
+            border: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+            <Chip
+              label={`${pendingControlCount} pending AI summary`}
+              size="small"
+              color="warning"
+              variant="outlined"
+              sx={{ fontWeight: 700 }}
+            />
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              High Risk Key Manual controls waiting for rationalisation generation.
+            </Typography>
           </Box>
         </Paper>
       ) : null}
@@ -880,22 +922,26 @@ function KeyManualAiInsightsSummary() {
             ) : rows.length === 0 ? (
               <Box sx={{ px: 3, py: 4 }}>
                 <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
-                  No stored AI insight rows found for this run.
+                  No High Risk Key Manual controls found for the selected filters.
                 </Typography>
               </Box>
             ) : (
-              rows.map((row, index) => (
+              rows.map((row, index) => {
+                const isPending = Boolean(row.is_pending)
+                return (
                 <Box
                   key={row.id}
                   sx={{
                     display: 'grid',
                     gridTemplateColumns: '220px 220px minmax(420px, 1fr)',
                     borderBottom: index === rows.length - 1 ? 'none' : `1px solid ${theme.palette.divider}`,
-                    backgroundColor: index % 2 === 0
-                      ? 'transparent'
-                      : theme.palette.mode === 'dark'
-                        ? 'rgba(255,255,255,0.02)'
-                        : theme.palette.grey[50],
+                    backgroundColor: isPending
+                      ? (theme.palette.mode === 'dark' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.06)')
+                      : index % 2 === 0
+                        ? 'transparent'
+                        : theme.palette.mode === 'dark'
+                          ? 'rgba(255,255,255,0.02)'
+                          : theme.palette.grey[50],
                   }}
                 >
                   <Box
@@ -936,6 +982,15 @@ function KeyManualAiInsightsSummary() {
                       </Typography>
                       {row.form_id ? <OpenInNewRoundedIcon sx={{ fontSize: 16 }} /> : null}
                     </Box>
+                    {isPending ? (
+                      <Chip
+                        label="Pending"
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        sx={{ mt: 0.75, height: 22, fontWeight: 700 }}
+                      />
+                    ) : null}
                   </Box>
 
                   <Box
@@ -966,16 +1021,20 @@ function KeyManualAiInsightsSummary() {
                     <Typography
                       variant="body2"
                       sx={{
-                        color: theme.palette.text.primary,
+                        color: isPending ? 'text.secondary' : theme.palette.text.primary,
                         fontWeight: 500,
+                        fontStyle: isPending ? 'italic' : 'normal',
                         whiteSpace: 'normal',
                       }}
                     >
-                      {row.rationalisation_opportunity}
+                      {isPending
+                        ? 'AI rationalisation summary not generated yet.'
+                        : (row.rationalisation_opportunity || '—')}
                     </Typography>
                   </Box>
                 </Box>
-              ))
+                )
+              })
             )}
           </Box>
         </Box>

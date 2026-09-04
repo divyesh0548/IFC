@@ -11,18 +11,14 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import FormControl from '@mui/material/FormControl'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import Alert from '@mui/material/Alert'
-import TextField from '@mui/material/TextField'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
-import Switch from '@mui/material/Switch'
 import {
   DASHBOARD_PAGE_OUTER_SX,
   DASHBOARD_PAPER_SX,
   FILTER_BOX_MIN_WIDTH,
-  PAGE_SUBHEADER_TEXT_SX,
   CONCLUSION_BADGE_TABLE_PILL_SX,
   CONCLUSION_TABLE_CELL_SX,
   TABLE_HEADER_BG,
@@ -36,6 +32,7 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { API_BASE_URL } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
+import ControlNumberSearchRow from '../../components/ControlNumberSearchRow'
 
 function User_dashboard() {
   const theme = useTheme()
@@ -268,7 +265,9 @@ function User_dashboard() {
         elevation={3}
         sx={{
           ...DASHBOARD_PAPER_SX,
-          p: 3,
+          pt: 3.5,
+          px: 3,
+          pb: 3,
           backgroundColor: theme.palette.background.paper,
           borderRadius: 2,
         }}
@@ -305,7 +304,7 @@ function User_dashboard() {
             flexDirection: { xs: 'column', sm: 'row' },
             justifyContent: 'space-between',
             alignItems: { xs: 'flex-start', sm: 'center' },
-            mb: 3,
+            mb: 2,
             gap: 2,
           }}
         >
@@ -396,64 +395,15 @@ function User_dashboard() {
         </Box>
 
         <Box sx={{ mb: 1.5 }}>
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              mb: 1.5,
-              flexWrap: 'wrap',
-              gap: 1,
-            }}
-          >
-            <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, flex: '1 1 240px', minWidth: 0, pr: { sm: 2 } }}>
-              Track your assigned RACMs, filter by status, and open any item to review details.
-            </Typography>
-            <FormControlLabel
-              control={<Switch checked={cellWordWrap} onChange={(e) => setCellWordWrap(e.target.checked)} size="small" color="primary" />}
-              label="Word wrap"
-              sx={{
-                mr: 0,
-                userSelect: 'none',
-                flex: '0 0 auto',
-                '& .MuiFormControlLabel-label': {
-                  fontSize: '0.8125rem',
-                  color: theme.palette.text.secondary,
-                },
-              }}
-            />
-          </Box>
-          <Box
-            component="form"
+          <ControlNumberSearchRow
+            value={controlNumberInput}
+            onChange={(e) => setControlNumberInput(e.target.value)}
             onSubmit={handleControlNumberSearchSubmit}
-            sx={{
-              display: 'flex',
-              flexDirection: { xs: 'column', sm: 'row' },
-              gap: 1,
-              alignItems: { xs: 'stretch', sm: 'center' },
-            }}
-          >
-            <TextField
-              label="Control Number"
-              value={controlNumberInput}
-              onChange={(e) => setControlNumberInput(e.target.value)}
-              size="small"
-              sx={{
-                minWidth: { xs: '100%', sm: 260 },
-                '& .MuiOutlinedInput-root': {
-                  backgroundColor: 'transparent',
-                },
-              }}
-            />
-            <Button type="submit" variant="contained">
-              Search
-            </Button>
-            {(controlNumberInput || controlNumberFilter) ? (
-              <Button type="button" variant="outlined" onClick={handleControlNumberSearchClear}>
-                Clear
-              </Button>
-            ) : null}
-          </Box>
+            onClear={handleControlNumberSearchClear}
+            showClear={Boolean(controlNumberInput || controlNumberFilter)}
+            cellWordWrap={cellWordWrap}
+            onCellWordWrapChange={(e) => setCellWordWrap(e.target.checked)}
+          />
         </Box>
 
         {loading ? (

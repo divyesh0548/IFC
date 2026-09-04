@@ -10,8 +10,11 @@ import CircularProgress from '@mui/material/CircularProgress'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
+import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
+import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
+import IconButton from '@mui/material/IconButton'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -23,6 +26,8 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
+import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import Checkbox from '@mui/material/Checkbox'
 import Dialog from '@mui/material/Dialog'
@@ -144,6 +149,7 @@ function UserManagement() {
   const [bulkLogsDialogOpen, setBulkLogsDialogOpen] = useState(false)
   const [showBulkLogsButton, setShowBulkLogsButton] = useState(false)
   const [bulkWarningDialogOpen, setBulkWarningDialogOpen] = useState(false)
+  const [actionsMenuAnchorEl, setActionsMenuAnchorEl] = useState(null)
   const [approverDetailsDialog, setApproverDetailsDialog] = useState({
     open: false,
     loading: false,
@@ -156,6 +162,7 @@ function UserManagement() {
     user: null,
     linkedUnitIds: [],
     selectedUnitIdsToAdd: [],
+    allowLinking: false,
     linking: false,
     error: '',
   })
@@ -213,6 +220,7 @@ function UserManagement() {
     const normalizedRole = String(role || '').trim()
     if (!normalizedRole) return '-'
     if (normalizedRole === 'company_co') return 'Company Coordinator'
+    if (normalizedRole === 'company_admin') return 'Company Admin'
 
     return normalizedRole
       .split('_')
@@ -254,7 +262,7 @@ function UserManagement() {
       const matchesUnit =
         unitFilter === 'all'
           ? true
-          : String(user.role || '').trim() === 'approver'
+          : ['approver', 'company_admin'].includes(String(user.role || '').trim())
             ? true
           : unitFilter === '__unassigned__'
             ? unitIds.length === 0
@@ -492,8 +500,13 @@ function UserManagement() {
     return unitOptions.filter((unit) => !linkedSet.has(unit.unitId))
   }, [unitOptions, userUnitsDialog.linkedUnitIds])
 
-  const handleOpenUserUnits = (user) => {
-    if (!user || String(user.role || '').trim() !== 'user' || deleteMode) {
+  const handleOpenUserUnits = (user, { allowLinking = false } = {}) => {
+    if (!user || deleteMode) {
+      return
+    }
+
+    const role = String(user.role || '').trim()
+    if (role !== 'user' && role !== 'company_co') {
       return
     }
 
@@ -502,13 +515,14 @@ function UserManagement() {
       user,
       linkedUnitIds: getUserUnitIds(user),
       selectedUnitIdsToAdd: [],
+      allowLinking: Boolean(allowLinking) && role === 'user',
       linking: false,
       error: '',
     })
   }
 
   const handleLinkUserUnits = async () => {
-    if (!userUnitsDialog.user?.email_id) {
+    if (!userUnitsDialog.allowLinking || !userUnitsDialog.user?.email_id) {
       return
     }
 
@@ -546,6 +560,7 @@ function UserManagement() {
         user: null,
         linkedUnitIds: [],
         selectedUnitIdsToAdd: [],
+        allowLinking: false,
         linking: false,
         error: '',
       })
@@ -1339,7 +1354,13 @@ function UserManagement() {
   }
   const tableBorderColor = alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.16 : 0.2)
   const filterControlSx = { minWidth: { xs: '100%', sm: 240 } }
-  const actionButtonSx = { textTransform: 'none', fontWeight: 700 }
+  const actionsMenuOpen = Boolean(actionsMenuAnchorEl)
+  const deleteActionDisabled =
+    usersLoading || filteredUsers.length === 0 || deletingUsers || (deleteMode && selectedUserEmails.size === 0)
+  const deleteActionLabel =
+    deleteMode && selectedUserEmails.size > 0
+      ? `Delete ${selectedUserEmails.size} selected users`
+      : 'Delete users'
   const bodyCellSx = {
     py: 1.55,
     px: 2.25,
@@ -1372,127 +1393,172 @@ function UserManagement() {
         <Box
           sx={{
             display: 'flex',
-            justifyContent: 'space-between',
+            flexDirection: 'column',
             gap: 2,
-            flexWrap: 'wrap',
-            alignItems: { xs: 'stretch', md: 'flex-start' },
             px: { xs: 0, sm: 0.5 },
-            py: 2.25,
-            flexDirection: { xs: 'column', md: 'row' },
+            pt: 0,
+            pb: 2.5,
             borderBottom: '1px solid',
             borderColor: 'divider',
-            mb: 2,
+            mb: 3,
           }}
         >
-          <Typography
-            component="h1"
+          <Box
             sx={{
-              fontSize: { xs: '1.45rem', sm: '1.7rem' },
-              fontWeight: 850,
-              color: 'text.primary',
-              lineHeight: 1.15,
+              display: 'flex',
+              gap: 2,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
             }}
           >
-            User Management
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', alignItems: 'center', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
-            {showUnitControls ? (
+            <Typography
+              component="h1"
+              sx={{
+                fontSize: { xs: '1.45rem', sm: '1.7rem' },
+                fontWeight: 850,
+                color: 'text.primary',
+                lineHeight: 1.15,
+              }}
+            >
+              User Management
+            </Typography>
+
+            <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
+              {showUnitControls ? (
+                <FormControl size="small" sx={filterControlSx}>
+                  <InputLabel id="unit-filter-label">Unit</InputLabel>
+                  <Select
+                    labelId="unit-filter-label"
+                    id="unit-filter"
+                    value={unitFilter}
+                    label="Unit"
+                    onChange={(e) => setUnitFilter(e.target.value)}
+                    disabled={usersLoading || unitOptions.length === 0}
+                  >
+                    <MenuItem value="all">All Units</MenuItem>
+                    {unitOptions.map((unit) => (
+                      <MenuItem key={unit.unitId} value={unit.unitId}>
+                        {unit.unitName}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : null}
               <FormControl size="small" sx={filterControlSx}>
-                <InputLabel id="unit-filter-label">Unit</InputLabel>
+                <InputLabel id="role-filter-label">Role</InputLabel>
                 <Select
-                  labelId="unit-filter-label"
-                  id="unit-filter"
-                  value={unitFilter}
-                  label="Unit"
-                  onChange={(e) => setUnitFilter(e.target.value)}
-                  disabled={usersLoading || unitOptions.length === 0}
+                  labelId="role-filter-label"
+                  id="role-filter"
+                  value={roleFilter}
+                  label="Role"
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  disabled={usersLoading || roleOptions.length === 0}
                 >
-                  <MenuItem value="all">All Units</MenuItem>
-                  {unitOptions.map((unit) => (
-                    <MenuItem key={unit.unitId} value={unit.unitId}>
-                      {unit.unitName}
+                  <MenuItem value="all">All Roles</MenuItem>
+                  {roleOptions.map((role) => (
+                    <MenuItem key={role} value={role}>
+                      {formatRoleLabel(role)}
                     </MenuItem>
                   ))}
                 </Select>
               </FormControl>
-            ) : null}
-            <FormControl size="small" sx={filterControlSx}>
-              <InputLabel id="role-filter-label">Role</InputLabel>
-              <Select
-                labelId="role-filter-label"
-                id="role-filter"
-                value={roleFilter}
-                label="Role"
-                onChange={(e) => setRoleFilter(e.target.value)}
-                disabled={usersLoading || roleOptions.length === 0}
+              <IconButton
+                aria-label="Open actions menu"
+                aria-controls={actionsMenuOpen ? 'user-management-actions-menu' : undefined}
+                aria-haspopup="true"
+                aria-expanded={actionsMenuOpen ? 'true' : undefined}
+                onClick={(event) => setActionsMenuAnchorEl(event.currentTarget)}
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1.5,
+                  color: 'text.secondary',
+                }}
               >
-                <MenuItem value="all">All Roles</MenuItem>
-                {roleOptions.map((role) => (
-                  <MenuItem key={role} value={role}>
-                    {formatRoleLabel(role)}
+                <MenuRoundedIcon />
+              </IconButton>
+              <Menu
+                id="user-management-actions-menu"
+                anchorEl={actionsMenuAnchorEl}
+                open={actionsMenuOpen}
+                onClose={() => setActionsMenuAnchorEl(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                slotProps={{
+                  paper: {
+                    sx: { minWidth: 220, mt: 0.75 },
+                  },
+                }}
+              >
+                <MenuItem
+                  disabled={usersLoading || mappedUnits.length === 0 || deletingUsers}
+                  onClick={() => {
+                    setActionsMenuAnchorEl(null)
+                    handleOpenBulkUploadDialog()
+                  }}
+                >
+                  <ListItemIcon>
+                    <UploadFileRoundedIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primary="Bulk Upload" />
+                </MenuItem>
+                <MenuItem
+                  disabled={usersLoading || filteredUsers.length === 0}
+                  onClick={() => {
+                    setActionsMenuAnchorEl(null)
+                    handleExportUsers()
+                  }}
+                >
+                  <ListItemIcon>
+                    <DownloadRoundedIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primary="Export" />
+                </MenuItem>
+                <MenuItem
+                  disabled={deleteActionDisabled}
+                  onClick={() => {
+                    setActionsMenuAnchorEl(null)
+                    if (deleteMode) {
+                      if (selectedUserEmails.size > 0) {
+                        handleDeleteClick()
+                      }
+                    } else {
+                      handleDeleteModeToggle()
+                    }
+                  }}
+                >
+                  <ListItemIcon>
+                    <DeleteIcon fontSize="small" color={deleteMode ? 'error' : 'inherit'} />
+                  </ListItemIcon>
+                  <ListItemText primary={deleteActionLabel} />
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    setActionsMenuAnchorEl(null)
+                    navigate('/company-co/user-management/create-user')
+                  }}
+                >
+                  <ListItemIcon>
+                    <AddIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primary="Create user" />
+                </MenuItem>
+                {showBulkLogsButton ? (
+                  <MenuItem
+                    onClick={() => {
+                      setActionsMenuAnchorEl(null)
+                      setBulkLogsDialogOpen(true)
+                    }}
+                  >
+                    <ListItemIcon>
+                      <ArticleOutlinedIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Logs !" />
                   </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <Button
-              variant="outlined"
-              startIcon={<UploadFileRoundedIcon />}
-              onClick={handleOpenBulkUploadDialog}
-              disabled={usersLoading || mappedUnits.length === 0 || deletingUsers}
-              sx={actionButtonSx}
-            >
-              Bulk Upload
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<DownloadRoundedIcon />}
-              onClick={handleExportUsers}
-              disabled={usersLoading || filteredUsers.length === 0}
-              sx={actionButtonSx}
-            >
-              Export
-            </Button>
-            <Button
-              variant={deleteMode ? 'contained' : 'outlined'}
-              color="error"
-              onClick={() => {
-                if (deleteMode) {
-                  if (selectedUserEmails.size > 0) {
-                    handleDeleteClick()
-                  }
-                } else {
-                  handleDeleteModeToggle()
-                }
-              }}
-              disabled={usersLoading || filteredUsers.length === 0 || deletingUsers || (deleteMode && selectedUserEmails.size === 0)}
-              aria-label={
-                deleteMode && selectedUserEmails.size > 0
-                  ? `Delete ${selectedUserEmails.size} selected users`
-                  : 'Delete users'
-              }
-              sx={{ ...actionButtonSx, minWidth: 0, px: 1.25 }}
-            >
-              <DeleteIcon />
-            </Button>
-            <Button
-              variant="contained"
-              color="secondary"
-              onClick={() => navigate('/company-co/create-user')}
-              aria-label="Create user"
-              sx={{ ...actionButtonSx, minWidth: 0, px: 1.25 }}
-            >
-              <AddIcon />
-            </Button>
-            {showBulkLogsButton && (
-              <Button
-                variant="contained"
-                color="info"
-                onClick={() => setBulkLogsDialogOpen(true)}
-                sx={actionButtonSx}
-              >
-                Logs !
-              </Button>
-            )}
+                ) : null}
+              </Menu>
+            </Box>
           </Box>
         </Box>
 
@@ -1529,11 +1595,10 @@ function UserManagement() {
             <TableHead>
               <TableRow>
                 {deleteMode ? <TableCell sx={{ ...headCellSx, width: 54, px: 2 }} /> : null}
-                <TableCell sx={headCellSx}>Name</TableCell>
+                <TableCell sx={{ ...headCellSx, minWidth: 200 }}>Name</TableCell>
                 <TableCell sx={headCellSx}>Email ID</TableCell>
-                <TableCell sx={{ ...headCellSx, width: showUnitControls ? 180 : 210 }}>Role</TableCell>
-                {showUnitControls ? <TableCell sx={headCellSx}>Unit</TableCell> : null}
-                <TableCell sx={headCellSx}>Department</TableCell>
+                <TableCell sx={{ ...headCellSx, width: 210 }}>Role</TableCell>
+                <TableCell sx={{ ...headCellSx, minWidth: 180 }}>Department</TableCell>
                 <TableCell sx={headCellSx}>Designation</TableCell>
                 <TableCell sx={headCellSx}>Mobile</TableCell>
               </TableRow>
@@ -1541,19 +1606,19 @@ function UserManagement() {
             <TableBody>
               {usersLoading ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? (showUnitControls ? 8 : 7) : (showUnitControls ? 7 : 6)} align="center" sx={{ py: 5, borderBottom: 0 }}>
+                  <TableCell colSpan={deleteMode ? 7 : 6} align="center" sx={{ py: 5, borderBottom: 0 }}>
                     <CircularProgress size={26} />
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? (showUnitControls ? 8 : 7) : (showUnitControls ? 7 : 6)} align="center" sx={{ py: 5, borderBottom: 0 }}>
+                  <TableCell colSpan={deleteMode ? 7 : 6} align="center" sx={{ py: 5, borderBottom: 0 }}>
                     No users found for your company.
                   </TableCell>
                 </TableRow>
               ) : filteredUsers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={deleteMode ? (showUnitControls ? 8 : 7) : (showUnitControls ? 7 : 6)} align="center" sx={{ py: 5, borderBottom: 0 }}>
+                  <TableCell colSpan={deleteMode ? 7 : 6} align="center" sx={{ py: 5, borderBottom: 0 }}>
                     No users found for the selected filters.
                   </TableCell>
                 </TableRow>
@@ -1561,12 +1626,26 @@ function UserManagement() {
                 sortedFilteredUsers.map((user, idx) => {
                   const isCoordinatorRow = isLoggedCoordinatorUser(user)
                   const rowTextSx = isCoordinatorRow ? { fontWeight: 800 } : undefined
+                  const role = String(user.role || '').trim()
+                  const canOpenUnitsOnRowClick = !deleteMode && (role === 'user' || role === 'company_co')
+                  const canOpenApproverOnRowClick = !deleteMode && role === 'approver'
+                  const isRowClickable = canOpenUnitsOnRowClick || canOpenApproverOnRowClick
 
                   return (
                   <TableRow
                     key={`${user.email_id}-${idx}`}
                     hover
+                    onClick={() => {
+                      if (canOpenApproverOnRowClick) {
+                        handleOpenApproverDetails(user)
+                        return
+                      }
+                      if (canOpenUnitsOnRowClick) {
+                        handleOpenUserUnits(user, { allowLinking: role === 'user' })
+                      }
+                    }}
                     sx={{
+                      cursor: isRowClickable ? 'pointer' : 'default',
                       '&:hover': {
                         backgroundColor: TABLE_ROW_HOVER_BG,
                       },
@@ -1579,7 +1658,10 @@ function UserManagement() {
                     }}
                   >
                     {deleteMode ? (
-                      <TableCell sx={{ ...bodyCellSx, px: 2, width: 54 }}>
+                      <TableCell
+                        sx={{ ...bodyCellSx, px: 2, width: 54 }}
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         <Checkbox
                           checked={selectedUserEmails.has(user.email_id)}
                           disabled={user.role !== 'user'}
@@ -1588,77 +1670,20 @@ function UserManagement() {
                         />
                       </TableCell>
                     ) : null}
-                    <TableCell sx={bodyCellSx}>
+                    <TableCell sx={{ ...bodyCellSx, minWidth: 200 }}>
                       <Typography component="span" sx={rowTextSx}>
-                        {user.emp_name ? `${user.emp_name}${user.role === 'company_co' ? ' (Company Coordinator)' : ''}` : ''}
+                        {user.emp_name || ''}
                       </Typography>
                     </TableCell>
                     <TableCell sx={bodyCellSx}>
                       <Typography component="span" sx={rowTextSx}>{user.email_id || '-'}</Typography>
                     </TableCell>
                     <TableCell sx={{ ...bodyCellSx, whiteSpace: 'nowrap' }}>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
-                        <Typography component="span" sx={{ fontSize: '0.89rem', lineHeight: 1.2, ...rowTextSx }}>
-                          {formatRoleLabel(user.role)}
-                        </Typography>
-                        {user.role === 'approver' ? (
-                          <Typography
-                            component="button"
-                            type="button"
-                            onClick={() => handleOpenApproverDetails(user)}
-                            sx={{
-                              p: 0,
-                              m: 0,
-                              border: 0,
-                              background: 'transparent',
-                              textAlign: 'left',
-                              cursor: 'pointer',
-                              color: theme.palette.primary.main,
-                              fontSize: '0.7rem',
-                              lineHeight: 1.2,
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            (Click to see details)
-                          </Typography>
-                        ) : null}
-                      </Box>
+                      <Typography component="span" sx={{ fontSize: '0.89rem', lineHeight: 1.2, ...rowTextSx }}>
+                        {formatRoleLabel(user.role)}
+                      </Typography>
                     </TableCell>
-                    {showUnitControls ? (
-                      <TableCell sx={bodyCellSx}>
-                        {user.role === 'user' ? (
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
-                            <Typography component="span" sx={{ fontSize: '0.89rem', lineHeight: 1.2, ...rowTextSx }}>
-                              {user.unit_name || user.unit_id || '-'}
-                            </Typography>
-                            {!deleteMode ? (
-                              <Typography
-                                component="button"
-                                type="button"
-                                onClick={() => handleOpenUserUnits(user)}
-                                sx={{
-                                  p: 0,
-                                  m: 0,
-                                  border: 0,
-                                  background: 'transparent',
-                                  textAlign: 'left',
-                                  cursor: 'pointer',
-                                  color: theme.palette.primary.main,
-                                  fontSize: '0.7rem',
-                                  lineHeight: 1.2,
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                (Click to see details)
-                              </Typography>
-                            ) : null}
-                          </Box>
-                        ) : (
-                          <Typography component="span" sx={rowTextSx}>{user.unit_name || user.unit_id || '-'}</Typography>
-                        )}
-                      </TableCell>
-                    ) : null}
-                    <TableCell sx={bodyCellSx}>
+                    <TableCell sx={{ ...bodyCellSx, minWidth: 180 }}>
                       <Typography component="span" sx={rowTextSx}>{user.department || '-'}</Typography>
                     </TableCell>
                     <TableCell sx={bodyCellSx}>
@@ -1682,8 +1707,20 @@ function UserManagement() {
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>Bulk User Upload</DialogTitle>
-        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2.5 }}>
+        <DialogTitle sx={{ px: 3, py: 1.75 }}>Bulk User Upload</DialogTitle>
+        <DialogContent
+          dividers
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            px: 3,
+            '&&': {
+              paddingTop: 2,
+              paddingBottom: 2,
+            },
+          }}
+        >
           {mappedUnits.length === 0 ? (
             <Alert severity="info">
               No mapped units found for this coordinator.
@@ -1762,7 +1799,7 @@ function UserManagement() {
           )}
           {bulkUploadDialog.error && <Alert severity="error">{bulkUploadDialog.error}</Alert>}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, py: 1.75 }}>
           <Button onClick={handleCloseBulkUploadDialog} disabled={bulkUploadDialog.submitting}>
             Cancel
           </Button>
@@ -1786,13 +1823,21 @@ function UserManagement() {
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle>Non-organization Email IDs</DialogTitle>
-        <DialogContent>
+        <DialogTitle sx={{ px: 3, py: 1.75 }}>Non-organization Email IDs</DialogTitle>
+        <DialogContent
+          sx={{
+            px: 3,
+            '&&': {
+              paddingTop: 2,
+              paddingBottom: 2,
+            },
+          }}
+        >
           <DialogContentText>
             {bulkUploadDialog.nonOrgCount} non-organization email ids are found, if possible use company email for data security.
           </DialogContentText>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, py: 1.75 }}>
           <Button onClick={() => setBulkWarningDialogOpen(false)} disabled={bulkUploadDialog.submitting}>
             Cancel
           </Button>
@@ -1816,8 +1861,20 @@ function UserManagement() {
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>Bulk Upload Logs</DialogTitle>
-        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 1.2, pt: 2.5 }}>
+        <DialogTitle sx={{ px: 3, py: 1.75 }}>Bulk Upload Logs</DialogTitle>
+        <DialogContent
+          dividers
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.2,
+            px: 3,
+            '&&': {
+              paddingTop: 2,
+              paddingBottom: 2,
+            },
+          }}
+        >
           {bulkUploadLogs.length === 0 ? (
             <Typography color="text.secondary">No logs available.</Typography>
           ) : (
@@ -1835,7 +1892,7 @@ function UserManagement() {
             ))
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, py: 1.75 }}>
           <Button onClick={() => setBulkLogsDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
@@ -1844,7 +1901,7 @@ function UserManagement() {
         open={approverDetailsDialog.open}
         onClose={() => setApproverDetailsDialog((prev) => ({ ...prev, open: false }))}
         title={approverDetailsDialog.approver ? (
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.1, flexWrap: 'wrap', py: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.1, flexWrap: 'wrap' }}>
             <Typography component="span" sx={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.25 }}>
               Approver Assignments
             </Typography>
@@ -1857,8 +1914,14 @@ function UserManagement() {
         fullWidth
         maxWidth="md"
         showTitleDivider
-        titleSx={{ py: 1.75 }}
-        contentSx={{ py: 2.2 }}
+        titleSx={{ px: 3, py: 1.75 }}
+        contentSx={{
+          '&&': {
+            paddingTop: 2,
+            paddingBottom: 2,
+          },
+        }}
+        actionsSx={{ px: 3, py: 1.75 }}
         actions={(
           <Button onClick={() => setApproverDetailsDialog((prev) => ({ ...prev, open: false }))} variant="outlined" sx={getAppDialogCancelButtonSx(theme)}>
             Close
@@ -1872,12 +1935,10 @@ function UserManagement() {
         ) : approverDetailsDialog.error ? (
           <Alert severity="error">{approverDetailsDialog.error}</Alert>
         ) : (
-          <Box sx={{ mt: 1.5, py: 1.5 }}>
-            <ApproverAssignmentsPanel
-              key={approverDetailsDialog.approver?.email_id || 'none'}
-              assignments={currentApproverAssignments}
-            />
-          </Box>
+          <ApproverAssignmentsPanel
+            key={approverDetailsDialog.approver?.email_id || 'none'}
+            assignments={currentApproverAssignments}
+          />
         )}
       </AppDialog>
 
@@ -1890,12 +1951,13 @@ function UserManagement() {
             user: null,
             linkedUnitIds: [],
             selectedUnitIdsToAdd: [],
+            allowLinking: false,
             linking: false,
             error: '',
           })
         }}
         title={userUnitsDialog.user ? (
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.1, flexWrap: 'wrap', py: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.1, flexWrap: 'wrap' }}>
             <Typography component="span" sx={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.25 }}>
               Linked Units
             </Typography>
@@ -1908,8 +1970,17 @@ function UserManagement() {
         fullWidth
         maxWidth="md"
         showTitleDivider
-        titleSx={{ py: 1.75 }}
-        contentSx={{ py: 2.2, display: 'flex', flexDirection: 'column', gap: 2 }}
+        titleSx={{ px: 3, py: 1.75 }}
+        contentSx={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+          '&&': {
+            paddingTop: 2,
+            paddingBottom: 2,
+          },
+        }}
+        actionsSx={{ px: 3, py: 1.75 }}
         actions={(
           <Button
             onClick={() => {
@@ -1919,6 +1990,7 @@ function UserManagement() {
                 user: null,
                 linkedUnitIds: [],
                 selectedUnitIdsToAdd: [],
+                allowLinking: false,
                 linking: false,
                 error: '',
               })
@@ -1931,83 +2003,94 @@ function UserManagement() {
           </Button>
         )}
       >
-        <Box sx={{ mt: 1.5, py: 1.5 }}>
+        <Box>
           <Typography sx={{ fontWeight: 700, mb: 1 }}>Current linked units</Typography>
           {userUnitsDialog.linkedUnitIds.length === 0 ? (
             <Typography color="text.secondary">No units linked.</Typography>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {userUnitsDialog.linkedUnitIds.map((unitId) => (
-                <Box
-                  key={unitId}
-                  sx={{
-                    px: 1.5,
-                    py: 1.1,
-                    borderRadius: 1.5,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    backgroundColor: alpha(theme.palette.background.default, 0.35),
-                  }}
-                >
-                  <Typography sx={{ fontWeight: 700 }}>
-                    {unitOptions.find((unit) => unit.unitId === unitId)?.unitName || unitId}
-                  </Typography>
-                </Box>
-              ))}
+              {userUnitsDialog.linkedUnitIds.map((unitId, index) => {
+                const linkedNames = getUserUnitNames(userUnitsDialog.user || {})
+                const displayName =
+                  unitOptions.find((unit) => unit.unitId === unitId)?.unitName
+                  || linkedNames[index]
+                  || unitId
+                return (
+                  <Box
+                    key={unitId}
+                    sx={{
+                      px: 1.5,
+                      py: 1.1,
+                      borderRadius: 1.5,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      backgroundColor: alpha(theme.palette.background.default, 0.35),
+                    }}
+                  >
+                    <Typography sx={{ fontWeight: 700 }}>
+                      {displayName}
+                    </Typography>
+                  </Box>
+                )
+              })}
             </Box>
           )}
         </Box>
 
-        <Box>
-          <Typography sx={{ fontWeight: 700, mb: 1 }}>Link another unit</Typography>
-          {availableUnitsToLink.length === 0 ? (
-            <Typography color="text.secondary">
-              This user is already linked to all units available under your coordinator assignment.
-            </Typography>
-          ) : (
-            <>
-              <FormControl fullWidth>
-                <InputLabel id="link-user-units-label">Units</InputLabel>
-                <Select
-                  labelId="link-user-units-label"
-                  multiple
-                  value={userUnitsDialog.selectedUnitIdsToAdd}
-                  label="Units"
-                  disabled={userUnitsDialog.linking}
-                  onChange={(event) => {
-                    const nextValue = typeof event.target.value === 'string'
-                      ? event.target.value.split(',')
-                      : event.target.value
-                    setUserUnitsDialog((prev) => ({
-                      ...prev,
-                      selectedUnitIdsToAdd: nextValue,
-                      error: '',
-                    }))
-                  }}
-                  renderValue={(selected) => getUnitNamesFromIds(Array.isArray(selected) ? selected : []).join(', ')}
-                >
-                  {availableUnitsToLink.map((unit) => (
-                    <MenuItem key={unit.unitId} value={unit.unitId}>
-                      <Checkbox checked={userUnitsDialog.selectedUnitIdsToAdd.includes(unit.unitId)} size="small" />
-                      <ListItemText primary={unit.unitName} />
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-                <Button
-                  variant="contained"
-                  color="secondary"
-                  disabled={userUnitsDialog.linking || userUnitsDialog.selectedUnitIdsToAdd.length === 0}
-                  onClick={handleLinkUserUnits}
-                  sx={{ textTransform: 'none', fontWeight: 700 }}
-                >
-                  {userUnitsDialog.linking ? 'Linking...' : 'Link Unit(s)'}
-                </Button>
-              </Box>
-            </>
-          )}
-        </Box>
+        {userUnitsDialog.allowLinking ? (
+          <Box>
+            <Typography sx={{ fontWeight: 700, mb: 1 }}>Link another unit</Typography>
+            {availableUnitsToLink.length === 0 ? (
+              <Typography color="text.secondary">
+                This user is already linked to all units available under your coordinator assignment.
+              </Typography>
+            ) : (
+              <>
+                <FormControl fullWidth>
+                  <InputLabel id="link-user-units-label">Units</InputLabel>
+                  <Select
+                    labelId="link-user-units-label"
+                    multiple
+                    value={userUnitsDialog.selectedUnitIdsToAdd}
+                    label="Units"
+                    disabled={userUnitsDialog.linking}
+                    onChange={(event) => {
+                      const nextValue = typeof event.target.value === 'string'
+                        ? event.target.value.split(',')
+                        : event.target.value
+                      setUserUnitsDialog((prev) => ({
+                        ...prev,
+                        selectedUnitIdsToAdd: nextValue,
+                        error: '',
+                      }))
+                    }}
+                    renderValue={(selected) => getUnitNamesFromIds(Array.isArray(selected) ? selected : []).join(', ')}
+                  >
+                    {availableUnitsToLink.map((unit) => (
+                      <MenuItem key={unit.unitId} value={unit.unitId}>
+                        <Checkbox checked={userUnitsDialog.selectedUnitIdsToAdd.includes(unit.unitId)} size="small" />
+                        <ListItemText primary={unit.unitName} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                {userUnitsDialog.selectedUnitIdsToAdd.length > 0 ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                    <Button
+                      variant="contained"
+                      color="secondary"
+                      disabled={userUnitsDialog.linking}
+                      onClick={handleLinkUserUnits}
+                      sx={{ textTransform: 'none', fontWeight: 700 }}
+                    >
+                      {userUnitsDialog.linking ? 'Linking...' : 'Link Unit(s)'}
+                    </Button>
+                  </Box>
+                ) : null}
+              </>
+            )}
+          </Box>
+        ) : null}
 
         {userUnitsDialog.error ? <Alert severity="error">{userUnitsDialog.error}</Alert> : null}
       </AppDialog>
@@ -2030,17 +2113,26 @@ function UserManagement() {
         <DialogTitle
           id="delete-dialog-title"
           sx={{
-            pb: 2,
-            pt: 2.5,
             px: 3,
+            py: 1.75,
             fontWeight: 600,
             fontSize: '1.25rem',
             color: theme.palette.text.primary,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
           }}
         >
           Confirm Delete
         </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 2.25, pb: 2.25 }}>
+        <DialogContent
+          sx={{
+            px: 3,
+            '&&': {
+              paddingTop: 2,
+              paddingBottom: 2,
+            },
+          }}
+        >
           <DialogContentText
             id="delete-dialog-description"
             sx={{
@@ -2048,8 +2140,6 @@ function UserManagement() {
               fontSize: '0.9375rem',
               lineHeight: 1.5,
               m: 0,
-              mb: 1.5,
-              mt: 1.5,
             }}
           >
             Deleting selected user(s) will remove them from the company and all assigned RACMs will go inactive. This action cannot be undone.
@@ -2071,7 +2161,7 @@ function UserManagement() {
         <DialogActions
           sx={{
             px: 3,
-            py: 2.25,
+            py: 1.75,
             gap: 1.5,
             borderTop: '1px solid',
             borderColor: 'divider',

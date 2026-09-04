@@ -6,14 +6,11 @@ import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import Tooltip from '@mui/material/Tooltip'
 import FormControl from '@mui/material/FormControl'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
-import Switch from '@mui/material/Switch'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
-import TextField from '@mui/material/TextField'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -23,7 +20,6 @@ import {
   DASHBOARD_PAGE_OUTER_SX,
   DASHBOARD_PAPER_SX,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
-  PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   CONCLUSION_BADGE_TABLE_PILL_SX,
@@ -40,6 +36,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { apiUrl } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { formatIndianDateTime as formatIndianDateTimeShared, parseDateValue } from '../../lib/dateTime'
+import ControlNumberSearchRow from '../../components/ControlNumberSearchRow'
 
 function ApproverDashboard() {
   const theme = useTheme()
@@ -423,7 +420,9 @@ function ApproverDashboard() {
         elevation={3}
         sx={{
           ...DASHBOARD_PAPER_SX,
-          p: 3,
+          pt: 3.5,
+          px: 3,
+          pb: 3,
           backgroundColor: theme.palette.background.paper,
           borderRadius: 2,
         }}
@@ -462,7 +461,7 @@ function ApproverDashboard() {
             flexDirection: { xs: 'column', sm: 'row' },
             justifyContent: 'space-between',
             alignItems: { xs: 'flex-start', sm: 'center' },
-            mb: 3,
+            mb: 2,
             gap: 2,
           }}
         >
@@ -495,7 +494,7 @@ function ApproverDashboard() {
             }}
           >
             {showUnitContext && (
-              <FormControl variant="outlined" sx={filterControlSx}>
+              <FormControl variant="outlined" size="small" sx={filterControlSx}>
                 <InputLabel id="approver-unit-filter-label">Unit</InputLabel>
                 <Select
                   labelId="approver-unit-filter-label"
@@ -514,7 +513,7 @@ function ApproverDashboard() {
               </FormControl>
             )}
 
-            <FormControl variant="outlined" sx={filterControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterControlSx}>
               <InputLabel id="approver-business-process-filter-label">Business Process</InputLabel>
               <Select
                 labelId="approver-business-process-filter-label"
@@ -532,7 +531,7 @@ function ApproverDashboard() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterControlSx}>
               <InputLabel id="approver-financial-year-filter-label">Financial Year</InputLabel>
               <Select
                 labelId="approver-financial-year-filter-label"
@@ -550,7 +549,7 @@ function ApproverDashboard() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterControlSx}>
               <InputLabel id="approver-status-filter-label">Status</InputLabel>
               <Select
                 labelId="approver-status-filter-label"
@@ -566,7 +565,7 @@ function ApproverDashboard() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterControlSx}>
               <InputLabel id="approver-conclusion-filter-label">Conclusion</InputLabel>
               <Select
                 labelId="approver-conclusion-filter-label"
@@ -592,77 +591,16 @@ function ApproverDashboard() {
           </Box>
         ) : (
           <Box>
-            <Box sx={{ mb: 1.5 }}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  mb: 1.5,
-                  flexWrap: 'wrap',
-                  gap: 1,
-                }}
-              >
-                <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, flex: '1 1 240px', minWidth: 0, pr: { sm: 2 } }}>
-                  Review active RACMs, and open a control to approve or reject.
-                </Typography>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={cellWordWrap}
-                      onChange={(e) => setCellWordWrap(e.target.checked)}
-                      size="small"
-                      color="primary"
-                    />
-                  }
-                  label="Word wrap"
-                  sx={{
-                    mr: 0,
-                    userSelect: 'none',
-                    flex: '0 0 auto',
-                    '& .MuiFormControlLabel-label': {
-                      fontSize: '0.875rem',
-                      color: 'text.secondary',
-                    },
-                  }}
-                />
-              </Box>
-              <Box
-                component="form"
-                onSubmit={handleControlNumberSearchSubmit}
-                sx={{
-                  display: 'flex',
-                  flexDirection: { xs: 'column', sm: 'row' },
-                  gap: 1,
-                  alignItems: { xs: 'stretch', sm: 'center' },
-                }}
-              >
-                <TextField
-                  label="Control Number"
-                  value={controlNumberInput}
-                  onChange={(e) => setControlNumberInput(e.target.value)}
-                  size="small"
-                  sx={{
-                    minWidth: { xs: '100%', sm: 260 },
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'transparent',
-                    },
-                  }}
-                />
-                <Button type="submit" variant="contained">
-                  Search
-                </Button>
-                {(controlNumberInput || controlNumberFilter) ? (
-                  <Button
-                    type="button"
-                    variant="outlined"
-                    onClick={handleControlNumberSearchClear}
-                  >
-                    Clear
-                  </Button>
-                ) : null}
-              </Box>
-            </Box>
+            <ControlNumberSearchRow
+              value={controlNumberInput}
+              onChange={(e) => setControlNumberInput(e.target.value)}
+              onSubmit={handleControlNumberSearchSubmit}
+              onClear={handleControlNumberSearchClear}
+              showClear={Boolean(controlNumberInput || controlNumberFilter)}
+              cellWordWrap={cellWordWrap}
+              onCellWordWrapChange={(e) => setCellWordWrap(e.target.checked)}
+              sx={{ mb: 1.5 }}
+            />
             {formsToDisplay.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4 }}>
                 <Typography color="text.secondary">

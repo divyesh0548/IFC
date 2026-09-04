@@ -43,6 +43,7 @@ function buildAllowedOrigins() {
     'http://localhost:5173',
     'http://localhost:3000',
     'http://127.0.0.1:5173',
+    'http://192.168.1.134:5173'
   ]);
 }
 
@@ -103,9 +104,9 @@ const path = require('path');
 app.use(express.static(path.join(__dirname, "../frontend/dist")));
 
 // Then catch-all for React
-app.get(/.*/, (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
-});
+// app.get(/.*/, (req, res) => {
+//   res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
+// });
 
 
 // Health check endpoint

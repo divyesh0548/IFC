@@ -192,7 +192,7 @@ function ApproverHome() {
                 lineHeight: 1.7,
               }}
             >
-              Review approval activity for your assigned RACMs, keep pending items moving, and use the dashboard as the operational hub for decisions.
+              Review the evidence and approve the RACMs; use the dashboard to manage pending controls.
             </Typography>
           </Box>
 

@@ -544,6 +544,53 @@ function excludeEntityLevelControls(rows) {
   return (rows || []).filter((row) => !isEntityLevelControlsBusinessProcess(row?.business_process));
 }
 
+function shapePendingAiInsightRow(control) {
+  return {
+    id: `pending-${String(control?.form_id || control?.control_number || Math.random()).trim()}`,
+    run_id: null,
+    company_identifier: control?.company_identifier || null,
+    form_id: control?.form_id ? String(control.form_id).trim() : null,
+    control_number: String(control?.control_number || '').trim() || 'N/A',
+    business_process: String(control?.business_process || '').trim() || 'Unassigned',
+    rationalisation_opportunity: null,
+    unit_id: control?.unit_id ? String(control.unit_id).trim() : null,
+    unit_name: control?.unit_name ? String(control.unit_name).trim() : null,
+    is_pending: true,
+  };
+}
+
+function buildPendingAiInsightRows(eligibleControls, generatedRows = []) {
+  const coveredKeys = new Set();
+  for (const row of generatedRows || []) {
+    const formId = String(row?.form_id || '').trim().toLowerCase();
+    const controlNumber = String(row?.control_number || '').trim().toLowerCase();
+    if (formId) coveredKeys.add(`form:${formId}`);
+    if (controlNumber) coveredKeys.add(`control:${controlNumber}`);
+  }
+
+  return (eligibleControls || [])
+    .filter((control) => {
+      const formId = String(control?.form_id || '').trim().toLowerCase();
+      const controlNumber = String(control?.control_number || '').trim().toLowerCase();
+      if (formId && coveredKeys.has(`form:${formId}`)) return false;
+      if (controlNumber && coveredKeys.has(`control:${controlNumber}`)) return false;
+      return Boolean(formId || controlNumber);
+    })
+    .map((control) => shapePendingAiInsightRow(control));
+}
+
+function sortAiInsightDisplayRows(rows) {
+  return [...(rows || [])].sort((a, b) => {
+    const bpA = String(a?.business_process || '').trim().toLowerCase();
+    const bpB = String(b?.business_process || '').trim().toLowerCase();
+    if (bpA !== bpB) return bpA.localeCompare(bpB);
+    return String(a?.control_number || '').localeCompare(String(b?.control_number || ''), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+  });
+}
+
 function shapeControlForAi(row) {
   return {
     controlNumber: String(row?.control_number || '').trim(),
@@ -1288,6 +1335,9 @@ async function getUsers(req, res) {
         OR (
           u.role = 'approver'
         )
+        OR (
+          u.role = 'company_admin'
+        )
       )
     `;
     params.push(mappedUnitIds);
@@ -1324,6 +1374,9 @@ async function getUsers(req, res) {
           )
           OR (
             u.role = 'approver'
+          )
+          OR (
+            u.role = 'company_admin'
           )
         )
       `;
@@ -2377,17 +2430,23 @@ async function getKeyManualAiInsightsRun(req, res) {
     );
 
     if (runs.length === 0) {
+      const eligibleControls = excludeEntityLevelControls(highRiskKeyManualControls);
+      const pendingRows = sortAiInsightDisplayRows(
+        buildPendingAiInsightRows(eligibleControls, [])
+      );
+
       return res.status(200).json({
         success: true,
         data: {
           runs: [],
           run: null,
-          rows: [],
+          rows: pendingRows,
+          pending_control_count: pendingRows.length,
           excluded_entity_level_count: excludedEntityLevelCount,
           filters: {
             units: mappedUnits,
           },
-          eligible_control_count: excludeEntityLevelControls(highRiskKeyManualControls).length,
+          eligible_control_count: eligibleControls.length,
         },
       });
     }
@@ -2492,6 +2551,13 @@ async function getKeyManualAiInsightsRun(req, res) {
       return true;
     });
 
+    const eligibleControls = excludeEntityLevelControls(highRiskKeyManualControls);
+    const pendingRows = buildPendingAiInsightRows(eligibleControls, shapedRows);
+    const displayRows = sortAiInsightDisplayRows([
+      ...shapedRows.map((row) => ({ ...row, is_pending: false })),
+      ...pendingRows,
+    ]);
+
     return res.status(200).json({
       success: true,
       data: {
@@ -2512,11 +2578,12 @@ async function getKeyManualAiInsightsRun(req, res) {
           row_count: shapedRows.length,
         },
         excluded_entity_level_count: excludedEntityLevelCount,
-        eligible_control_count: excludeEntityLevelControls(highRiskKeyManualControls).length,
+        eligible_control_count: eligibleControls.length,
+        pending_control_count: pendingRows.length,
         filters: {
           units: mappedUnits,
         },
-        rows: shapedRows,
+        rows: displayRows,
       },
     });
   } catch (error) {

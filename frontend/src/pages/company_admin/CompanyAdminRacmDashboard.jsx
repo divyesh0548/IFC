@@ -4,13 +4,10 @@ import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import FormControl from '@mui/material/FormControl'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
-import Switch from '@mui/material/Switch'
-import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import TablePagination from '@mui/material/TablePagination'
@@ -19,12 +16,12 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { getRacmProcessOwnerDisplayValue } from '../../racmFormDetailFields'
+import ControlNumberSearchRow from '../../components/ControlNumberSearchRow'
 import {
   DASHBOARD_PAGE_OUTER_SX,
   DASHBOARD_PAPER_SX,
   DASHBOARD_TABLE_WRAP_SX,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
-  PAGE_SUBHEADER_TEXT_SX,
   CONCLUSION_BADGE_TABLE_PILL_SX,
   CONCLUSION_TABLE_CELL_SX,
   TABLE_HEADER_BG,
@@ -319,43 +316,54 @@ function CompanyAdminRacmDashboard() {
 
   return (
     <Box sx={DASHBOARD_PAGE_OUTER_SX}>
-      <Paper elevation={3} sx={{ ...DASHBOARD_PAPER_SX, p: 3 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          mb: 1,
+          gap: 1.25,
+        }}
+      >
+        <Button
+          variant="contained"
+          color="secondary"
+          onClick={() => navigate('/company_admin/ifc-report')}
+        >
+          Reports
+        </Button>
+      </Box>
+
+      <Paper elevation={3} sx={{ ...DASHBOARD_PAPER_SX, pt: 3.5, px: 3, pb: 3 }}>
         <Box
           sx={{
             display: 'flex',
-            alignItems: { xs: 'stretch', sm: 'flex-start' },
-            justifyContent: 'space-between',
             flexDirection: { xs: 'column', sm: 'row' },
-            gap: 1.5,
-            mb: 0.5,
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            mb: 2,
+            gap: 2,
           }}
         >
           <Box sx={{ pr: { sm: 2, md: 3 }, mr: { sm: 1 } }}>
-            <Typography variant="h5" component="h1" sx={{ fontWeight: 700, mb: 0.5 }}>
+            <Typography variant="h5" component="h1" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
               RACM Dashboard
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            color="secondary"
-            size="small"
-            onClick={() => navigate('/company_admin/ifc-report')}
-            sx={{ textTransform: 'none', fontWeight: 600, alignSelf: { xs: 'stretch', sm: 'center' } }}
-          >
-            Reports
-          </Button>
-        </Box>
 
-        <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Box
             sx={{
               display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
               flexWrap: 'wrap',
               gap: 2,
-              alignItems: 'center',
+              alignItems: { xs: 'stretch', sm: 'center' },
+              width: { xs: '100%', sm: 'auto' },
+              justifyContent: 'flex-end',
             }}
           >
-            <FormControl variant="outlined" sx={filterControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterControlSx}>
               <InputLabel id="ca-unit-filter-label">Unit</InputLabel>
               <Select
                 labelId="ca-unit-filter-label"
@@ -375,7 +383,7 @@ function CompanyAdminRacmDashboard() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterControlSx}>
               <InputLabel id="ca-bp-filter-label">Business Process</InputLabel>
               <Select
                 labelId="ca-bp-filter-label"
@@ -395,7 +403,7 @@ function CompanyAdminRacmDashboard() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterControlSx}>
               <InputLabel id="ca-fy-filter-label">Financial Year</InputLabel>
               <Select
                 labelId="ca-fy-filter-label"
@@ -415,7 +423,7 @@ function CompanyAdminRacmDashboard() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterControlSx}>
               <InputLabel id="ca-activity-filter-label">Activity</InputLabel>
               <Select
                 labelId="ca-activity-filter-label"
@@ -432,7 +440,7 @@ function CompanyAdminRacmDashboard() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterControlSx}>
               <InputLabel id="ca-status-filter-label">Approval Status</InputLabel>
               <Select
                 labelId="ca-status-filter-label"
@@ -451,7 +459,7 @@ function CompanyAdminRacmDashboard() {
               </Select>
             </FormControl>
 
-            <FormControl variant="outlined" sx={filterControlSx}>
+            <FormControl variant="outlined" size="small" sx={filterControlSx}>
               <InputLabel id="ca-conclusion-filter-label">Conclusion</InputLabel>
               <Select
                 labelId="ca-conclusion-filter-label"
@@ -470,69 +478,21 @@ function CompanyAdminRacmDashboard() {
                 ))}
               </Select>
             </FormControl>
-
           </Box>
+        </Box>
 
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Box>
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 1,
-                mb: 1.5,
-              }}
-            >
-              <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, flex: '1 1 240px', minWidth: 0, pr: { sm: 2 } }}>
-                View and filter RACMs across your company units.
-              </Typography>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={cellWordWrap}
-                    onChange={(e) => setCellWordWrap(e.target.checked)}
-                    size="small"
-                  />
-                }
-                label="Word wrap"
-                sx={{
-                  mr: 0,
-                  flexShrink: 0,
-                  userSelect: 'none',
-                  '& .MuiFormControlLabel-label': {
-                    fontSize: '0.8125rem',
-                    color: theme.palette.text.secondary,
-                  },
-                }}
-              />
-            </Box>
-            <Box
-              component="form"
+            <ControlNumberSearchRow
+              value={controlNumberInput}
+              onChange={(e) => setControlNumberInput(e.target.value)}
               onSubmit={handleControlNumberSearchSubmit}
-              sx={{
-                display: 'flex',
-                flexDirection: { xs: 'column', sm: 'row' },
-                gap: 1,
-                alignItems: { xs: 'stretch', sm: 'center' },
-              }}
-            >
-              <TextField
-                label="Control Number"
-                value={controlNumberInput}
-                onChange={(e) => setControlNumberInput(e.target.value)}
-                size="small"
-                sx={{ minWidth: { xs: '100%', sm: 260 } }}
-              />
-              <Button type="submit" variant="contained">
-                Search
-              </Button>
-              {(controlNumberInput || controlNumberFilter) ? (
-                <Button type="button" variant="outlined" onClick={handleControlNumberSearchClear}>
-                  Clear
-                </Button>
-              ) : null}
-            </Box>
+              onClear={handleControlNumberSearchClear}
+              showClear={Boolean(controlNumberInput || controlNumberFilter)}
+              cellWordWrap={cellWordWrap}
+              onCellWordWrapChange={(e) => setCellWordWrap(e.target.checked)}
+              sx={{ mb: 1.5 }}
+            />
           </Box>
 
           {loading ? (

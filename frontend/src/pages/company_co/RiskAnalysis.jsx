@@ -510,6 +510,104 @@ function RiskAnalysis() {
         </Button>
       </Box>
 
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          mb: 3,
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.25,
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end',
+            width: { xs: '100%', md: 'auto' },
+          }}
+        >
+          <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+            <InputLabel id="risk-analysis-unit-label" shrink>Unit</InputLabel>
+            <Select
+              labelId="risk-analysis-unit-label"
+              multiple
+              value={filterUnits}
+              label="Unit"
+              displayEmpty
+              notched
+              onChange={resetPageForFilterChange(setFilterUnits)}
+              renderValue={(selected) => renderFilterValue(
+                getSelectedFilterLabel(
+                  selected,
+                  unitOptions,
+                  (unitId) => unitOptions.find((unit) => String(unit.unit_id) === String(unitId))?.unit_name || unitId
+                )
+              )}
+            >
+              {unitOptions.map((unit) => (
+                <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                  <Checkbox checked={filterUnits.includes(unit.unit_id)} size="small" />
+                  <ListItemText primary={unit.unit_name || unit.unit_id} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+            <InputLabel id="risk-analysis-business-process-label" shrink>Business Process</InputLabel>
+            <Select
+              labelId="risk-analysis-business-process-label"
+              multiple
+              value={filterBusinessProcesses}
+              label="Business Process"
+              displayEmpty
+              notched
+              onChange={resetPageForFilterChange(setFilterBusinessProcesses)}
+              renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected, businessProcessOptions))}
+            >
+              {businessProcessOptions.map((option) => (
+                <MenuItem key={option} value={option}>
+                  <Checkbox checked={filterBusinessProcesses.includes(option)} size="small" />
+                  <ListItemText primary={option} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+            <InputLabel id="risk-analysis-financial-year-label" shrink>Financial Year</InputLabel>
+            <Select
+              labelId="risk-analysis-financial-year-label"
+              multiple
+              value={filterFinancialYears}
+              label="Financial Year"
+              displayEmpty
+              notched
+              onChange={resetPageForFilterChange(setFilterFinancialYears)}
+              renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected, financialYearOptions))}
+            >
+              {financialYearOptions.map((option) => (
+                <MenuItem key={option} value={option}>
+                  <Checkbox checked={filterFinancialYears.includes(option)} size="small" />
+                  <ListItemText primary={option} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={handleGenerateSelectedAnalyses}
+            disabled={batchGenerating || selectedControlNumbers.size === 0}
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            {batchGenerating ? 'Generating...' : `Generate Selected (${selectedControlNumbers.size})`}
+          </Button>
+        </Box>
+      </Box>
+
       {errorMessage ? (
         <Alert severity="info" sx={{ mb: 3 }}>
           {errorMessage}
@@ -531,102 +629,12 @@ function RiskAnalysis() {
         <Box
           sx={{
             px: 3,
-            pt: 3,
-            pb: 2,
+            pt: 2,
+            pb: 1.5,
             borderBottom: `1px solid ${theme.palette.divider}`,
           }}
         >
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1.25,
-              flexWrap: 'wrap',
-            }}
-          >
-              <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
-                <InputLabel id="risk-analysis-unit-label" shrink>Unit</InputLabel>
-                <Select
-                  labelId="risk-analysis-unit-label"
-                  multiple
-                  value={filterUnits}
-                  label="Unit"
-                  displayEmpty
-                  notched
-                  onChange={resetPageForFilterChange(setFilterUnits)}
-                  renderValue={(selected) => renderFilterValue(
-                    getSelectedFilterLabel(
-                      selected,
-                      unitOptions,
-                      (unitId) => unitOptions.find((unit) => String(unit.unit_id) === String(unitId))?.unit_name || unitId
-                    )
-                  )}
-                >
-                  {unitOptions.map((unit) => (
-                    <MenuItem key={unit.unit_id} value={unit.unit_id}>
-                      <Checkbox checked={filterUnits.includes(unit.unit_id)} size="small" />
-                      <ListItemText primary={unit.unit_name || unit.unit_id} />
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
-                <InputLabel id="risk-analysis-business-process-label" shrink>Business Process</InputLabel>
-                <Select
-                  labelId="risk-analysis-business-process-label"
-                  multiple
-                  value={filterBusinessProcesses}
-                  label="Business Process"
-                  displayEmpty
-                  notched
-                  onChange={resetPageForFilterChange(setFilterBusinessProcesses)}
-                  renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected, businessProcessOptions))}
-                >
-                  {businessProcessOptions.map((option) => (
-                    <MenuItem key={option} value={option}>
-                      <Checkbox checked={filterBusinessProcesses.includes(option)} size="small" />
-                      <ListItemText primary={option} />
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
-                <InputLabel id="risk-analysis-financial-year-label" shrink>Financial Year</InputLabel>
-                <Select
-                  labelId="risk-analysis-financial-year-label"
-                  multiple
-                  value={filterFinancialYears}
-                  label="Financial Year"
-                  displayEmpty
-                  notched
-                  onChange={resetPageForFilterChange(setFilterFinancialYears)}
-                  renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected, financialYearOptions))}
-                >
-                  {financialYearOptions.map((option) => (
-                    <MenuItem key={option} value={option}>
-                      <Checkbox checked={filterFinancialYears.includes(option)} size="small" />
-                      <ListItemText primary={option} />
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Button
-                variant="contained"
-                color="secondary"
-                onClick={handleGenerateSelectedAnalyses}
-                disabled={batchGenerating || selectedControlNumbers.size === 0}
-                sx={{
-                  height: FILTER_CONTROL_HEIGHT,
-                  whiteSpace: 'nowrap',
-                  px: 2,
-                }}
-              >
-                {batchGenerating ? 'Generating...' : `Generate Selected (${selectedControlNumbers.size})`}
-              </Button>
-          </Box>
-          <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
+          <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
             Showing {rows.length} of {totalCount} assigned-unit controls for the selected filters.
           </Typography>
         </Box>

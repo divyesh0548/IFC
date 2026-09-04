@@ -3,14 +3,10 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import FormControl from '@mui/material/FormControl'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
-import Switch from '@mui/material/Switch'
-import TextField from '@mui/material/TextField'
-import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import TablePagination from '@mui/material/TablePagination'
@@ -23,7 +19,6 @@ import {
   DASHBOARD_TABLE_WRAP_SX,
   FILTER_BOX_MIN_WIDTH,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
-  PAGE_SUBHEADER_TEXT_SX,
   TABLE_HEADER_BG,
   TABLE_ROW_HOVER_BG,
   getApprovalStatusBadgeSolidColors,
@@ -35,6 +30,7 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { getRacmProcessOwnerDisplayValue } from '../../racmFormDetailFields'
 import RacmUserDocumentsDialog from '../../components/racm/RacmUserDocumentsDialog'
+import ControlNumberSearchRow from '../../components/ControlNumberSearchRow'
 import { toast } from 'react-hot-toast'
 
 const DEFAULT_ROWS_PER_PAGE = 10
@@ -391,7 +387,9 @@ function AuditorRacmDashboard() {
         elevation={3}
         sx={{
           ...DASHBOARD_PAPER_SX,
-          p: 3,
+          pt: 3.5,
+          px: 3,
+          pb: 3,
           backgroundColor: theme.palette.background.paper,
           borderRadius: 2,
         }}
@@ -400,7 +398,7 @@ function AuditorRacmDashboard() {
           sx={{
             display: 'flex',
             flexDirection: 'column',
-            mb: 3,
+            mb: 2,
             gap: 2,
           }}
         >
@@ -424,9 +422,6 @@ function AuditorRacmDashboard() {
               >
                 RACM Dashboard
               </Typography>
-              {/* <Typography variant="body2" sx={PAGE_SUBHEADER_TEXT_SX}>
-                Review RACMs across all companies with the same operational filters as the coordinator dashboard, but in read-only mode.
-              </Typography> */}
             </Box>
 
             <Box
@@ -560,21 +555,24 @@ function AuditorRacmDashboard() {
           </Box>
         </Box>
 
-        <Box
-          component="form"
+        <ControlNumberSearchRow
+          value={controlNumberInput}
+          onChange={(event) => setControlNumberInput(event.target.value)}
           onSubmit={handleControlNumberSearchSubmit}
-          sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 1, alignItems: { xs: 'stretch', sm: 'center' }, mb: 2 }}
-        >
-          <TextField
-            label="Control Number"
-            value={controlNumberInput}
-            onChange={(event) => setControlNumberInput(event.target.value)}
-            size="small"
-            sx={{ minWidth: { xs: '100%', sm: 280 } }}
-          />
-          <Button type="submit" variant="contained">Search</Button>
-          {(controlNumberInput || controlNumberFilter) ? <Button type="button" variant="outlined" onClick={handleControlNumberSearchClear}>Clear</Button> : null}
-        </Box>
+          onClear={handleControlNumberSearchClear}
+          showClear={Boolean(controlNumberInput || controlNumberFilter)}
+          cellWordWrap={cellWordWrap}
+          onCellWordWrapChange={(event) => setCellWordWrap(event.target.checked)}
+          fieldSx={{ minWidth: { xs: '100%', sm: 280 } }}
+          sx={{ mb: 2 }}
+          leadingContent={
+            !loading && filteredForms.length > 0 ? (
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                {filteredForms.length} RACM{filteredForms.length === 1 ? '' : 's'}
+              </Typography>
+            ) : null
+          }
+        />
 
         {error && (
           <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
@@ -594,40 +592,6 @@ function AuditorRacmDashboard() {
           </Box>
         ) : (
           <Box>
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                mb: 1.5,
-                flexWrap: 'wrap',
-                gap: 1,
-              }}
-            >
-              <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
-                {filteredForms.length} RACM{filteredForms.length === 1 ? '' : 's'}
-              </Typography>
-              <FormControlLabel
-                control={(
-                  <Switch
-                    checked={cellWordWrap}
-                    onChange={(event) => setCellWordWrap(event.target.checked)}
-                    size="small"
-                    color="primary"
-                  />
-                )}
-                label="Word wrap"
-                sx={{
-                  mr: 0,
-                  userSelect: 'none',
-                  '& .MuiFormControlLabel-label': {
-                    fontSize: '0.8125rem',
-                    color: theme.palette.text.secondary,
-                  },
-                }}
-              />
-            </Box>
-
             <Box sx={DASHBOARD_TABLE_WRAP_SX}>
               <Box
                 component="table"

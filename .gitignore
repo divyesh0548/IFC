@@ -9,6 +9,10 @@ yarn-error.log*
 pnpm-debug.log*
 *.log
 
+
+# Control library files
+Controls library/
+
 # OS files
 .DS_Store
 Thumbs.db

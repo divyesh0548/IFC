@@ -22,6 +22,7 @@ import { toast } from 'react-hot-toast'
 import { apiUrl } from '../../config/api'
 import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX } from '../../components/AppDialog'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import { formatIndianDateTimeCompact } from '../../lib/dateTime'
 import {
   DASHBOARD_PAGE_OUTER_SX,
   PAGE_SUBHEADER_TEXT_SX,
@@ -73,19 +74,6 @@ function replacePreviewVars(text) {
   return result
 }
 
-function formatUpdatedAt(value) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  return date.toLocaleString(undefined, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 function EmailCustomization() {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -114,9 +102,6 @@ function EmailCustomization() {
       const fetchedTemplates = json.data?.templates || []
       setUnits(fetchedUnits)
       setTemplates(fetchedTemplates)
-      if (fetchedUnits.length === 1 && !selectedUnitId) {
-        setSelectedUnitId(fetchedUnits[0].unit_id)
-      }
     } catch (err) {
       toast.error(err.message || 'Failed to load email templates')
     } finally {
@@ -202,7 +187,11 @@ function EmailCustomization() {
 
   const previewSubject = useMemo(() => replacePreviewVars(subject), [subject])
   const previewBody = useMemo(() => replacePreviewVars(body), [body])
-  const formattedLastUpdated = useMemo(() => formatUpdatedAt(lastUpdatedAt), [lastUpdatedAt])
+  const formattedLastUpdated = useMemo(() => {
+    if (!lastUpdatedAt) return null
+    const formatted = formatIndianDateTimeCompact(lastUpdatedAt, '')
+    return formatted || null
+  }, [lastUpdatedAt])
 
   const isDark = theme.palette.mode === 'dark'
   const inputFieldBg = isDark ? 'rgba(30, 41, 59, 0.72)' : 'rgba(248, 250, 252, 1)'
@@ -273,19 +262,44 @@ function EmailCustomization() {
               </Box>
 
               {!loading && units.length > 0 && (
-                <FormControl size="small" sx={{ minWidth: 220, maxWidth: 320, flex: '0 0 auto', alignSelf: { xs: 'stretch', md: 'flex-start' } }}>
-                  <InputLabel id="unit-select-label">Select Unit</InputLabel>
-                  <Select
-                    labelId="unit-select-label"
-                    value={selectedUnitId}
-                    label="Select Unit"
-                    onChange={(e) => setSelectedUnitId(e.target.value)}
-                  >
-                    {units.map((u) => (
-                      <MenuItem key={u.unit_id} value={u.unit_id}>{u.unit_name || u.unit_id}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: { xs: 'stretch', md: 'flex-end' },
+                    gap: 0.75,
+                    flex: '0 0 auto',
+                    alignSelf: { xs: 'stretch', md: 'flex-start' },
+                    minWidth: { md: 220 },
+                  }}
+                >
+                  <FormControl size="small" sx={{ minWidth: 220, maxWidth: 320, width: { xs: '100%', md: 'auto' } }}>
+                    <InputLabel id="unit-select-label">Select Unit</InputLabel>
+                    <Select
+                      labelId="unit-select-label"
+                      value={selectedUnitId}
+                      label="Select Unit"
+                      onChange={(e) => setSelectedUnitId(e.target.value)}
+                    >
+                      {units.map((u) => (
+                        <MenuItem key={u.unit_id} value={u.unit_id}>{u.unit_name || u.unit_id}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {selectedUnitId && formattedLastUpdated ? (
+                    <Typography
+                      sx={{
+                        fontSize: '0.8125rem',
+                        color: 'text.secondary',
+                        fontWeight: 600,
+                        textAlign: { xs: 'left', md: 'right' },
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Last Updated: {formattedLastUpdated}
+                    </Typography>
+                  ) : null}
+                </Box>
               )}
             </Box>
           </Box>
@@ -297,100 +311,112 @@ function EmailCustomization() {
           </Box>
         ) : units.length === 0 ? (
           <Alert severity="info" sx={{ mt: 2 }}>No units are assigned to you.</Alert>
+        ) : !selectedUnitId ? (
+          <Box
+            sx={{
+              mt: 4,
+              py: 6,
+              px: 2,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <Typography
+              sx={{
+                fontSize: '1.05rem',
+                fontWeight: 600,
+                color: 'text.secondary',
+                textAlign: 'center',
+              }}
+            >
+              Select a unit to start editing template
+            </Typography>
+          </Box>
         ) : (
           <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {selectedUnitId && (
-              <>
-                <Box>
-                  <Typography sx={{ fontWeight: 700, fontSize: '0.875rem', mb: 1, color: 'text.secondary' }}>
-                    Available Variables (click to insert at end)
-                  </Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                    {AVAILABLE_VARIABLES.map((v) => (
-                      <Tooltip key={v.key} title={`Inserts {{${v.key}}} — Example: ${v.example}`} arrow>
-                        <Chip
-                          label={v.key}
-                          size="small"
-                          variant="outlined"
-                          onClick={() => insertVariable('body', v.key)}
-                          sx={{ cursor: 'pointer', fontFamily: 'monospace', fontSize: '0.8rem' }}
-                        />
-                      </Tooltip>
-                    ))}
-                  </Box>
-                </Box>
-
-                {formattedLastUpdated && (
-                  <Typography sx={{ fontSize: '0.875rem', color: 'text.secondary', fontWeight: 600 }}>
-                    Last updated: {formattedLastUpdated}
-                  </Typography>
-                )}
-
-                <TextField
-                  label="Email Subject"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  fullWidth
-                  size="small"
-                  sx={{
-                    maxWidth: 900,
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: inputFieldBg,
-                    },
-                  }}
-                />
-
-                <TextField
-                  label="Email Body"
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  fullWidth
-                  multiline
-                  minRows={14}
-                  maxRows={30}
-                  InputProps={{
-                    sx: { fontFamily: 'monospace', fontSize: '0.875rem', whiteSpace: 'pre-wrap' },
-                  }}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: inputFieldBg,
-                    },
-                  }}
-                />
-
-                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<SaveRoundedIcon />}
-                    onClick={handleSave}
-                    disabled={saving || !selectedUnitId}
-                    sx={{ textTransform: 'none', fontWeight: 700, px: 3 }}
-                  >
-                    {saving ? 'Saving...' : 'Save Template'}
-                  </Button>
-                  {hasCustomTemplate && (
-                    <Button
+            <Box>
+              <Typography sx={{ fontWeight: 700, fontSize: '0.875rem', mb: 1, color: 'text.secondary' }}>
+                Available Variables (click to insert at end)
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                {AVAILABLE_VARIABLES.map((v) => (
+                  <Tooltip key={v.key} title={`Inserts {{${v.key}}} — Example: ${v.example}`} arrow>
+                    <Chip
+                      label={v.key}
+                      size="small"
                       variant="outlined"
-                      color="warning"
-                      startIcon={<RestoreIcon />}
-                      onClick={handleReset}
-                      disabled={saving}
-                      sx={{ textTransform: 'none', fontWeight: 700 }}
-                    >
-                      Reset to Default
-                    </Button>
-                  )}
-                  <Button
-                    variant="outlined"
-                    onClick={() => setShowPreview(true)}
-                    sx={{ textTransform: 'none', fontWeight: 600 }}
-                  >
-                    Preview
-                  </Button>
-                </Box>
-              </>
-            )}
+                      onClick={() => insertVariable('body', v.key)}
+                      sx={{ cursor: 'pointer', fontFamily: 'monospace', fontSize: '0.8rem' }}
+                    />
+                  </Tooltip>
+                ))}
+              </Box>
+            </Box>
+
+            <TextField
+              label="Email Subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              fullWidth
+              size="small"
+              sx={{
+                maxWidth: 900,
+                '& .MuiOutlinedInput-root': {
+                  backgroundColor: inputFieldBg,
+                },
+              }}
+            />
+
+            <TextField
+              label="Email Body"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              fullWidth
+              multiline
+              minRows={14}
+              maxRows={30}
+              InputProps={{
+                sx: { fontFamily: 'monospace', fontSize: '0.875rem', whiteSpace: 'pre-wrap' },
+              }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  backgroundColor: inputFieldBg,
+                },
+              }}
+            />
+
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<SaveRoundedIcon />}
+                onClick={handleSave}
+                disabled={saving || !selectedUnitId}
+                sx={{ textTransform: 'none', fontWeight: 700, px: 3 }}
+              >
+                {saving ? 'Saving...' : 'Save Template'}
+              </Button>
+              {hasCustomTemplate && (
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  startIcon={<RestoreIcon />}
+                  onClick={handleReset}
+                  disabled={saving}
+                  sx={{ textTransform: 'none', fontWeight: 700 }}
+                >
+                  Reset to Default
+                </Button>
+              )}
+              <Button
+                variant="outlined"
+                onClick={() => setShowPreview(true)}
+                sx={{ textTransform: 'none', fontWeight: 600 }}
+              >
+                Preview
+              </Button>
+            </Box>
           </Box>
         )}
       </Paper>

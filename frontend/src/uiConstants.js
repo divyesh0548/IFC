@@ -41,6 +41,31 @@ export const FILTER_DROPDOWN_MIN_WIDTH_SM = 180
 // Default min-width for slightly wider dropdowns (e.g. Business Process names)
 export const FILTER_DROPDOWN_MIN_WIDTH_LG = 220
 
+/** Control-number search on RACM listing pages — underline only (no box border). */
+export const CONTROL_NUMBER_SEARCH_FIELD_SX = {
+  minWidth: { xs: '100%', sm: 260 },
+  '& .MuiInput-root': {
+    backgroundColor: 'transparent',
+  },
+  '& .MuiInput-underline:before': {
+    borderBottomColor: 'divider',
+  },
+  '& .MuiInput-underline:hover:not(.Mui-disabled):before': {
+    borderBottomColor: 'text.secondary',
+  },
+  '& .MuiInput-underline:after': {
+    borderBottomColor: 'primary.main',
+  },
+}
+
+/** Row layout for control-number search + Search/Clear buttons — bottoms aligned. */
+export const CONTROL_NUMBER_SEARCH_FORM_SX = {
+  display: 'flex',
+  flexDirection: { xs: 'column', sm: 'row' },
+  gap: 1,
+  alignItems: { xs: 'stretch', sm: 'flex-end' },
+}
+
 // Standard width for full-width filters when used inside responsive containers
 export const FILTER_BOX_MIN_WIDTH = {
   xs: '100%',
