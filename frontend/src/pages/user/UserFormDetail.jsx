@@ -47,7 +47,7 @@ import ChangeRequestHistoryList from '../../components/racm/ChangeRequestHistory
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import ProcessOwnerDeclarationAction from '../../components/racm/ProcessOwnerDeclarationAction'
 import ProcessOwnerDeclarationBadge from '../../components/racm/ProcessOwnerDeclarationBadge'
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasDesignImplementationSectionContent, hasRacmFieldValue, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE, DESIGN_IMPLEMENTATION_SECTION_KEY, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatIndianDateTime, formatDateOnly, toDateOnlyString } from '../../lib/dateTime'
 import { formatChangeRequestDisplayValue } from '../../lib/changeRequestHistory'
@@ -150,7 +150,10 @@ function isRequestChangeFieldEditable(fieldKey) {
 
 function getExtraRequestChangeFields(fieldDefinitions) {
   return (Array.isArray(fieldDefinitions) ? fieldDefinitions : [])
-    .filter((field) => !field.is_fixed)
+    .filter((field) => (
+      !field.is_fixed
+      && String(field.section_key || '').trim() !== DESIGN_IMPLEMENTATION_SECTION_KEY
+    ))
     .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
 }
 
@@ -1140,7 +1143,7 @@ function UserFormDetail() {
   // Design & Implementation fields should render only when they have a value.
   const groupedApproverFields = APPROVAL_SECTION_FIELD_KEYS
 
-  const hasGroupedFieldValue = hasPopulatedApprovalSectionFields(formData)
+  const hasGroupedFieldValue = hasDesignImplementationSectionContent(formData)
 
   if (loading) {
     return (
@@ -2118,6 +2121,17 @@ function UserFormDetail() {
                         </Box>
                       )
                     })}
+                    <RacmTemplateSectionFields
+                      sectionKey={DESIGN_IMPLEMENTATION_SECTION_KEY}
+                      title=""
+                      fieldDefinitions={formData.field_definitions}
+                      values={formData.dynamic_values || {}}
+                      asCard={false}
+                      showTitle={false}
+                      blendIntoParent
+                      showCustomColumnIndicator
+                      hideEmpty
+                    />
                   </Box>
                 </CardContent>
               </Card>

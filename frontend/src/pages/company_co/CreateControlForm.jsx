@@ -348,7 +348,8 @@ function CreateControlForm({ libraryMode = false }) {
         if (cancelled) return
 
         if (response.ok && data.success) {
-          const extras = Array.isArray(data.data?.extra_fields) ? data.data.extra_fields : []
+          const extras = (Array.isArray(data.data?.extra_fields) ? data.data.extra_fields : [])
+            .filter((field) => String(field.section_key || '').trim() !== 'design_implementation')
           setRacmTemplate(data.data?.template || null)
           setExtraTemplateFields(extras)
           setSectionLabels({

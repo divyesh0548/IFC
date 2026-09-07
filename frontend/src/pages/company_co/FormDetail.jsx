@@ -48,7 +48,7 @@ import {
 import UnitUserSearchAutocomplete from '../../components/company_co/UnitUserSearchAutocomplete'
 import CompanyUserSearchAutocomplete from '../../components/company_co/CompanyUserSearchAutocomplete'
 import { fetchUnitUsers } from '../../components/company_co/unitUserSearch'
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, hasValidProcessOwnerAssignment, isCoordinatorAssignedRacm, getRacmReassignmentBlockMessage, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasDesignImplementationSectionContent, hasRacmFieldValue, hasValidProcessOwnerAssignment, isCoordinatorAssignedRacm, getRacmReassignmentBlockMessage, getRejectedResubmitEligibility, REJECTED_RESUBMIT_MESSAGE, DESIGN_IMPLEMENTATION_SECTION_KEY, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields'
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog'
@@ -2095,7 +2095,7 @@ function FormDetail() {
   // Grouped fields that should be displayed together (only if at least one has a value)
   const groupedApproverFields = APPROVAL_SECTION_FIELD_KEYS
   
-  const hasGroupedFieldValue = hasPopulatedApprovalSectionFields(formData)
+  const hasGroupedFieldValue = hasDesignImplementationSectionContent(formData)
   const deficiencyResponse = formData?.deficiency_response || null
   const deficiencyCurrentSubmission = deficiencyResponse?.current_submission || null
   const deficiencySubmissions = Array.isArray(deficiencyResponse?.submissions)
@@ -3598,6 +3598,17 @@ function FormDetail() {
                       </Box>
                     )
                   })}
+                  <RacmTemplateSectionFields
+                    sectionKey={DESIGN_IMPLEMENTATION_SECTION_KEY}
+                    title=""
+                    fieldDefinitions={formData.field_definitions}
+                    values={formData.dynamic_values || {}}
+                    asCard={false}
+                    showTitle={false}
+                    blendIntoParent
+                    showCustomColumnIndicator
+                    hideEmpty
+                  />
                 </Box>
               </CardContent>
             </Card>

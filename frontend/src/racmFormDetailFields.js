@@ -109,6 +109,7 @@ export const APPROVAL_SECTION_FIELD_KEYS = [
   'design_deficiency_desc',
 ]
 
+export const DESIGN_IMPLEMENTATION_SECTION_KEY = 'design_implementation'
 export const DESIGN_IMPLEMENTATION_SECTION_TITLE = 'Design and Implementation'
 export const DOCUMENTS_APPROVAL_SECTION_TITLE = 'Documents & Approval'
 
@@ -131,6 +132,30 @@ export function getPopulatedApprovalSectionFields(formData, keys = APPROVAL_SECT
 
 export function hasPopulatedApprovalSectionFields(formData, keys = APPROVAL_SECTION_FIELD_KEYS) {
   return getPopulatedApprovalSectionFields(formData, keys).length > 0
+}
+
+export function getDesignImplementationExtraFields(fieldDefinitions) {
+  return (Array.isArray(fieldDefinitions) ? fieldDefinitions : [])
+    .filter((field) => (
+      !field.is_fixed
+      && String(field.section_key || '').trim() === DESIGN_IMPLEMENTATION_SECTION_KEY
+    ))
+    .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
+}
+
+export function getPopulatedDesignImplementationExtraFields(fieldDefinitions, dynamicValues) {
+  return getDesignImplementationExtraFields(fieldDefinitions).filter((field) => (
+    hasRacmFieldValue(dynamicValues?.[field.field_key])
+  ))
+}
+
+export function hasDesignImplementationSectionContent(formData) {
+  if (!formData) return false
+  if (hasPopulatedApprovalSectionFields(formData)) return true
+  return getPopulatedDesignImplementationExtraFields(
+    formData.field_definitions,
+    formData.dynamic_values
+  ).length > 0
 }
 
 export function isCoordinatorAssignedRacm(form) {

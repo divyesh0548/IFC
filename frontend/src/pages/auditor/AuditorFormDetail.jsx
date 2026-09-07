@@ -33,7 +33,7 @@ import {
   FORM_DETAIL_ROOT_SX,
   formatRacmApprovalStatusLabel,
 } from '../../uiConstants'
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasRacmFieldValue, getRacmProcessOwnerDisplayValue, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, hasPopulatedApprovalSectionFields, hasDesignImplementationSectionContent, hasRacmFieldValue, getRacmProcessOwnerDisplayValue, DESIGN_IMPLEMENTATION_SECTION_KEY, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields'
 import { API_BASE_URL, apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { formatRacmUserDocumentSubtitle, normalizeRacmUserDocuments, normalizeSampleDocuments } from '../../lib/racmUserDocuments'
@@ -345,7 +345,7 @@ function AuditorFormDetail() {
   ]
   const excludedFields = ['id', 'form_id', 'company_identifier', 'created_at', 'active', 'approved_rejected', 'reason_by_approver']
   const groupedApproverFields = APPROVAL_SECTION_FIELD_KEYS
-  const hasGroupedFieldValue = hasPopulatedApprovalSectionFields(formData)
+  const hasGroupedFieldValue = hasDesignImplementationSectionContent(formData)
 
   const sampleDocs = getSampleDocs()
   const sampleDocCount = sampleDocs.length
@@ -1106,6 +1106,17 @@ function AuditorFormDetail() {
                       </Box>
                     )
                   })}
+                  <RacmTemplateSectionFields
+                    sectionKey={DESIGN_IMPLEMENTATION_SECTION_KEY}
+                    title=""
+                    fieldDefinitions={formData.field_definitions}
+                    values={formData.dynamic_values || {}}
+                    asCard={false}
+                    showTitle={false}
+                    blendIntoParent
+                    showCustomColumnIndicator
+                    hideEmpty
+                  />
                 </Box>
               </CardContent>
             </Card>

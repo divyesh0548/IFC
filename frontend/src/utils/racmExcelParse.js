@@ -265,6 +265,27 @@ function parseSheet(worksheet, sheetName, options = {}) {
 
 /**
  * @param {ArrayBuffer} arrayBuffer — from File.arrayBuffer()
+ * @returns {string[]} Worksheet names in workbook order
+ */
+export function listRacmExcelSheetNames(arrayBuffer) {
+  try {
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+    const sheetNames = workbook.SheetNames
+
+    if (!sheetNames || sheetNames.length === 0) {
+      throw new Error('Excel file has no sheets')
+    }
+
+    return sheetNames.map((name) => String(name))
+  } catch (error) {
+    throw new Error(error.message || 'Error reading Excel worksheets')
+  }
+}
+
+/**
+ * Parse a single worksheet only — never merges sheets.
+ * @param {ArrayBuffer} arrayBuffer — from File.arrayBuffer()
+ * @param {{ sheetName: string, headerRowNumber?: number|null }} options
  * @returns {Array<Record<string, string|null>>} Raw row objects keyed by Excel header labels
  */
 export function parseRacmExcelFromArrayBuffer(arrayBuffer, options = {}) {
@@ -276,24 +297,25 @@ export function parseRacmExcelFromArrayBuffer(arrayBuffer, options = {}) {
       throw new Error('Excel file has no sheets')
     }
 
-    const allDataRows = []
-
-    for (let i = 0; i < sheetNames.length; i++) {
-      const sheetName = sheetNames[i]
-      const worksheet = workbook.Sheets[sheetName]
-      try {
-        const sheetData = parseSheet(worksheet, sheetName, options)
-        allDataRows.push(...sheetData)
-      } catch {
-        continue
-      }
+    const requestedSheetName = String(options.sheetName || '').trim()
+    if (!requestedSheetName) {
+      throw new Error('Please select a worksheet to import.')
     }
 
-    if (allDataRows.length === 0) {
-      throw new Error('No data rows found in any sheet')
+    if (!sheetNames.includes(requestedSheetName)) {
+      throw new Error(`Worksheet "${requestedSheetName}" was not found in the Excel file.`)
     }
 
-    return allDataRows
+    const worksheet = workbook.Sheets[requestedSheetName]
+    const sheetData = parseSheet(worksheet, requestedSheetName, options)
+
+    if (!sheetData || sheetData.length === 0) {
+      throw new Error(
+        `No data rows found in worksheet "${requestedSheetName}". Check the header row or choose another sheet.`
+      )
+    }
+
+    return sheetData
   } catch (error) {
     throw new Error(error.message || 'Error parsing Excel file')
   }

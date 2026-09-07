@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import Card from '@mui/material/Card';
@@ -38,7 +38,7 @@ import {
   FORM_DETAIL_CONTENT_STACK_SX,
   FORM_DETAIL_ROOT_SX,
 } from '../../uiConstants';
-import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, getRacmProcessOwnerDisplayValue, hasPopulatedApprovalSectionFields, hasRacmFieldValue, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields';
+import { RACM_FIELD_LABELS, orderControlDetailKeys, APPROVAL_SECTION_FIELD_KEYS, getPopulatedApprovalSectionFields, getRacmProcessOwnerDisplayValue, hasPopulatedApprovalSectionFields, hasDesignImplementationSectionContent, getDesignImplementationExtraFields, hasRacmFieldValue, DESIGN_IMPLEMENTATION_SECTION_KEY, DESIGN_IMPLEMENTATION_SECTION_TITLE, DOCUMENTS_APPROVAL_SECTION_TITLE, DOCUMENTS_APPROVAL_REMARKS_ROW_SX } from '../../racmFormDetailFields';
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext';
 import { RacmAuditLogsDialog } from '../../components/racm/RacmAuditLogsDialog';
 import { RacmTemplateSectionFields } from '../../components/racm/RacmTemplateSectionFields';
@@ -64,6 +64,7 @@ function ApproverFormDetail() {
     control_design_conclusion: '',
     design_deficiency_desc: ''
   })
+  const [editableDynamicValues, setEditableDynamicValues] = useState({})
   const [changeDecisionOpen, setChangeDecisionOpen] = useState(false)
   const [changeDecisionReason, setChangeDecisionReason] = useState('')
   const [changeDecisionSubmitting, setChangeDecisionSubmitting] = useState(false)
@@ -173,6 +174,11 @@ function ApproverFormDetail() {
     }
   }, [form_id])
 
+  const designImplementationExtraFields = useMemo(
+    () => getDesignImplementationExtraFields(formData?.field_definitions),
+    [formData?.field_definitions]
+  )
+
   const fetchFormData = async () => {
     setLoading(true)
     setError(null)
@@ -192,6 +198,7 @@ function ApproverFormDetail() {
           control_design_conclusion: data.data.control_design_conclusion || '',
           design_deficiency_desc: data.data.design_deficiency_desc || ''
         })
+        setEditableDynamicValues({ ...(data.data.dynamic_values || {}) })
         setDeficiencyReviewDecision('')
         setDeficiencyReviewComment('')
       } else {
@@ -209,6 +216,13 @@ function ApproverFormDetail() {
     setEditableFields(prev => ({
       ...prev,
       [field]: value
+    }))
+  }
+
+  const handleDynamicFieldChange = (fieldKey, value) => {
+    setEditableDynamicValues((prev) => ({
+      ...prev,
+      [fieldKey]: value,
     }))
   }
 
@@ -257,12 +271,18 @@ function ApproverFormDetail() {
     }
 
     const isApproveAction = approvalDecision === 'Approved'
+    const designExtraFields = getDesignImplementationExtraFields(formData?.field_definitions)
+    const dynamicValuesPayload = {}
+    designExtraFields.forEach((field) => {
+      dynamicValuesPayload[field.field_key] = editableDynamicValues[field.field_key] ?? ''
+    })
     const payload = {
       status: approvalDecision,
       reason_by_approver: reasonByApprover || '',
       control_design_procs: editableFields.control_design_procs,
       control_design_conclusion: isApproveAction ? editableFields.control_design_conclusion : '',
       design_deficiency_desc: isApproveAction ? editableFields.design_deficiency_desc : '',
+      dynamic_values: dynamicValuesPayload,
     }
 
     setApproving(true)
@@ -287,6 +307,7 @@ function ApproverFormDetail() {
           control_design_conclusion: '',
           design_deficiency_desc: ''
         })
+        setEditableDynamicValues({})
         setFormData(data.data)
         setTimeout(() => {
           fetchFormData()
@@ -678,7 +699,7 @@ function ApproverFormDetail() {
   const uploadedDocs = Array.isArray(formData?.doc_uploaded_by_user_docs)
     ? formData.doc_uploaded_by_user_docs.filter((doc) => String(doc.doc_uploaded_by_user || '').trim() !== '')
     : []
-  const hasGroupedFieldValue = hasPopulatedApprovalSectionFields(formData)
+  const hasGroupedFieldValue = hasDesignImplementationSectionContent(formData)
   const selectedDesignConclusion = isPending
     ? String(editableFields.control_design_conclusion || '').trim()
     : String(formData?.control_design_conclusion || '').trim()
@@ -1608,6 +1629,17 @@ function ApproverFormDetail() {
                         </Box>
                       )
                     })}
+                    <RacmTemplateSectionFields
+                      sectionKey={DESIGN_IMPLEMENTATION_SECTION_KEY}
+                      title=""
+                      fieldDefinitions={formData.field_definitions}
+                      values={formData.dynamic_values || {}}
+                      asCard={false}
+                      showTitle={false}
+                      blendIntoParent
+                      showCustomColumnIndicator
+                      hideEmpty
+                    />
                   </Box>
                 </CardContent>
               </Card>
@@ -2067,20 +2099,51 @@ function ApproverFormDetail() {
                                 </React.Fragment>
                               )
                             })}
+
+                          {designImplementationExtraFields.map((field) => (
+                            <TextField
+                              key={field.field_key}
+                              label={field.label}
+                              variant="outlined"
+                              value={editableDynamicValues[field.field_key] || ''}
+                              onChange={(e) => handleDynamicFieldChange(field.field_key, e.target.value)}
+                              fullWidth
+                              multiline
+                              rows={3}
+                              helperText="Optional"
+                              sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}
+                            />
+                          ))}
                         </>
                       ) : null}
 
                       {showRejectFlowFields ? (
-                        <TextField
-                          label={fieldLabels.control_design_procs}
-                          variant="outlined"
-                          value={editableFields.control_design_procs || ''}
-                          onChange={(e) => handleFieldChange('control_design_procs', e.target.value)}
-                          fullWidth
-                          multiline
-                          rows={4}
-                          sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}
-                        />
+                        <>
+                          <TextField
+                            label={fieldLabels.control_design_procs}
+                            variant="outlined"
+                            value={editableFields.control_design_procs || ''}
+                            onChange={(e) => handleFieldChange('control_design_procs', e.target.value)}
+                            fullWidth
+                            multiline
+                            rows={4}
+                            sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}
+                          />
+                          {designImplementationExtraFields.map((field) => (
+                            <TextField
+                              key={`reject-${field.field_key}`}
+                              label={field.label}
+                              variant="outlined"
+                              value={editableDynamicValues[field.field_key] || ''}
+                              onChange={(e) => handleDynamicFieldChange(field.field_key, e.target.value)}
+                              fullWidth
+                              multiline
+                              rows={3}
+                              helperText="Optional"
+                              sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}
+                            />
+                          ))}
+                        </>
                       ) : null}
 
                       {(showApproveFlowFields || showRejectFlowFields) ? (

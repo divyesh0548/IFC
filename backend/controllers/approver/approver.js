@@ -25,7 +25,9 @@ const { buildUserFormDetailUrl } = require('../../utils/racm_status_user_email')
 const {
   getTemplateWithFieldsById,
   loadDynamicFieldValuesForForm,
+  applyApprovedDynamicFieldChanges,
   isRacmTemplateSchemaReady,
+  RACM_TEMPLATE_SECTIONS,
 } = require('../../utils/racm_templates');
 const {
   controlFormsUtcOverridesSql,
@@ -438,6 +440,7 @@ async function approveForm(req, res) {
       control_design_procs,
       control_design_conclusion,
       design_deficiency_desc,
+      dynamic_values,
     } = req.body;
     const approver = req.approver;
 
@@ -546,7 +549,7 @@ async function approveForm(req, res) {
 
       const lockedFormResult = await client.query(
         `
-          SELECT cf.form_id, cf.active
+          SELECT cf.form_id, cf.active, cf.template_id
           FROM control_forms cf
           ${scopedApproverRacmJoin('cf')}
           WHERE cf.form_id = $2
@@ -586,6 +589,48 @@ async function approveForm(req, res) {
         });
       }
 
+      const templateId = lockedFormResult.rows[0]?.template_id;
+      if (
+        dynamic_values !== undefined
+        && templateId
+        && await isRacmTemplateSchemaReady(client)
+      ) {
+        const templatePayload = await getTemplateWithFieldsById(client, templateId);
+        if (!templatePayload.ok) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: templatePayload.message || 'Template not found for this RACM',
+          });
+        }
+
+        const designExtraKeys = new Set(
+          (templatePayload.extra_fields || [])
+            .filter((field) => String(field.section_key || '').trim() === RACM_TEMPLATE_SECTIONS.DESIGN_IMPLEMENTATION)
+            .map((field) => field.field_key)
+        );
+        const fieldChanges = {};
+        for (const fieldKey of designExtraKeys) {
+          fieldChanges[fieldKey] = dynamic_values?.[fieldKey] ?? '';
+        }
+
+        if (Object.keys(fieldChanges).length > 0) {
+          const saveResult = await applyApprovedDynamicFieldChanges(
+            client,
+            form_id,
+            templateId,
+            fieldChanges
+          );
+          if (!saveResult.ok) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+              success: false,
+              message: saveResult.message || 'Failed to save custom Design and Implementation fields',
+            });
+          }
+        }
+      }
+
       await client.query('COMMIT');
       updatedForm = result.rows[0];
     } catch (dbErr) {
@@ -604,6 +649,15 @@ async function approveForm(req, res) {
     }
 
     await attachControlFormDocuments(pool, [updatedForm]);
+    if (updatedForm?.template_id && await isRacmTemplateSchemaReady(pool)) {
+      const templatePayload = await getTemplateWithFieldsById(pool, updatedForm.template_id);
+      if (templatePayload.ok) {
+        updatedForm.field_definitions = templatePayload.field_definitions || [];
+        updatedForm.extra_fields = templatePayload.extra_fields || [];
+      }
+      const dynamicPayload = await loadDynamicFieldValuesForForm(pool, form_id);
+      updatedForm.dynamic_values = dynamicPayload.dynamic_values || {};
+    }
     const processOwnerEmail = updatedForm.control_owner;
 
     await notifyProcessOwnerRacmDecision(

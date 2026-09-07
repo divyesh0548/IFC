@@ -18,6 +18,7 @@ const {
   saveDynamicFieldValues,
   incrementTemplateLinkedRacmCount,
   isRacmTemplateSchemaReady,
+  RACM_TEMPLATE_SECTIONS,
 } = require('./racm_templates');
 
 const EXTRA_FIELD_MAPPING_PREFIX = 'extra:';
@@ -129,7 +130,7 @@ async function findExistingCompanyControlNumberDuplicates(client, companyIdentif
   const companyId = String(companyIdentifier || '').trim();
   if (!companyId) return [];
 
-  const controlNumbers = Array.from(
+  const uploadControlNumbers = Array.from(
     new Set(
       (transformedData || [])
         .map((row) => (row?.control_number != null ? String(row.control_number).trim() : ''))
@@ -137,17 +138,18 @@ async function findExistingCompanyControlNumberDuplicates(client, companyIdentif
     )
   );
 
-  if (controlNumbers.length === 0) return [];
+  if (uploadControlNumbers.length === 0) return [];
 
   const result = await client.query(
     `
       SELECT DISTINCT TRIM(control_number) AS control_number
       FROM control_forms
       WHERE company_identifier = $1
+        AND NULLIF(TRIM(COALESCE(control_number, '')), '') IS NOT NULL
         AND TRIM(control_number) = ANY($2::text[])
       ORDER BY TRIM(control_number) ASC
     `,
-    [companyId, controlNumbers]
+    [companyId, uploadControlNumbers]
   );
 
   return result.rows
@@ -157,15 +159,16 @@ async function findExistingCompanyControlNumberDuplicates(client, companyIdentif
 
 function findDuplicateControlNumbersWithinUpload(transformedData) {
   const counts = new Map();
+
   for (const row of transformedData || []) {
-    const controlNumber = row?.control_number != null ? String(row.control_number).trim() : '';
-    if (!controlNumber) continue;
-    counts.set(controlNumber, (counts.get(controlNumber) || 0) + 1);
+    const displayValue = row?.control_number != null ? String(row.control_number).trim() : '';
+    if (!displayValue) continue;
+    counts.set(displayValue, (counts.get(displayValue) || 0) + 1);
   }
 
   return Array.from(counts.entries())
     .filter(([, count]) => count > 1)
-    .map(([controlNumber]) => controlNumber)
+    .map(([value]) => value)
     .sort((a, b) => a.localeCompare(b));
 }
 
@@ -530,7 +533,9 @@ async function insertRacmRowsFromTransformedData(client, options) {
       activeTemplateId = templateResult.template.id;
       const templateDetails = await getTemplateWithFieldsById(client, activeTemplateId);
       if (templateDetails.ok) {
-        extraFields = templateDetails.extra_fields || [];
+        extraFields = (templateDetails.extra_fields || []).filter(
+          (field) => String(field.section_key || '').trim() !== RACM_TEMPLATE_SECTIONS.DESIGN_IMPLEMENTATION
+        );
       }
     }
   }

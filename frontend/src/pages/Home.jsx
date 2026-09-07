@@ -8,7 +8,6 @@ import {
   CardContent,
   Chip,
   Divider,
-  Grid,
   IconButton,
   Stack,
   Tooltip,
@@ -211,6 +210,8 @@ function Home() {
   }
 
   const isAuthResolved = authStatus !== 'checking'
+  const softBorder = alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.12 : 0.09)
+  const cardSurface = alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.55 : 0.78)
 
   const navButtonSx = {
     textTransform: 'none',
@@ -250,27 +251,30 @@ function Home() {
   }
 
   const panelSx = {
-    borderRadius: 6,
+    borderRadius: 4,
     border: '1px solid',
-    borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.1 : 0.08),
-    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.72 : 0.84),
+    borderColor: softBorder,
+    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.72 : 0.88),
     backdropFilter: 'blur(18px)',
     boxShadow:
       theme.palette.mode === 'dark'
-        ? '0 24px 60px rgba(0, 0, 0, 0.28)'
-        : '0 24px 60px rgba(15, 23, 42, 0.08)',
+        ? '0 18px 40px rgba(0, 0, 0, 0.24)'
+        : '0 18px 40px rgba(15, 23, 42, 0.07)',
   }
 
-  const sectionCardPaddingSx = { xs: 3, sm: 3.5, md: 4.25 }
+  const sectionCardPaddingSx = { xs: 2.75, sm: 3.25, md: 3.75 }
 
   const bulletListSx = {
     m: 0,
-    pl: 2.5,
+    pl: 2.25,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0.85,
     '& li': {
       color: 'text.secondary',
-      lineHeight: 1.75,
-      marginBottom: 0.8,
-      paddingLeft: 0.35,
+      lineHeight: 1.65,
+      paddingLeft: 0.25,
+      fontSize: '0.925rem',
     },
     '& li::marker': {
       color: theme.palette.primary.main,
@@ -279,26 +283,30 @@ function Home() {
 
   const heroHighlightCardSx = {
     width: '100%',
-    minHeight: 116,
-    p: 2.25,
-    borderRadius: 4,
+    flex: 1,
+    minHeight: 104,
+    p: 2,
+    borderRadius: 3,
     border: '1px solid',
-    borderColor: alpha(theme.palette.text.primary, 0.1),
-    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.55),
+    borderColor: softBorder,
+    backgroundColor: cardSurface,
     boxSizing: 'border-box',
     display: 'flex',
-    alignItems: 'stretch',
+    alignItems: 'flex-start',
   }
 
   const subsectionCardSx = {
     width: '100%',
     height: '100%',
-    p: 2.5,
-    borderRadius: 4,
+    minHeight: { md: 168 },
+    p: 2.25,
+    borderRadius: 3,
     border: '1px solid',
-    borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.1 : 0.07),
-    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.58),
+    borderColor: softBorder,
+    backgroundColor: cardSurface,
     boxSizing: 'border-box',
+    display: 'flex',
+    flexDirection: 'column',
   }
 
   return (
@@ -361,30 +369,34 @@ function Home() {
         </Box>
       </Box>
 
-      <Box sx={{ ...shellInnerSx, py: { xs: 4, sm: 5, md: 6.5 } }}>
-        <Stack spacing={{ xs: 3, md: 4 }} sx={{ animation: 'homeFadeUp 720ms ease-out' }}>
+      <Box sx={{ ...shellInnerSx, py: { xs: 3.5, sm: 4.5, md: 5.5 } }}>
+        <Stack spacing={{ xs: 2.75, md: 3.25 }} sx={{ animation: 'homeFadeUp 720ms ease-out' }}>
           <Card sx={{ ...panelSx, overflow: 'hidden' }}>
-            <CardContent sx={{ p: sectionCardPaddingSx }}>
+            <CardContent sx={{ p: `${0} !important` }}>
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) minmax(0, 1fr)' },
+                  gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.05fr) minmax(0, 0.95fr)' },
                   alignItems: 'stretch',
-                  gap: { xs: 3, md: 4 },
+                  gap: 0,
                 }}
               >
                 <Box
                   sx={{
                     minWidth: 0,
                     display: 'flex',
+                    p: sectionCardPaddingSx,
+                    borderRight: { lg: '1px solid' },
+                    borderBottom: { xs: '1px solid', lg: 0 },
+                    borderColor: softBorder,
                   }}
                 >
-                  <Stack spacing={2.5} sx={{ width: '100%', justifyContent: 'center' }}>
+                  <Stack spacing={2.25} sx={{ width: '100%', justifyContent: 'center' }}>
                     <Chip
                       label={portalContent.hero.eyebrow}
                       sx={{
                         alignSelf: 'flex-start',
-                        height: 34,
+                        height: 32,
                         borderRadius: 999,
                         backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.12),
                         color: theme.palette.text.primary,
@@ -396,29 +408,29 @@ function Home() {
                       component="h1"
                       sx={{
                         fontFamily: '"Aldrich", sans-serif',
-                        fontSize: { xs: '2.3rem', sm: '2.9rem', md: '3.6rem' },
-                        lineHeight: 1.02,
-                        letterSpacing: '-0.04em',
-                        maxWidth: '16ch',
+                        fontSize: { xs: '2rem', sm: '2.45rem', md: '2.9rem' },
+                        lineHeight: 1.12,
+                        letterSpacing: '-0.03em',
+                        maxWidth: { xs: '100%', md: '22ch' },
                       }}
                     >
                       {portalContent.hero.title}
                     </Typography>
-                    <Stack spacing={1.5}>
+                    <Stack spacing={1.35} sx={{ maxWidth: 640 }}>
                       {portalContent.hero.body.map((paragraph) => (
                         <Typography
                           key={paragraph.slice(0, 40)}
                           sx={{
                             color: 'text.secondary',
-                            fontSize: { xs: '1rem', md: '1.05rem' },
-                            lineHeight: 1.85,
+                            fontSize: { xs: '0.98rem', md: '1.02rem' },
+                            lineHeight: 1.75,
                           }}
                         >
                           {paragraph}
                         </Typography>
                       ))}
                     </Stack>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ pt: 1 }}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ pt: 0.5 }}>
                       {isAuthResolved && (isAuthenticated ? (
                         <Button variant="contained" color="primary" onClick={() => navigate(getDashboardPath())} sx={{ ...navButtonSx, px: 3 }}>
                           Open workspace
@@ -447,158 +459,143 @@ function Home() {
                   sx={{
                     minWidth: 0,
                     display: 'flex',
+                    p: sectionCardPaddingSx,
+                    background:
+                      theme.palette.mode === 'dark'
+                        ? 'linear-gradient(165deg, rgba(10,25,47,0.55) 0%, rgba(13,35,63,0.35) 100%)'
+                        : 'linear-gradient(165deg, rgba(255,255,255,0.55) 0%, rgba(231,244,244,0.7) 100%)',
                   }}
                 >
-                  <Box
-                    sx={{
-                      height: '100%',
-                      minHeight: { xs: 320, md: 360 },
-                      display: 'flex',
-                      flexDirection: 'column',
-                      borderRadius: 5,
-                      width: '100%',
-                      p: { xs: 3, md: 3.5 },
-                      position: 'relative',
-                      overflow: 'hidden',
-                      boxSizing: 'border-box',
-                      background:
-                        theme.palette.mode === 'dark'
-                          ? 'linear-gradient(160deg, rgba(10,25,47,0.94) 0%, rgba(13,35,63,0.9) 52%, rgba(8,20,36,0.96) 100%)'
-                          : 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(231,244,244,0.96) 55%, rgba(224,238,236,0.98) 100%)',
-                      border: '1px solid',
-                      borderColor: alpha(theme.palette.primary.main, 0.18),
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        position: 'absolute',
-                        width: 220,
-                        height: 220,
-                        borderRadius: '50%',
-                        top: -70,
-                        right: -60,
-                        backgroundColor: alpha(theme.palette.primary.main, 0.16),
-                        filter: 'blur(10px)',
-                      }}
-                    />
-                    <Box
-                      sx={{
-                        position: 'absolute',
-                        width: 180,
-                        height: 180,
-                        borderRadius: '50%',
-                        bottom: -70,
-                        left: -40,
-                        backgroundColor: alpha(theme.palette.secondary.main, 0.22),
-                        filter: 'blur(10px)',
-                      }}
-                    />
-                    <Stack
-                      spacing={2.2}
-                      sx={{
-                        position: 'relative',
-                        zIndex: 1,
-                        height: '100%',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <Box>
-                        <Typography sx={{ color: 'text.secondary', fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                          What this portal improves
-                        </Typography>
-                        <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.3rem', md: '1.55rem' }, mt: 1 }}>
-                          Better control operations with less manual follow-up
-                        </Typography>
-                      </Box>
+                  <Stack spacing={2} sx={{ width: '100%', height: '100%' }}>
+                    <Box>
+                      <Typography
+                        sx={{
+                          color: 'text.secondary',
+                          fontSize: '0.78rem',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.1em',
+                          fontWeight: 700,
+                        }}
+                      >
+                        What this portal improves
+                      </Typography>
+                      <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.2rem', md: '1.35rem' }, mt: 0.85, lineHeight: 1.3 }}>
+                        Better control operations with less manual follow-up
+                      </Typography>
+                    </Box>
 
-                      <Stack spacing={1.5} sx={{ width: '100%' }}>
-                        {portalContent.highlights.map((item) => {
-                          const Icon = item.icon
-                          return (
-                            <Box key={item.label} sx={heroHighlightCardSx}>
-                              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-                                <Box
-                                  sx={{
-                                    width: 42,
-                                    height: 42,
-                                    borderRadius: 3,
-                                    display: 'grid',
-                                    placeItems: 'center',
-                                    backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.12),
-                                    color: theme.palette.primary.main,
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  <Icon fontSize="small" />
-                                </Box>
-                                <Box>
-                                  <Typography sx={{ fontWeight: 800, fontSize: '1.05rem', lineHeight: 1.2 }}>
-                                    {item.value}{' '}
-                                    <Box component="span" sx={{ fontWeight: 700, color: 'text.secondary', fontSize: '0.88rem' }}>
-                                      {item.label}
-                                    </Box>
-                                  </Typography>
-                                  <Typography sx={{ color: 'text.secondary', mt: 0.5, lineHeight: 1.7, fontSize: '0.92rem' }}>
-                                    {item.description}
-                                  </Typography>
-                                </Box>
-                              </Stack>
-                            </Box>
-                          )
-                        })}
-                      </Stack>
+                    <Stack spacing={1.35} sx={{ width: '100%', flex: 1 }}>
+                      {portalContent.highlights.map((item) => {
+                        const Icon = item.icon
+                        return (
+                          <Box key={item.label} sx={heroHighlightCardSx}>
+                            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start', width: '100%' }}>
+                              <Box
+                                sx={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: 2.5,
+                                  display: 'grid',
+                                  placeItems: 'center',
+                                  backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.12),
+                                  color: theme.palette.primary.main,
+                                  flexShrink: 0,
+                                  mt: 0.15,
+                                }}
+                              >
+                                <Icon fontSize="small" />
+                              </Box>
+                              <Box sx={{ minWidth: 0, flex: 1 }}>
+                                <Typography sx={{ fontWeight: 800, fontSize: '1rem', lineHeight: 1.25 }}>
+                                  {item.value}{' '}
+                                  <Box component="span" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.86rem' }}>
+                                    {item.label}
+                                  </Box>
+                                </Typography>
+                                <Typography sx={{ color: 'text.secondary', mt: 0.55, lineHeight: 1.6, fontSize: '0.9rem' }}>
+                                  {item.description}
+                                </Typography>
+                              </Box>
+                            </Stack>
+                          </Box>
+                        )
+                      })}
                     </Stack>
-                  </Box>
+                  </Stack>
                 </Box>
               </Box>
             </CardContent>
           </Card>
 
-          <Stack id="ifc-value-sections" spacing={{ xs: 3, md: 3.5 }}>
+          <Stack id="ifc-value-sections" spacing={{ xs: 2.75, md: 3 }}>
             {portalContent.sections.map((section) => (
               <Card key={section.title} sx={{ ...panelSx, overflow: 'hidden' }}>
-                <CardContent sx={{ p: sectionCardPaddingSx }}>
-                  <Grid container spacing={{ xs: 3, md: 4 }} alignItems="stretch">
-                    <Grid item xs={12} lg={4}>
-                      <Stack
-                        spacing={2}
-                        sx={{
-                          height: '100%',
-                          justifyContent: 'center',
-                          pr: { lg: 1 },
-                        }}
-                      >
-                        <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.55rem', md: '1.9rem' }, lineHeight: 1.15 }}>
+                <CardContent sx={{ p: `${0} !important` }}>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 0.9fr) minmax(0, 1.1fr)' },
+                      alignItems: 'stretch',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        p: sectionCardPaddingSx,
+                        borderRight: { lg: '1px solid' },
+                        borderBottom: { xs: '1px solid', lg: 0 },
+                        borderColor: softBorder,
+                        display: 'flex',
+                        alignItems: 'center',
+                        background:
+                          theme.palette.mode === 'dark'
+                            ? alpha(theme.palette.primary.main, 0.06)
+                            : alpha(theme.palette.primary.main, 0.04),
+                      }}
+                    >
+                      <Stack spacing={1.5} sx={{ width: '100%', maxWidth: 420 }}>
+                        <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.4rem', md: '1.65rem' }, lineHeight: 1.2 }}>
                           {section.title}
                         </Typography>
-                        <Typography sx={{ color: 'text.secondary', lineHeight: 1.8 }}>{section.intro}</Typography>
+                        <Typography sx={{ color: 'text.secondary', lineHeight: 1.7, fontSize: '0.98rem' }}>
+                          {section.intro}
+                        </Typography>
                       </Stack>
-                    </Grid>
+                    </Box>
 
-                    <Grid item xs={12} lg={8}>
-                      <Grid container spacing={2.25} alignItems="stretch">
+                    <Box sx={{ p: sectionCardPaddingSx }}>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                          gap: 1.75,
+                          height: '100%',
+                          alignItems: 'stretch',
+                        }}
+                      >
                         {section.subsections.map((sub) => (
-                          <Grid item xs={12} md={6} key={sub.title} sx={{ display: 'flex' }}>
-                            <Box sx={subsectionCardSx}>
-                              <Stack spacing={1.25}>
-                                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                                  <CheckCircleOutlineRoundedIcon sx={{ fontSize: 18, color: theme.palette.primary.main }} />
-                                  <Typography sx={{ fontWeight: 700, lineHeight: 1.35 }}>{sub.title}</Typography>
-                                </Stack>
-                                <Box component="ul" sx={bulletListSx}>
-                                  {sub.bullets.map((bullet) => (
-                                    <Box component="li" key={bullet}>
-                                      {bullet}
-                                    </Box>
-                                  ))}
-                                </Box>
+                          <Box key={sub.title} sx={subsectionCardSx}>
+                            <Stack spacing={1.15} sx={{ height: '100%' }}>
+                              <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', minHeight: 42 }}>
+                                <CheckCircleOutlineRoundedIcon
+                                  sx={{ fontSize: 18, color: theme.palette.primary.main, mt: 0.2, flexShrink: 0 }}
+                                />
+                                <Typography sx={{ fontWeight: 700, lineHeight: 1.35, fontSize: '0.98rem' }}>
+                                  {sub.title}
+                                </Typography>
                               </Stack>
-                            </Box>
-                          </Grid>
+                              <Box component="ul" sx={bulletListSx}>
+                                {sub.bullets.map((bullet) => (
+                                  <Box component="li" key={bullet}>
+                                    {bullet}
+                                  </Box>
+                                ))}
+                              </Box>
+                            </Stack>
+                          </Box>
                         ))}
-                      </Grid>
-                    </Grid>
-                  </Grid>
+                      </Box>
+                    </Box>
+                  </Box>
                 </CardContent>
               </Card>
             ))}
@@ -614,16 +611,16 @@ function Home() {
             }}
           >
             <CardContent sx={{ p: sectionCardPaddingSx }}>
-              <Stack spacing={2} sx={{ textAlign: 'center', alignItems: 'center' }}>
-                <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.4rem', md: '1.8rem' }, maxWidth: 900, lineHeight: 1.3 }}>
+              <Stack spacing={1.75} sx={{ textAlign: 'center', alignItems: 'center', mx: 'auto', maxWidth: 860 }}>
+                <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.3rem', md: '1.6rem' }, lineHeight: 1.35 }}>
                   {portalContent.closing}
                 </Typography>
-                <Typography sx={{ color: 'text.secondary', maxWidth: 820, lineHeight: 1.8 }}>
+                <Typography sx={{ color: 'text.secondary', lineHeight: 1.75, fontSize: '0.98rem' }}>
                   Centralized workflow, audit visibility, and stronger ownership are what make the system useful in practice,
                   not just documented on paper.
                 </Typography>
                 {isAuthenticated ? (
-                  <Button variant="contained" color="primary" onClick={() => navigate(getDashboardPath())} sx={{ ...navButtonSx, px: 3 }}>
+                  <Button variant="contained" color="primary" onClick={() => navigate(getDashboardPath())} sx={{ ...navButtonSx, px: 3, mt: 0.5 }}>
                     Continue to dashboard
                   </Button>
                 ) : null}
@@ -633,10 +630,12 @@ function Home() {
 
           <Card sx={panelSx}>
             <CardContent sx={{ p: sectionCardPaddingSx }}>
-              <Stack spacing={2}>
-                <Typography sx={{ fontWeight: 800, fontSize: '1rem' }}>Legal disclaimer</Typography>
+              <Stack spacing={1.75}>
+                <Typography sx={{ fontWeight: 800, fontSize: '0.98rem', letterSpacing: '0.01em' }}>
+                  Legal disclaimer
+                </Typography>
                 <Divider />
-                <Typography sx={{ color: 'text.secondary', lineHeight: 1.8, fontSize: '0.94rem' }}>
+                <Typography sx={{ color: 'text.secondary', lineHeight: 1.75, fontSize: '0.92rem' }}>
                   {portalContent.legalDisclaimer}
                 </Typography>
               </Stack>

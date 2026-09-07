@@ -46,9 +46,7 @@ const SECTION_OPTIONS = [
   { key: 'others', label: 'Others' },
 ]
 
-const CUSTOM_COLUMN_SECTION_OPTIONS = SECTION_OPTIONS.filter(
-  (option) => option.key !== 'design_implementation'
-)
+const CUSTOM_COLUMN_SECTION_OPTIONS = SECTION_OPTIONS
 const CUSTOM_COLUMN_SECTION_KEYS = new Set(CUSTOM_COLUMN_SECTION_OPTIONS.map((option) => option.key))
 
 const ASSERTION_COLUMNS_INFO =
@@ -252,7 +250,7 @@ function TemplateColumnListing({
                       color: 'text.disabled',
                     }}
                   >
-                    (To be filled by auditor)
+                    (To be filled by approver)
                   </Box>
                 ) : null}
               </Typography>
@@ -859,7 +857,7 @@ function RacmTemplates() {
       return
     }
     if (!CUSTOM_COLUMN_SECTION_KEYS.has(columnEditor.sectionKey)) {
-      toast.error('Custom columns cannot be added to Design and Implementation')
+      toast.error('Invalid section for custom columns')
       return
     }
     if (!assertUniqueColumnLabel(label, { excludeClientId: columnEditor.clientId })) {
@@ -899,7 +897,7 @@ function RacmTemplates() {
   const appendDraftField = (sectionKey) => {
     if (isPageBusy()) return
     if (!CUSTOM_COLUMN_SECTION_KEYS.has(sectionKey)) {
-      toast.error('Custom columns cannot be added to Design and Implementation')
+      toast.error('Invalid section for custom columns')
       return
     }
     const unfinishedDraft = editableExtraFields.find((field) => field.isDraft)

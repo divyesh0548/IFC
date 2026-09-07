@@ -87,9 +87,15 @@ export function RacmTemplateSectionFields({
   showCustomColumnIndicator = false,
   requestChangeMode = false,
   isFieldChanged,
+  hideEmpty = false,
 }) {
   const theme = useTheme()
   const fields = getSectionFields(fieldDefinitions, sectionKey)
+    .filter((field) => {
+      if (!hideEmpty || isEditMode) return true
+      const value = values?.[field.field_key]
+      return value !== null && value !== undefined && String(value).trim() !== ''
+    })
   if (fields.length === 0) return null
 
   const fieldCells = fields.map((field) => {

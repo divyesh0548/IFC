@@ -7,3 +7,16 @@ Should I remove max limit of smaple size for each control frequency?
 ELC to be Developed = Mayank sir will provide info on this later.
 
 Add audit logs of user(all types) creation as well as approver Assignment.
+
+
+Suggestions from Khadija : 
+
+Add employee ID in user creation. So seperate users.
+
+Coordinator can modify RACM currently, but it must be approved by company admin or approver of unit.
+
+Approved + Not effective is confusing combination.
+
+Approver can also suggest chnages in RACM.
+
+There must be multi level approval.

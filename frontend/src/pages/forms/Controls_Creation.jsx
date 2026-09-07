@@ -30,7 +30,10 @@ import ChecklistRoundedIcon from '@mui/icons-material/ChecklistRounded'
 import AddIcon from '@mui/icons-material/Add'
 import { toast } from 'react-hot-toast'
 import dayjs from 'dayjs'
-import { parseRacmExcelFromArrayBuffer } from '../../utils/racmExcelParse'
+import {
+  listRacmExcelSheetNames,
+  parseRacmExcelFromArrayBuffer,
+} from '../../utils/racmExcelParse'
 import {
   findDetectedControlFrequencyHeader,
   getControlFrequencyValidationDetails,
@@ -41,9 +44,14 @@ import { apiUrl } from '../../config/api'
 import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
 import ControlFrequencyValueMapDialog from '../../components/racm/ControlFrequencyValueMapDialog'
+import AssertionYesNoMapDialog from '../../components/racm/AssertionYesNoMapDialog'
 import { SampleSizeSettingsButton } from '../../components/company_co/UnitSampleSizeSettingsDialog'
 import ActiveRacmTemplateNotice from '../../components/company_co/ActiveRacmTemplateNotice'
 import { buildAutomaticColumnMappingForRows } from '../../utils/racmBulkImportColumnMapping'
+import {
+  applyAssertionYesNoMapping,
+  getAssertionYesNoMappingPrompt,
+} from '../../utils/assertionYesNoMapping'
 import { LIGHT_MODE_ALERT_SX } from '../../uiConstants'
 
 const MAX_BULK_IMPORT_ROWS = 5000
@@ -67,6 +75,9 @@ function Controls_Creation() {
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState(null)
+  const [sheetNames, setSheetNames] = useState([])
+  const [selectedSheet, setSelectedSheet] = useState('')
+  const [sheetNamesLoading, setSheetNamesLoading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [businessProcess, setBusinessProcess] = useState('')
   const [unitId, setUnitId] = useState('')
@@ -90,6 +101,14 @@ function Controls_Creation() {
     ctx: null,
     selections: {},
   })
+  const [assertionYesNoMappingDialogState, setAssertionYesNoMappingDialogState] = useState({
+    open: false,
+    distinctValues: [],
+    assertionHeaders: [],
+    templateExtraFields: [],
+    ctx: null,
+    selections: {},
+  })
   const [showSampleSizeNotice, setShowSampleSizeNotice] = useState(false)
   const accentColor = theme.palette.primary.main
   const accentSoft = alpha(accentColor, theme.palette.mode === 'dark' ? 0.18 : 0.12)
@@ -98,6 +117,7 @@ function Controls_Creation() {
   const hasAnyProgress =
     !!file ||
     !!preview ||
+    String(selectedSheet || '').trim() !== '' ||
     String(businessProcess || '').trim() !== '' ||
     String(unitId || '').trim() !== '' ||
     String(financialYear || '').trim() !== '' ||
@@ -108,6 +128,12 @@ function Controls_Creation() {
     !!pendingImport
   const hasReminderValues = String(dueDate || '').trim() !== '' || String(reminderFrequency || '').trim() !== ''
   const formLocked = unitsLoading || templateLoading
+
+  const clearSheetSelection = useCallback(() => {
+    setSheetNames([])
+    setSelectedSheet('')
+    setSheetNamesLoading(false)
+  }, [])
 
   const handleTemplateLoadingChange = useCallback((isLoading) => {
     setTemplateLoading(Boolean(isLoading))
@@ -194,10 +220,11 @@ function Controls_Creation() {
     return d.toISOString().split('T')[0]
   }
 
-  const validateAndSetFile = (selectedFile) => {
+  const validateAndSetFile = async (selectedFile) => {
     if (!selectedFile) {
       setFile(null)
       setPreview(null)
+      clearSheetSelection()
       return false
     }
 
@@ -207,25 +234,29 @@ function Controls_Creation() {
       }
     }
 
-    // Enforce .xlsx extension only (frontend limitation only)
+    // Allow .xlsx and .xlsb (frontend limitation only)
     const fileName = String(selectedFile.name || '').toLowerCase()
-    if (!fileName.endsWith('.xlsx')) {
-      toast.error('Only .xlsx files are allowed. Please upload an .xlsx file.')
+    const hasAllowedExtension = fileName.endsWith('.xlsx') || fileName.endsWith('.xlsb')
+    if (!hasAllowedExtension) {
+      toast.error('Only .xlsx or .xlsb files are allowed. Please upload an Excel file.')
       setFile(null)
       setPreview(null)
+      clearSheetSelection()
       clearFilePicker()
       return false
     }
 
-    // Validate file type
+    // Validate file type when the browser reports one
     const validTypes = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'application/vnd.ms-excel.sheet.binary.macroEnabled.12', // .xlsb
     ]
 
-    if (!validTypes.includes(selectedFile.type)) {
-      toast.error('Invalid file type. Please upload an .xlsx file.')
+    if (selectedFile.type && !validTypes.includes(selectedFile.type)) {
+      toast.error('Invalid file type. Please upload an .xlsx or .xlsb file.')
       setFile(null)
       setPreview(null)
+      clearSheetSelection()
       clearFilePicker()
       return false
     }
@@ -235,6 +266,7 @@ function Controls_Creation() {
       toast.error('File size exceeds 20MB limit.')
       setFile(null)
       setPreview(null)
+      clearSheetSelection()
       clearFilePicker()
       return false
     }
@@ -243,12 +275,32 @@ function Controls_Creation() {
     setPreview({
       name: selectedFile.name
     })
+    setSheetNames([])
+    setSelectedSheet('')
+    setSheetNamesLoading(true)
+
+    try {
+      const buffer = await selectedFile.arrayBuffer()
+      const names = listRacmExcelSheetNames(buffer)
+      setSheetNames(names)
+      setSelectedSheet(names.length === 1 ? names[0] : '')
+    } catch (err) {
+      toast.error(err.message || 'Could not read worksheets from the Excel file.')
+      setFile(null)
+      setPreview(null)
+      clearSheetSelection()
+      clearFilePicker()
+      return false
+    } finally {
+      setSheetNamesLoading(false)
+    }
+
     return true
   }
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0]
-    validateAndSetFile(selectedFile)
+    void validateAndSetFile(selectedFile)
   }
 
   const handleDragOver = (e) => {
@@ -269,7 +321,7 @@ function Controls_Creation() {
     setIsDragging(false)
 
     const droppedFile = e.dataTransfer.files[0]
-    validateAndSetFile(droppedFile)
+    void validateAndSetFile(droppedFile)
   }
 
   const handleFileSelect = () => {
@@ -279,6 +331,7 @@ function Controls_Creation() {
   const handleRemoveFile = () => {
     setFile(null)
     setPreview(null)
+    clearSheetSelection()
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -293,6 +346,7 @@ function Controls_Creation() {
     setDuplicateControlNumberNotice('')
     setFile(null)
     setPreview(null)
+    clearSheetSelection()
     setBusinessProcess('')
     setUnitId(unitOptions[0]?.unit_id || '')
     setFinancialYear('')
@@ -397,6 +451,17 @@ function Controls_Creation() {
       return
     }
 
+    if (sheetNamesLoading) {
+      toast.error('Still reading worksheets. Please wait a moment.')
+      return
+    }
+
+    const selectedSheetName = String(selectedSheet || '').trim()
+    if (!selectedSheetName) {
+      toast.error('Please select one worksheet to import.')
+      return
+    }
+
     if (!businessProcess) {
       toast.error('Please select a business process')
       return
@@ -432,6 +497,7 @@ function Controls_Creation() {
     try {
       const buffer = await file.arrayBuffer()
       rows = parseRacmExcelFromArrayBuffer(buffer, {
+        sheetName: selectedSheetName,
         headerRowNumber: manualHeaderRowNumber,
       })
     } catch (parseErr) {
@@ -476,7 +542,9 @@ function Controls_Creation() {
     }
     const templateExtraFields =
       templateResponse.ok && templateData.success && Array.isArray(templateData.data?.extra_fields)
-        ? templateData.data.extra_fields
+        ? templateData.data.extra_fields.filter(
+          (field) => String(field.section_key || '').trim() !== 'design_implementation'
+        )
         : []
     return {
       mappingConfig: {
@@ -487,27 +555,36 @@ function Controls_Creation() {
     }
   }
 
-  const handleAutomaticColumnMapping = async () => {
-    if (!pendingImport) {
-      handleMappingDialogCancel()
+  const continueImportAfterColumnMapping = async (importCtx, columnMapping, templateExtraFields = []) => {
+    const assertionPrompt = getAssertionYesNoMappingPrompt(
+      importCtx.rows,
+      columnMapping,
+      templateExtraFields
+    )
+    if (assertionPrompt.needed) {
+      setMappingDialogOpen(false)
+      setPendingImport(null)
+      setAssertionYesNoMappingDialogState({
+        open: true,
+        distinctValues: assertionPrompt.distinctValues,
+        assertionHeaders: assertionPrompt.assertionHeaders,
+        templateExtraFields,
+        ctx: {
+          importCtx,
+          column_mapping: columnMapping,
+        },
+        selections: Object.fromEntries(
+          assertionPrompt.distinctValues.map((value) => [value, ''])
+        ),
+      })
       return
     }
 
-    let columnMapping = {}
-    try {
-      const { mappingConfig, templateExtraFields } = await loadBulkImportMappingContext(pendingImport.unitId)
-      columnMapping = buildAutomaticColumnMappingForRows(
-        pendingImport.rows,
-        mappingConfig,
-        templateExtraFields
-      )
-    } catch (error) {
-      console.error('Failed to build automatic column mapping:', error)
-      toast.error('Could not prepare column mapping for import. Try manual column mapping.')
-      return
-    }
+    await continueImportAfterAssertionMapping(importCtx, columnMapping)
+  }
 
-    const detectedControlFrequencyHeader = findDetectedControlFrequencyHeader(pendingImport.rows)
+  const continueImportAfterAssertionMapping = async (importCtx, columnMapping) => {
+    const detectedControlFrequencyHeader = findDetectedControlFrequencyHeader(importCtx.rows)
     if (!detectedControlFrequencyHeader) {
       toast.error(
         'Control Frequency column was not detected automatically. Map it manually or correct the Excel file and upload again.'
@@ -516,17 +593,18 @@ function Controls_Creation() {
     }
 
     const controlFrequencyValidation = getControlFrequencyValidationDetails(
-      pendingImport.rows,
+      importCtx.rows,
       detectedControlFrequencyHeader
     )
     if (!controlFrequencyValidation.ok) {
       if (controlFrequencyValidation.reason === 'invalid_value') {
         setMappingDialogOpen(false)
+        setPendingImport(null)
         setControlFrequencyMappingDialogState({
           open: true,
           invalidValues: controlFrequencyValidation.invalidValues,
           ctx: {
-            importCtx: pendingImport,
+            importCtx,
             column_mapping: columnMapping,
           },
           selections: Object.fromEntries(
@@ -539,10 +617,34 @@ function Controls_Creation() {
       return
     }
 
-    const ctx = pendingImport
     setMappingDialogOpen(false)
     setPendingImport(null)
-    await runBulkImport(ctx, { column_mapping: columnMapping })
+    await runBulkImport(importCtx, { column_mapping: columnMapping })
+  }
+
+  const handleAutomaticColumnMapping = async () => {
+    if (!pendingImport) {
+      handleMappingDialogCancel()
+      return
+    }
+
+    let columnMapping = {}
+    let templateExtraFields = []
+    try {
+      const mappingContext = await loadBulkImportMappingContext(pendingImport.unitId)
+      templateExtraFields = mappingContext.templateExtraFields
+      columnMapping = buildAutomaticColumnMappingForRows(
+        pendingImport.rows,
+        mappingContext.mappingConfig,
+        templateExtraFields
+      )
+    } catch (error) {
+      console.error('Failed to build automatic column mapping:', error)
+      toast.error('Could not prepare column mapping for import. Try manual column mapping.')
+      return
+    }
+
+    await continueImportAfterColumnMapping(pendingImport, columnMapping, templateExtraFields)
   }
 
   const handleCustomColumnMapping = () => {
@@ -593,6 +695,44 @@ function Controls_Creation() {
       column_mapping: ctx.column_mapping,
       control_frequency_value_mapping: mapping,
     })
+  }
+
+  const handleAssertionYesNoMappingCancel = () => {
+    setAssertionYesNoMappingDialogState({
+      open: false,
+      distinctValues: [],
+      assertionHeaders: [],
+      templateExtraFields: [],
+      ctx: null,
+      selections: {},
+    })
+  }
+
+  const handleAssertionYesNoMappingSkip = async () => {
+    const ctx = assertionYesNoMappingDialogState.ctx
+    handleAssertionYesNoMappingCancel()
+    if (!ctx?.importCtx) return
+    await continueImportAfterAssertionMapping(ctx.importCtx, ctx.column_mapping)
+  }
+
+  const handleAssertionYesNoMappingConfirm = async (mapping) => {
+    const ctx = assertionYesNoMappingDialogState.ctx
+    const assertionHeaders = assertionYesNoMappingDialogState.assertionHeaders
+    handleAssertionYesNoMappingCancel()
+    if (!ctx?.importCtx) return
+
+    const mappedRows = applyAssertionYesNoMapping(
+      ctx.importCtx.rows,
+      assertionHeaders,
+      mapping
+    )
+    await continueImportAfterAssertionMapping(
+      {
+        ...ctx.importCtx,
+        rows: mappedRows,
+      },
+      ctx.column_mapping
+    )
   }
 
   return (
@@ -768,7 +908,7 @@ function Controls_Creation() {
               Upload checklist
             </Typography>
             {[
-              'Use a .xlsx file only, up to 20 MB.',
+              'Use a .xlsx or .xlsb file, up to 20 MB.',
               `Bussiness Process in excel will be ignored and will be set to the selected business process.`,
               'Due date and reminder frequency are optional and can be configured later',
             ].map((item) => (
@@ -830,7 +970,7 @@ function Controls_Creation() {
                 ref={fileInputRef}
                 id="excelFile"
                 name="excelFile"
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                accept=".xlsx,.xlsb,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.binary.macroEnabled.12"
                 onChange={handleFileChange}
                 disabled={loading || formLocked}
                 style={{ display: 'none' }}
@@ -887,7 +1027,7 @@ function Controls_Creation() {
                     Drop your Excel file here
                   </Typography>
                   <Typography sx={{ mt: 0.8, fontSize: '0.94rem', color: theme.palette.text.secondary }}>
-                    Click to browse or drag and drop a `.xlsx` file up to 20 MB.
+                    Click to browse or drag and drop a `.xlsx` or `.xlsb` file up to 20 MB.
                   </Typography>
                 </Paper>
               ) : (
@@ -948,6 +1088,40 @@ function Controls_Creation() {
                       <DeleteIcon />
                     </IconButton>
                   </Box>
+
+                  {sheetNamesLoading ? (
+                    <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <CircularProgress size={20} />
+                      <Typography variant="body2" color="text.secondary">
+                        Reading worksheets…
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <FormControl
+                      fullWidth
+                      required
+                      disabled={loading || formLocked || sheetNames.length === 0}
+                      variant="outlined"
+                      sx={{ mt: 2 }}
+                    >
+                      <InputLabel id="worksheet-select-label">Worksheet</InputLabel>
+                      <Select
+                        labelId="worksheet-select-label"
+                        value={selectedSheet}
+                        label="Worksheet"
+                        onChange={(e) => setSelectedSheet(e.target.value)}
+                      >
+                        {sheetNames.map((name) => (
+                          <MenuItem key={name} value={name}>
+                            {name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
+                        Select one worksheet. Sheets are never merged.
+                      </Typography>
+                    </FormControl>
+                  )}
                 </Paper>
               )}
 
@@ -1175,8 +1349,10 @@ function Controls_Creation() {
                     loading ||
                     formLocked ||
                     businessProcessesLoading ||
+                    sheetNamesLoading ||
                     mappingDialogOpen ||
                     !file ||
+                    !selectedSheet ||
                     !businessProcess ||
                     !unitId ||
                     !financialYear
@@ -1426,6 +1602,21 @@ function Controls_Creation() {
           }))
         }
         onConfirm={handleControlFrequencyMappingConfirm}
+      />
+      <AssertionYesNoMapDialog
+        open={assertionYesNoMappingDialogState.open}
+        distinctValues={assertionYesNoMappingDialogState.distinctValues}
+        selections={assertionYesNoMappingDialogState.selections}
+        loading={loading}
+        onCancel={handleAssertionYesNoMappingCancel}
+        onSkip={handleAssertionYesNoMappingSkip}
+        onSelectionsChange={(selections) =>
+          setAssertionYesNoMappingDialogState((prev) => ({
+            ...prev,
+            selections,
+          }))
+        }
+        onConfirm={handleAssertionYesNoMappingConfirm}
       />
       </Box>
   )

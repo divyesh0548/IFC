@@ -27,10 +27,15 @@ import { apiUrl } from '../../config/api'
 import { getControlFrequencyValidationDetails } from '../../utils/controlFrequencyValidation'
 import { useControlFrequencyOptions } from '../../hooks/useControlFrequencyOptions'
 import ControlFrequencyValueMapDialog from '../../components/racm/ControlFrequencyValueMapDialog'
+import AssertionYesNoMapDialog from '../../components/racm/AssertionYesNoMapDialog'
 import {
   parseExtraFieldMappingValue,
   toExtraFieldMappingValue,
 } from '../../utils/racmTemplateKeywords'
+import {
+  applyAssertionYesNoMapping,
+  getAssertionYesNoMappingPrompt,
+} from '../../utils/assertionYesNoMapping'
 import {
   BULK_IMPORT_AUTO,
   BULK_IMPORT_SKIP,
@@ -92,6 +97,13 @@ function ExcelColumnMap() {
   const [controlFrequencyMappingDialogState, setControlFrequencyMappingDialogState] = useState({
     open: false,
     invalidValues: [],
+    submitContext: null,
+    selections: {},
+  })
+  const [assertionYesNoMappingDialogState, setAssertionYesNoMappingDialogState] = useState({
+    open: false,
+    distinctValues: [],
+    assertionHeaders: [],
     submitContext: null,
     selections: {},
   })
@@ -210,7 +222,10 @@ function ExcelColumnMap() {
         )
         const data = await response.json()
         if (!cancelled && response.ok && data.success) {
-          setTemplateExtraFields(Array.isArray(data.data?.extra_fields) ? data.data.extra_fields : [])
+          setTemplateExtraFields(
+            (Array.isArray(data.data?.extra_fields) ? data.data.extra_fields : [])
+              .filter((field) => String(field.section_key || '').trim() !== 'design_implementation')
+          )
         }
       } catch (error) {
         console.error('Failed to load unit template fields for bulk import:', error)
@@ -241,7 +256,9 @@ function ExcelColumnMap() {
   const fieldOptions = useMemo(() => {
     const standard = RACM_BULK_IMPORT_MAPPABLE_FIELDS.map((key) => ({
       value: key,
-      label: RACM_FIELD_LABELS[key] || key.replace(/_/g, ' '),
+      label: key === 'control_number'
+        ? 'Control Number (not mandatory — auto-generated if not imported from Excel)'
+        : (RACM_FIELD_LABELS[key] || key.replace(/_/g, ' ')),
     }))
     const extras = templateExtraFields.map((field) => ({
       value: toExtraFieldMappingValue(field.field_key),
@@ -294,8 +311,45 @@ function ExcelColumnMap() {
       return
     }
 
-    const controlFrequencyValidation = getControlFrequencyValidationDetails(
+    const column_mapping = buildColumnMapping(
+      headers,
+      selections,
+      autoDetectedByHeader,
+      mappingConfig,
+      mappableSet
+    )
+
+    const assertionPrompt = getAssertionYesNoMappingPrompt(
       payload.rows,
+      column_mapping,
+      templateExtraFields
+    )
+    if (assertionPrompt.needed) {
+      setAssertionYesNoMappingDialogState({
+        open: true,
+        distinctValues: assertionPrompt.distinctValues,
+        assertionHeaders: assertionPrompt.assertionHeaders,
+        submitContext: {
+          column_mapping,
+          controlFrequencyHeader,
+        },
+        selections: Object.fromEntries(
+          assertionPrompt.distinctValues.map((value) => [value, ''])
+        ),
+      })
+      return
+    }
+
+    await continueImportAfterAssertionMapping(column_mapping, payload.rows, controlFrequencyHeader)
+  }
+
+  const continueImportAfterAssertionMapping = async (
+    column_mapping,
+    rows,
+    controlFrequencyHeader
+  ) => {
+    const controlFrequencyValidation = getControlFrequencyValidationDetails(
+      rows,
       controlFrequencyHeader
     )
     if (!controlFrequencyValidation.ok) {
@@ -304,13 +358,8 @@ function ExcelColumnMap() {
           open: true,
           invalidValues: controlFrequencyValidation.invalidValues,
           submitContext: {
-            column_mapping: buildColumnMapping(
-              headers,
-              selections,
-              autoDetectedByHeader,
-              mappingConfig,
-              mappableSet
-            ),
+            column_mapping,
+            rows,
           },
           selections: Object.fromEntries(
             controlFrequencyValidation.invalidValues.map((value) => [value, ''])
@@ -322,22 +371,19 @@ function ExcelColumnMap() {
       return
     }
 
-    const column_mapping = buildColumnMapping(
-      headers,
-      selections,
-      autoDetectedByHeader,
-      mappingConfig,
-      mappableSet
-    )
-    await submitImport(column_mapping)
+    await submitImport(column_mapping, null, rows)
   }
 
-  const submitImport = async (column_mapping, controlFrequencyValueMapping = null) => {
+  const submitImport = async (
+    column_mapping,
+    controlFrequencyValueMapping = null,
+    rowsOverride = null
+  ) => {
     const body = {
       businessProcess: payload.businessProcess,
       financialYear: payload.financialYear,
       unit_id: payload.unitId,
-      rows: payload.rows,
+      rows: Array.isArray(rowsOverride) ? rowsOverride : payload.rows,
       column_mapping,
     }
     if (payload.due_date && payload.reminder_frequency) {
@@ -406,7 +452,51 @@ function ExcelColumnMap() {
     const submitContext = controlFrequencyMappingDialogState.submitContext
     handleControlFrequencyMappingCancel()
     if (!submitContext?.column_mapping) return
-    await submitImport(submitContext.column_mapping, mapping)
+    await submitImport(
+      submitContext.column_mapping,
+      mapping,
+      submitContext.rows || null
+    )
+  }
+
+  const handleAssertionYesNoMappingCancel = () => {
+    setAssertionYesNoMappingDialogState({
+      open: false,
+      distinctValues: [],
+      assertionHeaders: [],
+      submitContext: null,
+      selections: {},
+    })
+  }
+
+  const handleAssertionYesNoMappingSkip = async () => {
+    const submitContext = assertionYesNoMappingDialogState.submitContext
+    handleAssertionYesNoMappingCancel()
+    if (!submitContext?.column_mapping || !submitContext?.controlFrequencyHeader) return
+    await continueImportAfterAssertionMapping(
+      submitContext.column_mapping,
+      payload.rows,
+      submitContext.controlFrequencyHeader
+    )
+  }
+
+  const handleAssertionYesNoMappingConfirm = async (mapping) => {
+    const submitContext = assertionYesNoMappingDialogState.submitContext
+    const assertionHeaders = assertionYesNoMappingDialogState.assertionHeaders
+    handleAssertionYesNoMappingCancel()
+    if (!submitContext?.column_mapping || !submitContext?.controlFrequencyHeader) return
+
+    const mappedRows = applyAssertionYesNoMapping(
+      payload.rows,
+      assertionHeaders,
+      mapping
+    )
+    setPayload((prev) => (prev ? { ...prev, rows: mappedRows } : prev))
+    await continueImportAfterAssertionMapping(
+      submitContext.column_mapping,
+      mappedRows,
+      submitContext.controlFrequencyHeader
+    )
   }
 
   if (!payload) {
@@ -767,6 +857,21 @@ function ExcelColumnMap() {
           }))
         }
         onConfirm={handleControlFrequencyMappingConfirm}
+      />
+      <AssertionYesNoMapDialog
+        open={assertionYesNoMappingDialogState.open}
+        distinctValues={assertionYesNoMappingDialogState.distinctValues}
+        selections={assertionYesNoMappingDialogState.selections}
+        loading={loading}
+        onCancel={handleAssertionYesNoMappingCancel}
+        onSkip={handleAssertionYesNoMappingSkip}
+        onSelectionsChange={(selections) =>
+          setAssertionYesNoMappingDialogState((prev) => ({
+            ...prev,
+            selections,
+          }))
+        }
+        onConfirm={handleAssertionYesNoMappingConfirm}
       />
     </Box>
   )

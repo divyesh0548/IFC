@@ -51,6 +51,7 @@ const {
   decrementTemplateLinkedRacmCount,
   loadDynamicFieldValuesForForm,
   isRacmTemplateSchemaReady,
+  RACM_TEMPLATE_SECTIONS,
 } = require('../../utils/racm_templates');
 const {
   attachControlFormDocuments,
@@ -2427,9 +2428,22 @@ async function updateControlForm(req, res) {
       if (templateId) {
         const templateDetails = await getTemplateWithFieldsById(pool, templateId);
         if (templateDetails.ok) {
+          let dynamicValuesToSave = dynamic_values;
+          if (!isApprover) {
+            const designExtraKeys = new Set(
+              (templateDetails.extra_fields || [])
+                .filter((field) => String(field.section_key || '').trim() === RACM_TEMPLATE_SECTIONS.DESIGN_IMPLEMENTATION)
+                .map((field) => field.field_key)
+            );
+            if (designExtraKeys.size > 0) {
+              dynamicValuesToSave = Object.fromEntries(
+                Object.entries(dynamic_values || {}).filter(([key]) => !designExtraKeys.has(key))
+              );
+            }
+          }
           const dynamicValidation = validateDynamicValuesAgainstTemplate(
             templateDetails.extra_fields || [],
-            dynamic_values
+            dynamicValuesToSave
           );
           if (!dynamicValidation.ok) {
             return res.status(400).json({ success: false, message: dynamicValidation.message });
@@ -4368,9 +4382,17 @@ async function createControlForm(req, res) {
 
       activeTemplateId = templateResult.template.id;
       const templateDetails = await getTemplateWithFieldsById(client, activeTemplateId);
+      const designExtraKeys = new Set(
+        (templateDetails.extra_fields || [])
+          .filter((field) => String(field.section_key || '').trim() === RACM_TEMPLATE_SECTIONS.DESIGN_IMPLEMENTATION)
+          .map((field) => field.field_key)
+      );
+      const createDynamicValues = Object.fromEntries(
+        Object.entries(req.body.dynamic_values || {}).filter(([key]) => !designExtraKeys.has(key))
+      );
       const dynamicValidation = validateDynamicValuesAgainstTemplate(
         templateDetails.extra_fields || [],
-        req.body.dynamic_values
+        createDynamicValues
       );
       if (!dynamicValidation.ok) {
         await client.query('ROLLBACK');
