@@ -8,10 +8,13 @@ import CircularProgress from '@mui/material/CircularProgress'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
+import Checkbox from '@mui/material/Checkbox'
+import ListItemText from '@mui/material/ListItemText'
 import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import FormHelperText from '@mui/material/FormHelperText'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import AssignmentIndRoundedIcon from '@mui/icons-material/AssignmentIndRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
@@ -50,6 +53,7 @@ const createRoleDialogState = () => ({
   department: '',
   designation: '',
   mobile: '',
+  unitIds: [],
   submitting: false,
   error: '',
 })
@@ -179,20 +183,26 @@ function CompanyAdminUnitManagement() {
       ? '/api/company-admin/unit-management/approvers'
       : '/api/company-admin/unit-management/coordinators'
 
+    const payload = {
+      email_id: email,
+      emp_code: roleDialog.emp_code || null,
+      emp_name: roleDialog.emp_name || null,
+      department: roleDialog.department || null,
+      designation: roleDialog.designation || null,
+      mobile: normalizeMobileDigits(roleDialog.mobile) || null,
+    }
+
+    if (roleDialog.type === 'company_co' && Array.isArray(roleDialog.unitIds) && roleDialog.unitIds.length > 0) {
+      payload.unit_ids = roleDialog.unitIds
+    }
+
     setRoleDialog((prev) => ({ ...prev, submitting: true, error: '' }))
     try {
       const response = await fetch(apiUrl(endpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          email_id: email,
-          emp_code: roleDialog.emp_code || null,
-          emp_name: roleDialog.emp_name || null,
-          department: roleDialog.department || null,
-          designation: roleDialog.designation || null,
-          mobile: normalizeMobileDigits(roleDialog.mobile) || null,
-        }),
+        body: JSON.stringify(payload),
       })
       const result = await response.json()
       if (!response.ok || !result?.success) {
@@ -265,6 +275,16 @@ function CompanyAdminUnitManagement() {
 
     return !isAssignedToCurrentUnit || emailId === selectedEmail
   })
+
+  // Units without a coordinator — one unit can only have one coordinator.
+  const unassignedUnitsForCoordinator = data.units.filter(
+    (unit) => !String(unit.coordinator_email_id || '').trim()
+  )
+
+  const getUnitLabel = (unitId) => {
+    const unit = data.units.find((item) => String(item.unit_id) === String(unitId))
+    return unit?.unit_name || unitId
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, py: 2 }}>
@@ -410,11 +430,61 @@ function CompanyAdminUnitManagement() {
       >
         <FormControl fullWidth required>
           <InputLabel id="company-admin-role-type">Role</InputLabel>
-          <Select labelId="company-admin-role-type" label="Role" value={roleDialog.type} onChange={(event) => setRoleDialog((prev) => ({ ...prev, type: event.target.value, error: '' }))}>
+          <Select
+            labelId="company-admin-role-type"
+            label="Role"
+            value={roleDialog.type}
+            onChange={(event) => setRoleDialog((prev) => ({
+              ...prev,
+              type: event.target.value,
+              unitIds: event.target.value === 'company_co' ? prev.unitIds : [],
+              error: '',
+            }))}
+          >
             <MenuItem value="company_co">Company Coordinator</MenuItem>
             <MenuItem value="approver">Approver</MenuItem>
           </Select>
         </FormControl>
+        {roleDialog.type === 'company_co' ? (
+          <FormControl fullWidth>
+            <InputLabel id="company-admin-role-units">Units (optional)</InputLabel>
+            <Select
+              labelId="company-admin-role-units"
+              label="Units (optional)"
+              multiple
+              value={roleDialog.unitIds}
+              onChange={(event) => setRoleDialog((prev) => ({
+                ...prev,
+                unitIds: typeof event.target.value === 'string'
+                  ? event.target.value.split(',')
+                  : event.target.value,
+                error: '',
+              }))}
+              renderValue={(selected) => {
+                const selectedIds = Array.isArray(selected) ? selected : []
+                if (selectedIds.length === 0) return 'None selected'
+                return selectedIds.map(getUnitLabel).join(', ')
+              }}
+              disabled={unassignedUnitsForCoordinator.length === 0}
+            >
+              {unassignedUnitsForCoordinator.map((unit) => (
+                <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                  <Checkbox checked={roleDialog.unitIds.includes(unit.unit_id)} size="small" />
+                  <ListItemText primary={unit.unit_name || unit.unit_id} />
+                </MenuItem>
+              ))}
+            </Select>
+            <FormHelperText>
+              {unassignedUnitsForCoordinator.length === 0
+                ? 'All units already have a coordinator. You can still create this coordinator and assign units later.'
+                : 'Optional. Select one or more unassigned units. One unit can have only one coordinator.'}
+            </FormHelperText>
+          </FormControl>
+        ) : (
+          <Alert severity="info">
+            Approver unit assignments can be managed from Approver Management after creation.
+          </Alert>
+        )}
         <TextField
           label="Email ID"
           type="email"

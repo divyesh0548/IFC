@@ -21,6 +21,7 @@ import {
   Select,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
@@ -119,7 +120,6 @@ function CustomColumnEditorDialog({
 }) {
   const theme = useTheme()
   const isEditing = mode === 'edit'
-  const showSectionPicker = isEditing && canEditSection
 
   const actions = isEditing ? (
     <>
@@ -172,21 +172,24 @@ function CustomColumnEditorDialog({
                 : undefined
             }
           />
-          {showSectionPicker ? (
-            <FormControl fullWidth>
-              <InputLabel>Section</InputLabel>
-              <Select value={sectionKey} label="Section" onChange={(e) => onSectionChange(e.target.value)}>
-                {CUSTOM_COLUMN_SECTION_KEYS.has(sectionKey) ? null : (
-                  <MenuItem value={sectionKey}>{getSectionLabel(sectionKey)}</MenuItem>
-                )}
-                {CUSTOM_COLUMN_SECTION_OPTIONS.map((option) => (
-                  <MenuItem key={option.key} value={option.key}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          ) : null}
+          <FormControl fullWidth disabled={!canEditSection}>
+            <InputLabel id="custom-column-section-label">Section</InputLabel>
+            <Select
+              labelId="custom-column-section-label"
+              value={sectionKey}
+              label="Section"
+              onChange={(e) => onSectionChange(e.target.value)}
+            >
+              {CUSTOM_COLUMN_SECTION_KEYS.has(sectionKey) ? null : (
+                <MenuItem value={sectionKey}>{getSectionLabel(sectionKey)}</MenuItem>
+              )}
+              {CUSTOM_COLUMN_SECTION_OPTIONS.map((option) => (
+                <MenuItem key={option.key} value={option.key}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Stack>
       ) : (
         <Stack spacing={1}>
@@ -202,7 +205,13 @@ function CustomColumnEditorDialog({
   )
 }
 
-function TemplateColumnListing({ groupedFields, canEditExtras, onColumnClick, onAddColumn }) {
+function TemplateColumnListing({
+  groupedFields,
+  canEditExtras,
+  onColumnClick,
+  onAddColumn,
+  highlightedClientId = null,
+}) {
   return (
     <Stack spacing={2.5} divider={<Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }} />}>
       {groupedFields.map((section) => {
@@ -223,6 +232,7 @@ function TemplateColumnListing({ groupedFields, canEditExtras, onColumnClick, on
             >
               <Typography
                 variant="subtitle2"
+                component="div"
                 sx={{
                   fontWeight: 800,
                   textTransform: 'uppercase',
@@ -231,6 +241,20 @@ function TemplateColumnListing({ groupedFields, canEditExtras, onColumnClick, on
                 }}
               >
                 {section.label}
+                {section.key === 'design_implementation' ? (
+                  <Box
+                    component="span"
+                    sx={{
+                      ml: 0.75,
+                      fontWeight: 500,
+                      textTransform: 'none',
+                      letterSpacing: 'normal',
+                      color: 'text.disabled',
+                    }}
+                  >
+                    (To be filled by auditor)
+                  </Box>
+                ) : null}
               </Typography>
               {canAddCustomColumn ? (
                 <Button
@@ -256,10 +280,13 @@ function TemplateColumnListing({ groupedFields, canEditExtras, onColumnClick, on
               {section.extras.map((field) => {
                 const clientId = field.clientId || field.field_key
                 const displayLabel = String(field.label || '').trim() || (field.isDraft ? 'New custom column' : field.label)
+                const isDraft = Boolean(field.isDraft)
+                const isHighlighted = Boolean(highlightedClientId) && String(highlightedClientId) === String(clientId)
+                const showUnfinishedCue = isDraft || isHighlighted
 
-                return (
+                const cell = (
                   <Box
-                    key={clientId}
+                    data-custom-column-id={clientId}
                     role={canEditExtras ? 'button' : undefined}
                     tabIndex={canEditExtras ? 0 : undefined}
                     onClick={canEditExtras ? () => onColumnClick(clientId) : undefined}
@@ -276,11 +303,26 @@ function TemplateColumnListing({ groupedFields, canEditExtras, onColumnClick, on
                     sx={{
                       ...columnCellSx,
                       cursor: canEditExtras ? 'pointer' : 'default',
+                      ...(showUnfinishedCue
+                        ? {
+                            borderStyle: 'dashed',
+                            borderColor: isHighlighted ? 'warning.main' : 'warning.light',
+                            backgroundColor: (theme) =>
+                              theme.palette.mode === 'dark'
+                                ? 'rgba(255, 167, 38, 0.12)'
+                                : 'rgba(255, 167, 38, 0.08)',
+                          }
+                        : {}),
                       ...(canEditExtras
                         ? {
                             '&:hover': {
-                              borderColor: 'primary.main',
-                              backgroundColor: 'action.selected',
+                              borderColor: showUnfinishedCue ? 'warning.main' : 'primary.main',
+                              backgroundColor: showUnfinishedCue
+                                ? (theme) =>
+                                  theme.palette.mode === 'dark'
+                                    ? 'rgba(255, 167, 38, 0.18)'
+                                    : 'rgba(255, 167, 38, 0.12)'
+                                : 'action.selected',
                             },
                           }
                         : {}),
@@ -291,8 +333,33 @@ function TemplateColumnListing({ groupedFields, canEditExtras, onColumnClick, on
                       <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>
                         {displayLabel}
                       </Typography>
+                      {isDraft ? (
+                        <Typography
+                          variant="caption"
+                          sx={{ color: 'warning.main', fontWeight: 700, flexShrink: 0 }}
+                        >
+                          Unfinished
+                        </Typography>
+                      ) : null}
                     </Stack>
                   </Box>
+                )
+
+                if (!showUnfinishedCue) {
+                  return <React.Fragment key={clientId}>{cell}</React.Fragment>
+                }
+
+                return (
+                  <Tooltip
+                    key={clientId}
+                    title="Finish or delete this column before adding another"
+                    placement="top"
+                    arrow
+                  >
+                    <span style={{ display: 'block', minWidth: 0 }}>
+                      {cell}
+                    </span>
+                  </Tooltip>
                 )
               })}
             </Box>
@@ -426,13 +493,30 @@ function RacmTemplates() {
     isNew: false,
     canEditSection: false,
   })
+  const [highlightedDraftClientId, setHighlightedDraftClientId] = useState(null)
   const assertionWarningShownRef = useRef(null)
   const loadingRef = useRef(false)
+  const draftHighlightTimeoutRef = useRef(null)
   useSyncGlobalLoading(loading)
 
   useEffect(() => {
     loadingRef.current = loading
   }, [loading])
+
+  useEffect(() => () => {
+    if (draftHighlightTimeoutRef.current) {
+      clearTimeout(draftHighlightTimeoutRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    const draftStillExists = editableExtraFields.some(
+      (field) => field.isDraft && String(field.clientId) === String(highlightedDraftClientId)
+    )
+    if (highlightedDraftClientId && !draftStillExists) {
+      setHighlightedDraftClientId(null)
+    }
+  }, [editableExtraFields, highlightedDraftClientId])
 
   const isPageBusy = () => loadingRef.current
 
@@ -703,8 +787,30 @@ function RacmTemplates() {
       sectionKey,
       fromCatalog: Boolean(field.fromCatalog),
       isNew: Boolean(field.isNew),
-      canEditSection: !field.fromCatalog && sectionKey !== 'assertions',
+      canEditSection: !field.fromCatalog,
     })
+  }
+
+  const focusUnfinishedDraftColumn = (draftField) => {
+    if (!draftField?.clientId) return
+    const clientId = draftField.clientId
+    setHighlightedDraftClientId(clientId)
+    if (draftHighlightTimeoutRef.current) {
+      clearTimeout(draftHighlightTimeoutRef.current)
+    }
+    draftHighlightTimeoutRef.current = setTimeout(() => {
+      setHighlightedDraftClientId((current) => (current === clientId ? null : current))
+    }, 5000)
+
+    requestAnimationFrame(() => {
+      const escapedId = typeof CSS !== 'undefined' && CSS.escape
+        ? CSS.escape(String(clientId))
+        : String(clientId).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+      const node = document.querySelector(`[data-custom-column-id="${escapedId}"]`)
+      node?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+
+    handleOpenColumnEditor(clientId, { startInEditMode: true })
   }
 
   const resetColumnEditor = () => {
@@ -775,6 +881,7 @@ function RacmTemplates() {
         return next
       })
     )
+    setHighlightedDraftClientId(null)
     resetColumnEditor()
   }
 
@@ -795,15 +902,18 @@ function RacmTemplates() {
       toast.error('Custom columns cannot be added to Design and Implementation')
       return
     }
+    const unfinishedDraft = editableExtraFields.find((field) => field.isDraft)
+    if (unfinishedDraft) {
+      toast.error('Finish or delete the new column before adding another')
+      focusUnfinishedDraftColumn(unfinishedDraft)
+      return
+    }
     if (columnEditor.open) {
       toast.error('Close the column editor first')
       return
     }
-    if (editableExtraFields.some((field) => field.isDraft)) {
-      toast.error('Finish or delete the new column before adding another')
-      return
-    }
     const clientId = `new-${Date.now()}-${editableExtraFields.length}`
+    setHighlightedDraftClientId(null)
     setEditableExtraFields((prev) => [
       ...prev,
       {
@@ -825,7 +935,7 @@ function RacmTemplates() {
       sectionKey: sectionKey,
       fromCatalog: false,
       isNew: true,
-      canEditSection: sectionKey !== 'assertions',
+      canEditSection: true,
     })
   }
 
@@ -1387,6 +1497,7 @@ function RacmTemplates() {
                   canEditExtras={canEditExtras && !loading}
                   onColumnClick={handleOpenColumnEditor}
                   onAddColumn={appendDraftField}
+                  highlightedClientId={highlightedDraftClientId}
                 />
 
                 {canEditExtras ? (

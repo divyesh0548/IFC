@@ -425,7 +425,9 @@ async function createRoleUser(req, res, role) {
     return res.status(400).json({ success: false, message: mobileError });
   }
 
-  if (role !== 'approver' && unitIds.length === 0) {
+  // Process owners (users) must belong to at least one unit.
+  // Coordinators may be created first and linked to units later (or optionally during create).
+  if (role === 'user' && unitIds.length === 0) {
     return res.status(400).json({ success: false, message: 'At least one unit is required' });
   }
 
@@ -444,16 +446,31 @@ async function createRoleUser(req, res, role) {
       mobile,
     });
 
-    const assignmentTable = role === 'company_co'
-      ? 'coordinator_unit_assignments'
-      : 'user_unit_memberships';
-    const emailColumn = role === 'company_co' ? 'coordinator_email_id' : 'user_email_id';
-
-    if (role !== 'approver') {
+    if (role === 'company_co' && unitIds.length > 0) {
+      // One unit can only have one coordinator — clear any existing assignment for these units.
+      await client.query(
+        `
+          DELETE FROM coordinator_unit_assignments
+          WHERE company_identifier = $1
+            AND unit_id = ANY($2::text[])
+        `,
+        [companyIdentifier, unitIds]
+      );
       for (const unitId of unitIds) {
         await client.query(
           `
-            INSERT INTO ${assignmentTable} (company_identifier, ${emailColumn}, unit_id)
+            INSERT INTO coordinator_unit_assignments (company_identifier, coordinator_email_id, unit_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT DO NOTHING
+          `,
+          [companyIdentifier, emailId, unitId]
+        );
+      }
+    } else if (role === 'user' && unitIds.length > 0) {
+      for (const unitId of unitIds) {
+        await client.query(
+          `
+            INSERT INTO user_unit_memberships (company_identifier, user_email_id, unit_id)
             VALUES ($1, $2, $3)
             ON CONFLICT DO NOTHING
           `,
@@ -1163,14 +1180,26 @@ async function updateCoordinatorUnits(req, res) {
       'DELETE FROM coordinator_unit_assignments WHERE company_identifier = $1 AND LOWER(TRIM(coordinator_email_id)) = $2',
       [companyIdentifier, emailId]
     );
-    for (const unitId of unitIds) {
+
+    if (unitIds.length > 0) {
+      // One unit can only have one coordinator — clear prior assignments on these units.
       await client.query(
         `
-          INSERT INTO coordinator_unit_assignments (company_identifier, coordinator_email_id, unit_id)
-          VALUES ($1, $2, $3)
+          DELETE FROM coordinator_unit_assignments
+          WHERE company_identifier = $1
+            AND unit_id = ANY($2::text[])
         `,
-        [companyIdentifier, emailId, unitId]
+        [companyIdentifier, unitIds]
       );
+      for (const unitId of unitIds) {
+        await client.query(
+          `
+            INSERT INTO coordinator_unit_assignments (company_identifier, coordinator_email_id, unit_id)
+            VALUES ($1, $2, $3)
+          `,
+          [companyIdentifier, emailId, unitId]
+        );
+      }
     }
 
     await client.query('COMMIT');

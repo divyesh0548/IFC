@@ -1,1 +1,3 @@
 Give demo of IFC to Khadija on around 11th September.
+
+In companies table the gst and pan values should be unique, so add that contraint or other logic.

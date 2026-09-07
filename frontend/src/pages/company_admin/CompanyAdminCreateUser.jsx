@@ -47,15 +47,37 @@ function CompanyAdminCreateUser() {
   const [mobile, setMobile] = useState('')
   const [selectedUnitIds, setSelectedUnitIds] = useState([])
   const [unitOptions, setUnitOptions] = useState([])
+  const [coordinators, setCoordinators] = useState([])
   const [unitsLoading, setUnitsLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [mobileRequiredError, setMobileRequiredError] = useState('')
   const { getEmailWarning, getEmailWarningHelperTextSx } = useOrganizationEmailWarning()
   const mobileFormatWarning = mobile.trim() ? getMobileValidationError(mobile.trim()) : ''
-  const requiresUnits = role === 'user' || role === 'company_co'
-  const hasMultipleUnits = unitOptions.length > 1
-  const singleUnitLabel = unitOptions[0]?.unit_name || unitOptions[0]?.unit_id || ''
+  const requiresUnits = role === 'user'
+  const showCoordinatorUnits = role === 'company_co'
+  const showUnitSelector = requiresUnits || showCoordinatorUnits
+
+  const assignedCoordinatorUnitIds = useMemo(() => {
+    const assigned = new Set()
+    coordinators.forEach((person) => {
+      const unitIds = Array.isArray(person.unit_ids) ? person.unit_ids : []
+      unitIds.forEach((unitId) => {
+        if (unitId != null && String(unitId).trim()) {
+          assigned.add(String(unitId).trim())
+        }
+      })
+    })
+    return assigned
+  }, [coordinators])
+
+  const selectableUnitOptions = useMemo(() => {
+    if (!showCoordinatorUnits) return unitOptions
+    return unitOptions.filter((unit) => !assignedCoordinatorUnitIds.has(String(unit.unit_id || '').trim()))
+  }, [showCoordinatorUnits, unitOptions, assignedCoordinatorUnitIds])
+
+  const hasMultipleUnits = selectableUnitOptions.length > 1
+  const singleUnitLabel = selectableUnitOptions[0]?.unit_name || selectableUnitOptions[0]?.unit_id || ''
 
   useSyncGlobalLoading(loading || unitsLoading)
 
@@ -75,19 +97,23 @@ function CompanyAdminCreateUser() {
 
         if (response.ok && data.success) {
           const units = Array.isArray(data.data?.units) ? data.data.units : []
+          const coordinatorList = Array.isArray(data.data?.coordinators) ? data.data.coordinators : []
           setUnitOptions(units)
+          setCoordinators(coordinatorList)
           setSelectedUnitIds((currentUnitIds) => (
             currentUnitIds.length > 0 ? currentUnitIds : (units[0]?.unit_id ? [units[0].unit_id] : [])
           ))
         } else {
           toast.error(data.message || 'Failed to load company units')
           setUnitOptions([])
+          setCoordinators([])
         }
       } catch (fetchError) {
         console.error('Fetch company units error:', fetchError)
         if (active) {
           toast.error('Failed to load company units')
           setUnitOptions([])
+          setCoordinators([])
         }
       } finally {
         if (active) {
@@ -118,9 +144,21 @@ function CompanyAdminCreateUser() {
     setDesignation('')
     setDepartment('')
     setMobile('')
-    setSelectedUnitIds(unitOptions[0]?.unit_id ? [unitOptions[0].unit_id] : [])
+    setSelectedUnitIds(role === 'user' && unitOptions[0]?.unit_id ? [unitOptions[0].unit_id] : [])
     setError('')
     setMobileRequiredError('')
+  }
+
+  const handleRoleChange = (nextRole) => {
+    setRole(nextRole)
+    setError('')
+    if (nextRole === 'company_co') {
+      setSelectedUnitIds([])
+    } else if (nextRole === 'user') {
+      setSelectedUnitIds(unitOptions[0]?.unit_id ? [unitOptions[0].unit_id] : [])
+    } else {
+      setSelectedUnitIds([])
+    }
   }
 
   const handleSubmit = async (event) => {
@@ -174,7 +212,7 @@ function CompanyAdminCreateUser() {
         mobile: normalizeMobileDigits(mobile) || null,
       }
 
-      if (requiresUnits) {
+      if (requiresUnits || (showCoordinatorUnits && selectedUnitIds.length > 0)) {
         payload.unit_ids = selectedUnitIds
       }
 
@@ -262,7 +300,7 @@ function CompanyAdminCreateUser() {
                     select
                     variant="outlined"
                     value={role}
-                    onChange={(event) => setRole(event.target.value)}
+                    onChange={(event) => handleRoleChange(event.target.value)}
                     required
                     disabled={loading}
                     fullWidth
@@ -274,38 +312,56 @@ function CompanyAdminCreateUser() {
                     ))}
                   </TextField>
 
-                  {requiresUnits ? (
+                  {showUnitSelector ? (
                     <TextField
                       id="unit_id"
                       name="unit_id"
-                      label={hasMultipleUnits ? 'Units' : 'Unit'}
-                      select={hasMultipleUnits}
+                      label={showCoordinatorUnits ? (hasMultipleUnits ? 'Units (optional)' : 'Unit (optional)') : (hasMultipleUnits ? 'Units' : 'Unit')}
+                      select={hasMultipleUnits || showCoordinatorUnits}
                       variant="outlined"
-                      value={hasMultipleUnits ? selectedUnitIds : singleUnitLabel}
+                      value={
+                        hasMultipleUnits || showCoordinatorUnits
+                          ? selectedUnitIds
+                          : (requiresUnits ? singleUnitLabel : '')
+                      }
                       onChange={(event) => setSelectedUnitIds(
                         typeof event.target.value === 'string'
-                          ? event.target.value.split(',')
+                          ? event.target.value.split(',').filter(Boolean)
                           : event.target.value
                       )}
-                      required
-                      disabled={loading || unitsLoading || unitOptions.length === 0 || !hasMultipleUnits}
+                      required={requiresUnits}
+                      disabled={
+                        loading
+                        || unitsLoading
+                        || selectableUnitOptions.length === 0
+                        || (requiresUnits && !hasMultipleUnits && !showCoordinatorUnits)
+                      }
                       helperText={
                         unitsLoading
                           ? 'Loading company units...'
-                          : unitOptions.length === 0
-                            ? 'No units are configured for this company.'
-                            : hasMultipleUnits
-                              ? 'Select one or more units for this user.'
-                              : 'This user will be created for the selected unit.'
+                          : selectableUnitOptions.length === 0
+                            ? (showCoordinatorUnits
+                              ? 'All units already have a coordinator. You can still create this coordinator and assign units later.'
+                              : 'No units are configured for this company.')
+                            : showCoordinatorUnits
+                              ? 'Optional. Select one or more unassigned units. One unit can have only one coordinator.'
+                              : hasMultipleUnits
+                                ? 'Select one or more units for this user.'
+                                : 'This user will be created for the selected unit.'
                       }
                       fullWidth
-                      SelectProps={hasMultipleUnits ? {
+                      SelectProps={(hasMultipleUnits || showCoordinatorUnits) ? {
                         multiple: true,
+                        displayEmpty: showCoordinatorUnits,
                         renderValue: (selected) => {
                           const selectedIds = Array.isArray(selected) ? selected : []
+                          if (selectedIds.length === 0) {
+                            return showCoordinatorUnits ? 'None selected' : ''
+                          }
                           return selectedIds
                             .map((unitId) => {
-                              const unit = unitOptions.find((option) => option.unit_id === unitId)
+                              const unit = selectableUnitOptions.find((option) => option.unit_id === unitId)
+                                || unitOptions.find((option) => option.unit_id === unitId)
                               return unit?.unit_name || unitId
                             })
                             .filter(Boolean)
@@ -318,11 +374,11 @@ function CompanyAdminCreateUser() {
                             <ApartmentRoundedIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
                           </InputAdornment>
                         ),
-                        readOnly: !hasMultipleUnits,
+                        readOnly: requiresUnits && !hasMultipleUnits && !showCoordinatorUnits,
                       }}
                     >
-                      {hasMultipleUnits
-                        ? unitOptions.map((unit) => (
+                      {(hasMultipleUnits || showCoordinatorUnits)
+                        ? selectableUnitOptions.map((unit) => (
                           <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
                             <Checkbox checked={selectedUnitIds.includes(unit.unit_id)} size="small" />
                             <ListItemText primary={unit.unit_name || unit.unit_id} />

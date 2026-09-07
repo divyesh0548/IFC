@@ -54,7 +54,7 @@ import { apiUrl } from '../../config/api'
 import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, TABLE_HEADER_BG, TABLE_ROW_HOVER_BG } from '../../uiConstants'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
-import AppDialog, { getAppDialogCancelButtonSx } from '../../components/AppDialog'
+import AppDialog, { APP_DIALOG_PRIMARY_BUTTON_SX, getAppDialogCancelButtonSx } from '../../components/AppDialog'
 import ApproverAssignmentsPanel from '../../components/approver/ApproverAssignmentsPanel'
 
 const bulkUploadDialogDefaults = {
@@ -593,9 +593,18 @@ function UserManagement() {
       const isCheckbox =
         target.type === 'checkbox' ||
         target.closest?.('input[type="checkbox"]') ||
-        target.closest?.('.MuiCheckbox-root')
+        target.closest?.('.MuiCheckbox-root') ||
+        target.closest?.('[role="checkbox"]')
 
-      const isDialog = target.closest?.('.MuiDialog-root')
+      const isDialog = target.closest?.('.MuiDialog-root') || target.closest?.('[role="dialog"]')
+      const isActionsMenu =
+        target.closest?.('#user-management-actions-menu') ||
+        target.closest?.('[data-user-mgmt-actions-trigger]') ||
+        target.closest?.('[data-user-mgmt-confirm-action]') ||
+        target.closest?.('.MuiMenu-root') ||
+        target.closest?.('[role="menu"]') ||
+        target.closest?.('[role="menuitem"]')
+
       const clickedButton = target.closest?.('button')
       const isDeleteButton = Boolean(
         clickedButton &&
@@ -603,7 +612,7 @@ function UserManagement() {
             clickedButton.getAttribute('aria-label')?.toLowerCase().includes('delete'))
       )
 
-      if (isCheckbox || isDialog || isDeleteButton) return
+      if (isCheckbox || isDialog || isActionsMenu || isDeleteButton) return
 
       setDeleteMode(false)
     }
@@ -1356,11 +1365,11 @@ function UserManagement() {
   const filterControlSx = { minWidth: { xs: '100%', sm: 240 } }
   const actionsMenuOpen = Boolean(actionsMenuAnchorEl)
   const deleteActionDisabled =
-    usersLoading || filteredUsers.length === 0 || deletingUsers || (deleteMode && selectedUserEmails.size === 0)
-  const deleteActionLabel =
-    deleteMode && selectedUserEmails.size > 0
-      ? `Delete ${selectedUserEmails.size} selected users`
-      : 'Delete users'
+    usersLoading || filteredUsers.length === 0 || deletingUsers || deleteMode
+  const deleteConfirmLabel =
+    selectedUserEmails.size > 0
+      ? `Delete (${selectedUserEmails.size})`
+      : 'Delete'
   const bodyCellSx = {
     py: 1.55,
     px: 2.25,
@@ -1464,11 +1473,15 @@ function UserManagement() {
                 </Select>
               </FormControl>
               <IconButton
+                data-user-mgmt-actions-trigger
                 aria-label="Open actions menu"
                 aria-controls={actionsMenuOpen ? 'user-management-actions-menu' : undefined}
                 aria-haspopup="true"
                 aria-expanded={actionsMenuOpen ? 'true' : undefined}
-                onClick={(event) => setActionsMenuAnchorEl(event.currentTarget)}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setActionsMenuAnchorEl(event.currentTarget)
+                }}
                 sx={{
                   border: '1px solid',
                   borderColor: 'divider',
@@ -1478,6 +1491,24 @@ function UserManagement() {
               >
                 <MenuRoundedIcon />
               </IconButton>
+              {deleteMode ? (
+                <Button
+                  data-user-mgmt-confirm-action
+                  variant="contained"
+                  color="error"
+                  size="small"
+                  disabled={selectedUserEmails.size === 0 || deletingUsers}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    if (selectedUserEmails.size > 0) {
+                      handleDeleteClick()
+                    }
+                  }}
+                  sx={{ textTransform: 'none', fontWeight: 600 }}
+                >
+                  {deleteConfirmLabel}
+                </Button>
+              ) : null}
               <Menu
                 id="user-management-actions-menu"
                 anchorEl={actionsMenuAnchorEl}
@@ -1492,7 +1523,7 @@ function UserManagement() {
                 }}
               >
                 <MenuItem
-                  disabled={usersLoading || mappedUnits.length === 0 || deletingUsers}
+                  disabled={usersLoading || mappedUnits.length === 0 || deletingUsers || deleteMode}
                   onClick={() => {
                     setActionsMenuAnchorEl(null)
                     handleOpenBulkUploadDialog()
@@ -1504,7 +1535,7 @@ function UserManagement() {
                   <ListItemText primary="Bulk Upload" />
                 </MenuItem>
                 <MenuItem
-                  disabled={usersLoading || filteredUsers.length === 0}
+                  disabled={usersLoading || filteredUsers.length === 0 || deleteMode}
                   onClick={() => {
                     setActionsMenuAnchorEl(null)
                     handleExportUsers()
@@ -1519,21 +1550,16 @@ function UserManagement() {
                   disabled={deleteActionDisabled}
                   onClick={() => {
                     setActionsMenuAnchorEl(null)
-                    if (deleteMode) {
-                      if (selectedUserEmails.size > 0) {
-                        handleDeleteClick()
-                      }
-                    } else {
-                      handleDeleteModeToggle()
-                    }
+                    handleDeleteModeToggle()
                   }}
                 >
                   <ListItemIcon>
-                    <DeleteIcon fontSize="small" color={deleteMode ? 'error' : 'inherit'} />
+                    <DeleteIcon fontSize="small" />
                   </ListItemIcon>
-                  <ListItemText primary={deleteActionLabel} />
+                  <ListItemText primary="Delete users" />
                 </MenuItem>
                 <MenuItem
+                  disabled={deleteMode}
                   onClick={() => {
                     setActionsMenuAnchorEl(null)
                     navigate('/company-co/user-management/create-user')
@@ -1546,6 +1572,7 @@ function UserManagement() {
                 </MenuItem>
                 {showBulkLogsButton ? (
                   <MenuItem
+                    disabled={deleteMode}
                     onClick={() => {
                       setActionsMenuAnchorEl(null)
                       setBulkLogsDialogOpen(true)
@@ -1701,66 +1728,92 @@ function UserManagement() {
         </TableContainer>
       </Paper>
 
-      <Dialog
+      <AppDialog
         open={bulkUploadDialog.open}
         onClose={handleCloseBulkUploadDialog}
+        title="Bulk User Upload"
+        titleId="company-co-bulk-user-upload-dialog-title"
         fullWidth
         maxWidth="sm"
+        actions={(
+          <>
+            <Button
+              onClick={handleCloseBulkUploadDialog}
+              disabled={bulkUploadDialog.submitting}
+              variant="outlined"
+              sx={getAppDialogCancelButtonSx(theme)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleBulkUploadUsers}
+              disabled={
+                bulkUploadDialog.submitting ||
+                mappedUnits.length === 0 ||
+                bulkUploadRows.length === 0
+              }
+              sx={APP_DIALOG_PRIMARY_BUTTON_SX}
+            >
+              {bulkUploadDialog.submitting ? 'Uploading...' : 'Upload'}
+            </Button>
+          </>
+        )}
       >
-        <DialogTitle sx={{ px: 3, py: 1.75 }}>Bulk User Upload</DialogTitle>
-        <DialogContent
-          dividers
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            px: 3,
-            '&&': {
-              paddingTop: 2,
-              paddingBottom: 2,
-            },
-          }}
-        >
-          {mappedUnits.length === 0 ? (
-            <Alert severity="info">
-              No mapped units found for this coordinator.
-            </Alert>
-          ) : (
-            <>
-              <FormControl fullWidth required disabled={bulkUploadDialog.submitting}>
-                <InputLabel id="bulk-upload-unit-label">{showUnitControls ? 'Units' : 'Unit'}</InputLabel>
-                <Select
-                  labelId="bulk-upload-unit-label"
-                  label={showUnitControls ? 'Units' : 'Unit'}
-                  multiple={showUnitControls}
-                  value={showUnitControls ? bulkUploadDialog.unitIds : (bulkUploadDialog.unitIds[0] || '')}
-                  onChange={(event) =>
-                    setBulkUploadDialog((prev) => ({
-                      ...prev,
-                      unitIds: typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value,
-                      error: '',
-                    }))
-                  }
-                  renderValue={
-                    showUnitControls
-                      ? (selected) => getUnitNamesFromIds(Array.isArray(selected) ? selected : []).join(', ')
-                      : undefined
-                  }
-                >
-                  {mappedUnits.map((unit) => (
-                    <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
-                      {showUnitControls ? <Checkbox checked={bulkUploadDialog.unitIds.includes(unit.unit_id)} size="small" /> : null}
-                      <ListItemText primary={unit.unit_name || unit.unit_id} />
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+        {mappedUnits.length === 0 ? (
+          <Alert severity="info">
+            No mapped units found for this coordinator.
+          </Alert>
+        ) : (
+          <>
+            <FormControl fullWidth required disabled={bulkUploadDialog.submitting}>
+              <InputLabel id="bulk-upload-unit-label">{showUnitControls ? 'Units' : 'Unit'}</InputLabel>
+              <Select
+                labelId="bulk-upload-unit-label"
+                label={showUnitControls ? 'Units' : 'Unit'}
+                multiple={showUnitControls}
+                value={showUnitControls ? bulkUploadDialog.unitIds : (bulkUploadDialog.unitIds[0] || '')}
+                onChange={(event) =>
+                  setBulkUploadDialog((prev) => ({
+                    ...prev,
+                    unitIds: typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value,
+                    error: '',
+                  }))
+                }
+                renderValue={
+                  showUnitControls
+                    ? (selected) => getUnitNamesFromIds(Array.isArray(selected) ? selected : []).join(', ')
+                    : undefined
+                }
+              >
+                {mappedUnits.map((unit) => (
+                  <MenuItem key={unit.unit_id || unit.id} value={unit.unit_id}>
+                    {showUnitControls ? <Checkbox checked={bulkUploadDialog.unitIds.includes(unit.unit_id)} size="small" /> : null}
+                    <ListItemText primary={unit.unit_name || unit.unit_id} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
+            <Box sx={{ display: 'flex', gap: 1.25, flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
               <Button
-                variant="outlined"
+                variant="contained"
                 component="label"
                 startIcon={<UploadFileRoundedIcon />}
                 disabled={bulkUploadDialog.submitting}
+                sx={{
+                  ...APP_DIALOG_PRIMARY_BUTTON_SX,
+                  flex: 1,
+                  minWidth: 0,
+                  backgroundColor: theme.palette.mode === 'dark'
+                    ? theme.palette.primary.dark
+                    : theme.palette.primary.main,
+                  '&:hover': {
+                    backgroundColor: theme.palette.mode === 'dark'
+                      ? alpha(theme.palette.primary.dark, 0.92)
+                      : theme.palette.primary.dark,
+                  },
+                }}
               >
                 Upload Excel
                 <input
@@ -1776,46 +1829,35 @@ function UserManagement() {
                 startIcon={<DownloadRoundedIcon />}
                 onClick={handleDownloadBulkTemplate}
                 disabled={bulkUploadDialog.submitting}
+                sx={{
+                  ...getAppDialogCancelButtonSx(theme),
+                  flex: 1,
+                  minWidth: 0,
+                }}
               >
                 Download Template
               </Button>
+            </Box>
 
-              {bulkUploadDialog.fileName && (
-                <Typography sx={{ fontSize: '0.9rem', color: 'text.secondary' }}>
-                  Selected file: {bulkUploadDialog.fileName}
-                </Typography>
-              )}
+            {bulkUploadDialog.fileName && (
+              <Typography sx={{ fontSize: '0.9rem', color: 'text.secondary' }}>
+                Selected file: {bulkUploadDialog.fileName}
+              </Typography>
+            )}
 
-              <Alert severity="info">
-                Excel header row must include: Name, Email ID, Department, Designation, Mobile. Email ID and Mobile are required and must be valid for every row. Duplicate emails within the file are not allowed. Existing users in other units are added to the selected unit(s) automatically. Rows with an email that already exists in the selected unit(s) will be skipped.
-              </Alert>
+            <Alert severity="info">
+              Excel header row must include: Name, Email ID, Department, Designation, Mobile. Email ID and Mobile are required and must be valid for every row. Duplicate emails within the file are not allowed. Existing users in other units are added to the selected unit(s) automatically. Rows with an email that already exists in the selected unit(s) will be skipped.
+            </Alert>
 
-              {bulkUploadRows.length > 0 && (
-                <Typography sx={{ fontSize: '0.9rem', color: 'text.secondary' }}>
-                  Parsed rows: {bulkUploadRows.length}
-                </Typography>
-              )}
-            </>
-          )}
-          {bulkUploadDialog.error && <Alert severity="error">{bulkUploadDialog.error}</Alert>}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, py: 1.75 }}>
-          <Button onClick={handleCloseBulkUploadDialog} disabled={bulkUploadDialog.submitting}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleBulkUploadUsers}
-            disabled={
-              bulkUploadDialog.submitting ||
-              mappedUnits.length === 0 ||
-              bulkUploadRows.length === 0
-            }
-          >
-            {bulkUploadDialog.submitting ? 'Uploading...' : 'Upload'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+            {bulkUploadRows.length > 0 && (
+              <Typography sx={{ fontSize: '0.9rem', color: 'text.secondary' }}>
+                Parsed rows: {bulkUploadRows.length}
+              </Typography>
+            )}
+          </>
+        )}
+        {bulkUploadDialog.error && <Alert severity="error">{bulkUploadDialog.error}</Alert>}
+      </AppDialog>
 
       <Dialog
         open={bulkWarningDialogOpen}
@@ -1823,7 +1865,7 @@ function UserManagement() {
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle sx={{ px: 3, py: 1.75 }}>Non-organization Email IDs</DialogTitle>
+        <DialogTitle sx={{ px: 3, pt: 2.5, pb: 2.5 }}>Non-organization Email IDs</DialogTitle>
         <DialogContent
           sx={{
             px: 3,

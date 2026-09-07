@@ -100,7 +100,7 @@ const radiusComponentOverrides = {
   MuiDialogTitle: {
     styleOverrides: {
       root: ({ theme }) => ({
-        paddingTop: theme.spacing(3),
+        paddingTop: theme.spacing(2.5),
         paddingRight: theme.spacing(3),
         paddingBottom: theme.spacing(2.5),
         paddingLeft: theme.spacing(3),
@@ -125,8 +125,8 @@ const radiusComponentOverrides = {
         paddingRight: theme.spacing(3),
         paddingBottom: theme.spacing(3),
         paddingLeft: theme.spacing(3),
-        borderTop: 0,
-        borderBottom: 0,
+        borderTop: `1px solid ${theme.palette.divider}`,
+        borderBottom: `1px solid ${theme.palette.divider}`,
       }),
     },
   },
@@ -135,7 +135,7 @@ const radiusComponentOverrides = {
       root: ({ theme }) => ({
         paddingTop: theme.spacing(2.5),
         paddingRight: theme.spacing(3),
-        paddingBottom: theme.spacing(3),
+        paddingBottom: theme.spacing(2.5),
         paddingLeft: theme.spacing(3),
         gap: theme.spacing(1.5),
         borderTop: `1px solid ${theme.palette.divider}`,
