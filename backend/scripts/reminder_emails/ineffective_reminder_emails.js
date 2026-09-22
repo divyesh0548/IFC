@@ -18,6 +18,7 @@
 
 const { pool } = require('../../utils/db');
 const { sendEmail } = require('../../utils/send_email');
+const { getCcEmailsForRacm } = require('../../utils/racm_cc_recipients');
 const { getCoordinatorEmailForUnit } = require('../../utils/deficiency_response_notifications');
 const {
   updateIneffectiveReminderDatetime,
@@ -120,10 +121,26 @@ async function runIneffectiveReminderEmails() {
       const text = buildIneffectiveReminderEmailBody(form);
 
       const coordinatorEmail = await getCoordinatorEmailForUnit(form.company_identifier, form.unit_id);
-      const ccEmails = coordinatorEmail
-        && coordinatorEmail.toLowerCase() !== to.toLowerCase()
-        ? [coordinatorEmail]
-        : [];
+      const matrixCcEmails = await getCcEmailsForRacm({
+        companyIdentifier: form.company_identifier,
+        businessProcess: form.business_process,
+        unitId: form.unit_id,
+        formId: form.form_id,
+        excludeEmail: to,
+      });
+      const ccEmails = Array.from(
+        new Set(
+          [
+            coordinatorEmail
+              && coordinatorEmail.toLowerCase() !== to.toLowerCase()
+              ? coordinatorEmail
+              : null,
+            ...matrixCcEmails,
+          ]
+            .map((email) => String(email || '').trim().toLowerCase())
+            .filter(Boolean)
+        )
+      );
 
       const sent = await sendEmail(to, subject, text, ccEmails.length ? { cc: ccEmails } : undefined);
       if (sent) {

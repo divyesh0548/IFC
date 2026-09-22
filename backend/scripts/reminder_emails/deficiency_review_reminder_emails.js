@@ -18,6 +18,7 @@
 
 const { pool } = require('../../utils/db');
 const { sendEmail } = require('../../utils/send_email');
+const { getCcEmailsForRacm } = require('../../utils/racm_cc_recipients');
 const {
   updateDeficiencyReviewReminderDatetime,
   buildDeficiencyReviewReminderDatetimeDueSql,
@@ -167,7 +168,15 @@ async function runDeficiencyReviewReminderEmails() {
       const subject = `Reminder: Control ${controlNumberText} - ${businessProcessText} - ${responseTypeLabel} awaiting review`;
       const text = buildDeficiencyReviewReminderEmailBody(form);
 
-      const sent = await sendEmail(to, subject, text);
+      const ccEmails = await getCcEmailsForRacm({
+        companyIdentifier: form.company_identifier,
+        businessProcess: form.business_process,
+        unitId: form.unit_id,
+        formId: form.form_id,
+        excludeEmail: to,
+      });
+
+      const sent = await sendEmail(to, subject, text, ccEmails.length ? { cc: ccEmails } : undefined);
       if (sent) {
         const updatedAt = await updateDeficiencyReviewReminderDatetime(client, form.form_id);
         console.log(
@@ -185,4 +194,4 @@ async function runDeficiencyReviewReminderEmails() {
 }
 
 module.exports = { runDeficiencyReviewReminderEmails };
-
+

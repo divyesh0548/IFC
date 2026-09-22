@@ -34,6 +34,7 @@ import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
 import { toast } from 'react-hot-toast'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
+import RacmControlSearchAutocomplete from '../../components/company_co/RacmControlSearchAutocomplete'
 import {
   DASHBOARD_PAGE_OUTER_SX,
   FILTER_DROPDOWN_MIN_WIDTH_LG,
@@ -70,6 +71,8 @@ function mapDisplayEntries(rawEntries) {
   return (rawEntries || [])
     .map((entry) => {
       const entryId = Number(entry.id)
+      const racmIdentifier = String(entry.racm_identifier || '').trim()
+      const controlNumber = String(entry.control_number || '').trim()
       return {
         key: `entry-${entryId}`,
         email_id: entry.email_id,
@@ -77,6 +80,12 @@ function mapDisplayEntries(rawEntries) {
         unit_name: entry.unit_name,
         business_process: entry.business_process,
         business_process_display: formatBusinessProcessDisplay(entry.business_process),
+        racm_identifier: racmIdentifier,
+        control_number: controlNumber,
+        control_number_display: racmIdentifier
+          ? (controlNumber || racmIdentifier)
+          : '—',
+        isRacmSpecific: Boolean(racmIdentifier),
         entryIds: entryId ? [entryId] : [],
         isAllBusinessProcesses: isAllProcessesEntry(entry.business_process),
       }
@@ -84,6 +93,10 @@ function mapDisplayEntries(rawEntries) {
     .sort((left, right) => {
       const processCompare = String(left.business_process_display || '').localeCompare(String(right.business_process_display || ''))
       if (processCompare !== 0) return processCompare
+      const scopeCompare = Number(left.isRacmSpecific) - Number(right.isRacmSpecific)
+      if (scopeCompare !== 0) return scopeCompare
+      const controlCompare = String(left.control_number_display || '').localeCompare(String(right.control_number_display || ''))
+      if (controlCompare !== 0) return controlCompare
       const emailCompare = String(left.email_id || '').localeCompare(String(right.email_id || ''))
       if (emailCompare !== 0) return emailCompare
       return String(left.unit_name || left.unit_id || '').localeCompare(String(right.unit_name || right.unit_id || ''))
@@ -104,6 +117,8 @@ function CommunicationMatrix() {
   const [addDialog, setAddDialog] = useState(addDialogDefaults)
   const [selectedUnitIds, setSelectedUnitIds] = useState([])
   const [selectedBusinessProcesses, setSelectedBusinessProcesses] = useState([])
+  const [racmBusinessProcess, setRacmBusinessProcess] = useState('')
+  const [selectedRacmControl, setSelectedRacmControl] = useState(null)
   const [emailInputs, setEmailInputs] = useState([''])
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedEntryIds, setSelectedEntryIds] = useState(new Set())
@@ -178,6 +193,8 @@ function CommunicationMatrix() {
     const defaultUnitId = String(mappedUnits[0]?.unit_id || '').trim()
     setSelectedUnitIds(defaultUnitId ? [defaultUnitId] : [])
     setSelectedBusinessProcesses(businessProcesses[0] ? [businessProcesses[0]] : [])
+    setRacmBusinessProcess(businessProcesses[0] || '')
+    setSelectedRacmControl(null)
     setEmailInputs([''])
     setAddDialog({ ...addDialogDefaults, open: true })
   }
@@ -186,6 +203,8 @@ function CommunicationMatrix() {
     if (addDialog.submitting) return
     setAddDialog(addDialogDefaults)
     setEmailInputs([''])
+    setSelectedRacmControl(null)
+    setRacmBusinessProcess('')
   }
 
   const normalizedEmails = useMemo(
@@ -195,7 +214,7 @@ function CommunicationMatrix() {
   )
 
   const handleSubmitAdd = async () => {
-    if (selectedUnitIds.length === 0) {
+    if (addDialog.mode !== 'racm' && selectedUnitIds.length === 0) {
       setAddDialog((prev) => ({ ...prev, error: 'Select at least one unit' }))
       return
     }
@@ -206,6 +225,20 @@ function CommunicationMatrix() {
     if (addDialog.mode === 'specific' && selectedBusinessProcesses.length === 0) {
       setAddDialog((prev) => ({ ...prev, error: 'Select at least one Business Process' }))
       return
+    }
+    if (addDialog.mode === 'racm') {
+      if (!racmBusinessProcess) {
+        setAddDialog((prev) => ({ ...prev, error: 'Select a Business Process' }))
+        return
+      }
+      if (selectedUnitIds.length !== 1) {
+        setAddDialog((prev) => ({ ...prev, error: 'Select one unit' }))
+        return
+      }
+      if (!selectedRacmControl?.form_id) {
+        setAddDialog((prev) => ({ ...prev, error: 'Select a Control Number' }))
+        return
+      }
     }
 
     setAddDialog((prev) => ({ ...prev, submitting: true, error: '' }))
@@ -229,6 +262,28 @@ function CommunicationMatrix() {
         }
         totalInserted += Number(result.inserted || 0)
         totalSkipped += Number(result.skipped || 0)
+      } else if (addDialog.mode === 'racm') {
+        const response = await fetch(apiUrl('/api/company-co/communication-matrix/racm-specific'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            email_ids: normalizedEmails,
+            business_process: racmBusinessProcess,
+            racm_identifier: selectedRacmControl.form_id,
+          }),
+        })
+        const result = await response.json()
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'Failed to add RACM specific emails')
+        }
+        totalInserted += Number(result.inserted || 0)
+        totalSkipped += Number(result.skipped || 0)
+        if (Array.isArray(result.blockedEmails) && result.blockedEmails.length > 0) {
+          toast.error(
+            `${result.blockedEmails.length} email(s) already exist for this business process at unit scope`
+          )
+        }
       } else {
         for (const businessProcess of selectedBusinessProcesses) {
           const response = await fetch(apiUrl('/api/company-co/communication-matrix/specific'), {
@@ -253,8 +308,10 @@ function CommunicationMatrix() {
       if (totalInserted > 0) {
         toast.success(`Added successfully. Inserted: ${totalInserted}`)
       }
-      if (totalSkipped > 0) {
+      if (totalSkipped > 0 && addDialog.mode !== 'racm') {
         toast.error(`${totalSkipped} email(s) already exist for the selected unit${addDialog.mode === 'specific' ? ' and business process' : ''}`)
+      } else if (totalSkipped > 0 && totalInserted > 0) {
+        toast.error(`${totalSkipped} email(s) were skipped`)
       }
       handleCloseAddDialog()
       await fetchMatrix()
@@ -398,6 +455,7 @@ function CommunicationMatrix() {
             </Typography>
             <Typography sx={{ ...PAGE_SUBHEADER_TEXT_SX, mt: 0.75, maxWidth: 760 }}>
               Emails added for a business process are included in the CC list of all emails sent for that business process.
+              RACM-specific emails are included only for that control.
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', flexWrap: 'wrap', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
@@ -548,6 +606,7 @@ function CommunicationMatrix() {
                     </TableCell>
                   ) : null}
                   <TableCell sx={headCellSx}>Business Process</TableCell>
+                  <TableCell sx={headCellSx}>Control Number</TableCell>
                   <TableCell sx={headCellSx}>Email ID</TableCell>
                   <TableCell sx={headCellSx}>Unit</TableCell>
                 </TableRow>
@@ -555,7 +614,7 @@ function CommunicationMatrix() {
               <TableBody>
                 {displayEntries.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={deleteMode ? 4 : 3} sx={{ py: 4, px: 2.25, borderBottom: 0 }}>
+                    <TableCell colSpan={deleteMode ? 5 : 4} sx={{ py: 4, px: 2.25, borderBottom: 0 }}>
                       <Typography color="text.secondary">No communication emails found.</Typography>
                     </TableCell>
                   </TableRow>
@@ -584,6 +643,7 @@ function CommunicationMatrix() {
                         </TableCell>
                       ) : null}
                       <TableCell sx={bodyCellSx}>{row.business_process_display}</TableCell>
+                      <TableCell sx={bodyCellSx}>{row.control_number_display}</TableCell>
                       <TableCell sx={bodyCellSx}>{row.email_id || '-'}</TableCell>
                       <TableCell sx={bodyCellSx}>{row.unit_name || row.unit_id || '-'}</TableCell>
                     </TableRow>
@@ -604,13 +664,25 @@ function CommunicationMatrix() {
               labelId="add-mode-label"
               value={addDialog.mode}
               label="Option"
-              onChange={(event) =>
-                setAddDialog((prev) => ({ ...prev, mode: event.target.value, error: '' }))
-              }
+              onChange={(event) => {
+                const nextMode = event.target.value
+                setSelectedRacmControl(null)
+                if (nextMode === 'racm') {
+                  if (!racmBusinessProcess && businessProcesses[0]) {
+                    setRacmBusinessProcess(businessProcesses[0])
+                  }
+                  setSelectedUnitIds((prev) => {
+                    const first = String(prev[0] || mappedUnits[0]?.unit_id || '').trim()
+                    return first ? [first] : []
+                  })
+                }
+                setAddDialog((prev) => ({ ...prev, mode: nextMode, error: '' }))
+              }}
               disabled={addDialog.submitting}
             >
               <MenuItem value="common">Add common CC email for all Business Process</MenuItem>
               <MenuItem value="specific">Business Process specific email</MenuItem>
+              <MenuItem value="racm">RACM Specific email</MenuItem>
             </Select>
           </FormControl>
 
@@ -643,34 +715,97 @@ function CommunicationMatrix() {
             </FormControl>
           )}
 
-          <FormControl fullWidth required>
-            <InputLabel id="unit-multi-select-label">Units</InputLabel>
-            <Select
-              labelId="unit-multi-select-label"
-              multiple
-              value={selectedUnitIds}
-              label="Units"
-              onChange={(event) => {
-                const nextValue = typeof event.target.value === 'string'
-                  ? event.target.value.split(',')
-                  : event.target.value
-                if (nextValue.length === 0) return
-                setSelectedUnitIds(nextValue)
-                setAddDialog((prev) => ({ ...prev, error: '' }))
-              }}
-              renderValue={(selected) => selected
-                .map((unitId) => mappedUnits.find((unit) => String(unit.unit_id) === String(unitId))?.unit_name || unitId)
-                .join(', ')}
-              disabled={addDialog.submitting || mappedUnits.length === 0}
-            >
-              {mappedUnits.map((unit) => (
-                <MenuItem key={unit.unit_id} value={unit.unit_id}>
-                  <Checkbox checked={selectedUnitIds.includes(unit.unit_id)} size="small" />
-                  <ListItemText primary={unit.unit_name || unit.unit_id} />
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          {addDialog.mode === 'racm' && (
+            <>
+              <FormControl fullWidth required>
+                <InputLabel id="racm-business-process-label">Business Process</InputLabel>
+                <Select
+                  labelId="racm-business-process-label"
+                  value={racmBusinessProcess}
+                  label="Business Process"
+                  onChange={(event) => {
+                    setRacmBusinessProcess(event.target.value)
+                    setSelectedRacmControl(null)
+                    setAddDialog((prev) => ({ ...prev, error: '' }))
+                  }}
+                  disabled={addDialog.submitting}
+                >
+                  {businessProcesses.map((process) => (
+                    <MenuItem key={process} value={process}>
+                      {process}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl fullWidth required>
+                <InputLabel id="racm-unit-select-label">Unit</InputLabel>
+                <Select
+                  labelId="racm-unit-select-label"
+                  value={selectedUnitIds[0] || ''}
+                  label="Unit"
+                  onChange={(event) => {
+                    const nextUnitId = String(event.target.value || '').trim()
+                    setSelectedUnitIds(nextUnitId ? [nextUnitId] : [])
+                    setSelectedRacmControl(null)
+                    setAddDialog((prev) => ({ ...prev, error: '' }))
+                  }}
+                  disabled={addDialog.submitting || mappedUnits.length === 0}
+                >
+                  {mappedUnits.map((unit) => (
+                    <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                      {unit.unit_name || unit.unit_id}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <RacmControlSearchAutocomplete
+                businessProcess={racmBusinessProcess}
+                unitId={selectedUnitIds[0] || ''}
+                value={selectedRacmControl}
+                onChange={(control) => {
+                  setSelectedRacmControl(control)
+                  setAddDialog((prev) => ({ ...prev, error: '' }))
+                }}
+                disabled={addDialog.submitting || !racmBusinessProcess || !selectedUnitIds[0]}
+                prefetch={addDialog.open && addDialog.mode === 'racm'}
+                inDialog
+                helperText="Shows up to 5 controls from the selected unit."
+              />
+            </>
+          )}
+
+          {addDialog.mode !== 'racm' && (
+            <FormControl fullWidth required>
+              <InputLabel id="unit-multi-select-label">Units</InputLabel>
+              <Select
+                labelId="unit-multi-select-label"
+                multiple
+                value={selectedUnitIds}
+                label="Units"
+                onChange={(event) => {
+                  const nextValue = typeof event.target.value === 'string'
+                    ? event.target.value.split(',')
+                    : event.target.value
+                  if (nextValue.length === 0) return
+                  setSelectedUnitIds(nextValue)
+                  setAddDialog((prev) => ({ ...prev, error: '' }))
+                }}
+                renderValue={(selected) => selected
+                  .map((unitId) => mappedUnits.find((unit) => String(unit.unit_id) === String(unitId))?.unit_name || unitId)
+                  .join(', ')}
+                disabled={addDialog.submitting || mappedUnits.length === 0}
+              >
+                {mappedUnits.map((unit) => (
+                  <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                    <Checkbox checked={selectedUnitIds.includes(unit.unit_id)} size="small" />
+                    <ListItemText primary={unit.unit_name || unit.unit_id} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Typography sx={{ fontWeight: 600 }}>Email IDs</Typography>

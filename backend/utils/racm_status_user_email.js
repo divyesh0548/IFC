@@ -246,6 +246,7 @@ async function sendInactiveRacmUserEmailForFormId(formId) {
     companyIdentifier: row.company_identifier,
     businessProcess: row.business_process,
     unitId: row.unit_id,
+    formId: row.form_id,
     excludeEmail: processOwnerEmail,
   });
 

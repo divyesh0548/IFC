@@ -22,8 +22,10 @@ router.post('/ai-insights/key-manual-summary/generate', verifyCompanyCoordinator
 router.delete('/ai-insights/key-manual-summary/:run_id', verifyCompanyCoordinator, controller.deleteKeyManualAiInsightsRun);
 router.get('/racm-audit-logs/:form_id', verifyCompanyCoordinator, controller.getRacmAuditLogs);
 router.get('/communication-matrix', verifyCompanyCoordinator, controller.getCommunicationMatrix);
+router.get('/communication-matrix/controls', verifyCompanyCoordinator, controller.searchCommunicationMatrixControls);
 router.post('/communication-matrix/common', verifyCompanyCoordinator, controller.addCommonCommunicationEmails);
 router.post('/communication-matrix/specific', verifyCompanyCoordinator, controller.addBusinessProcessSpecificCommunicationEmails);
+router.post('/communication-matrix/racm-specific', verifyCompanyCoordinator, controller.addRacmSpecificCommunicationEmails);
 router.post('/communication-matrix/delete', verifyCompanyCoordinator, controller.deleteCommunicationMatrixEntries);
 router.get('/users', verifyCompanyCoordinator, controller.getUsers);
 router.get('/assigned-units', verifyCompanyCoordinator, controller.getAssignedUnits);

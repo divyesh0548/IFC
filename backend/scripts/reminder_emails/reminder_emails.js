@@ -12,6 +12,7 @@
 
 const { pool } = require('../../utils/db');
 const { sendEmail } = require('../../utils/send_email');
+const { getCcEmailsForRacm } = require('../../utils/racm_cc_recipients');
 const {
   updateReminderDatetime,
   REMINDER_DATETIME_DUE_SQL,
@@ -171,7 +172,15 @@ async function runReminderEmails() {
       const subject = `Reminder - Control ${controlNumberText} - ${businessProcessText} submission pending`;
       const text = buildReminderEmailBody(form);
 
-      const sent = await sendEmail(to, subject, text);
+      const ccEmails = await getCcEmailsForRacm({
+        companyIdentifier: form.company_identifier,
+        businessProcess: form.business_process,
+        unitId: form.unit_id,
+        formId: form.form_id,
+        excludeEmail: to,
+      });
+
+      const sent = await sendEmail(to, subject, text, ccEmails.length ? { cc: ccEmails } : undefined);
       if (sent) {
         const updatedAt = await updateReminderDatetime(client, form.form_id, form.reminder_frequency);
         console.log(

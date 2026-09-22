@@ -1,18 +1,6 @@
-1. Dynamic RACM templates per company units. 
-
-2. A new user type "Company Admin" has been added, who will create coordinator, approvers and company units; and assign them. Company Admin can also create users/process owners.
-
-3. Coordinator self-assignment. Where coordinator will upload evidence and submit RACM for approval.
-
-4. Coordinator will decide sample size according to control frequency for their assigned unit.
-
-5. Implemented an option of "No submission declaration" whene process owner do not have furthure documents.
-
-6. 3 Types of approver assignment : 1. Unit Level 2. Unit + Business process 3. RACM-specific assignment
 
 
-
-Points needs discussion
+Points needs discussion (Arose during UAT with Mayank Parekh sir)
 
 1. Allow coordinator to upload documents in All RACMs by default. In some cases coordinator first verify the documents before submission, so they should be able to upload.
 
@@ -20,6 +8,35 @@ Points needs discussion
 
 
 
-Questions from my side 
 
-1. Once coordinator assigns themselves to a RACM, can they change the assignment and assign another process owner? 
+
+Chnages from discussion with Vishal sir
+
+Prompts / Functional Changes
+1.    Control Owner / Designation Changes: Update the prompt to capture changes in the process owner, control owner’s designation, or department, with the objective of synchronizing the RACM with the latest organogram and user responsibilities. The email communication should be updated to request control owners to notify any changes in user responsibilities, department, or designation. ---- Minor change in email body
+
+2.    Header Mapping for Subsequent Processes: Develop a prompt to reuse standardized headers while uploading the remaining processes after completing the RACM for one process. This will reduce the time and effort required for header mapping for subsequent processes for same company. ---- Will take moderate amount of time (Approx 4 hours)
+
+
+3.    Reminder and Escalation Mechanism: Update the reminder email prompt for cases where no action is taken after multiple reminders. A final reminder should specify the delay in evidence submission and highlight that non-submission may result in the control being considered ineffective. Where required, the matter should also be escalated to the immediate superior of the control owner. ---- Can be done in 3 hours, there are many reminder emails
+
+
+
+4.    Rejected Control Evidence: Update the prompt to enable control owners to directly access rejected controls or evidence requiring action. The email communication should include hyperlinks to the respective rejected controls/evidence, allowing process owners to focus only on relevant items requiring corrective action. ------ R & D required
+
+
+5.    “Not Applicable” Option: Add a “Not Applicable” option in the control owner submission dropdown. This should also allow OE Testing to be marked as N/A where there are no relevant transactions during the testing period.  ---- Will take some time, because this is related to control cycle and many parameters are involved.
+
+
+
+   Areas for Further Review / Under Adaptation
+1.    Automation Opportunities: Develop prompts to identify potential automation opportunities for existing controls across all RACMs uploaded to the site. 
+2.    IFC Testing Report Automation: Automate generation of the IFC Testing Report upon completion of OE Testing and finalize the standard report format. 
+3.    ELC Site: Develop and configure the site for Entity-Level Controls (ELC). 
+4.    Internal / Beta Testing: Conduct internal testing during this / next week, with Divyesh and Vishal uploading and testing at least two RACMs, using the APL IFC as the reference.
+
+Also please share site credentials so as i can go through it and we can start beta testing in two days.
+
+
+
+

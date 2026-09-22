@@ -4614,12 +4614,17 @@ async function getCommunicationMatrix(req, res) {
         r.email_id,
         r.business_process,
         r.unit_id,
+        COALESCE(NULLIF(TRIM(r.racm_identifier), ''), '') AS racm_identifier,
+        NULLIF(TRIM(cf.control_number), '') AS control_number,
         COALESCE(NULLIF(TRIM(cum.unit_name), ''), r.unit_id) AS unit_name,
         ${createdAtUtcSql('r.created_at')}
       FROM racm_cc_users r
       LEFT JOIN company_unit_master cum
         ON cum.company_identifier = r.company_identifier
        AND cum.unit_id = r.unit_id
+      LEFT JOIN control_forms cf
+        ON cf.company_identifier = r.company_identifier
+       AND cf.form_id = NULLIF(TRIM(r.racm_identifier), '')
       WHERE r.company_identifier = $1
         AND r.unit_id = ANY($2::text[])
     `;
@@ -4631,7 +4636,13 @@ async function getCommunicationMatrix(req, res) {
       )`;
       params.push(businessProcessFilter, ALL_PROCESSES_KEYWORD);
     }
-    entriesQuery += ' ORDER BY r.business_process ASC, r.email_id ASC, unit_name ASC';
+    entriesQuery += ` ORDER BY
+      CASE WHEN COALESCE(TRIM(r.racm_identifier), '') = '' THEN 0 ELSE 1 END ASC,
+      r.business_process ASC,
+      COALESCE(cf.control_number, '') ASC,
+      r.email_id ASC,
+      unit_name ASC
+    `;
 
     const entriesResult = await pool.query(entriesQuery, params);
 
@@ -4732,8 +4743,8 @@ async function addCommonCommunicationEmails(req, res) {
       for (const emailId of normalizedEmails) {
         const result = await client.query(
           `
-            INSERT INTO racm_cc_users (email_id, business_process, company_identifier, unit_id)
-            SELECT $1::text, $2::text, $3::text, $4::text
+            INSERT INTO racm_cc_users (email_id, business_process, company_identifier, unit_id, racm_identifier)
+            SELECT $1::text, $2::text, $3::text, $4::text, ''::text
             WHERE NOT EXISTS (
               SELECT 1
               FROM racm_cc_users
@@ -4741,6 +4752,7 @@ async function addCommonCommunicationEmails(req, res) {
                 AND company_identifier = $3
                 AND unit_id = $4
                 AND TRIM(COALESCE(business_process, '')) = $2::text
+                AND COALESCE(TRIM(racm_identifier), '') = ''
             )
           `,
           [emailId, ALL_PROCESSES_KEYWORD, companyIdentifier, unitId, emailId]
@@ -4904,8 +4916,8 @@ async function addBusinessProcessSpecificCommunicationEmails(req, res) {
       for (const emailId of normalizedEmails) {
         const result = await client.query(
           `
-            INSERT INTO racm_cc_users (email_id, business_process, company_identifier, unit_id)
-            SELECT $1::text, $2::text, $3::text, $4::text
+            INSERT INTO racm_cc_users (email_id, business_process, company_identifier, unit_id, racm_identifier)
+            SELECT $1::text, $2::text, $3::text, $4::text, ''::text
             WHERE NOT EXISTS (
               SELECT 1
               FROM racm_cc_users
@@ -4913,6 +4925,7 @@ async function addBusinessProcessSpecificCommunicationEmails(req, res) {
                 AND company_identifier = $3
                 AND unit_id = $4
                 AND TRIM(COALESCE(business_process, '')) = $2::text
+                AND COALESCE(TRIM(racm_identifier), '') = ''
             )
           `,
           [emailId, businessProcess, companyIdentifier, unitId, emailId]
@@ -4944,6 +4957,319 @@ async function addBusinessProcessSpecificCommunicationEmails(req, res) {
     return res.status(500).json({
       success: false,
       message: 'Failed to add communication emails',
+    });
+  } finally {
+    client.release();
+  }
+}
+
+async function searchCommunicationMatrixControls(req, res) {
+  try {
+    const companyIdentifier = req.user.company_identifier;
+    const coordinatorEmail = normalizeEmail(req.user.email_id);
+    const businessProcess = req.query.business_process != null
+      ? String(req.query.business_process).trim()
+      : '';
+    const unitId = req.query.unit_id != null ? String(req.query.unit_id).trim() : '';
+    const searchTerm = req.query.q != null ? String(req.query.q).trim() : '';
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isInteger(limitRaw) && limitRaw > 0
+      ? Math.min(limitRaw, 5)
+      : 5;
+
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is missing for coordinator',
+      });
+    }
+
+    if (!businessProcess || businessProcess === ALL_PROCESSES_KEYWORD) {
+      return res.status(400).json({
+        success: false,
+        message: 'Business Process is required',
+      });
+    }
+
+    if (!unitId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unit is required',
+      });
+    }
+
+    const mappedUnitsResult = await pool.query(
+      `
+        SELECT DISTINCT NULLIF(TRIM(cum.unit_id), '') AS unit_id
+        FROM company_unit_master cum
+        INNER JOIN coordinator_unit_assignments cua
+          ON cua.company_identifier = cum.company_identifier
+         AND cua.unit_id = cum.unit_id
+        WHERE cum.company_identifier = $1
+          AND LOWER(TRIM(cua.coordinator_email_id)) = $2
+          AND NULLIF(TRIM(cum.unit_id), '') IS NOT NULL
+          AND cum.unit_id = $3
+      `,
+      [companyIdentifier, coordinatorEmail, unitId]
+    );
+
+    if (mappedUnitsResult.rows.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'Selected unit is not mapped to this company coordinator',
+      });
+    }
+
+    const params = [companyIdentifier, unitId, businessProcess];
+    let searchClause = '';
+    // Match ignoring whitespace and symbols (e.g. "C.1" / "C 1" / "C1" / "c-1")
+    const normalizedSearchTerm = String(searchTerm || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    if (normalizedSearchTerm) {
+      params.push(`%${normalizedSearchTerm}%`);
+      searchClause = `
+          AND regexp_replace(UPPER(TRIM(COALESCE(cf.control_number, ''))), '[^A-Z0-9]', '', 'g')
+            LIKE $${params.length}
+      `;
+    }
+    params.push(limit);
+
+    const result = await pool.query(
+      `
+        SELECT
+          cf.form_id,
+          cf.control_number,
+          cf.unit_id,
+          COALESCE(NULLIF(TRIM(cum.unit_name), ''), cf.unit_id) AS unit_name,
+          cf.business_process
+        FROM control_forms cf
+        LEFT JOIN company_unit_master cum
+          ON cum.company_identifier = cf.company_identifier
+         AND cum.unit_id = cf.unit_id
+        WHERE cf.company_identifier = $1
+          AND cf.unit_id = $2
+          AND LOWER(TRIM(COALESCE(cf.business_process, ''))) = LOWER(TRIM($3::text))
+          AND NULLIF(TRIM(cf.form_id), '') IS NOT NULL
+          AND NULLIF(TRIM(cf.control_number), '') IS NOT NULL
+          ${searchClause}
+        ORDER BY cf.control_number ASC
+        LIMIT $${params.length}
+      `,
+      params
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result.rows.map((row) => ({
+        form_id: row.form_id,
+        control_number: row.control_number,
+        unit_id: row.unit_id,
+        unit_name: row.unit_name,
+        business_process: row.business_process,
+        label: String(row.control_number || '').trim(),
+      })),
+    });
+  } catch (error) {
+    console.error('Search communication matrix controls error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to search controls',
+    });
+  }
+}
+
+async function addRacmSpecificCommunicationEmails(req, res) {
+  const coordinator = req.user;
+  const companyIdentifier = coordinator.company_identifier;
+  const coordinatorEmail = normalizeEmail(coordinator.email_id);
+  const inputEmails = Array.isArray(req.body?.email_ids) ? req.body.email_ids : [];
+  const businessProcess = req.body?.business_process != null ? String(req.body.business_process).trim() : '';
+  const racmIdentifier = req.body?.racm_identifier != null
+    ? String(req.body.racm_identifier).trim()
+    : (req.body?.form_id != null ? String(req.body.form_id).trim() : '');
+
+  if (!companyIdentifier) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company identifier is missing for coordinator',
+    });
+  }
+
+  if (!businessProcess || businessProcess === ALL_PROCESSES_KEYWORD) {
+    return res.status(400).json({
+      success: false,
+      message: 'Business Process is required',
+    });
+  }
+
+  if (!racmIdentifier) {
+    return res.status(400).json({
+      success: false,
+      message: 'RACM (control) selection is required',
+    });
+  }
+
+  const normalizedEmails = [...new Set(inputEmails.map(normalizeEmail).filter(Boolean))];
+  if (normalizedEmails.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'At least one email ID is required',
+    });
+  }
+
+  const invalidEmails = normalizedEmails.filter((email) => !isValidEmail(email));
+  if (invalidEmails.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid email format found',
+      invalidEmails,
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const formResult = await client.query(
+      `
+        SELECT
+          cf.form_id,
+          cf.control_number,
+          cf.unit_id,
+          cf.business_process
+        FROM control_forms cf
+        INNER JOIN coordinator_unit_assignments cua
+          ON cua.company_identifier = cf.company_identifier
+         AND cua.unit_id = cf.unit_id
+         AND LOWER(TRIM(cua.coordinator_email_id)) = $3
+        WHERE cf.company_identifier = $1
+          AND cf.form_id = $2
+          AND NULLIF(TRIM(cf.unit_id), '') IS NOT NULL
+        LIMIT 1
+      `,
+      [companyIdentifier, racmIdentifier, coordinatorEmail]
+    );
+
+    if (formResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Selected RACM was not found or is not mapped to this company coordinator',
+      });
+    }
+
+    const formRow = formResult.rows[0];
+    const formBusinessProcess = String(formRow.business_process || '').trim();
+    const unitId = String(formRow.unit_id || '').trim();
+    const controlNumber = String(formRow.control_number || '').trim();
+
+    if (!unitId) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Selected RACM does not have a unit',
+      });
+    }
+
+    if (formBusinessProcess !== businessProcess) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Selected RACM does not belong to the chosen Business Process',
+      });
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+    const blockedEmails = [];
+
+    for (const emailId of normalizedEmails) {
+      const processScopeExists = await client.query(
+        `
+          SELECT 1
+          FROM racm_cc_users
+          WHERE company_identifier = $1
+            AND unit_id = $2
+            AND LOWER(TRIM(email_id)) = $3
+            AND COALESCE(TRIM(racm_identifier), '') = ''
+            AND (
+              TRIM(COALESCE(business_process, '')) = $4
+              OR TRIM(COALESCE(business_process, '')) = $5
+            )
+          LIMIT 1
+        `,
+        [companyIdentifier, unitId, emailId, businessProcess, ALL_PROCESSES_KEYWORD]
+      );
+
+      if (processScopeExists.rows.length > 0) {
+        blockedEmails.push(emailId);
+        skipped += 1;
+        continue;
+      }
+
+      const result = await client.query(
+        `
+          INSERT INTO racm_cc_users (
+            email_id,
+            business_process,
+            company_identifier,
+            unit_id,
+            racm_identifier
+          )
+          SELECT $1::text, $2::text, $3::text, $4::text, $5::text
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM racm_cc_users
+            WHERE LOWER(TRIM(email_id)) = $6
+              AND company_identifier = $3
+              AND unit_id = $4
+              AND TRIM(COALESCE(business_process, '')) = $2::text
+              AND COALESCE(TRIM(racm_identifier), '') = $5::text
+          )
+        `,
+        [emailId, businessProcess, companyIdentifier, unitId, racmIdentifier, emailId]
+      );
+
+      if (result.rowCount > 0) inserted += 1;
+      else skipped += 1;
+    }
+
+    await client.query('COMMIT');
+
+    if (inserted === 0 && blockedEmails.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message:
+          'These email(s) are already added for this business process (or all processes) at unit scope. Remove the process-level CC entry before adding a RACM-specific one.',
+        blockedEmails,
+        inserted,
+        skipped,
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'RACM specific email(s) added successfully',
+      inserted,
+      skipped,
+      blockedEmails,
+      business_process: businessProcess,
+      racm_identifier: racmIdentifier,
+      control_number: controlNumber,
+      unit_id: unitId,
+      emailCount: normalizedEmails.length,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Add RACM specific communication emails error:', error);
+    if (error.code === '23505') {
+      return res.status(409).json({
+        success: false,
+        message: 'One or more email IDs already exist with conflicting unique constraint',
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to add RACM specific communication emails',
     });
   } finally {
     client.release();
@@ -5264,8 +5590,10 @@ module.exports = {
   checkUserRole,
   getRacmAuditLogs,
   getCommunicationMatrix,
+  searchCommunicationMatrixControls,
   addCommonCommunicationEmails,
   addBusinessProcessSpecificCommunicationEmails,
+  addRacmSpecificCommunicationEmails,
   deleteCommunicationMatrixEntries,
   createCompanyBusinessProcess,
   getUnitSampleSizeConfig,

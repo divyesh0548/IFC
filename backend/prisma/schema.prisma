@@ -434,9 +434,11 @@ model RacmCcUser {
   businessProcess   String    @map("business_process") @db.VarChar(255)
   companyIdentifier String    @map("company_identifier") @db.VarChar(255)
   unitId            String    @map("unit_id") @db.VarChar(255)
+  /// Empty for business-process / all-process CC. Stores control_forms.form_id for RACM-specific CC.
+  racmIdentifier    String    @default("") @map("racm_identifier") @db.VarChar(255)
   createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
 
-  @@unique([emailId, businessProcess, unitId])
+  @@unique([emailId, businessProcess, unitId, racmIdentifier])
   @@map("racm_cc_users")
 }
 

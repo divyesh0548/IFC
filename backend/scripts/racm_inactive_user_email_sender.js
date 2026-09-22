@@ -38,6 +38,7 @@ async function runPendingRacmInactiveUserEmails() {
         companyIdentifier: row.company_identifier,
         businessProcess: row.business_process,
         unitId: row.unit_id,
+        formId: row.form_id,
         excludeEmail: processOwnerEmail,
       });
       const emailSent = await sendEmail(processOwnerEmail, payload.subject, payload.text, { cc: ccEmails });

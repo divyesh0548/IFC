@@ -1,0 +1,6 @@
+In deployment environment backend was sending login emails twice. In some of cases, both emails had different formats.
+
+In bulk RACM creation got this error in console. But the RACM were created.
+
+ExcelColumnMap-BEOHxFjc.js:1 SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+z	@	ExcelColumnMap-BEOHxFjc.js:1

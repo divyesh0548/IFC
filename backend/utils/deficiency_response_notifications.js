@@ -108,6 +108,7 @@ async function getCommunicationMatrixCcEmails(form, excludeEmails = []) {
     companyIdentifier: form?.company_identifier,
     businessProcess: form?.business_process,
     unitId: form?.unit_id,
+    formId: form?.form_id,
   });
 
   return ccEmails.filter((email) => !excludeSet.has(normalizeEmail(email)));

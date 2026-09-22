@@ -225,6 +225,7 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
         companyIdentifier: updatedForm.company_identifier,
         businessProcess: updatedForm.business_process,
         unitId: updatedForm.unit_id,
+        formId: updatedForm.form_id,
         excludeEmail: ownerTrim,
       }),
       getCoordinatorEmailForUnit(updatedForm.company_identifier, updatedForm.unit_id),

@@ -9,6 +9,13 @@ ELC to be Developed = Mayank sir will provide info on this later.
 Add audit logs of user(all types) creation as well as approver Assignment.
 
 
+Suggestions from Sapan sir :
+
+In mail (to process owner) add a line that if change is required in control then request change in website.
+
+
+
+
 Suggestions from Khadija : 
 
 Add employee ID in user creation. So seperate users.

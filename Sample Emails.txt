@@ -227,8 +227,6 @@ Sharp and Tannan Associates
 
 
 
-Change the wordings from "Deficiency Response" to "Mitigation/Compensatory Plan"
-
 
 
 ============================================== Deficiency Response Reminder (to process owner) ==================================
@@ -269,7 +267,7 @@ Sharp and Tannan Associates
 
 
 
-=============================== Deficiency Response Submission ============================
+=============================== Mitigation/Compensatory plan Submission ============================
 
 Subject : {Response Type} submitted for Control {control number} - {Business Process}
 
@@ -338,7 +336,7 @@ IFC System
 
 
 
-============================== Deficiency Response Result(Approved) from Approver ============================
+============================== Mitigation/Compensatory plan Result(Approved) from Approver ============================
 
 Subject = Control {control number} - {Business Process} - {response type} {Approved}
 
@@ -370,7 +368,7 @@ IFC System
 
 
 
-============================== Deficiency Response Result(Rejected) from Approver ============================
+============================== Mitigation/Compensatory plan Result(Rejected) from Approver ============================
 
 Subject = Control {control number} - {Business Process} - {response type} {Rejected}
 
