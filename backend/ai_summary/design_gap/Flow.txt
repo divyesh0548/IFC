@@ -1,0 +1,36 @@
+1. Config
+   - OPENROUTER_API_KEY + DATABASE_URL (backend/.env)
+   - column_map.yaml: settings (model, max_tokens, max_field_chars) + checks
+   - Shared classified values: backend/config/control_classification_allowed_values.json
+     (nature_of_control / control_type_ma / control_type_fo / key_control)
+     — same file used by Unclassified Controls page; reference via "$shared" in column_map
+   - Run config in run_design_gap.py: COMPANY / UNIT / BUSINESS_PROCESS / FINANCIAL_YEAR / LIMIT
+   - statuses: ok | flagged | insufficient_data
+
+2. Extract controls
+   - SQL from control_forms (filters + LIMIT)
+   - Join assertion values from racm_field_values (section_key=assertions)
+
+3. Build per-control context
+   - Identifiers + only columns needed by eligible checks
+   - Truncate free text to max_field_chars
+
+4. Pre-check gate (NO OpenRouter if fail) — per control × per check
+   A) required_classified invalid/empty → insufficient_data
+   B) required_text empty → insufficient_data
+   C) Failed checks are REMOVED from the OpenRouter payload
+   D) Other checks on the same control still run
+
+5. AI review — one OpenRouter call per control (eligible checks only)
+   - If zero eligible checks → no API call
+   - JSON results merged with pre-check insufficient_data
+
+6. Aggregate report
+   - output/design_gap_report_*.json + *.md
+   - Summary counts + token usage + flagged / insufficient sections
+
+7. Cost knobs
+   - See COSTING.txt (--limit, model, max_field_chars, max_tokens, eligible-check count)
+
+8. Later
+   - Tune column_map / prompts, then port to Node website job

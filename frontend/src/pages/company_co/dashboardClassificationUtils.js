@@ -1,8 +1,10 @@
+import {
+  isAllowedClassificationValue,
+  normalizeClassificationToken,
+} from '../../utils/controlClassificationAllowedValues'
+
 const normalizeValue = (value) => String(value || '').trim().toLowerCase()
-const normalizeKeyControlToken = (value) =>
-  String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '')
+const normalizeKeyControlToken = normalizeClassificationToken
 
 const normalizeKeyControlWords = (value) =>
   String(value || '')
@@ -42,6 +44,15 @@ const classifyKeyControlValue = (formOrValue) => {
     }
 
     return 'unclassified'
+  }
+
+  // Prefer shared allowed list (Yes / No) when present.
+  if (isAllowedClassificationValue('key_control', formOrValue)) {
+    const token = normalizeKeyControlToken(formOrValue)
+    if (token === 'no' || token.startsWith('non')) {
+      return 'nonKey'
+    }
+    return 'key'
   }
 
   const normalized = normalizeValue(formOrValue)
@@ -87,38 +98,26 @@ const getFieldValue = (form, snakeCaseKey, camelCaseKey = '') => {
 }
 
 const classifyNatureOfControl = (value) => {
-  const normalized = normalizeValue(value)
-
-  if (normalized === 'preventive' || normalized === 'preventing') {
-    return 'preventive'
+  if (!isAllowedClassificationValue('nature_of_control', value)) {
+    return 'unclassified'
   }
 
-  if (normalized === 'detective') {
-    return 'detective'
-  }
-
-  if (normalized.includes('corrective')) {
-    return 'corrective'
-  }
-
+  const token = normalizeClassificationToken(value)
+  if (token.startsWith('prevent')) return 'preventive'
+  if (token.startsWith('detect')) return 'detective'
+  if (token.includes('correct')) return 'corrective'
   return 'unclassified'
 }
 
 const classifyControlType = (value) => {
-  const normalized = normalizeValue(value)
-
-  if (normalized.includes('semi')) {
-    return 'semiAutomated'
+  if (!isAllowedClassificationValue('control_type_ma', value)) {
+    return 'unclassified'
   }
 
-  if (normalized === 'manual') {
-    return 'manual'
-  }
-
-  if (normalized === 'automated' || normalized === 'automative') {
-    return 'automated'
-  }
-
+  const token = normalizeClassificationToken(value)
+  if (token.includes('semi')) return 'semiAutomated'
+  if (token === 'manual') return 'manual'
+  if (token.includes('automat')) return 'automated'
   return 'unclassified'
 }
 
@@ -194,13 +193,14 @@ const matchesDashboardFilters = (form, filters = {}) => {
 }
 
 const getUnclassifiedFlags = (form) => {
-  const keyControl = form
-  const natureOfControl = classifyNatureOfControl(getFieldValue(form, 'nature_of_control', 'natureOfControl'))
-  const controlType = classifyControlType(getFieldValue(form, 'control_type_ma', 'controlTypeMa'))
+  const keyRaw = getFieldValue(form, 'key_control', 'keyControl')
+  const natureRaw = getFieldValue(form, 'nature_of_control', 'natureOfControl')
+  const typeRaw = getFieldValue(form, 'control_type_ma', 'controlTypeMa')
 
-  const key = classifyKeyControlValue(keyControl) === 'unclassified'
-  const nature = natureOfControl === 'unclassified'
-  const type = controlType === 'unclassified'
+  // Single source: backend/config/control_classification_allowed_values.json
+  const key = !isAllowedClassificationValue('key_control', keyRaw)
+  const nature = !isAllowedClassificationValue('nature_of_control', natureRaw)
+  const type = !isAllowedClassificationValue('control_type_ma', typeRaw)
 
   return {
     key,

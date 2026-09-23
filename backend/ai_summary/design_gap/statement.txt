@@ -1,0 +1,28 @@
+Whether risks and controls are adequately aligned with each other
+
+
+Whether adequate risks are identified and covered across the entire business cycle ------- This will be covered in Risk analysis, No need to add this in design gap
+
+
+Whether appropriate financial statement assertions are allocated to each risk
+
+
+Whether the risk constitutes a Risk of Material Misstatement (RoMM)  ----- This can't be done, because not all controls will have column ROMM
+
+
+Whether the control objective and control description are adequate to mitigate the associated risk
+
+
+Whether the control classification (Preventive/Detective) is appropriate  ----- Included in report with basic text validation, no need to use AI in this
+
+
+Whether the nature of the control is appropriately classified  ----- Included in report with basic text validation, no need to use AI in this
+
+
+Whether the control is Manual, Automated, or System-driven, and identify opportunities for automation   ------ Different module exists for same
+
+
+Whether any fraud risk exists in relation to the identified risk/process
+
+
+Whether the control should be classified as a Key Control

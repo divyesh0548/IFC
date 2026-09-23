@@ -10,6 +10,7 @@ import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import TableViewRoundedIcon from '@mui/icons-material/TableViewRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
@@ -110,6 +111,14 @@ function Company_co_home() {
       description: 'Review the classification of controls, AI insights and more.',
       path: '/company-co/control-dispersion-dashboard',
       icon: <AssessmentRoundedIcon sx={{ fontSize: 38 }} />,
+      accent: sharedTileAccent,
+    },
+    {
+      eyebrow: 'AI',
+      title: 'AI Insights',
+      description: 'Generate design-gap analysis for controls, track progress, and export scoped reports.',
+      path: '/company-co/ai-insights',
+      icon: <AutoAwesomeRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },
   ]

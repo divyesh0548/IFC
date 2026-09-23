@@ -1,0 +1,6 @@
+{
+  "nature_of_control": ["Preventive", "Detective"],
+  "control_type_ma": ["Manual", "Automated", "Semi-Automated"],
+  "control_type_fo": ["Financial", "Operational"],
+  "key_control": ["Yes", "No"]
+}

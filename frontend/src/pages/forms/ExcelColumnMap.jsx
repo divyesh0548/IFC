@@ -14,6 +14,13 @@ import TableRow from '@mui/material/TableRow'
 import FormControl from '@mui/material/FormControl'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
+import InputLabel from '@mui/material/InputLabel'
+import TextField from '@mui/material/TextField'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContentText from '@mui/material/DialogContentText'
 import { toast } from 'react-hot-toast'
 import {
   RACM_BULK_IMPORT_MAPPABLE_FIELDS,
@@ -34,6 +41,7 @@ import {
 } from '../../utils/racmTemplateKeywords'
 import {
   applyAssertionYesNoMapping,
+  getAssertionExcelHeaders,
   getAssertionYesNoMappingPrompt,
 } from '../../utils/assertionYesNoMapping'
 import {
@@ -45,6 +53,12 @@ import {
   collectBulkImportHeaders,
   getEffectiveMappedField,
 } from '../../utils/racmBulkImportColumnMapping'
+import {
+  softApplySavedColumnMapping,
+  mergeValueMappings,
+  filterUnmappedInvalidFrequencyValues,
+  filterUnmappedAssertionValues,
+} from '../../utils/racmSavedColumnMapping'
 
 const AUTO = BULK_IMPORT_AUTO
 const SKIP = BULK_IMPORT_SKIP
@@ -91,6 +105,20 @@ function ExcelColumnMap() {
   const [mappingConfig, setMappingConfig] = useState(null)
   const [templateExtraFields, setTemplateExtraFields] = useState([])
   const [templateFieldsLoaded, setTemplateFieldsLoaded] = useState(false)
+  const [activeTemplate, setActiveTemplate] = useState(null)
+  const [savedMappings, setSavedMappings] = useState([])
+  const [selectedSavedMappingId, setSelectedSavedMappingId] = useState('')
+  const [appliedPresetId, setAppliedPresetId] = useState(null)
+  const [sessionAssertionYesNoMapping, setSessionAssertionYesNoMapping] = useState({})
+  const [sessionControlFrequencyValueMapping, setSessionControlFrequencyValueMapping] = useState({})
+  const [saveMappingDialog, setSaveMappingDialog] = useState({
+    open: false,
+    name: '',
+    overwrite: false,
+    submitting: false,
+    error: '',
+    pendingNavigate: false,
+  })
   const [userOverrides, setUserOverrides] = useState({})
   const [duplicateControlNumberNotice, setDuplicateControlNumberNotice] = useState('')
   const { controlFrequencyOptions, loading: controlFrequencyOptionsLoading } = useControlFrequencyOptions()
@@ -208,27 +236,56 @@ function ExcelColumnMap() {
   useEffect(() => {
     if (!payload?.unitId) {
       setTemplateExtraFields([])
+      setActiveTemplate(null)
+      setSavedMappings([])
+      setSelectedSavedMappingId('')
+      setAppliedPresetId(null)
+      setSessionAssertionYesNoMapping({})
+      setSessionControlFrequencyValueMapping({})
       return undefined
     }
 
     let cancelled = false
     setTemplateExtraFields([])
     setTemplateFieldsLoaded(false)
+    setActiveTemplate(null)
+    setSavedMappings([])
+    setSelectedSavedMappingId('')
+    setAppliedPresetId(null)
+    setSessionAssertionYesNoMapping({})
+    setSessionControlFrequencyValueMapping({})
     ;(async () => {
       try {
-        const response = await fetch(
-          apiUrl(`/api/company-co/racm-templates?unit_id=${encodeURIComponent(payload.unitId)}`),
-          { credentials: 'include' }
-        )
-        const data = await response.json()
-        if (!cancelled && response.ok && data.success) {
+        const [templateResponse, mappingsResponse] = await Promise.all([
+          fetch(
+            apiUrl(`/api/company-co/racm-templates?unit_id=${encodeURIComponent(payload.unitId)}`),
+            { credentials: 'include' }
+          ),
+          fetch(
+            apiUrl(`/api/company-co/excel-column-mappings?unit_id=${encodeURIComponent(payload.unitId)}`),
+            { credentials: 'include' }
+          ),
+        ])
+        const templateData = await templateResponse.json()
+        const mappingsData = await mappingsResponse.json()
+
+        if (!cancelled && templateResponse.ok && templateData.success) {
           setTemplateExtraFields(
-            (Array.isArray(data.data?.extra_fields) ? data.data.extra_fields : [])
+            (Array.isArray(templateData.data?.extra_fields) ? templateData.data.extra_fields : [])
               .filter((field) => String(field.section_key || '').trim() !== 'design_implementation')
           )
+          const template = templateData.data?.template || null
+          setActiveTemplate(template)
+        }
+
+        if (!cancelled && mappingsResponse.ok && mappingsData.success) {
+          setSavedMappings(Array.isArray(mappingsData.data?.mappings) ? mappingsData.data.mappings : [])
+          if (mappingsData.data?.active_template) {
+            setActiveTemplate((prev) => prev || mappingsData.data.active_template)
+          }
         }
       } catch (error) {
-        console.error('Failed to load unit template fields for bulk import:', error)
+        console.error('Failed to load unit template fields / saved mappings for bulk import:', error)
       } finally {
         if (!cancelled) {
           setUserOverrides({})
@@ -241,6 +298,41 @@ function ExcelColumnMap() {
       cancelled = true
     }
   }, [payload?.unitId])
+
+  const handleApplySavedMapping = () => {
+    const mappingId = Number(selectedSavedMappingId)
+    const preset = savedMappings.find((item) => Number(item.id) === mappingId)
+    if (!preset) {
+      toast.error('Select a saved mapping first.')
+      return
+    }
+
+    const soft = softApplySavedColumnMapping({
+      savedColumnMapping: preset.column_mapping,
+      headers,
+      mappableSet,
+    })
+    setUserOverrides(soft.overrides)
+    setAppliedPresetId(preset.id)
+    setSessionAssertionYesNoMapping(mergeValueMappings(preset.assertion_yes_no_mapping))
+    setSessionControlFrequencyValueMapping(mergeValueMappings(preset.control_frequency_value_mapping))
+
+    const parts = [`Applied ${soft.appliedCount} column(s)`]
+    if (soft.skippedTargetCount > 0) {
+      parts.push(`${soft.skippedTargetCount} target(s) no longer in template`)
+    }
+    if (soft.unmatchedHeaderCount > 0) {
+      parts.push(`${soft.unmatchedHeaderCount} Excel header(s) not in preset`)
+    }
+    toast.success(parts.join('. ') + '.')
+
+    void fetch(apiUrl(`/api/company-co/excel-column-mappings/${preset.id}/touch`), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unit_id: payload.unitId }),
+    }).catch(() => {})
+  }
 
   useEffect(() => {
     if (mappingConfig && payload && templateFieldsLoaded) {
@@ -319,28 +411,50 @@ function ExcelColumnMap() {
       mappableSet
     )
 
+    let rowsForImport = payload.rows
+    if (Object.keys(sessionAssertionYesNoMapping).length > 0) {
+      const assertionHeaders = getAssertionExcelHeaders(column_mapping, templateExtraFields)
+      if (assertionHeaders.length > 0) {
+        rowsForImport = applyAssertionYesNoMapping(
+          payload.rows,
+          assertionHeaders,
+          sessionAssertionYesNoMapping
+        )
+        setPayload((prev) => (prev ? { ...prev, rows: rowsForImport } : prev))
+      }
+    }
+
     const assertionPrompt = getAssertionYesNoMappingPrompt(
-      payload.rows,
+      rowsForImport,
       column_mapping,
       templateExtraFields
     )
     if (assertionPrompt.needed) {
-      setAssertionYesNoMappingDialogState({
-        open: true,
-        distinctValues: assertionPrompt.distinctValues,
-        assertionHeaders: assertionPrompt.assertionHeaders,
-        submitContext: {
-          column_mapping,
-          controlFrequencyHeader,
-        },
-        selections: Object.fromEntries(
-          assertionPrompt.distinctValues.map((value) => [value, ''])
-        ),
-      })
-      return
+      const remainingValues = filterUnmappedAssertionValues(
+        assertionPrompt.distinctValues,
+        sessionAssertionYesNoMapping
+      )
+      if (remainingValues.length > 0) {
+        setAssertionYesNoMappingDialogState({
+          open: true,
+          distinctValues: remainingValues,
+          assertionHeaders: assertionPrompt.assertionHeaders,
+          submitContext: {
+            column_mapping,
+            controlFrequencyHeader,
+            rows: rowsForImport,
+          },
+          selections: Object.fromEntries(remainingValues.map((value) => [value, ''])),
+        })
+        return
+      }
     }
 
-    await continueImportAfterAssertionMapping(column_mapping, payload.rows, controlFrequencyHeader)
+    await continueImportAfterAssertionMapping(
+      column_mapping,
+      rowsForImport,
+      controlFrequencyHeader
+    )
   }
 
   const continueImportAfterAssertionMapping = async (
@@ -354,24 +468,142 @@ function ExcelColumnMap() {
     )
     if (!controlFrequencyValidation.ok) {
       if (controlFrequencyValidation.reason === 'invalid_value') {
-        setControlFrequencyMappingDialogState({
-          open: true,
-          invalidValues: controlFrequencyValidation.invalidValues,
-          submitContext: {
-            column_mapping,
-            rows,
-          },
-          selections: Object.fromEntries(
-            controlFrequencyValidation.invalidValues.map((value) => [value, ''])
-          ),
-        })
+        const remainingInvalid = filterUnmappedInvalidFrequencyValues(
+          controlFrequencyValidation.invalidValues,
+          sessionControlFrequencyValueMapping
+        )
+        if (remainingInvalid.length > 0) {
+          setControlFrequencyMappingDialogState({
+            open: true,
+            invalidValues: remainingInvalid,
+            submitContext: {
+              column_mapping,
+              rows,
+            },
+            selections: Object.fromEntries(remainingInvalid.map((value) => [value, ''])),
+          })
+          return
+        }
+
+        await submitImport(
+          column_mapping,
+          sessionControlFrequencyValueMapping,
+          rows
+        )
         return
       }
       toast.error(controlFrequencyValidation.message)
       return
     }
 
-    await submitImport(column_mapping, null, rows)
+    await submitImport(
+      column_mapping,
+      Object.keys(sessionControlFrequencyValueMapping).length > 0
+        ? sessionControlFrequencyValueMapping
+        : null,
+      rows
+    )
+  }
+
+  const openSaveMappingDialog = () => {
+    const defaultName = appliedPresetId
+      ? (savedMappings.find((item) => Number(item.id) === Number(appliedPresetId))?.name || '')
+      : ''
+    setSaveMappingDialog({
+      open: true,
+      name: defaultName,
+      overwrite: false,
+      submitting: false,
+      error: '',
+      pendingNavigate: true,
+    })
+  }
+
+  const closeSaveMappingDialog = ({ navigateAway = false } = {}) => {
+    const shouldNavigate = navigateAway || saveMappingDialog.pendingNavigate
+    setSaveMappingDialog({
+      open: false,
+      name: '',
+      overwrite: false,
+      submitting: false,
+      error: '',
+      pendingNavigate: false,
+    })
+    if (shouldNavigate) {
+      sessionStorage.removeItem(RACM_BULK_IMPORT_SESSION_KEY)
+      navigate('/company-co/control-creation', { replace: true })
+    }
+  }
+
+  const handleSaveMappingConfirm = async ({ overwrite = false } = {}) => {
+    const name = String(saveMappingDialog.name || '').trim()
+    if (!name) {
+      setSaveMappingDialog((prev) => ({ ...prev, error: 'Enter a mapping name.' }))
+      return
+    }
+    const templateId = Number(activeTemplate?.id)
+    if (!Number.isInteger(templateId) || templateId <= 0) {
+      setSaveMappingDialog((prev) => ({
+        ...prev,
+        error: 'Active template is missing. Mapping cannot be saved.',
+      }))
+      return
+    }
+
+    const column_mapping = buildColumnMapping(
+      headers,
+      selections,
+      autoDetectedByHeader,
+      mappingConfig,
+      mappableSet
+    )
+
+    setSaveMappingDialog((prev) => ({ ...prev, submitting: true, error: '', overwrite }))
+    try {
+      const response = await fetch(apiUrl('/api/company-co/excel-column-mappings'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit_id: payload.unitId,
+          name,
+          template_id: templateId,
+          column_mapping,
+          assertion_yes_no_mapping:
+            Object.keys(sessionAssertionYesNoMapping).length > 0
+              ? sessionAssertionYesNoMapping
+              : null,
+          control_frequency_value_mapping:
+            Object.keys(sessionControlFrequencyValueMapping).length > 0
+              ? sessionControlFrequencyValueMapping
+              : null,
+          excel_headers: headers,
+          overwrite: Boolean(overwrite),
+        }),
+      })
+      const data = await response.json()
+      if (response.status === 409 || data?.code === 'NAME_EXISTS') {
+        setSaveMappingDialog((prev) => ({
+          ...prev,
+          submitting: false,
+          overwrite: true,
+          error: 'A mapping with this name already exists. Click Overwrite to replace it.',
+        }))
+        return
+      }
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Failed to save mapping')
+      }
+      toast.success(data.message || (data.overwritten ? 'Mapping overwritten.' : 'Mapping saved.'))
+      closeSaveMappingDialog({ navigateAway: true })
+    } catch (error) {
+      console.error(error)
+      setSaveMappingDialog((prev) => ({
+        ...prev,
+        submitting: false,
+        error: error.message || 'Failed to save mapping',
+      }))
+    }
   }
 
   const submitImport = async (
@@ -379,6 +611,14 @@ function ExcelColumnMap() {
     controlFrequencyValueMapping = null,
     rowsOverride = null
   ) => {
+    const mergedFrequencyMapping = mergeValueMappings(
+      sessionControlFrequencyValueMapping,
+      controlFrequencyValueMapping
+    )
+    if (Object.keys(mergedFrequencyMapping).length > 0) {
+      setSessionControlFrequencyValueMapping(mergedFrequencyMapping)
+    }
+
     const body = {
       businessProcess: payload.businessProcess,
       financialYear: payload.financialYear,
@@ -390,12 +630,8 @@ function ExcelColumnMap() {
       body.due_date = payload.due_date
       body.reminder_frequency = payload.reminder_frequency
     }
-    if (
-      controlFrequencyValueMapping &&
-      typeof controlFrequencyValueMapping === 'object' &&
-      Object.keys(controlFrequencyValueMapping).length > 0
-    ) {
-      body.control_frequency_value_mapping = controlFrequencyValueMapping
+    if (Object.keys(mergedFrequencyMapping).length > 0) {
+      body.control_frequency_value_mapping = mergedFrequencyMapping
     }
 
     setLoading(true)
@@ -423,8 +659,7 @@ function ExcelColumnMap() {
             ? data.message
             : `Created ${inserted} RACM(s)${extra}.`
         )
-        sessionStorage.removeItem(RACM_BULK_IMPORT_SESSION_KEY)
-        navigate('/company-co/control-creation', { replace: true })
+        openSaveMappingDialog()
       } else {
         if (String(data?.message || '').includes(DUPLICATE_CONTROL_NUMBER_MESSAGE)) {
           setDuplicateControlNumberNotice(DUPLICATE_CONTROL_NUMBER_NOTICE)
@@ -452,9 +687,11 @@ function ExcelColumnMap() {
     const submitContext = controlFrequencyMappingDialogState.submitContext
     handleControlFrequencyMappingCancel()
     if (!submitContext?.column_mapping) return
+    const merged = mergeValueMappings(sessionControlFrequencyValueMapping, mapping)
+    setSessionControlFrequencyValueMapping(merged)
     await submitImport(
       submitContext.column_mapping,
-      mapping,
+      merged,
       submitContext.rows || null
     )
   }
@@ -475,7 +712,7 @@ function ExcelColumnMap() {
     if (!submitContext?.column_mapping || !submitContext?.controlFrequencyHeader) return
     await continueImportAfterAssertionMapping(
       submitContext.column_mapping,
-      payload.rows,
+      submitContext.rows || payload.rows,
       submitContext.controlFrequencyHeader
     )
   }
@@ -486,10 +723,13 @@ function ExcelColumnMap() {
     handleAssertionYesNoMappingCancel()
     if (!submitContext?.column_mapping || !submitContext?.controlFrequencyHeader) return
 
+    const mergedAssertionMapping = mergeValueMappings(sessionAssertionYesNoMapping, mapping)
+    setSessionAssertionYesNoMapping(mergedAssertionMapping)
+
     const mappedRows = applyAssertionYesNoMapping(
-      payload.rows,
+      submitContext.rows || payload.rows,
       assertionHeaders,
-      mapping
+      mergedAssertionMapping
     )
     setPayload((prev) => (prev ? { ...prev, rows: mappedRows } : prev))
     await continueImportAfterAssertionMapping(
@@ -541,6 +781,50 @@ function ExcelColumnMap() {
           <Alert severity="warning" sx={{ mt: 2 }}>
             {duplicateControlNumberNotice}
           </Alert>
+        ) : null}
+
+        <Box
+          sx={{
+            mt: 2,
+            display: 'flex',
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 1.5,
+            alignItems: { xs: 'stretch', sm: 'flex-end' },
+          }}
+        >
+          <FormControl fullWidth size="small" disabled={loading || savedMappings.length === 0}>
+            <InputLabel id="saved-mapping-label">Use previous mapping</InputLabel>
+            <Select
+              labelId="saved-mapping-label"
+              label="Use previous mapping"
+              value={selectedSavedMappingId}
+              onChange={(event) => setSelectedSavedMappingId(event.target.value)}
+            >
+              <MenuItem value="">
+                <em>{savedMappings.length === 0 ? 'No saved mappings for this template' : 'Select a mapping'}</em>
+              </MenuItem>
+              {savedMappings.map((mapping) => (
+                <MenuItem key={mapping.id} value={String(mapping.id)}>
+                  {mapping.name}
+                  {mapping.template_version != null ? ` (saved from v${mapping.template_version})` : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Button
+            variant="outlined"
+            onClick={handleApplySavedMapping}
+            disabled={loading || !selectedSavedMappingId}
+            sx={{ textTransform: 'none', whiteSpace: 'nowrap', minWidth: { sm: 140 } }}
+          >
+            Apply mapping
+          </Button>
+        </Box>
+        {activeTemplate?.template_name ? (
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+            Showing saved mappings for template &quot;{activeTemplate.template_name}&quot;
+            {activeTemplate.version != null ? ` (active v${activeTemplate.version})` : ''}.
+          </Typography>
         ) : null}
 
         <Box
@@ -873,6 +1157,68 @@ function ExcelColumnMap() {
         }
         onConfirm={handleAssertionYesNoMappingConfirm}
       />
+
+      <Dialog
+        open={saveMappingDialog.open}
+        onClose={() => {
+          if (!saveMappingDialog.submitting) closeSaveMappingDialog({ navigateAway: true })
+        }}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Save column mapping?</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1.5 }}>
+          <DialogContentText>
+            Save this mapping (including assertion and control-frequency value maps) for reuse on the next import for this template.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            fullWidth
+            label="Mapping name"
+            value={saveMappingDialog.name}
+            onChange={(event) =>
+              setSaveMappingDialog((prev) => ({
+                ...prev,
+                name: event.target.value,
+                error: '',
+                overwrite: false,
+              }))
+            }
+            disabled={saveMappingDialog.submitting}
+            error={Boolean(saveMappingDialog.error)}
+            helperText={saveMappingDialog.error || 'Use a clear name, e.g. P2P vendor export'}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button
+            onClick={() => closeSaveMappingDialog({ navigateAway: true })}
+            disabled={saveMappingDialog.submitting}
+            sx={{ textTransform: 'none' }}
+          >
+            Skip
+          </Button>
+          {saveMappingDialog.overwrite ? (
+            <Button
+              variant="contained"
+              color="warning"
+              disabled={saveMappingDialog.submitting}
+              onClick={() => handleSaveMappingConfirm({ overwrite: true })}
+              sx={{ textTransform: 'none' }}
+            >
+              {saveMappingDialog.submitting ? 'Saving…' : 'Overwrite'}
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              disabled={saveMappingDialog.submitting}
+              onClick={() => handleSaveMappingConfirm({ overwrite: false })}
+              sx={{ textTransform: 'none' }}
+            >
+              {saveMappingDialog.submitting ? 'Saving…' : 'Save'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

@@ -1,0 +1,58 @@
+{
+    "meta": {
+      "generated_at": "...",
+      "model": "openai/gpt-4.1-mini",
+      "company": "...",
+      "unit": "...",
+      "business_process": "...",
+      "financial_year": "...",
+      "limit": 2,
+      "dry_run": true,
+      "checks_configured": ["risk_control_alignment", "..."]
+    },
+    "summary": {
+      "controls_reviewed": 2,
+      "openrouter_calls": 1,
+      "control_design_status_counts": { "good_design": 1, "has_gaps": 1 },
+      "status_counts": { "ok": 8, "flagged": 1, "insufficient_data": 2 },
+      "by_check": { "romm": { "ok": 1, "flagged": 1 }, "...": {} },
+      "token_usage": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
+    },
+    "controls": [
+      {
+        "form_id": "...",
+        "control_number": "...",
+        "company_identifier": "...",
+        "unit_id": "...",
+        "business_process": "...",
+        "financial_year": "...",
+        "control_design_status": "good_design | has_gaps | insufficient_data",
+        "summary": "Control is in good design with no design gaps identified.",
+        "usage": {
+          "skipped": false,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0,
+          "control_design_status": "...",
+          "summary": "..."
+        },
+        "results": [
+          {
+            "check_id": "risk_control_alignment",
+            "statement": "...",
+            "status": "ok | flagged | insufficient_data",
+            "severity": "info | low | medium | high",
+            "inconsistency": "",
+            "evidence": [],
+            "recommendation": "",
+            "source": "openrouter | precheck | dry_run | ..."
+          }
+        ],
+        "ai_response_json": {
+          "control_design_status": "good_design",
+          "summary": "Control is in good design with no design gaps identified.",
+          "results": " /* raw / normalized AI check objects */ "
+        }
+      }
+    ]
+  }

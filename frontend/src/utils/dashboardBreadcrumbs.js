@@ -78,11 +78,19 @@ const BREADCRUMB_RULES = [
     ],
   },
   {
-    test: (p) => p === '/company-co/key-manual-ai-insights',
+    test: (p) => p === '/company-co/ai-insights',
     build: (home) => [
       homeItem(home),
       { label: 'Control Dispersion', to: '/company-co/control-dispersion-dashboard' },
       { label: 'AI Insights' },
+    ],
+  },
+  {
+    test: (p) => p === '/company-co/key-manual-ai-insights',
+    build: (home) => [
+      homeItem(home),
+      { label: 'Control Dispersion', to: '/company-co/control-dispersion-dashboard' },
+      { label: 'Key + Manual AI Insights' },
     ],
   },
   {

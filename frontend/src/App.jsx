@@ -55,6 +55,7 @@ const CreateUser = lazy(() => import('./pages/company_co/CreateUser'))
 const UnclassifiedControls = lazy(() => import('./pages/company_co/UnclassifiedControls'))
 const KeyManualAiInsightsSummary = lazy(() => import('./pages/company_co/KeyManualAiInsightsSummary'))
 const RiskAnalysis = lazy(() => import('./pages/company_co/RiskAnalysis'))
+const AiInsights = lazy(() => import('./pages/company_co/AiInsights'))
 const CompanyDetailsPage = lazy(() => import('./pages/CompanyDetailsPage'))
 const CompanyAdminHome = lazy(() => import('./pages/company_admin/companyAdminHome'))
 const CompanyAdminBusinessProcessManagement = lazy(() => import('./pages/company_admin/BusinessProcessManagement'))
@@ -324,6 +325,7 @@ function App() {
               <Route path="unclassified-controls" element={<UnclassifiedControls />} />
               <Route path="key-manual-ai-insights" element={<KeyManualAiInsightsSummary />} />
               <Route path="risk-analysis" element={<RiskAnalysis />} />
+              <Route path="ai-insights" element={<AiInsights />} />
               <Route path="racm-management" element={<RacmManagementDashboard />} />
               <Route path="ifc-report" element={<CompanyCoIfcReport />} />
               <Route path="racm-user-documents" element={<RacmUserDocuments />} />

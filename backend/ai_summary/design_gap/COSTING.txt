@@ -1,0 +1,57 @@
+Design-gap prototype — cost drivers (OpenRouter)
+================================================
+
+OpenRouter bills primarily on tokens (prompt + completion) × model price.
+This prototype uses ONE chat completion per control that still has ≥1 eligible check.
+
+Parameters that change cost (highest impact first)
+--------------------------------------------------
+1. --limit / max controls
+   - Linear: each control ≈ 1 API call (unless all checks fail pre-check → $0 for that row).
+   - Start with --limit 5–10 while tuning prompts.
+
+2. settings.model (column_map.yaml)
+   - Cheaper: gpt-4.1-mini / gpt-4o-mini-class models
+   - Costlier: larger / reasoning models
+   - Biggest $/1k-token multiplier.
+
+3. Number of eligible checks per control
+   - Pre-check skips remove checks from the payload → fewer prompt tokens AND usually
+     fewer completion tokens (model returns fewer result objects).
+   - Tight required_classified / required_text = more skips = lower cost (and less coverage).
+
+4. settings.max_field_chars
+   - Caps length of each free-text field in the prompt.
+   - Lower = cheaper + faster; too low may hurt quality.
+
+5. columns listed per check (column_map.yaml)
+   - Only union of eligible-check columns is sent.
+   - Drop unused columns to shrink prompts.
+
+6. settings.max_tokens
+   - Caps completion size (upper bound on output cost).
+   - Too low may truncate JSON; too high rarely increases cost unless the model is verbose,
+     but still sets the billed ceiling on some providers.
+
+7. settings.temperature
+   - Usually near-zero cost impact; keep 0 for stable JSON.
+
+8. --sleep-ms
+   - No direct $ impact; used for rate limits only.
+
+9. Prompt text size (SYSTEM_PROMPT + schema hint)
+   - Fixed overhead on every call; keep short.
+
+Rough mental model
+------------------
+  cost ≈ (#controls with ≥1 eligible check)
+        × (prompt_tokens + completion_tokens) / 1000
+        × model_price_per_1k
+
+Tips for cheap iteration
+------------------------
+- Use --dry-run first to see pre-check skip rates (no API spend).
+- Tune column_map gates, then run --limit 3 with a cheap model.
+- Inspect output/*/design_gap_report_*.json → summary.token_usage.
+- Prefer one call per control (current design) over one call per check
+  (that would multiply calls by ~10).

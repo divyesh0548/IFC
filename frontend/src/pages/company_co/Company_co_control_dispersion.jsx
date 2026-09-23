@@ -1120,6 +1120,58 @@ function ControlDispersionDashboard() {
         >
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
+              AI Insights
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
+              Design gap analysis for RACMs — generate insights and view unit-scoped reports.
+            </Typography>
+          </Box>
+          <Link
+            component="button"
+            type="button"
+            underline="hover"
+            onClick={() => navigate('/company-co/ai-insights')}
+            sx={{
+              p: 0,
+              border: 'none',
+              background: 'none',
+              color: theme.palette.primary.main,
+              fontWeight: 700,
+              fontSize: '0.95rem',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            Open AI Insights {'->'}
+          </Link>
+        </Box>
+      </Paper>
+
+      <Paper
+        sx={{
+          ...DASHBOARD_PAPER_SX,
+          mt: 3,
+          borderRadius: 3,
+          border: `1px solid ${theme.palette.divider}`,
+          boxShadow: theme.palette.mode === 'dark'
+            ? '0 10px 28px rgba(0, 0, 0, 0.28)'
+            : '0 12px 30px rgba(15, 23, 42, 0.08)',
+          overflow: 'hidden',
+        }}
+      >
+        <Box
+          sx={{
+            px: 3,
+            py: 3,
+            display: 'flex',
+            flexDirection: { xs: 'column', md: 'row' },
+            alignItems: { xs: 'flex-start', md: 'center' },
+            justifyContent: 'space-between',
+            gap: 2,
+          }}
+        >
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
               Risk Analysis
             </Typography>
             <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>

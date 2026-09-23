@@ -16,6 +16,16 @@ router.get('/risk-analysis/availability', verifyCompanyCoordinator, controller.g
 router.get('/risk-analysis/controls', verifyCompanyCoordinator, controller.listRiskAnalysisControls);
 router.get('/risk-analysis/control/:control_number', verifyCompanyCoordinator, controller.getRiskAnalysisByControl);
 router.post('/risk-analysis/control/:control_number/generate', verifyCompanyCoordinator, controller.generateRiskAnalysisByControl);
+
+const designGapInsights = require('../../controllers/company_co/design_gap_insights');
+router.get('/ai-insights/design-gap/availability', verifyCompanyCoordinator, designGapInsights.getDesignGapAvailability);
+router.get('/ai-insights/design-gap/controls', verifyCompanyCoordinator, designGapInsights.listDesignGapControls);
+router.get('/ai-insights/design-gap/report-scope', verifyCompanyCoordinator, designGapInsights.getDesignGapReportScope);
+router.get('/ai-insights/design-gap/report', verifyCompanyCoordinator, designGapInsights.getDesignGapReport);
+router.get('/ai-insights/design-gap/jobs/active', verifyCompanyCoordinator, designGapInsights.getActiveDesignGapJob);
+router.get('/ai-insights/design-gap/jobs/:job_id', verifyCompanyCoordinator, designGapInsights.getDesignGapJob);
+router.post('/ai-insights/design-gap/generate', verifyCompanyCoordinator, designGapInsights.generateDesignGapInsights);
+
 router.get('/ai-insights/key-manual-summary/availability', verifyCompanyCoordinator, controller.getKeyManualAiInsightsAvailability);
 router.get('/ai-insights/key-manual-summary', verifyCompanyCoordinator, controller.getKeyManualAiInsightsRun);
 router.post('/ai-insights/key-manual-summary/generate', verifyCompanyCoordinator, controller.generateKeyManualAiInsightsRun);
@@ -27,6 +37,12 @@ router.post('/communication-matrix/common', verifyCompanyCoordinator, controller
 router.post('/communication-matrix/specific', verifyCompanyCoordinator, controller.addBusinessProcessSpecificCommunicationEmails);
 router.post('/communication-matrix/racm-specific', verifyCompanyCoordinator, controller.addRacmSpecificCommunicationEmails);
 router.post('/communication-matrix/delete', verifyCompanyCoordinator, controller.deleteCommunicationMatrixEntries);
+
+const racmExcelColumnMappingController = require('../../controllers/company_co/racm_excel_column_mappings');
+router.get('/excel-column-mappings', verifyCompanyCoordinator, racmExcelColumnMappingController.listRacmExcelColumnMappings);
+router.post('/excel-column-mappings', verifyCompanyCoordinator, racmExcelColumnMappingController.upsertRacmExcelColumnMapping);
+router.post('/excel-column-mappings/:id/touch', verifyCompanyCoordinator, racmExcelColumnMappingController.markRacmExcelColumnMappingUsed);
+
 router.get('/users', verifyCompanyCoordinator, controller.getUsers);
 router.get('/assigned-units', verifyCompanyCoordinator, controller.getAssignedUnits);
 router.get('/approvers/:email_id/assignments', verifyCompanyCoordinator, controller.getApproverAssignments);

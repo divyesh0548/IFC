@@ -1,3 +1,5 @@
-Give demo of IFC to Khadija on around 11th September.
+In companies table the gst and pan values should be unique, so add that contraint or other logic. - Check this
 
-In companies table the gst and pan values should be unique, so add that contraint or other logic.
+Test the mapping save feature on excel upload. It is already developed. 
+
+Also test the combination of company + unit + control number must be unique. Test if user selects control number to import from excel rather then auto generate. Controls with same control numbers should not exists at unit level even for different business process.

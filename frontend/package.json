@@ -18,6 +18,7 @@
     "@mui/x-date-pickers": "^8.27.2",
     "@tailwindcss/vite": "^4.1.18",
     "dayjs": "^1.11.20",
+    "jspdf": "^4.2.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-hot-toast": "^2.6.0",
