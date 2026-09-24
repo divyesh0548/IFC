@@ -1,0 +1,18 @@
+Clarifications / conflicts resolved in this change:
+
+1. Empty Key Control vs Key=Yes
+   - Empty key_control → text-validation insufficient_data (fixed; was easy to miss when overall status was has_gaps).
+   - key_control=Yes → check is SKIPPED (N/A), not insufficient. Only No goes to AI.
+
+2. Alignment values
+   - Supported: Strong | Partial | Weak | Misaligned | No Control
+   - Strong → ok; Partial/Weak/Misaligned/No Control → flagged (design gap).
+   - AI insufficient_data does NOT count as a design gap.
+
+3. Dry run
+   - Set DESIGN_GAP_DRY_RUN=true in AI-Summary-API-Backend/.env
+   - Generate still runs from UI; OpenRouter is skipped; prompts download as .txt; insights are NOT saved.
+
+4. Per-check prompts
+   - Edit JSON under services/design_gap/check_prompts/*.json
+   - column_map.yaml keeps short statement + prompt_file reference.

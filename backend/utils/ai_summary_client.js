@@ -6,13 +6,50 @@
  */
 
 const DEFAULT_TIMEOUT_MS = 3 * 60 * 1000;
+const HEALTH_TIMEOUT_MS = 5000;
+const HEALTH_RETRY_COUNT = 3;
+const HEALTH_RETRY_DELAY_MS = 400;
 
-function getAiSummaryConfig() {
-  const baseUrl = String(process.env.AI_SUMMARY_API_URL || 'http://127.0.0.1:5001')
+function normalizeAiSummaryBaseUrl(rawUrl) {
+  let baseUrl = String(rawUrl || 'http://127.0.0.1:5001')
     .trim()
     .replace(/\/$/, '');
+  // Avoid intermittent IPv6 (::1) failures when Flask listens on 127.0.0.1 only.
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.hostname === 'localhost') {
+      parsed.hostname = '127.0.0.1';
+      baseUrl = parsed.toString().replace(/\/$/, '');
+    }
+  } catch {
+    // keep as-is
+  }
+  return baseUrl;
+}
+
+function getAiSummaryConfig() {
+  const baseUrl = normalizeAiSummaryBaseUrl(process.env.AI_SUMMARY_API_URL);
   const apiKey = String(process.env.AI_SUMMARY_API_KEY || '').trim();
   return { baseUrl, apiKey };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(url, { method = 'GET', headers, body, timeoutMs } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      method,
+      headers,
+      body,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function callAiSummaryApi(path, { method = 'GET', body = null, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
@@ -24,11 +61,8 @@ async function callAiSummaryApi(path, { method = 'GET', body = null, timeoutMs =
     throw error;
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetchWithTimeout(`${baseUrl}${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -36,7 +70,7 @@ async function callAiSummaryApi(path, { method = 'GET', body = null, timeoutMs =
         Accept: 'application/json',
       },
       body: body == null ? undefined : JSON.stringify(body),
-      signal: controller.signal,
+      timeoutMs,
     });
 
     const text = await response.text();
@@ -74,8 +108,6 @@ async function callAiSummaryApi(path, { method = 'GET', body = null, timeoutMs =
     unreachable.code = 'AI_SUMMARY_UNREACHABLE';
     unreachable.statusCode = 503;
     throw unreachable;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -86,17 +118,36 @@ async function analyzeDesignGapControl(control, { dryRun = false } = {}) {
   });
 }
 
+async function probeAiSummaryHealthOnce(baseUrl) {
+  const response = await fetchWithTimeout(`${baseUrl}/health`, {
+    method: 'GET',
+    timeoutMs: HEALTH_TIMEOUT_MS,
+  });
+  return response.ok;
+}
+
 async function checkAiSummaryHealth() {
   const { baseUrl } = getAiSummaryConfig();
-  try {
-    const response = await fetch(`${baseUrl}/health`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(5000),
-    });
-    return response.ok;
-  } catch {
-    return false;
+  let lastError = null;
+  for (let attempt = 1; attempt <= HEALTH_RETRY_COUNT; attempt += 1) {
+    try {
+      const ok = await probeAiSummaryHealthOnce(baseUrl);
+      if (ok) return true;
+      lastError = new Error(`HTTP health check failed (attempt ${attempt})`);
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < HEALTH_RETRY_COUNT) {
+      await sleep(HEALTH_RETRY_DELAY_MS * attempt);
+    }
   }
+  if (lastError) {
+    console.warn(
+      `AI Summary API health check failed for ${baseUrl}:`,
+      lastError.message || lastError
+    );
+  }
+  return false;
 }
 
 module.exports = {

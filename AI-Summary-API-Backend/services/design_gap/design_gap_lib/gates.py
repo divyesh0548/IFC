@@ -27,7 +27,6 @@ def get_field(control: dict[str, Any], field: str) -> str:
         return ""
 
     if field == ASSERTIONS_ALL:
-        # Presence helper for gates — prefer assertions.any for required_text
         return get_field(control, "assertions.any")
 
     if field.startswith("assertions."):
@@ -50,7 +49,6 @@ def build_assertions_payload(
     """
     items = control.get("assertion_fields")
     if not isinstance(items, list) or not items:
-        # Fallback from plain assertions dict
         assertions = control.get("assertions") or {}
         if isinstance(assertions, dict):
             items = [
@@ -95,40 +93,51 @@ def matches_allowed(value: Any, allowed: list[str] | None) -> bool:
     return token in allowed_norm
 
 
+def _is_non_key_only_list(allowed_list: list[str]) -> bool:
+    return bool(allowed_list) and all(
+        _norm_token(a) == "no" or _norm_token(a).startswith("non") for a in allowed_list
+    )
+
+
 def run_precheck(control: dict[str, Any], check: dict[str, Any]) -> dict[str, Any] | None:
     """
-    Return an insufficient_data result dict if the check fails the gate.
-    Return None if the check is eligible for OpenRouter.
+    Return:
+      - None if eligible for AI
+      - {"action": "skip", ...} if check does not apply (e.g. key_control=Yes for non-key-only)
+      - insufficient_data result dict if text/classified validation fails
     """
     check_id = check["id"]
-    statement = check["statement"]
+    statement = check.get("statement") or check_id
     reasons: list[str] = []
 
-    required_classified = check.get("required_classified") or {}
-    for field, allowed in required_classified.items():
-        value = get_field(control, field)
-        allowed_list = list(allowed or [])
-        if is_empty(value):
-            reasons.append(f"{field} is empty")
-        elif not matches_allowed(value, allowed_list):
-            if field == "key_control" and allowed_list and all(
-                _norm_token(a) == "no" or _norm_token(a).startswith("non")
-                for a in allowed_list
-            ):
-                reasons.append(
-                    f"{field}={value!r} — check applies only to non-key controls "
-                    f"(allowed {allowed_list})"
-                )
-            else:
-                reasons.append(
-                    f"{field}={value!r} not in allowed {allowed_list}"
-                )
-
+    # 1) Text validation first (required_text)
     required_text = check.get("required_text") or []
     for field in required_text:
         value = get_field(control, field)
         if is_empty(value):
             reasons.append(f"{field} is empty")
+
+    # 2) Classified validation
+    required_classified = check.get("required_classified") or {}
+    for field, allowed in required_classified.items():
+        value = get_field(control, field)
+        allowed_list = list(allowed or [])
+        if is_empty(value):
+            # Empty already covered if also in required_text; still record for classified-only fields
+            if field not in required_text:
+                reasons.append(f"{field} is empty")
+            continue
+        if matches_allowed(value, allowed_list):
+            continue
+        # Present but outside allowed set
+        if field == "key_control" and _is_non_key_only_list(allowed_list):
+            # key_control=Yes (or other non-No) → check N/A, not insufficient data
+            return {
+                "action": "skip",
+                "check_id": check_id,
+                "reason": f"{field}={value!r} — check applies only to non-key controls",
+            }
+        reasons.append(f"{field}={value!r} not in allowed {allowed_list}")
 
     if not reasons:
         return None
@@ -138,7 +147,10 @@ def run_precheck(control: dict[str, Any], check: dict[str, Any]) -> dict[str, An
         "statement": statement,
         "status": "insufficient_data",
         "severity": "info",
-        "inconsistency": "Required fields failed pre-check; OpenRouter skipped for this check.",
+        "alignment": "",
+        "alignment_rationale": "",
+        "proposed_solution": "Fill/correct the listed fields, then re-run.",
+        "inconsistency": "Required fields failed text validation; AI skipped for this check.",
         "evidence": reasons,
         "recommendation": "Fill/correct the listed fields, then re-run.",
         "source": "precheck",
@@ -147,17 +159,20 @@ def run_precheck(control: dict[str, Any], check: dict[str, Any]) -> dict[str, An
 
 def partition_checks(
     control: dict[str, Any], checks: list[dict[str, Any]]
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Split checks into (eligible_for_ai, precheck_results)."""
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split checks into (eligible_for_ai, precheck_results, skipped)."""
     eligible: list[dict[str, Any]] = []
     precheck_results: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     for check in checks:
-        failed = run_precheck(control, check)
-        if failed:
-            precheck_results.append(failed)
-        else:
+        outcome = run_precheck(control, check)
+        if outcome is None:
             eligible.append(check)
-    return eligible, precheck_results
+        elif outcome.get("action") == "skip":
+            skipped.append(outcome)
+        else:
+            precheck_results.append(outcome)
+    return eligible, precheck_results, skipped
 
 
 def build_control_payload(
@@ -197,6 +212,11 @@ def build_control_payload(
         },
         "fields": fields,
         "checks": [
-            {"id": c["id"], "statement": c["statement"]} for c in eligible_checks
+            {
+                "id": c["id"],
+                "statement": c.get("statement") or c["id"],
+                "prompt": c.get("prompt") or c.get("statement") or "",
+            }
+            for c in eligible_checks
         ],
     }

@@ -13,11 +13,10 @@ Whether the risk constitutes a Risk of Material Misstatement (RoMM)  ----- This 
 Whether the control objective and control description are adequate to mitigate the associated risk
 
 
-Whether the control classification (Preventive/Detective) is appropriate  ----- Included in report with basic text validation, no need to use AI in this
+Whether the control classification (Preventive/Detective) is appropriate
 
 
-Whether the nature of the control is appropriately classified  ----- Included in report with basic text validation, no need to use AI in this
-
+Whether the nature of the control is appropriately classified
 
 Whether the control is Manual, Automated, or System-driven, and identify opportunities for automation   ------ Different module exists for same
 
@@ -26,3 +25,9 @@ Whether any fraud risk exists in relation to the identified risk/process
 
 
 Whether the control should be classified as a Key Control
+
+
+
+
+Get three ouputs for each design gap checks.
+

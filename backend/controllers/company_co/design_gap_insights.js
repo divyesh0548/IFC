@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { pool } = require('../../utils/db');
 const { prisma } = require('../../lib/prisma');
+const { sqlOrderByControlNumberAsc, sortByControlNumber } = require('../../utils/controlNumberSort');
 const {
   analyzeDesignGapControl,
   checkAiSummaryHealth,
@@ -31,6 +32,9 @@ function shapeJob(job) {
     started_at: job.started_at,
     finished_at: job.finished_at || null,
     message: job.message || null,
+    dry_run: Boolean(job.dry_run),
+    dry_run_prompt_count: Array.isArray(job.dry_run_prompts) ? job.dry_run_prompts.length : 0,
+    dry_run_txt: job.dry_run_txt || null,
   };
 }
 
@@ -51,6 +55,8 @@ function getActiveJobForCoordinator(coordinatorEmail) {
 async function processDesignGapJob(job) {
   job.status = 'running';
   job.started_at = new Date().toISOString();
+  job.dry_run = false;
+  job.dry_run_prompts = [];
 
   for (const form of job.to_process) {
     if (job.status === 'cancelled') break;
@@ -72,7 +78,17 @@ async function processDesignGapJob(job) {
         continue;
       }
       const analysis = await analyzeDesignGapControl(payload, { dryRun: false });
-      await upsertDesignGapInsight(analysis);
+      if (analysis?.dry_run || analysis?.dry_run_txt) {
+        job.dry_run = true;
+        job.dry_run_prompts.push({
+          form_id: form.form_id,
+          control_number: form.control_number,
+          text: analysis.dry_run_txt || '',
+        });
+        // Do not persist dry-run rows as real insights
+      } else {
+        await upsertDesignGapInsight(analysis);
+      }
       job.processed += 1;
     } catch (error) {
       console.error('Design gap job error for', form.form_id, error);
@@ -89,12 +105,25 @@ async function processDesignGapJob(job) {
   job.current_form_id = null;
   job.current_control_number = null;
   job.finished_at = new Date().toISOString();
+  if (job.dry_run && job.dry_run_prompts.length > 0) {
+    job.dry_run_txt = job.dry_run_prompts
+      .map((entry) => entry.text || '')
+      .filter(Boolean)
+      .join('\n\n' + '='.repeat(72) + '\n\n');
+  }
   if (job.status !== 'cancelled') {
     job.status = job.errors.length > 0 && job.processed === job.errors.length ? 'failed' : 'completed';
-    job.message =
-      job.status === 'completed'
-        ? `Generated ${job.processed - job.errors.length} of ${job.total}. Skipped existing: ${job.skipped_existing}. Errors: ${job.errors.length}.`
-        : 'Design-gap job failed';
+    if (job.dry_run) {
+      job.message =
+        job.status === 'completed'
+          ? `Dry-run complete: ${job.dry_run_prompts.length} prompt file(s) ready. No AI calls; insights not saved.`
+          : 'Design-gap dry-run failed';
+    } else {
+      job.message =
+        job.status === 'completed'
+          ? `Generated ${job.processed - job.errors.length} of ${job.total}. Skipped existing: ${job.skipped_existing}. Errors: ${job.errors.length}.`
+          : 'Design-gap job failed';
+    }
   }
   if (activeJobByCoordinator.get(job.coordinator_email) === job.job_id) {
     activeJobByCoordinator.delete(job.coordinator_email);
@@ -327,6 +356,9 @@ async function listDesignGapControls(req, res) {
     const requestedUnitIds = normalizeMultiValue(req.query?.unit_ids);
     const requestedBusinessProcesses = normalizeMultiValue(req.query?.business_processes);
     const requestedFinancialYears = normalizeMultiValue(req.query?.financial_years);
+    const generationStatus = String(req.query?.generation_status || '')
+      .trim()
+      .toLowerCase();
 
     const allowedUnitIds = new Set(mappedUnitIds.map((unitId) => unitId.toLowerCase()));
     const filteredUnitIds = requestedUnitIds.filter((unitId) =>
@@ -358,11 +390,24 @@ async function listDesignGapControls(req, res) {
       params.push(requestedFinancialYears);
       paramIndex += 1;
     }
+    if (generationStatus === 'generated') {
+      conditions.push('dgi.form_id IS NOT NULL');
+    } else if (generationStatus === 'not_generated') {
+      conditions.push('dgi.form_id IS NULL');
+    }
 
     const whereClause = conditions.join('\n        AND ');
+    const fromClause = `
+      FROM control_forms cf
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = cf.company_identifier
+       AND cum.unit_id = cf.unit_id
+      LEFT JOIN design_gap_insights dgi
+        ON dgi.form_id = cf.form_id
+    `;
 
     const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS total_count FROM control_forms cf WHERE ${whereClause}`,
+      `SELECT COUNT(*)::int AS total_count ${fromClause} WHERE ${whereClause}`,
       params
     );
 
@@ -382,15 +427,10 @@ async function listDesignGapControls(req, res) {
           dgi.control_design_status,
           dgi.run_at AS design_gap_run_at,
           CASE WHEN dgi.form_id IS NULL THEN false ELSE true END AS has_design_gap_insight
-        FROM control_forms cf
-        LEFT JOIN company_unit_master cum
-          ON cum.company_identifier = cf.company_identifier
-         AND cum.unit_id = cf.unit_id
-        LEFT JOIN design_gap_insights dgi
-          ON dgi.form_id = cf.form_id
+        ${fromClause}
         WHERE ${whereClause}
         ORDER BY
-          LOWER(TRIM(COALESCE(cf.control_number, ''))) ASC,
+          ${sqlOrderByControlNumberAsc('cf.control_number')},
           LOWER(TRIM(COALESCE(cum.unit_name, ''))) ASC
         LIMIT $${dataParams.length - 1}
         OFFSET $${dataParams.length}
@@ -563,10 +603,21 @@ async function getDesignGapReport(req, res) {
         businessProcess,
         financialYear,
       },
-      orderBy: { controlNumber: 'asc' },
     });
 
-    const shaped = insights.map(shapeInsightRow);
+    let companyName = null;
+    try {
+      const company = await prisma.company.findUnique({
+        where: { companyIdentifier },
+        select: { companyName: true },
+      });
+      const name = String(company?.companyName || '').trim();
+      if (name) companyName = name;
+    } catch (error) {
+      console.error('Design gap report company name lookup failed:', error);
+    }
+
+    const shaped = sortByControlNumber(insights.map(shapeInsightRow));
     const statusCounts = {};
     const checkStatusCounts = {};
     let promptTokens = 0;
@@ -590,10 +641,11 @@ async function getDesignGapReport(req, res) {
       data: {
         meta: {
           unit_id: unitId,
-          unit_name: unitMeta.unit_name || unitId,
+          unit_name: String(unitMeta.unit_name || '').trim() || null,
           business_process: businessProcess,
           financial_year: financialYear,
           company_identifier: companyIdentifier,
+          company_name: companyName,
           generated_from_db: true,
         },
         summary: {
@@ -735,6 +787,9 @@ async function generateDesignGapInsights(req, res) {
       started_at: null,
       finished_at: null,
       message: null,
+      dry_run: false,
+      dry_run_prompts: [],
+      dry_run_txt: null,
     };
 
     designGapJobs.set(jobId, job);

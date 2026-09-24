@@ -16,9 +16,6 @@ import DialogActions from '@mui/material/DialogActions'
 import ListItemText from '@mui/material/ListItemText'
 import TablePagination from '@mui/material/TablePagination'
 import Chip from '@mui/material/Chip'
-import Stepper from '@mui/material/Stepper'
-import Step from '@mui/material/Step'
-import StepLabel from '@mui/material/StepLabel'
 import Accordion from '@mui/material/Accordion'
 import AccordionSummary from '@mui/material/AccordionSummary'
 import AccordionDetails from '@mui/material/AccordionDetails'
@@ -34,7 +31,11 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { getFieldValue } from './dashboardClassificationUtils'
 import { toast } from 'react-hot-toast'
-import { downloadDesignGapReportPdf } from '../../utils/designGapReportPdf'
+import {
+  downloadDesignGapReportPdf,
+  getDesignGapSummaryCounts,
+  humanizeCheckLabel,
+} from '../../utils/designGapReportPdf'
 
 const TABLE_GRID_COLUMNS = '56px 140px 160px 180px 200px 120px 140px minmax(280px, 1fr)'
 const FILTER_CONTROL_HEIGHT = 40
@@ -73,7 +74,7 @@ function statusChip(status) {
     return <Chip size="small" icon={<CheckCircleOutlineIcon />} label={s === 'ok' ? 'OK' : 'Good design'} color="success" variant="outlined" />
   }
   if (s === 'has_gaps' || s === 'flagged') {
-    return <Chip size="small" icon={<ErrorOutlineIcon />} label={s === 'flagged' ? 'Flagged' : 'Has gaps'} color="error" variant="outlined" />
+    return <Chip size="small" icon={<ErrorOutlineIcon />} label={s === 'flagged' ? 'Flagged' : 'Gaps'} color="error" variant="outlined" />
   }
   return <Chip size="small" icon={<InfoOutlinedIcon />} label="Insufficient data" color="warning" variant="outlined" />
 }
@@ -93,6 +94,7 @@ function AiInsights() {
   const [filterUnits, setFilterUnits] = useState([])
   const [filterBusinessProcesses, setFilterBusinessProcesses] = useState([])
   const [filterFinancialYears, setFilterFinancialYears] = useState([])
+  const [filterGenerationStatus, setFilterGenerationStatus] = useState('')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [totalCount, setTotalCount] = useState(0)
@@ -105,7 +107,6 @@ function AiInsights() {
   const [jobJustCompleted, setJobJustCompleted] = useState(false)
 
   const [reportsOpen, setReportsOpen] = useState(false)
-  const [reportStep, setReportStep] = useState(0)
   const [reportUnitId, setReportUnitId] = useState('')
   const [reportBp, setReportBp] = useState('')
   const [reportFy, setReportFy] = useState('')
@@ -119,17 +120,16 @@ function AiInsights() {
   const lastSelectedIndexRef = useRef(null)
   const pollTimerRef = useRef(null)
   const reportsOpenRef = useRef(reportsOpen)
-  const reportStepRef = useRef(reportStep)
   const reportUnitIdRef = useRef(reportUnitId)
   const reportBpRef = useRef(reportBp)
   const reportFyRef = useRef(reportFy)
   reportsOpenRef.current = reportsOpen
-  reportStepRef.current = reportStep
   reportUnitIdRef.current = reportUnitId
   reportBpRef.current = reportBp
   reportFyRef.current = reportFy
 
   const jobRunning = isJobActive(activeJob)
+  const reportFiltersReady = Boolean(reportUnitId && reportBp && reportFy)
 
   useSyncGlobalLoading(loading || reportScopeLoading)
 
@@ -191,11 +191,28 @@ function AiInsights() {
     setJobJustCompleted(String(job?.status || '').toLowerCase() === 'completed')
     clearSelection()
     setListTick((t) => t + 1)
-    if (reportsOpenRef.current && reportStepRef.current === 3) {
+    if (reportsOpenRef.current && reportUnitIdRef.current && reportBpRef.current && reportFyRef.current) {
       await loadReportScope()
     }
     if (String(job?.status || '').toLowerCase() === 'completed') {
-      toast.success(job?.message || 'Design-gap job completed')
+      if (job?.dry_run && job?.dry_run_txt) {
+        try {
+          const blob = new Blob([job.dry_run_txt], { type: 'text/plain;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const anchor = document.createElement('a')
+          anchor.href = url
+          anchor.download = `design_gap_dry_run_${job.job_id || 'prompts'}.txt`
+          document.body.appendChild(anchor)
+          anchor.click()
+          anchor.remove()
+          URL.revokeObjectURL(url)
+          toast.success(job?.message || 'Dry-run prompts downloaded')
+        } catch (error) {
+          toast.error(error.message || 'Failed to download dry-run prompts')
+        }
+      } else {
+        toast.success(job?.message || 'Design-gap job completed')
+      }
     } else if (String(job?.status || '').toLowerCase() === 'failed') {
       toast.error(job?.message || 'Design-gap job failed')
     }
@@ -225,17 +242,35 @@ function AiInsights() {
 
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
-      try {
-        const res = await fetch(apiUrl('/api/company-co/ai-insights/design-gap/availability'), {
-          credentials: 'include',
-        })
-        const data = await res.json()
-        if (!cancelled) setApiReachable(Boolean(data?.data?.reachable))
-      } catch {
-        if (!cancelled) setApiReachable(false)
+    const checkAvailability = async () => {
+      const maxAttempts = 3
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          const res = await fetch(apiUrl('/api/company-co/ai-insights/design-gap/availability'), {
+            credentials: 'include',
+          })
+          const data = await res.json()
+          const reachable = Boolean(data?.data?.reachable)
+          if (cancelled) return
+          if (reachable) {
+            setApiReachable(true)
+            return
+          }
+          if (attempt === maxAttempts) {
+            setApiReachable(false)
+            return
+          }
+        } catch {
+          if (cancelled) return
+          if (attempt === maxAttempts) {
+            setApiReachable(false)
+            return
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 400 * attempt))
       }
-    })()
+    }
+    checkAvailability()
     return () => {
       cancelled = true
     }
@@ -280,6 +315,9 @@ function AiInsights() {
         filterUnits.forEach((u) => params.append('unit_ids', u))
         filterBusinessProcesses.forEach((bp) => params.append('business_processes', bp))
         filterFinancialYears.forEach((fy) => params.append('financial_years', fy))
+        if (filterGenerationStatus) {
+          params.set('generation_status', filterGenerationStatus)
+        }
 
         const res = await fetch(apiUrl(`/api/company-co/ai-insights/design-gap/controls?${params}`), {
           credentials: 'include',
@@ -306,7 +344,7 @@ function AiInsights() {
     return () => {
       cancelled = true
     }
-  }, [page, rowsPerPage, filterUnits, filterBusinessProcesses, filterFinancialYears, listTick])
+  }, [page, rowsPerPage, filterUnits, filterBusinessProcesses, filterFinancialYears, filterGenerationStatus, listTick])
 
   const assertCanStartJob = () => {
     if (jobRunning) {
@@ -412,7 +450,7 @@ function AiInsights() {
         toast.success(job?.message || 'Nothing to generate')
         clearSelection()
         setListTick((t) => t + 1)
-        if (reportsOpen && reportStep === 3) await loadReportScope()
+        if (reportsOpen && reportFiltersReady) await loadReportScope()
         return
       }
       setActiveJob(job)
@@ -442,7 +480,9 @@ function AiInsights() {
     }
     const hasExisting = selectedRows.some((r) => r.has_design_gap_insight)
     if (hasExisting) {
-      setPendingGenerateMode({ formIds, source: 'selection' })
+      const existingCount = selectedRows.filter((r) => r.has_design_gap_insight).length
+      const pendingCount = selectedRows.length - existingCount
+      setPendingGenerateMode({ formIds, source: 'selection', existingCount, pendingCount })
       setRegenConfirmOpen(true)
       return
     }
@@ -450,11 +490,13 @@ function AiInsights() {
   }
 
   useEffect(() => {
-    if (reportsOpen && reportStep === 3 && reportUnitId && reportBp && reportFy) {
+    if (reportsOpen && reportUnitId && reportBp && reportFy) {
       loadReportScope()
+    } else if (reportsOpen) {
+      setReportScope(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportsOpen, reportStep, reportUnitId, reportBp, reportFy])
+  }, [reportsOpen, reportUnitId, reportBp, reportFy])
 
   const openReportView = async () => {
     try {
@@ -632,11 +674,27 @@ function AiInsights() {
             </Select>
           </FormControl>
 
+          <FormControl size="small" sx={FILTER_SELECT_SX}>
+            <InputLabel>Generation</InputLabel>
+            <Select
+              label="Generation"
+              value={filterGenerationStatus}
+              onChange={(e) => {
+                setFilterGenerationStatus(e.target.value)
+                setPage(0)
+                clearSelection()
+              }}
+            >
+              <MenuItem value="">All</MenuItem>
+              <MenuItem value="generated">Generated</MenuItem>
+              <MenuItem value="not_generated">Not Generated</MenuItem>
+            </Select>
+          </FormControl>
+
           <Box sx={{ flex: 1 }} />
 
           <Button variant="outlined" onClick={() => {
             setReportsOpen(true)
-            setReportStep(0)
             setReportUnitId('')
             setReportBp('')
             setReportFy('')
@@ -752,16 +810,10 @@ function AiInsights() {
         />
       </Paper>
 
-      {/* Reports wizard */}
-      <Dialog open={reportsOpen} onClose={() => !jobRunning && setReportsOpen(false)} fullWidth maxWidth="sm">
+      {/* Reports filters */}
+      <Dialog open={reportsOpen} onClose={() => !jobRunning && setReportsOpen(false)} fullWidth maxWidth="md">
         <DialogTitle>Design Gap Reports</DialogTitle>
         <DialogContent dividers>
-          <Stepper activeStep={reportStep} alternativeLabel sx={{ mb: 3 }}>
-            {['Unit', 'Business Process', 'Financial Year', 'Summary'].map((label) => (
-              <Step key={label}><StepLabel>{label}</StepLabel></Step>
-            ))}
-          </Stepper>
-
           {jobRunning && (
             <Alert severity="info" sx={{ mb: 2 }}>
               Design gap running… {activeJob?.processed || 0} / {activeJob?.total || 0}
@@ -769,7 +821,14 @@ function AiInsights() {
             </Alert>
           )}
 
-          {reportStep === 0 && (
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' },
+              gap: 2,
+              mb: 2,
+            }}
+          >
             <FormControl fullWidth size="small">
               <InputLabel>Unit</InputLabel>
               <Select
@@ -784,8 +843,6 @@ function AiInsights() {
                 ))}
               </Select>
             </FormControl>
-          )}
-          {reportStep === 1 && (
             <FormControl fullWidth size="small">
               <InputLabel>Business Process</InputLabel>
               <Select label="Business Process" value={reportBp} onChange={(e) => setReportBp(e.target.value)}>
@@ -794,8 +851,6 @@ function AiInsights() {
                 ))}
               </Select>
             </FormControl>
-          )}
-          {reportStep === 2 && (
             <FormControl fullWidth size="small">
               <InputLabel>Financial Year</InputLabel>
               <Select label="Financial Year" value={reportFy} onChange={(e) => setReportFy(e.target.value)}>
@@ -804,16 +859,22 @@ function AiInsights() {
                 ))}
               </Select>
             </FormControl>
+          </Box>
+
+          {!reportFiltersReady && (
+            <Typography variant="body2" color="text.secondary">
+              Select unit, business process, and financial year to view the report scope.
+            </Typography>
           )}
-          {reportStep === 3 && reportScope && (
+
+          {reportFiltersReady && reportScopeLoading && (
+            <Typography variant="body2" color="text.secondary">Loading scope…</Typography>
+          )}
+
+          {reportFiltersReady && reportScope && !reportScopeLoading && (
             <Box>
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                Unit: <strong>{unitLabel(reportUnitId)}</strong>
-              </Typography>
-              <Typography variant="body2">BP: <strong>{reportBp}</strong></Typography>
-              <Typography variant="body2" sx={{ mb: 2 }}>FY: <strong>{reportFy}</strong></Typography>
               <Alert severity="info" sx={{ mb: 2 }}>
-                RACMs in scope: <strong>{reportScope.total_racms}</strong>
+                Controls in scope: <strong>{reportScope.total_racms}</strong>
                 <br />
                 With design-gap summary: <strong>{reportScope.with_insight}</strong>
                 <br />
@@ -831,25 +892,9 @@ function AiInsights() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
           <Button onClick={() => setReportsOpen(false)} disabled={jobRunning}>Close</Button>
-          {reportStep > 0 && reportStep < 3 && (
-            <Button onClick={() => setReportStep((s) => s - 1)}>Back</Button>
-          )}
-          {reportStep < 3 && (
-            <Button
-              variant="contained"
-              disabled={
-                (reportStep === 0 && !reportUnitId) ||
-                (reportStep === 1 && !reportBp) ||
-                (reportStep === 2 && !reportFy)
-              }
-              onClick={() => setReportStep((s) => s + 1)}
-            >
-              Next
-            </Button>
-          )}
-          {reportStep === 3 && reportScope && (
+          {reportScope && reportFiltersReady && (
             <>
               {reportScope.with_insight > 0 && (
                 <Button variant="outlined" onClick={openReportView}>See Report</Button>
@@ -861,7 +906,11 @@ function AiInsights() {
                   disabled={jobRunning}
                   onClick={() => {
                     if (!assertCanStartJob()) return
-                    setPendingGenerateMode({ source: 'reports_all' })
+                    setPendingGenerateMode({
+                      source: 'reports_all',
+                      existingCount: Number(reportScope.with_insight || 0),
+                      pendingCount: Number(reportScope.missing_insight || 0),
+                    })
                     setRegenConfirmOpen(true)
                   }}
                 >
@@ -883,7 +932,11 @@ function AiInsights() {
                       disabled={jobRunning}
                       onClick={() => {
                         if (!assertCanStartJob()) return
-                        setPendingGenerateMode({ source: 'reports_regen' })
+                        setPendingGenerateMode({
+                          source: 'reports_regen',
+                          existingCount: Number(reportScope.with_insight || 0),
+                          pendingCount: Number(reportScope.missing_insight || 0),
+                        })
                         setRegenConfirmOpen(true)
                       }}
                     >
@@ -904,6 +957,14 @@ function AiInsights() {
           <Typography variant="body2">
             Some selected controls already have a design-gap summary. Regenerating them will call the AI again and may incur extra cost.
           </Typography>
+          <Box sx={{ mt: 1.75, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+            <Typography variant="body2">
+              Already have summary: <strong>{Number(pendingGenerateMode?.existingCount || 0)}</strong>
+            </Typography>
+            <Typography variant="body2">
+              Pending to generate: <strong>{Number(pendingGenerateMode?.pendingCount || 0)}</strong>
+            </Typography>
+          </Box>
           <Typography variant="body2" sx={{ mt: 1.5 }}>
             Choose <strong>Skip existing</strong> to only generate for controls without a summary, or <strong>Regenerate all</strong> to overwrite.
           </Typography>
@@ -942,82 +1003,159 @@ function AiInsights() {
       </Dialog>
 
       {/* Report viewer */}
-      <Dialog open={reportViewOpen} onClose={() => setReportViewOpen(false)} fullWidth maxWidth="md">
+      <Dialog open={reportViewOpen} onClose={() => setReportViewOpen(false)} fullWidth maxWidth="lg">
         <DialogTitle>Design Gap Report</DialogTitle>
-        <DialogContent dividers>
-          {reportData && (
-            <Box>
-              <Typography variant="body2" color="text.secondary">
-                Unit: {reportData.meta?.unit_name || reportData.meta?.unit_id} · BP: {reportData.meta?.business_process} · FY: {reportData.meta?.financial_year}
-              </Typography>
-              <Alert severity="info" sx={{ my: 2 }}>
-                Controls reviewed: <strong>{reportData.summary?.controls_reviewed || 0}</strong>
-                <br />
-                Status counts: {JSON.stringify(reportData.summary?.control_design_status_counts || {})}
-                <br />
-                Check statuses: {JSON.stringify(reportData.summary?.status_counts || {})}
-              </Alert>
-
-              <Typography variant="subtitle1" fontWeight={700} sx={{ mt: 1, mb: 1 }}>Good design</Typography>
-              {(reportData.controls || []).filter((c) => c.control_design_status === 'good_design').map((c) => (
-                <Typography key={c.form_id} variant="body2" sx={{ mb: 0.5 }}>
-                  ✓ <strong>{c.control_number}</strong> — {c.summary}
+        <DialogContent>
+          {reportData && (() => {
+            const counts = getDesignGapSummaryCounts(reportData)
+            const gapControls = (reportData.controls || []).filter((c) =>
+              (c.results || []).some((r) => r.status === 'flagged')
+            )
+            const insufControls = (reportData.controls || []).filter((c) =>
+              (c.results || []).some((r) => r.status === 'insufficient_data')
+            )
+            const companyName = String(reportData.meta?.company_name || '').trim() || '—'
+            const unitName = String(reportData.meta?.unit_name || '').trim() || '—'
+            return (
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  {companyName} | {unitName}
                 </Typography>
-              ))}
-              {(reportData.controls || []).every((c) => c.control_design_status !== 'good_design') && (
-                <Typography variant="body2" color="text.secondary">None</Typography>
-              )}
+                <Typography variant="subtitle1" fontWeight={700} sx={{ mt: 0.5 }}>
+                  {reportData.meta?.business_process}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, pb: 1.5, borderBottom: `1px solid ${theme.palette.divider}` }}>
+                  Financial year: {reportData.meta?.financial_year}
+                  {' · '}
+                  Controls reviewed: {counts.reviewed}
+                </Typography>
 
-              <Typography variant="subtitle1" fontWeight={700} sx={{ mt: 2, mb: 1 }}>Has gaps</Typography>
-              {(reportData.controls || []).filter((c) => c.control_design_status === 'has_gaps').map((c) => (
-                <Accordion key={c.form_id} disableGutters>
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                      {statusChip('has_gaps')}
-                      <Typography fontWeight={600}>{c.control_number}</Typography>
-                      <Typography variant="body2" color="text.secondary">{c.summary}</Typography>
-                    </Box>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    {(c.results || []).filter((r) => r.status === 'flagged').map((r) => (
-                      <Box key={r.check_id} sx={{ mb: 1.5 }}>
-                        <Typography variant="body2" fontWeight={700}>{r.check_id}</Typography>
-                        <Typography variant="body2">{r.inconsistency}</Typography>
-                        {Array.isArray(r.evidence) && r.evidence.length > 0 && (
-                          <Typography variant="caption" color="text.secondary" component="div">
-                            Evidence: {r.evidence.join(' · ')}
-                          </Typography>
-                        )}
-                        {r.recommendation && (
-                          <Typography variant="caption" component="div">Recommendation: {r.recommendation}</Typography>
-                        )}
+                <Box
+                  sx={{
+                    mt: 2,
+                    mb: 2.5,
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'baseline',
+                    gap: 2.5,
+                  }}
+                >
+                  {[
+                    { label: 'No Design Gap', value: counts.withoutGaps, tone: 'good' },
+                    { label: 'Gaps', value: counts.gaps, tone: 'bad' },
+                    { label: 'Insufficient data', value: counts.insufficientData, tone: 'neutral' },
+                  ].map((item) => (
+                    <Typography key={item.label} variant="body1" component="span" sx={{ whiteSpace: 'nowrap' }}>
+                      <Box component="span" color="text.secondary">
+                        {item.label}:{' '}
                       </Box>
-                    ))}
-                  </AccordionDetails>
-                </Accordion>
-              ))}
-              {(reportData.controls || []).every((c) => c.control_design_status !== 'has_gaps') && (
-                <Typography variant="body2" color="text.secondary">None</Typography>
-              )}
+                      <Box
+                        component="span"
+                        sx={{
+                          fontWeight: 800,
+                          color:
+                            item.tone === 'good'
+                              ? 'success.main'
+                              : item.tone === 'bad'
+                                ? 'error.main'
+                                : 'text.primary',
+                        }}
+                      >
+                        {item.value}
+                      </Box>
+                    </Typography>
+                  ))}
+                </Box>
 
-              <Typography variant="subtitle1" fontWeight={700} sx={{ mt: 2, mb: 1 }}>Insufficient data</Typography>
-              {(reportData.controls || []).map((c) => {
-                const insuf = (c.results || []).filter((r) => r.status === 'insufficient_data')
-                if (!insuf.length) return null
-                return (
-                  <Box key={`insuf-${c.form_id}`} sx={{ mb: 1.5 }}>
-                    <Typography variant="body2" fontWeight={700}>{c.control_number}</Typography>
-                    {insuf.map((r) => (
-                      <Typography key={r.check_id} variant="caption" component="div" color="text.secondary">
-                        · {r.check_id} ({r.source}): {r.inconsistency}
-                        {Array.isArray(r.evidence) && r.evidence.length ? ` — ${r.evidence.join('; ')}` : ''}
-                      </Typography>
-                    ))}
-                  </Box>
-                )
-              })}
-            </Box>
-          )}
+                <Typography
+                  variant="subtitle1"
+                  fontWeight={700}
+                  sx={{ mt: 1, mb: 1, pb: 0.75, borderBottom: `1px solid ${theme.palette.divider}` }}
+                >
+                  Gaps
+                </Typography>
+                {gapControls.map((c) => (
+                  <Accordion
+                    key={c.form_id}
+                    disableGutters
+                    elevation={0}
+                    sx={{
+                      bgcolor: 'transparent',
+                      '&:before': { display: 'none' },
+                      border: 'none',
+                      boxShadow: 'none',
+                    }}
+                  >
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: 0 }}>
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                        {statusChip('has_gaps')}
+                        <Typography fontWeight={600}>{c.control_number}</Typography>
+                        <Typography variant="body2" color="text.secondary">{c.summary}</Typography>
+                      </Box>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ px: 0 }}>
+                      {(c.results || []).filter((r) => r.status === 'flagged').map((r) => (
+                        <Box key={r.check_id} sx={{ mb: 1.5 }}>
+                          <Typography variant="body2" fontWeight={700}>
+                            {humanizeCheckLabel(r.check_id)}
+                            {r.alignment ? ` — ${r.alignment}` : ''}
+                          </Typography>
+                          {(r.alignment_rationale || r.inconsistency) && (
+                            <Typography variant="body2">
+                              {r.alignment_rationale || r.inconsistency}
+                            </Typography>
+                          )}
+                          {(r.proposed_solution || r.recommendation) && (
+                            <Typography variant="body2" sx={{ mt: 0.5 }} color="text.secondary">
+                              Proposed solution: {r.proposed_solution || r.recommendation}
+                            </Typography>
+                          )}
+                        </Box>
+                      ))}
+                    </AccordionDetails>
+                  </Accordion>
+                ))}
+                {gapControls.length === 0 && (
+                  <Typography variant="body2" color="text.secondary">None</Typography>
+                )}
+
+                <Typography
+                  variant="subtitle1"
+                  fontWeight={700}
+                  sx={{ mt: 2, mb: 1, pb: 0.75, borderBottom: `1px solid ${theme.palette.divider}` }}
+                >
+                  Insufficient data
+                </Typography>
+                {insufControls.map((c) => {
+                  const insuf = (c.results || []).filter((r) => r.status === 'insufficient_data')
+                  return (
+                    <Box key={`insuf-${c.form_id}`} sx={{ mb: 1.5 }}>
+                      <Typography variant="body2" fontWeight={700}>{c.control_number}</Typography>
+                      {c.summary && (
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                          {c.summary}
+                        </Typography>
+                      )}
+                      {insuf.map((r) => (
+                        <Typography key={r.check_id} variant="body2" component="div" color="text.secondary" sx={{ mb: 0.5 }}>
+                          · {humanizeCheckLabel(r.check_id)}
+                          {r.source === 'precheck' ? ' [text validation]' : r.source === 'openrouter' ? ' [AI]' : ''}
+                          {Array.isArray(r.evidence) && r.evidence.length
+                            ? `: ${r.evidence.join('; ')}`
+                            : r.inconsistency
+                              ? `: ${r.inconsistency}`
+                              : ''}
+                        </Typography>
+                      ))}
+                    </Box>
+                  )
+                })}
+                {insufControls.length === 0 && (
+                  <Typography variant="body2" color="text.secondary">None</Typography>
+                )}
+              </Box>
+            )
+          })()}
         </DialogContent>
         <DialogActions>
           <Button

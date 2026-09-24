@@ -1,0 +1,5 @@
+{
+  "id": "control_objective_adequacy",
+  "title": "Control objective adequacy",
+  "prompt": "Determine whether the control objective and control description are adequate to mitigate the associated risk.\n\nAssess alignment of objective/description to the risk as: Strong, Partial, or Weak.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences)."
+}

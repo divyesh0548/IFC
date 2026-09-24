@@ -1,0 +1,5 @@
+{
+  "id": "key_control_classification",
+  "title": "Key control classification",
+  "prompt": "This check applies only to non-key controls (key_control = No). Determine whether the control should instead be classified as a Key Control based on risk heat, risk description, and control design.\n\nAssess how well the current non-key classification fits as: Strong (appropriately non-key), Partial, or Weak (likely should be key).\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences)."
+}

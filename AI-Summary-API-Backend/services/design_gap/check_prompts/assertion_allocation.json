@@ -1,0 +1,5 @@
+{
+  "id": "assertion_allocation",
+  "title": "Assertion allocation",
+  "prompt": "Determine whether appropriate financial statement assertions are allocated to the risk for this control.\n\nAssess alignment of the assertion set to the risk as: Strong, Partial, or Weak.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences). If assertions are missing or too thin to judge, set status to insufficient_data."
+}

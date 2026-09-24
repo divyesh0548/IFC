@@ -1,0 +1,5 @@
+{
+  "id": "fraud_risk",
+  "title": "Fraud risk",
+  "prompt": "Determine whether any fraud risk exists in relation to the identified risk/process, and whether the recorded fraud-risk indication is consistent with the risk and control text.\n\nAssess alignment of the fraud indication to the risk/process as: Strong, Partial, or Weak.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences)."
+}

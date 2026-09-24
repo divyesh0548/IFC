@@ -27,3 +27,12 @@ Approved + Not effective is confusing combination.
 Approver can also suggest chnages in RACM.
 
 There must be multi level approval.
+
+
+
+
+
+Indispensable chnages:
+Add a standard password policy.
+
+

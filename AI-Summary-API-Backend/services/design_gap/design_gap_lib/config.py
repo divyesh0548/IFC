@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 PACKAGE_DIR = Path(__file__).resolve().parent.parent
 SERVICE_ROOT = PACKAGE_DIR.parent.parent
 DEFAULT_COLUMN_MAP = PACKAGE_DIR / "column_map.yaml"
+DEFAULT_CHECK_PROMPTS_DIR = PACKAGE_DIR / "check_prompts"
 DEFAULT_ENV_PATH = SERVICE_ROOT / ".env"
 SHARED_CLASSIFICATION_PATH = (
     SERVICE_ROOT / "config" / "control_classification_allowed_values.json"
@@ -227,6 +228,38 @@ def _resolve_required_classified(
     return resolved
 
 
+def load_check_prompt(check_id: str, prompt_file: str | None = None) -> dict[str, Any] | None:
+    """Load per-check prompt JSON from check_prompts/."""
+    filename = (prompt_file or f"{check_id}.json").strip()
+    path = DEFAULT_CHECK_PROMPTS_DIR / filename
+    if not path.is_file():
+        return None
+    with path.open(encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid check prompt JSON: {path}")
+    return data
+
+
+def apply_check_prompts(checks: list[Any]) -> None:
+    """Attach prompt text from JSON files onto each check (mutates in place)."""
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        check_id = str(check.get("id") or "").strip()
+        if not check_id:
+            continue
+        loaded = load_check_prompt(check_id, check.get("prompt_file"))
+        if not loaded:
+            check["prompt"] = str(check.get("statement") or "").strip()
+            continue
+        prompt = str(loaded.get("prompt") or "").strip()
+        title = str(loaded.get("title") or check.get("statement") or check_id).strip()
+        check["prompt"] = prompt or str(check.get("statement") or "").strip()
+        if title:
+            check["statement"] = title
+
+
 def load_column_map(path: Path | None = None) -> dict[str, Any]:
     map_path = path or DEFAULT_COLUMN_MAP
     with map_path.open(encoding="utf-8") as fh:
@@ -240,7 +273,9 @@ def load_column_map(path: Path | None = None) -> dict[str, Any]:
         str(c)
         for c in ((data.get("settings") or {}).get("default_columns") or [])
     ]
-    for check in data.get("checks") or []:
+    checks = data.get("checks") or []
+    apply_check_prompts(checks)
+    for check in checks:
         if not isinstance(check, dict):
             continue
         check["required_classified"] = _resolve_required_classified(

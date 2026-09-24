@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, request
 
 from app.auth import require_api_key
 from services.design_gap.design_gap_lib.config import load_column_map, load_env, resolve_settings
-from services.design_gap.design_gap_lib.service import analyze_control
+from services.design_gap.design_gap_lib.service import analyze_control, is_design_gap_dry_run_enabled
 
 design_gap_bp = Blueprint("design_gap", __name__, url_prefix="/v1/design-gap")
 
@@ -45,7 +45,7 @@ def analyze_one():
             400,
         )
 
-    dry_run = bool(body.get("dry_run", False))
+    dry_run = is_design_gap_dry_run_enabled(bool(body.get("dry_run", False)))
     load_env()
     try:
         column_map = load_column_map()
@@ -89,7 +89,7 @@ def analyze_batch():
             400,
         )
 
-    dry_run = bool(body.get("dry_run", False))
+    dry_run = is_design_gap_dry_run_enabled(bool(body.get("dry_run", False)))
     load_env()
     try:
         column_map = load_column_map()

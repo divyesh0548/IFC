@@ -47,7 +47,8 @@ allowed_values:
 
 checks:
   - id: risk_control_alignment
-    statement: "Whether risks and controls are adequately aligned with each other"
+    statement: "Risk–control alignment"
+    prompt_file: "risk_control_alignment.json"
     columns:
       - risk_description
       - control_objective
@@ -73,7 +74,8 @@ checks:
   #     - sub_process
 
   - id: assertion_allocation
-    statement: "Whether appropriate financial statement assertions are allocated to each risk"
+    statement: "Assertion allocation"
+    prompt_file: "assertion_allocation.json"
     # assertions.* expands at runtime to every field in this control's assertions section
     # (1 combined column or many separate columns — whatever the RACM template has).
     # Values are free text; no Yes/No validation.
@@ -101,7 +103,8 @@ checks:
   #     - risk_description
 
   - id: control_objective_adequacy
-    statement: "Whether the control objective and control description are adequate to mitigate the associated risk"
+    statement: "Control objective adequacy"
+    prompt_file: "control_objective_adequacy.json"
     columns:
       - risk_description
       - control_objective
@@ -153,7 +156,8 @@ checks:
   #     - standard_control_description
 
   - id: fraud_risk
-    statement: "Whether any fraud risk exists in relation to the identified risk/process"
+    statement: "Fraud risk"
+    prompt_file: "fraud_risk.json"
     columns:
       - whether_fraud_risks_exist
       - risk_description
@@ -165,9 +169,11 @@ checks:
       - risk_description
 
   - id: key_control_classification
-    statement: "Whether the control should be classified as a Key Control"
-    # Only for non-key controls (key_control = No from shared config).
-    # Key controls (Yes) skip this check — not sent to OpenRouter.
+    statement: "Key control classification"
+    prompt_file: "key_control_classification.json"
+    # Empty key_control → insufficient_data (text validation).
+    # key_control=Yes → check skipped (N/A), not insufficient.
+    # key_control=No → eligible for AI.
     columns:
       - key_control
       - risk_description
@@ -177,5 +183,6 @@ checks:
     required_classified:
       key_control: "$shared_non_key"
     required_text:
+      - key_control
       - risk_description
       - standard_control_description

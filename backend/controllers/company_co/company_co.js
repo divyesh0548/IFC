@@ -24,6 +24,10 @@ const {
   releaseGlobalAiModelLock,
 } = require('../../utils/ai_model_lock');
 const {
+  compareControlNumbers,
+  sqlOrderByControlNumberAsc,
+} = require('../../utils/controlNumberSort');
+const {
   getMobileValidationError,
   normalizeMobileDigits,
 } = require('../../utils/mobile_validation');
@@ -584,10 +588,7 @@ function sortAiInsightDisplayRows(rows) {
     const bpA = String(a?.business_process || '').trim().toLowerCase();
     const bpB = String(b?.business_process || '').trim().toLowerCase();
     if (bpA !== bpB) return bpA.localeCompare(bpB);
-    return String(a?.control_number || '').localeCompare(String(b?.control_number || ''), undefined, {
-      numeric: true,
-      sensitivity: 'base',
-    });
+    return compareControlNumbers(a?.control_number, b?.control_number);
   });
 }
 
@@ -812,7 +813,7 @@ async function listRiskAnalysisControls(req, res) {
          AND cum.unit_id = cf.unit_id
         WHERE ${whereClause}
         ORDER BY
-          LOWER(TRIM(COALESCE(cf.control_number, ''))) ASC,
+          ${sqlOrderByControlNumberAsc('cf.control_number')},
           LOWER(TRIM(COALESCE(cum.unit_name, ''))) ASC,
           LOWER(TRIM(COALESCE(cf.business_process, ''))) ASC
         LIMIT $${dataParams.length - 1}

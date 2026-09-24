@@ -6,13 +6,62 @@ from typing import Any
 SYSTEM_PROMPT = """You are an internal-controls design reviewer for IFC / RACM data.
 You evaluate ONLY the design checks provided in the user payload.
 Do not invent fields that are not present. Quote evidence from the provided field values.
-Return STRICT JSON matching the schema described by the user. No markdown fences."""
+Return STRICT JSON matching the schema described by the user. No markdown fences.
+Write comprehensive but concise prose: alignment_rationale and proposed_solution must each be at most 3 sentences."""
 
 GOOD_DESIGN_STATUS = "good_design"
 HAS_GAPS_STATUS = "has_gaps"
 CONTROL_STATUS_VALUES = frozenset(
     {GOOD_DESIGN_STATUS, HAS_GAPS_STATUS, "insufficient_data"}
 )
+
+ALIGNMENT_VALUES = frozenset(
+    {"strong", "partial", "weak", "misaligned", "no_control", ""}
+)
+
+
+def _normalize_alignment(raw: Any) -> str:
+    text = str(raw or "").strip().lower().replace("-", " ").replace("_", " ")
+    text = " ".join(text.split())
+    mapping = {
+        "strong": "Strong",
+        "strong alignment": "Strong",
+        "partial": "Partial",
+        "partial alignment": "Partial",
+        "weak": "Weak",
+        "weak alignment": "Weak",
+        "misaligned": "Misaligned",
+        "misalignment": "Misaligned",
+        "no control": "No Control",
+        "nocontrol": "No Control",
+    }
+    return mapping.get(text, str(raw or "").strip()[:40])
+
+
+def _alignment_implies_flagged(alignment: str) -> bool:
+    key = alignment.strip().lower()
+    return key in {"partial", "weak", "misaligned", "no control"}
+
+
+def _clip_sentences(text: str, max_sentences: int = 3, max_chars: int = 900) -> str:
+    raw = " ".join(str(text or "").split()).strip()
+    if not raw:
+        return ""
+    parts: list[str] = []
+    buf = ""
+    for ch in raw:
+        buf += ch
+        if ch in ".!?" and len(buf.strip()) > 1:
+            parts.append(buf.strip())
+            buf = ""
+            if len(parts) >= max_sentences:
+                break
+    if len(parts) < max_sentences and buf.strip():
+        parts.append(buf.strip())
+    out = " ".join(parts[:max_sentences])
+    if len(out) > max_chars:
+        out = out[: max_chars - 1].rstrip() + "…"
+    return out
 
 
 def build_user_prompt(payload: dict[str, Any]) -> str:
@@ -22,7 +71,7 @@ def build_user_prompt(payload: dict[str, Any]) -> str:
             "overall verdict for this control"
         ),
         "summary": (
-            "short overall message; if good_design use exactly: "
+            "short overall message (max 3 sentences); if good_design use exactly: "
             "'Control is in good design with no design gaps identified.'"
         ),
         "results": [
@@ -30,9 +79,10 @@ def build_user_prompt(payload: dict[str, Any]) -> str:
                 "check_id": "string — must match an id from checks",
                 "status": "ok | flagged | insufficient_data",
                 "severity": "info | low | medium | high",
-                "inconsistency": "short description; empty string if ok",
+                "alignment": "Strong | Partial | Weak | Misaligned | No Control",
+                "alignment_rationale": "up to 3 sentences explaining the alignment verdict",
+                "proposed_solution": "up to 3 sentences; empty string if ok / Strong",
                 "evidence": ["short quotes or field references from provided fields"],
-                "recommendation": "short actionable note; empty string if ok",
             }
         ],
     }
@@ -40,20 +90,20 @@ def build_user_prompt(payload: dict[str, Any]) -> str:
         "Review this single control against the listed design checks.\n"
         "Rules:\n"
         "- Evaluate ONLY the checks in payload.checks.\n"
+        "- For each check, follow that check's `prompt` instructions carefully.\n"
         "- Use ONLY payload.fields as evidence.\n"
-        "- status=flagged when the design appears inconsistent or inappropriate.\n"
-        "- status=ok when consistent given the provided data.\n"
+        "- status=flagged when alignment is Partial, Weak, Misaligned, or No Control, "
+        "or when the design appears inconsistent.\n"
+        "- status=ok when alignment is Strong (or equivalent sound design).\n"
         "- status=insufficient_data only if the provided fields are still too thin to judge "
-        "(prefer ok/flagged when data exists).\n"
+        "(prefer ok/flagged when data exists). AI insufficient_data is NOT a design gap.\n"
         "- Overall control_design_status:\n"
-        "  * good_design — EVERY check in results is status=ok "
-        "(no design gaps). Set summary to: "
-        "'Control is in good design with no design gaps identified.'\n"
+        "  * good_design — EVERY evaluated check in results is status=ok.\n"
         "  * has_gaps — one or more checks are status=flagged.\n"
         "  * insufficient_data — no flagged checks, but at least one check is "
-        "insufficient_data and none are flagged.\n"
+        "insufficient_data.\n"
         "- You do NOT need to invent gaps. If the control looks sound, return good_design.\n"
-        "- Keep inconsistency and recommendation under 280 characters each.\n"
+        "- alignment_rationale and proposed_solution: max 3 sentences each.\n"
         "- evidence: 1–3 short items max per check.\n\n"
         f"Expected JSON shape:\n{json.dumps(schema_hint, indent=2)}\n\n"
         f"Payload:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
@@ -77,6 +127,17 @@ def default_summary_for_status(status: str) -> str:
     if status == HAS_GAPS_STATUS:
         return "One or more design gaps were identified for this control."
     return "Insufficient data to fully assess design for this control."
+
+
+def _empty_detail_fields() -> dict[str, Any]:
+    return {
+        "alignment": "",
+        "alignment_rationale": "",
+        "proposed_solution": "",
+        "inconsistency": "",
+        "recommendation": "",
+        "evidence": [],
+    }
 
 
 def normalize_ai_results(
@@ -111,19 +172,43 @@ def normalize_ai_results(
         status = str(item.get("status") or "insufficient_data").strip().lower()
         if status not in allowed_status:
             status = "insufficient_data"
+
+        alignment = _normalize_alignment(
+            item.get("alignment") or item.get("alignment_level")
+        )
+        rationale = _clip_sentences(
+            item.get("alignment_rationale")
+            or item.get("inconsistency")
+            or item.get("explanation")
+            or ""
+        )
+        solution = _clip_sentences(
+            item.get("proposed_solution") or item.get("recommendation") or ""
+        )
+
+        if status == "ok" and _alignment_implies_flagged(alignment):
+            status = "flagged"
+        if status == "flagged" and not alignment:
+            alignment = "Weak"
+
         evidence = item.get("evidence") or []
         if isinstance(evidence, str):
             evidence = [evidence]
         if not isinstance(evidence, list):
             evidence = []
+
         found[check_id] = {
             "check_id": check_id,
-            "statement": by_id[check_id]["statement"],
+            "statement": by_id[check_id].get("statement") or check_id,
             "status": status,
             "severity": str(item.get("severity") or "info"),
-            "inconsistency": str(item.get("inconsistency") or ""),
+            "alignment": alignment,
+            "alignment_rationale": rationale,
+            "proposed_solution": solution,
+            # Backward-compatible mirrors for older UI consumers
+            "inconsistency": rationale,
+            "recommendation": solution,
             "evidence": [str(e) for e in evidence][:5],
-            "recommendation": str(item.get("recommendation") or ""),
             "source": "openrouter",
         }
 
@@ -133,29 +218,27 @@ def normalize_ai_results(
         if check_id in found:
             results.append(found[check_id])
         else:
-            results.append(
-                {
-                    "check_id": check_id,
-                    "statement": check["statement"],
-                    "status": "insufficient_data",
-                    "severity": "info",
-                    "inconsistency": "Model did not return a result for this check.",
-                    "evidence": [],
-                    "recommendation": "Re-run or inspect model output.",
-                    "source": "openrouter_missing",
-                }
-            )
+            missing = {
+                "check_id": check_id,
+                "statement": check.get("statement") or check_id,
+                "status": "insufficient_data",
+                "severity": "info",
+                "source": "openrouter_missing",
+                **_empty_detail_fields(),
+            }
+            missing["inconsistency"] = "Model did not return a result for this check."
+            missing["proposed_solution"] = "Re-run or inspect model output."
+            missing["recommendation"] = missing["proposed_solution"]
+            results.append(missing)
 
-    # Prefer status derived from per-check results (authoritative)
     derived = derive_control_design_status(results)
     control_status = model_status if model_status in CONTROL_STATUS_VALUES else derived
-    # If model claimed good_design but any flagged, force has_gaps
     if derived == HAS_GAPS_STATUS:
         control_status = HAS_GAPS_STATUS
     elif derived == GOOD_DESIGN_STATUS:
         control_status = GOOD_DESIGN_STATUS
 
-    summary = model_summary or default_summary_for_status(control_status)
+    summary = _clip_sentences(model_summary) or default_summary_for_status(control_status)
     if control_status == GOOD_DESIGN_STATUS:
         summary = default_summary_for_status(GOOD_DESIGN_STATUS)
 
