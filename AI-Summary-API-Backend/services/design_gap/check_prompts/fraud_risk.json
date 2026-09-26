@@ -1,5 +1,5 @@
 {
   "id": "fraud_risk",
-  "title": "Fraud risk",
-  "prompt": "Determine whether any fraud risk exists in relation to the identified risk/process, and whether the recorded fraud-risk indication is consistent with the risk and control text.\n\nAssess alignment of the fraud indication to the risk/process as: Strong, Partial, or Weak.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences)."
+  "title": "Fraud Risk Assessment",
+  "prompt": "Fraud Risk Assessment — Does the identified risk or process carry any fraud risk (e.g., management override, manipulation potential) that hasn't been flagged?\n\nCompare the risk, process, and control text with the recorded whether_fraud_risks_exist value. Assess alignment as: Strong, Partial, or Weak.\n- Strong: fraud exposure is correctly reflected (flagged when present, or correctly not flagged when absent).\n- Partial: some fraud exposure is noted but the flag or description is incomplete.\n- Weak: a fraud risk such as management override or manipulation is present and has not been flagged, or the flag clearly contradicts the risk.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences)."
 }

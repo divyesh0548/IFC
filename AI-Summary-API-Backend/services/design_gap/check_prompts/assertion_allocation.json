@@ -1,5 +1,5 @@
 {
   "id": "assertion_allocation",
-  "title": "Assertion allocation",
-  "prompt": "Determine whether appropriate financial statement assertions are allocated to the risk for this control.\n\nAssess alignment of the assertion set to the risk as: Strong, Partial, or Weak.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences). If assertions are missing or too thin to judge, set status to insufficient_data."
+  "title": "Financial Statement Assertions",
+  "prompt": "Financial Statement Assertions — Are the relevant assertions (Existence, Completeness, Accuracy, Valuation, Cut-off, Rights & Obligations, Presentation & Disclosure) correctly and completely mapped to the risk?\n\nUse only the assertion values provided. Assess alignment as: Strong, Partial, or Weak.\n- Strong: the assertions that apply to this risk are correctly and completely mapped.\n- Partial: some relevant assertions are mapped, but others that the risk implies are missing or misapplied.\n- Weak: assertions are missing, unrelated, or clearly incomplete for this risk.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences). If assertion values are too thin to judge, set status to insufficient_data."
 }

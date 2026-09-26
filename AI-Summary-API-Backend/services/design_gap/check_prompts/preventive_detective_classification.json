@@ -1,0 +1,5 @@
+{
+  "id": "preventive_detective_classification",
+  "title": "Preventive/Detective Classification",
+  "prompt": "Preventive/Detective Classification — Is the control correctly classified as Preventive (stops an error/misstatement before it occurs) or Detective (identifies it after occurrence), based on its actual design?\n\nCompare the recorded nature_of_control value to the control objective and description. Assess alignment as: Strong, Partial, or Weak.\n- Strong: the recorded Preventive or Detective class matches how the control is actually designed.\n- Partial: the design is mixed, so the recorded class is only partly right.\n- Weak: the recorded class contradicts the actual design.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences). If the design text is too thin to judge, set status to insufficient_data."
+}

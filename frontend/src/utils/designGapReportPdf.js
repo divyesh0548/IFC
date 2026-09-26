@@ -17,6 +17,30 @@ export function humanizeCheckLabel(value) {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+function formatFieldIssue(raw) {
+  const text = String(raw || '').trim()
+  const emptyMatch = text.match(/^([a-z0-9_.*]+) is empty$/i)
+  if (emptyMatch) {
+    return `${humanizeCheckLabel(emptyMatch[1])} field is empty`
+  }
+  const notAllowed = text.match(/^([a-z0-9_]+)=(.+?) not in allowed/i)
+  if (notAllowed) {
+    return `${humanizeCheckLabel(notAllowed[1])} value ${notAllowed[2].trim()} is not allowed`
+  }
+  return text.replace(/_/g, ' ')
+}
+
+/** Report line for an insufficient-data check, without raw field keys or tags. */
+export function formatInsufficientCheckLine(result) {
+  const title = humanizeCheckLabel(result?.check_id)
+  const evidence = Array.isArray(result?.evidence) ? result.evidence : []
+  const details = evidence.map(formatFieldIssue).filter(Boolean)
+  if (details.length) return `${title} : ${details.join('; ')}`
+  const note = String(result?.alignment_rationale || result?.inconsistency || '').trim()
+  if (note) return `${title} : ${note.replace(/_/g, ' ')}`
+  return title
+}
+
 function getControlStatusCounts(reportData) {
   const fromSummary = reportData?.summary?.control_design_status_counts || {}
   const controls = Array.isArray(reportData?.controls) ? reportData.controls : []
@@ -202,7 +226,7 @@ export function downloadDesignGapReportPdf(reportData) {
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(9)
         doc.setTextColor(...COLORS.muted)
-        y = addWrapped(doc, c.summary, margin, y + 0.5, contentWidth, 4)
+        y = addWrapped(doc, `Summary: ${c.summary}`, margin, y + 0.5, contentWidth, 4)
       }
 
       for (const r of flagged) {
@@ -210,12 +234,16 @@ export function downloadDesignGapReportPdf(reportData) {
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(9)
         doc.setTextColor(...COLORS.text)
-        const title = `${humanizeCheckLabel(r.check_id)}${r.alignment ? ` — ${r.alignment}` : ''}`
-        y = addWrapped(doc, title, margin + 3, y + 2, contentWidth - 3, 4)
+        y = addWrapped(doc, humanizeCheckLabel(r.check_id), margin + 3, y + 2, contentWidth - 3, 4)
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(9)
+        if (r.alignment) {
+          doc.setTextColor(...COLORS.text)
+          y = addWrapped(doc, `Alignment: ${r.alignment}`, margin + 3, y + 0.5, contentWidth - 3, 4)
+        }
         const rationale = r.alignment_rationale || r.inconsistency
         if (rationale) {
+          doc.setTextColor(...COLORS.text)
           y = addWrapped(doc, rationale, margin + 3, y + 0.5, contentWidth - 3, 4)
         }
         const solution = r.proposed_solution || r.recommendation
@@ -246,36 +274,15 @@ export function downloadDesignGapReportPdf(reportData) {
       doc.setTextColor(...COLORS.black)
       y = addWrapped(doc, String(c.control_number || c.form_id || 'Control'), margin, y, contentWidth, 4.5)
 
-      if (c.summary) {
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(9)
-        doc.setTextColor(...COLORS.muted)
-        y = addWrapped(doc, c.summary, margin, y + 0.5, contentWidth, 4)
-      }
-
       for (const r of insuf) {
         y = ensureSpace(doc, y, 12)
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(9)
         doc.setTextColor(...COLORS.text)
-        const tag = r.source === 'precheck' ? ' [text validation]' : r.source === 'openrouter' ? ' [AI]' : ''
-        y = addWrapped(
-          doc,
-          `${humanizeCheckLabel(r.check_id)}${tag}`,
-          margin + 3,
-          y + 2,
-          contentWidth - 3,
-          4
-        )
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(9)
-        doc.setTextColor(...COLORS.muted)
-        const detail = Array.isArray(r.evidence) && r.evidence.length
-          ? r.evidence.join('; ')
-          : r.inconsistency || ''
-        if (detail) {
-          y = addWrapped(doc, detail, margin + 3, y + 0.5, contentWidth - 3, 4)
-        }
+        doc.setTextColor(...COLORS.text)
+        y = addWrapped(doc, formatInsufficientCheckLine(r), margin + 3, y + 2, contentWidth - 3, 4)
       }
       y += 5
     }

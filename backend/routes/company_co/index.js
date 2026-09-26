@@ -16,6 +16,7 @@ router.get('/risk-analysis/availability', verifyCompanyCoordinator, controller.g
 router.get('/risk-analysis/controls', verifyCompanyCoordinator, controller.listRiskAnalysisControls);
 router.get('/risk-analysis/control/:control_number', verifyCompanyCoordinator, controller.getRiskAnalysisByControl);
 router.post('/risk-analysis/control/:control_number/generate', verifyCompanyCoordinator, controller.generateRiskAnalysisByControl);
+router.post('/risk-analysis/generate', verifyCompanyCoordinator, controller.generateRiskAnalysesSelected);
 
 const designGapInsights = require('../../controllers/company_co/design_gap_insights');
 router.get('/ai-insights/design-gap/availability', verifyCompanyCoordinator, designGapInsights.getDesignGapAvailability);
@@ -27,7 +28,7 @@ router.get('/ai-insights/design-gap/jobs/:job_id', verifyCompanyCoordinator, des
 router.post('/ai-insights/design-gap/generate', verifyCompanyCoordinator, designGapInsights.generateDesignGapInsights);
 
 router.get('/ai-insights/key-manual-summary/availability', verifyCompanyCoordinator, controller.getKeyManualAiInsightsAvailability);
-router.get('/ai-insights/key-manual-summary', verifyCompanyCoordinator, controller.getKeyManualAiInsightsRun);
+router.get('/ai-insights/key-manual-summary', verifyCompanyCoordinator, controller.listKeyManualControls);
 router.post('/ai-insights/key-manual-summary/generate', verifyCompanyCoordinator, controller.generateKeyManualAiInsightsRun);
 router.delete('/ai-insights/key-manual-summary/:run_id', verifyCompanyCoordinator, controller.deleteKeyManualAiInsightsRun);
 router.get('/racm-audit-logs/:form_id', verifyCompanyCoordinator, controller.getRacmAuditLogs);

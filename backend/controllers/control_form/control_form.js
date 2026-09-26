@@ -4963,16 +4963,16 @@ async function selfAssignRacm(req, res) {
       const status = String(form.status || '').trim().toLowerCase();
       if (hasValidOwner) {
         if (status === 'sent for approval') {
-          return res.status(400).json({
-            success: false,
+        return res.status(400).json({
+          success: false,
             message: 'This RACM cannot be transferred in its current approval status.',
-          });
-        }
+        });
+      }
 
         const conclusion = String(form.control_design_conclusion || '').trim().toLowerCase();
         if (conclusion === 'effective' || conclusion === 'accepted under deviation') {
-          return res.status(400).json({
-            success: false,
+        return res.status(400).json({
+          success: false,
             message: 'This RACM has been approved (Effective / Accepted Under Deviation) and cannot be transferred.',
           });
         }
@@ -5035,7 +5035,7 @@ async function selfAssignRacm(req, res) {
           previousProcessOwner
         );
       } else {
-        await logAuditEvent('Coordinator Self-Assignment', req.user.email_id, form_id);
+      await logAuditEvent('Coordinator Self-Assignment', req.user.email_id, form_id);
       }
       if (!wasActiveBeforeSelfAssign) {
         await logAuditEvent('Set RACM Active', req.user.email_id, form_id);
@@ -5071,43 +5071,43 @@ async function transferSelfAssignedRacmToProcessOwner(req, res) {
   const processOwnerEmail = String(req.body?.control_owner || '').trim().toLowerCase();
 
   if (req.user?.role !== 'company_co') {
-    return res.status(403).json({
-      success: false,
+        return res.status(403).json({
+          success: false,
       message: 'Only company coordinators can transfer self-assigned RACMs.',
     });
   }
 
   if (!processOwnerEmail) {
-    return res.status(400).json({
-      success: false,
+        return res.status(400).json({
+          success: false,
       message: 'Process owner email is required.',
     });
-  }
-
-  try {
-    const form = await getControlFormCoordinatorContext(pool, form_id);
-    if (!form) {
-      return res.status(404).json({ success: false, message: 'RACM not found' });
     }
+
+    try {
+      const form = await getControlFormCoordinatorContext(pool, form_id);
+      if (!form) {
+        return res.status(404).json({ success: false, message: 'RACM not found' });
+      }
 
     if (!isCoordinatorAssignedRacm(form)) {
-      return res.status(400).json({
-        success: false,
+        return res.status(400).json({
+          success: false,
         message: 'This RACM is not coordinator self-assigned.',
-      });
-    }
+        });
+      }
 
     const status = String(form.status || '').trim().toLowerCase();
     if (status === 'sent for approval' || status === 'approved') {
-      return res.status(400).json({
-        success: false,
+        return res.status(400).json({
+          success: false,
         message: 'This RACM cannot be transferred in its current approval status.',
-      });
-    }
+        });
+      }
 
     if (await hasProcessOwnerDeclaration(pool, form_id)) {
-      return res.status(400).json({
-        success: false,
+        return res.status(400).json({
+          success: false,
         message: 'The process owner has declared no further submission for this RACM, so it cannot be transferred.',
       });
     }
@@ -5116,24 +5116,24 @@ async function transferSelfAssignedRacmToProcessOwner(req, res) {
       .trim()
       .toLowerCase();
     if (deficiencyStatus === 'submitted_for_review') {
-      return res.status(400).json({
-        success: false,
+        return res.status(400).json({
+          success: false,
         message: 'A deficiency response has been submitted for this RACM and it cannot be transferred.',
-      });
-    }
+        });
+      }
 
-    const coordinatorEmail = String(req.user.email_id || '').trim().toLowerCase();
-    const hasUnitAccess = await coordinatorHasUnitAccess(pool, {
-      companyIdentifier: form.company_identifier,
-      unitId: form.unit_id,
-      coordinatorEmail,
-    });
-    if (!hasUnitAccess) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. You are not assigned to this RACM unit.',
+      const coordinatorEmail = String(req.user.email_id || '').trim().toLowerCase();
+      const hasUnitAccess = await coordinatorHasUnitAccess(pool, {
+        companyIdentifier: form.company_identifier,
+        unitId: form.unit_id,
+        coordinatorEmail,
       });
-    }
+      if (!hasUnitAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You are not assigned to this RACM unit.',
+        });
+      }
 
     const ownerValidation = await validateRacmUnitUserAssignment(pool, {
       companyIdentifier: form.company_identifier,
@@ -5146,17 +5146,17 @@ async function transferSelfAssignedRacmToProcessOwner(req, res) {
       return res.status(400).json({ success: false, message: ownerValidation.message });
     }
 
-    const updated = await prisma.controlForm.update({
-      where: { formId: String(form_id).trim() },
-      data: {
+      const updated = await prisma.controlForm.update({
+        where: { formId: String(form_id).trim() },
+        data: {
         controlOwner: processOwnerEmail,
         assignedToCoordinator: false,
         coordinatorAssignedBy: null,
         coordinatorAssignedAt: null,
         userMailSent: false,
         // Keep existing active state; do not deactivate during transfer.
-      },
-    });
+        },
+      });
 
     await logAuditEvent(
       'Transfer Self-Assigned RACM to Process Owner',
@@ -5165,27 +5165,27 @@ async function transferSelfAssignedRacmToProcessOwner(req, res) {
       processOwnerEmail
     );
 
-    return res.status(200).json({
-      success: true,
+      return res.status(200).json({
+        success: true,
       message: 'Self-assigned RACM transferred to process owner successfully',
-      data: {
-        form_id: updated.formId,
-        assigned_to_coordinator: updated.assignedToCoordinator,
-        coordinator_assigned_by: updated.coordinatorAssignedBy,
-        coordinator_assigned_at: updated.coordinatorAssignedAt,
-        control_owner: updated.controlOwner,
-        active: updated.active,
+        data: {
+          form_id: updated.formId,
+          assigned_to_coordinator: updated.assignedToCoordinator,
+          coordinator_assigned_by: updated.coordinatorAssignedBy,
+          coordinator_assigned_at: updated.coordinatorAssignedAt,
+          control_owner: updated.controlOwner,
+          active: updated.active,
         user_mail_sent: updated.userMailSent,
-      },
-    });
-  } catch (error) {
+        },
+      });
+    } catch (error) {
     console.error('Transfer self-assigned RACM error:', error);
-    return res.status(500).json({
-      success: false,
+      return res.status(500).json({
+        success: false,
       message: 'Error transferring self-assigned RACM to process owner',
-    });
+      });
+    }
   }
-}
 
 
 // Upload user document for a specific form and persist it immediately.

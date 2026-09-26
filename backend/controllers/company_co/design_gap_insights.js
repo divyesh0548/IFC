@@ -480,6 +480,11 @@ async function listDesignGapControls(req, res) {
         units: mappedUnits,
         business_processes: businessProcesses,
         financial_years: financialYears,
+        scope_rows: filterRowsResult.rows.map((row) => ({
+          unit_id: String(row.unit_id || '').trim(),
+          business_process: String(row.business_process || '').trim(),
+          financial_year: String(row.financial_year || '').trim(),
+        })).filter((row) => row.unit_id),
       },
     });
   } catch (error) {
@@ -563,6 +568,61 @@ async function getDesignGapReportScope(req, res) {
   }
 }
 
+function uniqueJoined(values) {
+  const unique = [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+  if (unique.length === 0) return null;
+  return unique.join(', ');
+}
+
+async function lookupCompanyName(companyIdentifier) {
+  try {
+    const company = await prisma.company.findUnique({
+      where: { companyIdentifier },
+      select: { companyName: true },
+    });
+    const name = String(company?.companyName || '').trim();
+    return name || null;
+  } catch (error) {
+    console.error('Design gap report company name lookup failed:', error);
+    return null;
+  }
+}
+
+function buildDesignGapReportPayload(shaped, meta) {
+  const statusCounts = {};
+  const checkStatusCounts = {};
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let totalTokens = 0;
+
+  for (const row of shaped) {
+    const status = row.control_design_status || 'unknown';
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+    promptTokens += Number(row.prompt_tokens || 0);
+    completionTokens += Number(row.completion_tokens || 0);
+    totalTokens += Number(row.total_tokens || 0);
+    for (const check of row.results || []) {
+      const cs = check.status || 'unknown';
+      checkStatusCounts[cs] = (checkStatusCounts[cs] || 0) + 1;
+    }
+  }
+
+  return {
+    meta,
+    summary: {
+      controls_reviewed: shaped.length,
+      control_design_status_counts: statusCounts,
+      status_counts: checkStatusCounts,
+      token_usage: {
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        total_tokens: totalTokens,
+      },
+    },
+    controls: shaped,
+  };
+}
+
 async function getDesignGapReport(req, res) {
   try {
     const companyIdentifier = String(req.user?.company_identifier || '').trim();
@@ -570,6 +630,7 @@ async function getDesignGapReport(req, res) {
     const unitId = String(req.query?.unit_id || '').trim();
     const businessProcess = String(req.query?.business_process || '').trim();
     const financialYear = String(req.query?.financial_year || '').trim();
+    const formIds = normalizeMultiValue(req.query?.form_ids);
 
     if (!companyIdentifier || !coordinatorEmail) {
       return res.status(403).json({
@@ -577,89 +638,85 @@ async function getDesignGapReport(req, res) {
         message: 'Company coordinator context is required',
       });
     }
-    if (!unitId || !businessProcess || !financialYear) {
-      return res.status(400).json({
-        success: false,
-        message: 'unit_id, business_process, and financial_year are required',
-      });
-    }
 
     const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
-    const unitMeta = mappedUnits.find(
-      (u) => String(u.unit_id || '').trim().toLowerCase() === unitId.toLowerCase()
+    const allowedUnitIds = new Set(
+      mappedUnits.map((unit) => String(unit.unit_id || '').trim().toLowerCase()).filter(Boolean)
     );
-    if (!unitMeta) {
-      return res.status(403).json({
-        success: false,
-        message: 'You can only view design-gap reports for your assigned units',
-        code: 'UNIT_NOT_ALLOWED',
+
+    let insights = [];
+    let metaUnitId = unitId;
+    let metaUnitName = null;
+    let metaBusinessProcess = businessProcess;
+    let metaFinancialYear = financialYear;
+
+    if (formIds.length > 0) {
+      const rows = await prisma.designGapInsight.findMany({
+        where: {
+          companyIdentifier,
+          formId: { in: formIds },
+        },
       });
-    }
-
-    const insights = await prisma.designGapInsight.findMany({
-      where: {
-        companyIdentifier,
-        unitId,
-        businessProcess,
-        financialYear,
-      },
-    });
-
-    let companyName = null;
-    try {
-      const company = await prisma.company.findUnique({
-        where: { companyIdentifier },
-        select: { companyName: true },
-      });
-      const name = String(company?.companyName || '').trim();
-      if (name) companyName = name;
-    } catch (error) {
-      console.error('Design gap report company name lookup failed:', error);
-    }
-
-    const shaped = sortByControlNumber(insights.map(shapeInsightRow));
-    const statusCounts = {};
-    const checkStatusCounts = {};
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let totalTokens = 0;
-
-    for (const row of shaped) {
-      const status = row.control_design_status || 'unknown';
-      statusCounts[status] = (statusCounts[status] || 0) + 1;
-      promptTokens += Number(row.prompt_tokens || 0);
-      completionTokens += Number(row.completion_tokens || 0);
-      totalTokens += Number(row.total_tokens || 0);
-      for (const check of row.results || []) {
-        const cs = check.status || 'unknown';
-        checkStatusCounts[cs] = (checkStatusCounts[cs] || 0) + 1;
+      insights = rows.filter((row) =>
+        allowedUnitIds.has(String(row.unitId || '').trim().toLowerCase())
+      );
+      if (insights.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No generated design-gap reports found for the selected controls',
+        });
       }
+      const unitIds = [...new Set(insights.map((row) => String(row.unitId || '').trim()).filter(Boolean))];
+      metaUnitId = unitIds.length === 1 ? unitIds[0] : null;
+      const unitMeta = mappedUnits.find(
+        (unit) => String(unit.unit_id || '').trim().toLowerCase() === String(metaUnitId || '').toLowerCase()
+      );
+      metaUnitName = String(unitMeta?.unit_name || '').trim() || null;
+      metaBusinessProcess = uniqueJoined(insights.map((row) => row.businessProcess));
+      metaFinancialYear = uniqueJoined(insights.map((row) => row.financialYear));
+    } else {
+      if (!unitId || !businessProcess || !financialYear) {
+        return res.status(400).json({
+          success: false,
+          message: 'unit_id, business_process, and financial_year are required',
+        });
+      }
+
+      const unitMeta = mappedUnits.find(
+        (u) => String(u.unit_id || '').trim().toLowerCase() === unitId.toLowerCase()
+      );
+      if (!unitMeta) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only view design-gap reports for your assigned units',
+          code: 'UNIT_NOT_ALLOWED',
+        });
+      }
+      metaUnitName = String(unitMeta.unit_name || '').trim() || null;
+      insights = await prisma.designGapInsight.findMany({
+        where: {
+          companyIdentifier,
+          unitId,
+          businessProcess,
+          financialYear,
+        },
+      });
     }
+
+    const companyName = await lookupCompanyName(companyIdentifier);
+    const shaped = sortByControlNumber(insights.map(shapeInsightRow));
 
     return res.status(200).json({
       success: true,
-      data: {
-        meta: {
-          unit_id: unitId,
-          unit_name: String(unitMeta.unit_name || '').trim() || null,
-          business_process: businessProcess,
-          financial_year: financialYear,
-          company_identifier: companyIdentifier,
-          company_name: companyName,
-          generated_from_db: true,
-        },
-        summary: {
-          controls_reviewed: shaped.length,
-          control_design_status_counts: statusCounts,
-          status_counts: checkStatusCounts,
-          token_usage: {
-            prompt_tokens: promptTokens,
-            completion_tokens: completionTokens,
-            total_tokens: totalTokens,
-          },
-        },
-        controls: shaped,
-      },
+      data: buildDesignGapReportPayload(shaped, {
+        unit_id: metaUnitId,
+        unit_name: metaUnitName,
+        business_process: metaBusinessProcess,
+        financial_year: metaFinancialYear,
+        company_identifier: companyIdentifier,
+        company_name: companyName,
+        generated_from_db: true,
+      }),
     });
   } catch (error) {
     console.error('Design gap report error:', error);

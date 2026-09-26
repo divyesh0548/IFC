@@ -308,8 +308,12 @@ def resolve_settings(
     if require_openrouter_key and not openrouter_api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not set (check AI-Summary-API-Backend/.env)")
 
+    model = (os.getenv("DESIGN_GAP_MODEL") or "").strip() or str(
+        raw.get("model") or "openai/gpt-4.1-mini"
+    )
+
     return Settings(
-        model=str(raw.get("model") or "openai/gpt-4.1-mini"),
+        model=model,
         temperature=float(raw.get("temperature", 0)),
         max_tokens=int(raw.get("max_tokens", 2500)),
         max_field_chars=int(raw.get("max_field_chars", 1200)),

@@ -10,6 +10,7 @@ import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Alert from '@mui/material/Alert'
 import Checkbox from '@mui/material/Checkbox'
+import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -24,6 +25,12 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { getFieldValue } from './dashboardClassificationUtils'
 import { toast } from 'react-hot-toast'
+import {
+  businessProcessesForUnits,
+  financialYearsForScope,
+  keepAllowed,
+  normalizeScopeRows,
+} from '../../utils/controlScopeFilters'
 
 function formatServerErrorToast(errorCode) {
   const normalizedErrorCode = String(errorCode || '').trim() || 'UNKNOWN_ERROR'
@@ -108,11 +115,22 @@ function RiskAnalysis() {
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
   const [unitOptions, setUnitOptions] = useState([])
-  const [businessProcessOptions, setBusinessProcessOptions] = useState([])
-  const [financialYearOptions, setFinancialYearOptions] = useState([])
+  const [scopeRows, setScopeRows] = useState([])
   const [filterUnits, setFilterUnits] = useState([])
   const [filterBusinessProcesses, setFilterBusinessProcesses] = useState([])
   const [filterFinancialYears, setFilterFinancialYears] = useState([])
+  const [filterGenerationStatus, setFilterGenerationStatus] = useState('')
+  const [listTick, setListTick] = useState(0)
+  const [regenConfirmOpen, setRegenConfirmOpen] = useState(false)
+  const [pendingGenerate, setPendingGenerate] = useState(null)
+  const businessProcessOptions = useMemo(
+    () => businessProcessesForUnits(scopeRows, filterUnits),
+    [scopeRows, filterUnits]
+  )
+  const financialYearOptions = useMemo(
+    () => financialYearsForScope(scopeRows, filterUnits, filterBusinessProcesses),
+    [scopeRows, filterUnits, filterBusinessProcesses]
+  )
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [totalCount, setTotalCount] = useState(0)
@@ -125,6 +143,7 @@ function RiskAnalysis() {
   const [batchGenerating, setBatchGenerating] = useState(false)
   const [analysisData, setAnalysisData] = useState(null)
   const lastSelectedIndexRef = useRef(null)
+  const rowMetaRef = useRef(new Map())
   useSyncGlobalLoading(loading || batchGenerating || analysisGenerating)
 
   const pageControlNumbers = useMemo(
@@ -151,6 +170,7 @@ function RiskAnalysis() {
         filterUnits.forEach((unitId) => params.append('unit_ids', unitId))
         filterBusinessProcesses.forEach((businessProcess) => params.append('business_processes', businessProcess))
         filterFinancialYears.forEach((financialYear) => params.append('financial_years', financialYear))
+        if (filterGenerationStatus) params.set('generation_status', filterGenerationStatus)
 
         const response = await fetch(apiUrl(`/api/company-co/risk-analysis/controls?${params.toString()}`), {
           credentials: 'include',
@@ -165,15 +185,13 @@ function RiskAnalysis() {
           setRows(Array.isArray(data.data) ? data.data : [])
           setTotalCount(Number(data.count || 0))
           setUnitOptions(Array.isArray(data.filters?.units) ? data.filters.units : [])
-          setBusinessProcessOptions(Array.isArray(data.filters?.business_processes) ? data.filters.business_processes : [])
-          setFinancialYearOptions(Array.isArray(data.filters?.financial_years) ? data.filters.financial_years : [])
+          setScopeRows(normalizeScopeRows(data.filters?.scope_rows))
         }
       } catch (error) {
         console.error('Error fetching risk analysis data:', error)
         if (!cancelled) {
           setUnitOptions([])
-          setBusinessProcessOptions([])
-          setFinancialYearOptions([])
+          setScopeRows([])
           setRows([])
           setTotalCount(0)
           setErrorMessage(error.message || 'Failed to load risk analysis data')
@@ -190,7 +208,12 @@ function RiskAnalysis() {
     return () => {
       cancelled = true
     }
-  }, [filterBusinessProcesses, filterFinancialYears, filterUnits, page, rowsPerPage])
+  }, [filterBusinessProcesses, filterFinancialYears, filterGenerationStatus, filterUnits, page, rowsPerPage, listTick])
+
+  rows.forEach((row) => {
+    const controlNumber = String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim()
+    if (controlNumber) rowMetaRef.current.set(controlNumber, row)
+  })
 
   const selectedControlsOnPage = useMemo(() => (
     rows.filter((row) => selectedControlNumbers.has(String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim()))
@@ -319,6 +342,7 @@ function RiskAnalysis() {
         analysis: data.data?.analysis || null,
       }))
       toast.success('Risk analysis generated successfully.')
+      setListTick((value) => value + 1)
     } catch (error) {
       console.error('Error generating risk analysis:', error)
       toast.error(formatServerErrorToast(error?.serverCode))
@@ -327,52 +351,65 @@ function RiskAnalysis() {
     }
   }
 
-  const handleGenerateSelectedAnalyses = async () => {
-    const controlNumbers = [...selectedControlNumbers]
-    if (controlNumbers.length === 0) {
-      toast('Select at least one RACM for risk analysis.')
-      return
-    }
-
+  const runGenerateSelected = async ({ formIds, regenerateExisting }) => {
     setBatchGenerating(true)
-    let generatedCount = 0
-    let failedCount = 0
-
+    setRegenConfirmOpen(false)
+    setPendingGenerate(null)
     try {
-      for (const controlNumber of controlNumbers) {
-        try {
-          const response = await fetch(apiUrl(`/api/company-co/risk-analysis/control/${encodeURIComponent(controlNumber)}/generate`), {
-            method: 'POST',
-            credentials: 'include',
-          })
-          const data = await response.json()
-
-          if (!response.ok || !data?.success) {
-            failedCount += 1
-            if (response.status === 409 || String(data?.code || '').trim() === 'AI_MODEL_BUSY') {
-              toast('LLM Server is busy, Try again after some moments')
-              break
-            }
-          } else {
-            generatedCount += 1
-          }
-        } catch (error) {
-          console.error('Error generating selected risk analysis:', error)
-          failedCount += 1
-        }
+      const response = await fetch(apiUrl('/api/company-co/risk-analysis/generate'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          form_ids: formIds,
+          regenerate_existing: regenerateExisting,
+        }),
+      })
+      const data = await response.json()
+      if (response.status === 409) {
+        toast('LLM Server is busy, Try again after some moments')
+        return
       }
-
-      if (generatedCount > 0) {
-        toast.success(`Risk analysis generated for ${generatedCount} RACM${generatedCount === 1 ? '' : 's'}.`)
-        setSelectedControlNumbers(new Set())
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Failed to generate risk analysis')
       }
-
-      if (failedCount > 0 && generatedCount === 0) {
-        toast.error('Risk analysis generation failed for the selected RACMs.')
-      }
+      const generated = Number(data.data?.generated || 0)
+      const skipped = Number(data.data?.skipped || 0)
+      toast.success(`Risk analysis generated for ${generated} control${generated === 1 ? '' : 's'}${skipped ? `. Skipped ${skipped} existing.` : '.'}`)
+      setSelectedControlNumbers(new Set())
+      setListTick((value) => value + 1)
+    } catch (error) {
+      toast.error(error.message || 'Failed to generate risk analysis')
     } finally {
       setBatchGenerating(false)
     }
+  }
+
+  const handleGenerateSelectedAnalyses = async () => {
+    const selectedRows = [...selectedControlNumbers]
+      .map((controlNumber) => rowMetaRef.current.get(controlNumber))
+      .filter(Boolean)
+    if (selectedRows.length === 0) {
+      toast('Select at least one control for risk analysis.')
+      return
+    }
+    const units = [...new Set(selectedRows.map((row) => String(row.unit_id || '').trim()).filter(Boolean))]
+    if (units.length > 1) {
+      toast.error('Selected controls must belong to one unit')
+      return
+    }
+    const formIds = selectedRows.map((row) => String(row.form_id || '').trim()).filter(Boolean)
+    const existingCount = selectedRows.filter((row) => row.has_risk_analysis).length
+    if (existingCount > 0) {
+      setPendingGenerate({
+        formIds,
+        existingCount,
+        pendingCount: selectedRows.length - existingCount,
+      })
+      setRegenConfirmOpen(true)
+      return
+    }
+    await runGenerateSelected({ formIds, regenerateExisting: false })
   }
 
   const handleCloseDialog = () => {
@@ -536,7 +573,18 @@ function RiskAnalysis() {
               label="Unit"
               displayEmpty
               notched
-              onChange={resetPageForFilterChange(setFilterUnits)}
+              onChange={(event) => {
+                const nextUnits = typeof event.target.value === 'string'
+                  ? event.target.value.split(',').filter(Boolean)
+                  : event.target.value
+                const nextBps = keepAllowed(filterBusinessProcesses, businessProcessesForUnits(scopeRows, nextUnits))
+                setFilterUnits(nextUnits)
+                setFilterBusinessProcesses(nextBps)
+                setFilterFinancialYears(keepAllowed(filterFinancialYears, financialYearsForScope(scopeRows, nextUnits, nextBps)))
+                setPage(0)
+                setSelectedControlNumbers(new Set())
+                lastSelectedIndexRef.current = null
+              }}
               renderValue={(selected) => renderFilterValue(
                 getSelectedFilterLabel(
                   selected,
@@ -554,7 +602,7 @@ function RiskAnalysis() {
             </Select>
           </FormControl>
 
-          <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+          <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX} disabled={filterUnits.length === 0}>
             <InputLabel id="risk-analysis-business-process-label" shrink>Business Process</InputLabel>
             <Select
               labelId="risk-analysis-business-process-label"
@@ -563,7 +611,17 @@ function RiskAnalysis() {
               label="Business Process"
               displayEmpty
               notched
-              onChange={resetPageForFilterChange(setFilterBusinessProcesses)}
+              disabled={filterUnits.length === 0}
+              onChange={(event) => {
+                const nextBps = typeof event.target.value === 'string'
+                  ? event.target.value.split(',').filter(Boolean)
+                  : event.target.value
+                setFilterBusinessProcesses(nextBps)
+                setFilterFinancialYears(keepAllowed(filterFinancialYears, financialYearsForScope(scopeRows, filterUnits, nextBps)))
+                setPage(0)
+                setSelectedControlNumbers(new Set())
+                lastSelectedIndexRef.current = null
+              }}
               renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected, businessProcessOptions))}
             >
               {businessProcessOptions.map((option) => (
@@ -575,7 +633,7 @@ function RiskAnalysis() {
             </Select>
           </FormControl>
 
-          <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+          <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX} disabled={filterBusinessProcesses.length === 0}>
             <InputLabel id="risk-analysis-financial-year-label" shrink>Financial Year</InputLabel>
             <Select
               labelId="risk-analysis-financial-year-label"
@@ -593,6 +651,27 @@ function RiskAnalysis() {
                   <ListItemText primary={option} />
                 </MenuItem>
               ))}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
+            <InputLabel id="risk-analysis-generation-label" shrink>Generation</InputLabel>
+            <Select
+              labelId="risk-analysis-generation-label"
+              value={filterGenerationStatus}
+              label="Generation"
+              displayEmpty
+              notched
+              onChange={(event) => {
+                setFilterGenerationStatus(event.target.value)
+                setPage(0)
+                setSelectedControlNumbers(new Set())
+                lastSelectedIndexRef.current = null
+              }}
+            >
+              <MenuItem value="">All</MenuItem>
+              <MenuItem value="generated">Generated</MenuItem>
+              <MenuItem value="not_generated">Not Generated</MenuItem>
             </Select>
           </FormControl>
 
@@ -765,6 +844,13 @@ function RiskAnalysis() {
                         {String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim() || 'Unassigned'}
                       </Typography>
                     </Tooltip>
+                    <Chip
+                      size="small"
+                      label={row.has_risk_analysis ? 'Generated' : 'Not generated'}
+                      color={row.has_risk_analysis ? 'success' : 'default'}
+                      variant={row.has_risk_analysis ? 'filled' : 'outlined'}
+                      sx={{ mt: 0.75 }}
+                    />
                   </Box>
                   <Box sx={{ px: 2, py: 1.75, borderRight: `1px solid ${theme.palette.divider}` }}>
                     <Tooltip title={String(getFieldValue(row, 'unit_name', 'unitName') || getFieldValue(row, 'unit_id', 'unitId') || '').trim() || 'Unassigned'} arrow>
@@ -923,6 +1009,38 @@ function RiskAnalysis() {
             disabled={analysisLoading || analysisGenerating || !selectedControl}
           >
             {analysisGenerating ? 'Generating…' : 'Generate Risk Analysis'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={regenConfirmOpen} onClose={() => !batchGenerating && setRegenConfirmOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Regenerate risk analysis?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            Some selected controls already have a risk analysis. Regenerating them will call the model again.
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1.5 }}>
+            Already have summary: <strong>{Number(pendingGenerate?.existingCount || 0)}</strong>
+          </Typography>
+          <Typography variant="body2">
+            Pending to generate: <strong>{Number(pendingGenerate?.pendingCount || 0)}</strong>
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRegenConfirmOpen(false)} disabled={batchGenerating}>Cancel</Button>
+          <Button
+            disabled={batchGenerating || Number(pendingGenerate?.pendingCount || 0) === 0}
+            onClick={() => runGenerateSelected({ formIds: pendingGenerate?.formIds || [], regenerateExisting: false })}
+          >
+            Skip existing
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={batchGenerating}
+            onClick={() => runGenerateSelected({ formIds: pendingGenerate?.formIds || [], regenerateExisting: true })}
+          >
+            Regenerate all
           </Button>
         </DialogActions>
       </Dialog>

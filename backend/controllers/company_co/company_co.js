@@ -463,6 +463,14 @@ function filterKeyManualControls(rows) {
   ));
 }
 
+const KEY_MANUAL_CONTROL_SQL = `
+  LOWER(TRIM(COALESCE(cf.control_type_ma, ''))) = 'manual'
+  AND (
+    LOWER(TRIM(COALESCE(cf.key_control, ''))) = 'yes'
+    OR regexp_replace(LOWER(TRIM(COALESCE(cf.key_control, ''))), '[^a-z0-9]+', '', 'g') IN ('keycontrol', 'keycontrols')
+  )
+`;
+
 function isHighRiskHeatValue(value) {
   return String(value || '').trim().toLowerCase().includes('high');
 }
@@ -753,6 +761,7 @@ async function listRiskAnalysisControls(req, res) {
     const requestedUnitIds = normalizeMultiValue(req.query?.unit_ids);
     const requestedBusinessProcesses = normalizeMultiValue(req.query?.business_processes);
     const requestedFinancialYears = normalizeMultiValue(req.query?.financial_years);
+    const generationStatus = String(req.query?.generation_status || '').trim().toLowerCase();
 
     const allowedUnitIds = new Set(mappedUnitIds.map((unitId) => unitId.toLowerCase()));
     const filteredUnitIds = requestedUnitIds.filter((unitId) => allowedUnitIds.has(unitId.toLowerCase()));
@@ -782,13 +791,27 @@ async function listRiskAnalysisControls(req, res) {
       params.push(requestedFinancialYears);
       paramIndex += 1;
     }
+    if (generationStatus === 'generated') {
+      conditions.push('ra.form_id IS NOT NULL');
+    } else if (generationStatus === 'not_generated') {
+      conditions.push('ra.form_id IS NULL');
+    }
 
     const whereClause = conditions.join('\n        AND ');
+    const fromClause = `
+      FROM control_forms cf
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = cf.company_identifier
+       AND cum.unit_id = cf.unit_id
+      LEFT JOIN risk_analysis ra
+        ON ra.company_identifier = cf.company_identifier
+       AND ra.form_id = cf.form_id
+    `;
 
     const countResult = await pool.query(
       `
         SELECT COUNT(*)::int AS total_count
-        FROM control_forms cf
+        ${fromClause}
         WHERE ${whereClause}
       `,
       params
@@ -806,11 +829,10 @@ async function listRiskAnalysisControls(req, res) {
           cf.business_process,
           cf.sub_process,
           cf.financial_year,
-          cf.risk_description
-        FROM control_forms cf
-        LEFT JOIN company_unit_master cum
-          ON cum.company_identifier = cf.company_identifier
-         AND cum.unit_id = cf.unit_id
+          cf.risk_description,
+          CASE WHEN ra.form_id IS NULL THEN false ELSE true END AS has_risk_analysis,
+          ra.coverage_status
+        ${fromClause}
         WHERE ${whereClause}
         ORDER BY
           ${sqlOrderByControlNumberAsc('cf.control_number')},
@@ -860,6 +882,11 @@ async function listRiskAnalysisControls(req, res) {
         units: mappedUnits,
         business_processes: businessProcesses,
         financial_years: financialYears,
+        scope_rows: filterRowsResult.rows.map((row) => ({
+          unit_id: String(row.unit_id || '').trim(),
+          business_process: String(row.business_process || '').trim(),
+          financial_year: String(row.financial_year || '').trim(),
+        })).filter((row) => row.unit_id),
       },
     });
   } catch (error) {
@@ -949,6 +976,95 @@ async function getRiskAnalysisByControl(req, res) {
   }
 }
 
+async function executeRiskAnalysisForControl(companyIdentifier, controlRow) {
+  const businessProcess = String(controlRow.business_process || '').trim();
+  if (!businessProcess) {
+    const error = new Error('Business process is required for risk analysis');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const { master } = loadRiskAnalysisMasterByBusinessProcess(businessProcess);
+  const candidateSubProcesses = (Array.isArray(master?.sub_processes) ? master.sub_processes : [])
+    .map((entry) => ({
+      subProcess: String(entry?.sub_process || '').trim(),
+      risks: Array.isArray(entry?.risks) ? entry.risks.map((risk) => String(risk || '').trim()).filter(Boolean) : [],
+    }))
+    .filter((entry) => entry.subProcess && entry.risks.length > 0);
+
+  if (candidateSubProcesses.length === 0) {
+    const error = new Error('No candidate sub-processes found in the risk analysis master file');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const llmResult = await requestRiskAnalysis({
+    companyIdentifier,
+    businessProcess,
+    control: shapeControlForRiskAnalysis({
+      control_number: controlRow.control_number,
+      business_process: controlRow.business_process,
+      sub_process: controlRow.sub_process,
+      risk_description: controlRow.risk_description,
+      control_objective: controlRow.control_objective,
+      standard_control_description: controlRow.standard_control_description,
+    }),
+    candidateSubProcesses,
+  });
+
+  const upsertResult = await pool.query(
+    `
+      INSERT INTO risk_analysis (
+        company_identifier,
+        form_id,
+        business_process,
+        sub_process,
+        model_name,
+        matched_sub_process,
+        match_confidence,
+        coverage_status,
+        response_json
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+      ON CONFLICT (company_identifier, form_id)
+      DO UPDATE SET
+        business_process = EXCLUDED.business_process,
+        sub_process = EXCLUDED.sub_process,
+        model_name = EXCLUDED.model_name,
+        matched_sub_process = EXCLUDED.matched_sub_process,
+        match_confidence = EXCLUDED.match_confidence,
+        coverage_status = EXCLUDED.coverage_status,
+        response_json = EXCLUDED.response_json,
+        updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)
+      RETURNING
+        id,
+        company_identifier,
+        form_id,
+        business_process,
+        sub_process,
+        model_name,
+        matched_sub_process,
+        match_confidence,
+        coverage_status,
+        response_json,
+        ${createdAtUpdatedAtUtcSql()}
+    `,
+    [
+      companyIdentifier,
+      controlRow.form_id ? String(controlRow.form_id).trim() : null,
+      businessProcess,
+      String(controlRow.sub_process || '').trim() || null,
+      OLLAMA_MODEL,
+      llmResult.matchedSubProcess,
+      llmResult.matchConfidence,
+      llmResult.coverageStatus,
+      JSON.stringify(llmResult),
+    ]
+  );
+
+  return serializeRiskAnalysisRow(upsertResult.rows[0] || null);
+}
+
 async function generateRiskAnalysisByControl(req, res) {
   const lockClient = await pool.connect();
 
@@ -986,102 +1102,128 @@ async function generateRiskAnalysisByControl(req, res) {
       });
     }
 
-    const businessProcess = String(controlRow.business_process || '').trim();
-    if (!businessProcess) {
-      return res.status(400).json({
-        success: false,
-        message: 'Business process is required for risk analysis',
-      });
-    }
-
-    const { master } = loadRiskAnalysisMasterByBusinessProcess(businessProcess);
-    const candidateSubProcesses = (Array.isArray(master?.sub_processes) ? master.sub_processes : [])
-      .map((entry) => ({
-        subProcess: String(entry?.sub_process || '').trim(),
-        risks: Array.isArray(entry?.risks) ? entry.risks.map((risk) => String(risk || '').trim()).filter(Boolean) : [],
-      }))
-      .filter((entry) => entry.subProcess && entry.risks.length > 0);
-
-    if (candidateSubProcesses.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No candidate sub-processes found in the risk analysis master file',
-      });
-    }
-
-    const llmResult = await requestRiskAnalysis({
-      companyIdentifier,
-      businessProcess,
-      control: shapeControlForRiskAnalysis({
-        control_number: controlRow.control_number,
-        business_process: controlRow.business_process,
-        sub_process: controlRow.sub_process,
-        risk_description: controlRow.risk_description,
-        control_objective: controlRow.control_objective,
-        standard_control_description: controlRow.standard_control_description,
-      }),
-      candidateSubProcesses,
-    });
-
-    const upsertResult = await pool.query(
-      `
-        INSERT INTO risk_analysis (
-          company_identifier,
-          form_id,
-          business_process,
-          sub_process,
-          model_name,
-          matched_sub_process,
-          match_confidence,
-          coverage_status,
-          response_json
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
-        ON CONFLICT (company_identifier, form_id)
-        DO UPDATE SET
-          business_process = EXCLUDED.business_process,
-          sub_process = EXCLUDED.sub_process,
-          model_name = EXCLUDED.model_name,
-          matched_sub_process = EXCLUDED.matched_sub_process,
-          match_confidence = EXCLUDED.match_confidence,
-          coverage_status = EXCLUDED.coverage_status,
-          response_json = EXCLUDED.response_json,
-          updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)
-        RETURNING
-          id,
-          company_identifier,
-          form_id,
-          business_process,
-          sub_process,
-          model_name,
-          matched_sub_process,
-          match_confidence,
-          coverage_status,
-          response_json,
-          ${createdAtUpdatedAtUtcSql()}
-      `,
-      [
-        companyIdentifier,
-        controlRow.form_id ? String(controlRow.form_id).trim() : null,
-        businessProcess,
-        String(controlRow.sub_process || '').trim() || null,
-        OLLAMA_MODEL,
-        llmResult.matchedSubProcess,
-        llmResult.matchConfidence,
-        llmResult.coverageStatus,
-        JSON.stringify(llmResult),
-      ]
-    );
+    const analysis = await executeRiskAnalysisForControl(companyIdentifier, controlRow);
 
     return res.status(200).json({
       success: true,
       message: 'Risk analysis generated successfully',
       data: {
-        analysis: serializeRiskAnalysisRow(upsertResult.rows[0] || null),
+        analysis,
       },
     });
   } catch (error) {
     console.error('Company coordinator generate risk analysis error:', error);
+    const errorCode = String(error?.code || 'INTERNAL_SERVER_ERROR').trim() || 'INTERNAL_SERVER_ERROR';
+    return res.status(Number(error?.statusCode || 500)).json({
+      success: false,
+      message: error?.message || 'Failed to generate risk analysis',
+      code: errorCode,
+    });
+  } finally {
+    try {
+      await releaseGlobalAiModelLock(lockClient);
+    } catch (unlockError) {
+      console.error('Failed to release AI model lock:', unlockError);
+    }
+    lockClient.release();
+  }
+}
+
+async function generateRiskAnalysesSelected(req, res) {
+  const lockClient = await pool.connect();
+
+  try {
+    const locked = await tryAcquireGlobalAiModelLock(lockClient);
+    if (!locked) {
+      return res.status(409).json({
+        success: false,
+        message: 'Model is busy, try after some moments',
+      });
+    }
+
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const formIds = normalizeRequestedUnitIds({ unit_ids: req.body?.form_ids });
+    const regenerateExisting = Boolean(req.body?.regenerate_existing);
+
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company coordinator context is required',
+      });
+    }
+    if (formIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'form_ids is required',
+      });
+    }
+
+    const formsResult = await pool.query(
+      `
+        SELECT
+          cf.form_id,
+          cf.control_number,
+          cf.business_process,
+          cf.sub_process,
+          cf.risk_description,
+          cf.control_objective,
+          cf.standard_control_description,
+          cf.unit_id,
+          CASE WHEN ra.form_id IS NULL THEN false ELSE true END AS has_risk_analysis
+        FROM control_forms cf
+        LEFT JOIN risk_analysis ra
+          ON ra.company_identifier = cf.company_identifier
+         AND ra.form_id = cf.form_id
+        WHERE cf.company_identifier = $1
+          AND cf.form_id = ANY($2::text[])
+          AND EXISTS (
+            SELECT 1
+            FROM coordinator_unit_assignments cua
+            WHERE cua.company_identifier = cf.company_identifier
+              AND cua.unit_id = cf.unit_id
+              AND LOWER(TRIM(cua.coordinator_email_id)) = $3
+          )
+      `,
+      [companyIdentifier, formIds, coordinatorEmail]
+    );
+
+    if (formsResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No matching controls found',
+      });
+    }
+
+    const unitIds = [...new Set(formsResult.rows.map((row) => String(row.unit_id || '').trim()).filter(Boolean))];
+    if (unitIds.length !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Select controls from a single unit only.',
+      });
+    }
+
+    let generated = 0;
+    let skipped = 0;
+    for (const row of formsResult.rows) {
+      if (!regenerateExisting && row.has_risk_analysis) {
+        skipped += 1;
+        continue;
+      }
+      await executeRiskAnalysisForControl(companyIdentifier, row);
+      generated += 1;
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Risk analysis generated successfully',
+      data: {
+        generated,
+        skipped,
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator generate selected risk analysis error:', error);
     const errorCode = String(error?.code || 'INTERNAL_SERVER_ERROR').trim() || 'INTERNAL_SERVER_ERROR';
     return res.status(Number(error?.statusCode || 500)).json({
       success: false,
@@ -2209,9 +2351,224 @@ async function getDashboardRacms(req, res) {
   }
 }
 
+async function getOrCreateCurrentKeyManualRun(companyIdentifier) {
+  const existing = await prisma.keyManualAiInsightsRunTable.findFirst({
+    where: { companyIdentifier },
+    orderBy: { id: 'asc' },
+  });
+  if (existing) return existing;
+  return prisma.keyManualAiInsightsRunTable.create({
+    data: {
+      companyIdentifier,
+      modelName: OLLAMA_MODEL,
+      promptVersion: KEY_MANUAL_AI_PROMPT_VERSION,
+      status: 'completed',
+    },
+  });
+}
+
+async function upsertKeyManualSummary({
+  companyIdentifier,
+  runId,
+  formId,
+  controlNumber,
+  businessProcess,
+  text,
+}) {
+  const existing = formId
+    ? await prisma.keyManualAiInsightsRowData.findFirst({
+      where: { companyIdentifier, formId },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    })
+    : null;
+
+  if (existing) {
+    return prisma.keyManualAiInsightsRowData.update({
+      where: { id: existing.id },
+      data: {
+        controlNumber,
+        businessProcess,
+        rationalisationOpportunity: text,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  try {
+    return await prisma.keyManualAiInsightsRowData.create({
+      data: {
+        runId,
+        companyIdentifier,
+        formId,
+        controlNumber,
+        businessProcess,
+        rationalisationOpportunity: text,
+        updatedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    if (error?.code !== 'P2002') throw error;
+    const clash = await prisma.keyManualAiInsightsRowData.findFirst({
+      where: { companyIdentifier, runId, controlNumber },
+    });
+    if (!clash) throw error;
+    return prisma.keyManualAiInsightsRowData.update({
+      where: { id: clash.id },
+      data: {
+        formId,
+        businessProcess,
+        rationalisationOpportunity: text,
+        updatedAt: new Date(),
+      },
+    });
+  }
+}
+
+async function listKeyManualControls(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company coordinator context is required',
+      });
+    }
+
+    const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+    const mappedUnitIds = mappedUnits.map((row) => String(row?.unit_id || '').trim()).filter(Boolean);
+    if (mappedUnitIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        count: 0,
+        filters: { units: [], business_processes: [], financial_years: [], scope_rows: [] },
+      });
+    }
+
+    const page = Math.max(Number.parseInt(req.query?.page, 10) || 1, 1);
+    const pageSize = Math.min(Math.max(Number.parseInt(req.query?.page_size, 10) || 10, 1), 100);
+    const offset = (page - 1) * pageSize;
+    const requestedUnitIds = normalizeRequestedUnitIds(req.query);
+    const requestedBusinessProcesses = normalizeRequestedUnitIds({ unit_ids: req.query?.business_processes });
+    const requestedFinancialYears = normalizeRequestedUnitIds({ unit_ids: req.query?.financial_years });
+    const generationStatus = String(req.query?.generation_status || '').trim().toLowerCase();
+    const allowedUnitIds = new Set(mappedUnitIds.map((unitId) => unitId.toLowerCase()));
+    const filteredUnitIds = requestedUnitIds.filter((unitId) => allowedUnitIds.has(unitId.toLowerCase()));
+
+    const params = [companyIdentifier, mappedUnitIds];
+    const conditions = [
+      'cf.company_identifier = $1',
+      "NULLIF(TRIM(cf.unit_id), '') IS NOT NULL",
+      'cf.unit_id = ANY($2::text[])',
+      KEY_MANUAL_CONTROL_SQL,
+    ];
+    let paramIndex = params.length + 1;
+    if (filteredUnitIds.length > 0) {
+      conditions.push(`cf.unit_id = ANY($${paramIndex}::text[])`);
+      params.push(filteredUnitIds);
+      paramIndex += 1;
+    }
+    if (requestedBusinessProcesses.length > 0) {
+      conditions.push(`LOWER(TRIM(COALESCE(cf.business_process, ''))) = ANY($${paramIndex}::text[])`);
+      params.push(requestedBusinessProcesses.map((value) => value.toLowerCase()));
+      paramIndex += 1;
+    }
+    if (requestedFinancialYears.length > 0) {
+      conditions.push(`TRIM(COALESCE(cf.financial_year, '')) = ANY($${paramIndex}::text[])`);
+      params.push(requestedFinancialYears);
+      paramIndex += 1;
+    }
+    if (generationStatus === 'generated') {
+      conditions.push('kmi.id IS NOT NULL');
+    } else if (generationStatus === 'not_generated') {
+      conditions.push('kmi.id IS NULL');
+    }
+
+    const whereClause = conditions.join('\n        AND ');
+    const fromClause = `
+      FROM control_forms cf
+      LEFT JOIN company_unit_master cum
+        ON cum.company_identifier = cf.company_identifier
+       AND cum.unit_id = cf.unit_id
+      LEFT JOIN LATERAL (
+        SELECT rd.id, rd.rationalisation_opportunity, rd.updated_at
+        FROM key_manual_ai_insights_row_data rd
+        WHERE rd.company_identifier = cf.company_identifier
+          AND rd.form_id = cf.form_id
+        ORDER BY rd.updated_at DESC NULLS LAST, rd.id DESC
+        LIMIT 1
+      ) kmi ON true
+    `;
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total_count ${fromClause} WHERE ${whereClause}`,
+      params
+    );
+    const dataParams = [...params, pageSize, offset];
+    const rowsResult = await pool.query(
+      `
+        SELECT
+          cf.form_id,
+          cf.unit_id,
+          cum.unit_name,
+          cf.control_number,
+          cf.business_process,
+          cf.sub_process,
+          cf.financial_year,
+          cf.risk_description,
+          CASE WHEN kmi.id IS NULL THEN false ELSE true END AS has_summary,
+          kmi.rationalisation_opportunity
+        ${fromClause}
+        WHERE ${whereClause}
+        ORDER BY
+          ${sqlOrderByControlNumberAsc('cf.control_number')},
+          LOWER(TRIM(COALESCE(cum.unit_name, ''))) ASC
+        LIMIT $${dataParams.length - 1}
+        OFFSET $${dataParams.length}
+      `,
+      dataParams
+    );
+
+    const filterRowsResult = await pool.query(
+      `
+        SELECT DISTINCT
+          cf.unit_id,
+          NULLIF(TRIM(cf.business_process), '') AS business_process,
+          NULLIF(TRIM(cf.financial_year), '') AS financial_year
+        FROM control_forms cf
+        WHERE cf.company_identifier = $1
+          AND NULLIF(TRIM(cf.unit_id), '') IS NOT NULL
+          AND cf.unit_id = ANY($2::text[])
+          AND ${KEY_MANUAL_CONTROL_SQL}
+      `,
+      [companyIdentifier, mappedUnitIds]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: rowsResult.rows,
+      count: Number(countResult.rows[0]?.total_count || 0),
+      filters: {
+        units: mappedUnits,
+        scope_rows: filterRowsResult.rows.map((row) => ({
+          unit_id: String(row.unit_id || '').trim(),
+          business_process: String(row.business_process || '').trim(),
+          financial_year: String(row.financial_year || '').trim(),
+        })).filter((row) => row.unit_id),
+      },
+    });
+  } catch (error) {
+    console.error('List key manual controls error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch key manual controls',
+    });
+  }
+}
+
 async function generateKeyManualAiInsightsRun(req, res) {
   const lockClient = await pool.connect();
-  let createdRunId = null;
 
   try {
     const locked = await tryAcquireGlobalAiModelLock(lockClient);
@@ -2224,127 +2581,107 @@ async function generateKeyManualAiInsightsRun(req, res) {
 
     const companyIdentifier = String(req.user?.company_identifier || '').trim() || null;
     const coordinatorEmail = normalizeEmail(req.user?.email_id);
-    if (!companyIdentifier) {
+    const formIds = normalizeRequestedUnitIds({ unit_ids: req.body?.form_ids });
+    const regenerateExisting = Boolean(req.body?.regenerate_existing);
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company coordinator context is required',
+      });
+    }
+    if (formIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Company identifier is required',
+        message: 'form_ids is required',
       });
     }
 
-    const requestedUnitIds = normalizeRequestedUnitIds(req.query);
-    const { rows: dashboardRows, units: mappedUnits } = await getCoordinatorAssignedUnitScopedRacmRows({
-      companyIdentifier,
-      coordinatorEmail,
-      requestedUnitIds,
-    });
+    const formsResult = await pool.query(
+      `
+        SELECT cf.*
+        FROM control_forms cf
+        WHERE cf.company_identifier = $1
+          AND cf.form_id = ANY($2::text[])
+          AND ${KEY_MANUAL_CONTROL_SQL}
+          AND EXISTS (
+            SELECT 1
+            FROM coordinator_unit_assignments cua
+            WHERE cua.company_identifier = cf.company_identifier
+              AND cua.unit_id = cf.unit_id
+              AND LOWER(TRIM(cua.coordinator_email_id)) = $3
+          )
+      `,
+      [companyIdentifier, formIds, coordinatorEmail]
+    );
 
-    if (mappedUnits.length === 0) {
-      return res.status(400).json({
+    if (formsResult.rows.length === 0) {
+      return res.status(404).json({
         success: false,
-        message: 'No units are mapped to your coordinator account.',
+        message: 'No matching key manual controls found',
       });
     }
 
-    const highRiskKeyManualControls = filterHighRiskKeyManualControls(dashboardRows);
-    const excludedEntityLevelCount = countEntityLevelControls(highRiskKeyManualControls);
-    const filteredControls = excludeEntityLevelControls(highRiskKeyManualControls);
-
-    if (filteredControls.length === 0) {
+    const unitIds = [...new Set(formsResult.rows.map((row) => String(row.unit_id || '').trim()).filter(Boolean))];
+    if (unitIds.length !== 1) {
       return res.status(400).json({
         success: false,
-        message: 'No eligible High Risk + Key + Manual Controls found in your assigned units after excluding Entity Level Controls',
+        message: 'Select controls from a single unit only.',
       });
     }
 
-    const run = await prisma.keyManualAiInsightsRunTable.create({
-      data: {
-        companyIdentifier,
-        modelName: OLLAMA_MODEL,
-        promptVersion: KEY_MANUAL_AI_PROMPT_VERSION,
-        status: 'in_progress',
-      },
-      select: {
-        id: true,
-      },
-    });
+    const run = await getOrCreateCurrentKeyManualRun(companyIdentifier);
+    let generated = 0;
+    let skipped = 0;
 
-    createdRunId = run.id;
+    for (const row of formsResult.rows) {
+      const formId = String(row.form_id || '').trim();
+      const existing = formId
+        ? await prisma.keyManualAiInsightsRowData.findFirst({
+          where: { companyIdentifier, formId },
+          select: { id: true },
+        })
+        : null;
+      if (existing && !regenerateExisting) {
+        skipped += 1;
+        continue;
+      }
 
-    const rowDataToCreate = [];
-
-    for (const row of filteredControls) {
-      const businessProcess = String(row?.business_process || '').trim() || 'Unspecified Business Process';
-      const llmInputControl = shapeControlForAi(row);
+      const businessProcess = String(row.business_process || '').trim() || 'Unspecified Business Process';
       const llmResult = await requestControlSummary({
         companyIdentifier,
         businessProcess,
-        control: llmInputControl,
+        control: shapeControlForAi(row),
       });
-
-      if (String(llmResult.controlNumber || '').trim() !== String(row?.control_number || '').trim()) {
-        throw new Error(
-          `Ollama returned control ${llmResult.controlNumber} for input ${row?.control_number}`
-        );
+      if (String(llmResult.controlNumber || '').trim() !== String(row.control_number || '').trim()) {
+        throw new Error(`Ollama returned control ${llmResult.controlNumber} for input ${row.control_number}`);
       }
 
-      rowDataToCreate.push({
-        runId: createdRunId,
+      await upsertKeyManualSummary({
         companyIdentifier,
-        formId: row.form_id ? String(row.form_id).trim() : null,
-        controlNumber: String(llmResult.controlNumber || '').trim(),
-        businessProcess: businessProcess || null,
-        rationalisationOpportunity: String(llmResult.rationalisationOpportunity || '').trim(),
+        runId: run.id,
+        formId: formId || null,
+        controlNumber: String(llmResult.controlNumber || row.control_number || '').trim(),
+        businessProcess,
+        text: String(llmResult.rationalisationOpportunity || '').trim(),
       });
+      generated += 1;
     }
-
-    await prisma.$transaction(async (tx) => {
-      if (rowDataToCreate.length > 0) {
-        await tx.keyManualAiInsightsRowData.createMany({
-          data: rowDataToCreate,
-        });
-      }
-
-      await tx.keyManualAiInsightsRunTable.update({
-        where: { id: createdRunId },
-        data: { status: 'completed' },
-      });
-    });
 
     return res.status(200).json({
       success: true,
       message: 'AI summary generated successfully',
       data: {
-        run_id: String(createdRunId),
-        control_count: filteredControls.length,
-        excluded_entity_level_count: excludedEntityLevelCount,
-        stored_row_count: rowDataToCreate.length,
+        generated,
+        skipped,
         model_name: OLLAMA_MODEL,
       },
     });
   } catch (error) {
     console.error('Company coordinator generate key manual AI insights error:', error);
-
-    const errorMessage = String(error?.message || '').trim();
-    const clientMessage = errorMessage
-      ? errorMessage
-      : 'Failed to generate AI summary';
-    const errorCode = String(error?.code || 'INTERNAL_SERVER_ERROR').trim() || 'INTERNAL_SERVER_ERROR';
-
-    if (createdRunId != null) {
-      try {
-        await prisma.keyManualAiInsightsRunTable.update({
-          where: { id: createdRunId },
-          data: { status: 'failed' },
-        });
-      } catch (updateError) {
-        console.error('Failed to mark AI insights run as failed:', updateError);
-      }
-    }
-
     return res.status(500).json({
       success: false,
-      message: clientMessage,
-      code: errorCode,
+      message: String(error?.message || '').trim() || 'Failed to generate AI summary',
+      code: String(error?.code || 'INTERNAL_SERVER_ERROR').trim() || 'INTERNAL_SERVER_ERROR',
     });
   } finally {
     try {
@@ -5574,7 +5911,9 @@ module.exports = {
   getRiskAnalysisAvailability,
   getRiskAnalysisByControl,
   generateRiskAnalysisByControl,
+  generateRiskAnalysesSelected,
   getKeyManualAiInsightsAvailability,
+  listKeyManualControls,
   getKeyManualAiInsightsRun,
   generateKeyManualAiInsightsRun,
   deleteKeyManualAiInsightsRun,

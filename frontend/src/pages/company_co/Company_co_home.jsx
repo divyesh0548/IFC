@@ -115,7 +115,7 @@ function Company_co_home() {
     },
     {
       eyebrow: 'AI',
-      title: 'AI Insights',
+      title: 'Design Gap Analysis',
       description: 'Generate design-gap analysis for controls, track progress, and export scoped reports.',
       path: '/company-co/ai-insights',
       icon: <AutoAwesomeRoundedIcon sx={{ fontSize: 38 }} />,

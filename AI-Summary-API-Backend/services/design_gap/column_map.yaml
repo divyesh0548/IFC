@@ -16,6 +16,8 @@
 #   Use "$shared_non_key" for key_control when the check applies only to No (non-key)
 
 settings:
+  # Active model is DESIGN_GAP_MODEL in AI-Summary-API-Backend/.env.
+  # This value is used only when that variable is empty.
   model: "openai/gpt-4.1-mini"
   # Cost knobs — see COSTING.txt
   temperature: 0
@@ -47,7 +49,7 @@ allowed_values:
 
 checks:
   - id: risk_control_alignment
-    statement: "Risk–control alignment"
+    statement: "Risk-Control Alignment"
     prompt_file: "risk_control_alignment.json"
     columns:
       - risk_description
@@ -74,7 +76,7 @@ checks:
   #     - sub_process
 
   - id: assertion_allocation
-    statement: "Assertion allocation"
+    statement: "Financial Statement Assertions"
     prompt_file: "assertion_allocation.json"
     # assertions.* expands at runtime to every field in this control's assertions section
     # (1 combined column or many separate columns — whatever the RACM template has).
@@ -103,7 +105,7 @@ checks:
   #     - risk_description
 
   - id: control_objective_adequacy
-    statement: "Control objective adequacy"
+    statement: "Control Objective & Description Adequacy"
     prompt_file: "control_objective_adequacy.json"
     columns:
       - risk_description
@@ -115,32 +117,36 @@ checks:
       - control_objective
       - standard_control_description
 
-  # - id: preventive_detective_classification
-  #   statement: "Whether the control classification (Preventive/Detective) is appropriate"
-  #   columns:
-  #     - nature_of_control
-  #     - risk_description
-  #     - standard_control_description
-  #     - control_objective
-  #   required_classified:
-  #     nature_of_control: "$shared"
-  #   required_text:
-  #     - risk_description
-  #     - standard_control_description
+  - id: preventive_detective_classification
+    statement: "Preventive/Detective Classification"
+    prompt_file: "preventive_detective_classification.json"
+    columns:
+      - nature_of_control
+      - risk_description
+      - standard_control_description
+      - control_objective
+    required_classified:
+      nature_of_control: "$shared"
+    required_text:
+      - nature_of_control
+      - risk_description
+      - standard_control_description
 
-  # - id: nature_of_control_classification
-  #   statement: "Whether the nature of the control is appropriately classified"
-  #   # In this schema nature_of_control == Preventive/Detective (same field as above).
-  #   # Keep separate so statement.txt stays 1:1; merge in YAML later if redundant.
-  #   columns:
-  #     - nature_of_control
-  #     - risk_description
-  #     - standard_control_description
-  #   required_classified:
-  #     nature_of_control: "$shared"
-  #   required_text:
-  #     - risk_description
-  #     - standard_control_description
+  - id: nature_of_control_classification
+    statement: "Nature of Control Classification"
+    prompt_file: "nature_of_control_classification.json"
+    # Manual / Automated / Semi-Automated (IT-dependent manual), based on how the control is performed.
+    columns:
+      - control_type_ma
+      - risk_description
+      - standard_control_description
+      - control_objective
+    required_classified:
+      control_type_ma: "$shared"
+    required_text:
+      - control_type_ma
+      - risk_description
+      - standard_control_description
 
   # - id: manual_automated_and_automation
   #   statement: "Whether the control is Manual, Automated, or System-driven, and identify opportunities for automation"
@@ -156,7 +162,7 @@ checks:
   #     - standard_control_description
 
   - id: fraud_risk
-    statement: "Fraud risk"
+    statement: "Fraud Risk Assessment"
     prompt_file: "fraud_risk.json"
     columns:
       - whether_fraud_risks_exist
@@ -169,11 +175,9 @@ checks:
       - risk_description
 
   - id: key_control_classification
-    statement: "Key control classification"
+    statement: "Key Control Determination"
     prompt_file: "key_control_classification.json"
-    # Empty key_control → insufficient_data (text validation).
-    # key_control=Yes → check skipped (N/A), not insufficient.
-    # key_control=No → eligible for AI.
+    # Empty key_control → insufficient_data. Yes and No are both sent to AI.
     columns:
       - key_control
       - risk_description
@@ -181,7 +185,7 @@ checks:
       - control_objective
       - standard_control_description
     required_classified:
-      key_control: "$shared_non_key"
+      key_control: "$shared"
     required_text:
       - key_control
       - risk_description

@@ -33,9 +33,16 @@ import { getFieldValue } from './dashboardClassificationUtils'
 import { toast } from 'react-hot-toast'
 import {
   downloadDesignGapReportPdf,
+  formatInsufficientCheckLine,
   getDesignGapSummaryCounts,
   humanizeCheckLabel,
 } from '../../utils/designGapReportPdf'
+import {
+  businessProcessesForUnits,
+  financialYearsForScope,
+  keepAllowed,
+  normalizeScopeRows,
+} from '../../utils/controlScopeFilters'
 
 const TABLE_GRID_COLUMNS = '56px 140px 160px 180px 200px 120px 140px minmax(280px, 1fr)'
 const FILTER_CONTROL_HEIGHT = 40
@@ -79,6 +86,14 @@ function statusChip(status) {
   return <Chip size="small" icon={<InfoOutlinedIcon />} label="Insufficient data" color="warning" variant="outlined" />
 }
 
+const SHOW_DESIGN_GAP_USAGE = import.meta.env.DEV
+
+function formatTokenCount(value) {
+  if (value == null || value === '') return '—'
+  const count = Number(value)
+  return Number.isFinite(count) ? count.toLocaleString() : '—'
+}
+
 function isJobActive(job) {
   const status = String(job?.status || '').toLowerCase()
   return status === 'pending' || status === 'running'
@@ -89,12 +104,19 @@ function AiInsights() {
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
   const [unitOptions, setUnitOptions] = useState([])
-  const [businessProcessOptions, setBusinessProcessOptions] = useState([])
-  const [financialYearOptions, setFinancialYearOptions] = useState([])
+  const [scopeRows, setScopeRows] = useState([])
   const [filterUnits, setFilterUnits] = useState([])
   const [filterBusinessProcesses, setFilterBusinessProcesses] = useState([])
   const [filterFinancialYears, setFilterFinancialYears] = useState([])
   const [filterGenerationStatus, setFilterGenerationStatus] = useState('')
+  const businessProcessOptions = useMemo(
+    () => businessProcessesForUnits(scopeRows, filterUnits),
+    [scopeRows, filterUnits]
+  )
+  const financialYearOptions = useMemo(
+    () => financialYearsForScope(scopeRows, filterUnits, filterBusinessProcesses),
+    [scopeRows, filterUnits, filterBusinessProcesses]
+  )
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [totalCount, setTotalCount] = useState(0)
@@ -114,10 +136,37 @@ function AiInsights() {
   const [reportScopeLoading, setReportScopeLoading] = useState(false)
   const [reportData, setReportData] = useState(null)
   const [reportViewOpen, setReportViewOpen] = useState(false)
+  const reportBusinessProcessOptions = useMemo(
+    () => businessProcessesForUnits(scopeRows, reportUnitId ? [reportUnitId] : []),
+    [scopeRows, reportUnitId]
+  )
+  const reportFinancialYearOptions = useMemo(
+    () => financialYearsForScope(scopeRows, reportUnitId ? [reportUnitId] : [], reportBp ? [reportBp] : []),
+    [scopeRows, reportUnitId, reportBp]
+  )
+
+  const openReports = () => {
+    const unitId = filterUnits.length === 1 ? filterUnits[0] : ''
+    const bpOptions = businessProcessesForUnits(scopeRows, unitId ? [unitId] : [])
+    const bp = filterBusinessProcesses.length === 1 && bpOptions.includes(filterBusinessProcesses[0])
+      ? filterBusinessProcesses[0]
+      : ''
+    const fyOptions = financialYearsForScope(scopeRows, unitId ? [unitId] : [], bp ? [bp] : [])
+    const fy = filterFinancialYears.length === 1 && fyOptions.includes(filterFinancialYears[0])
+      ? filterFinancialYears[0]
+      : ''
+    setReportUnitId(unitId)
+    setReportBp(bp)
+    setReportFy(fy)
+    setReportScope(null)
+    setReportData(null)
+    setReportsOpen(true)
+  }
   const [regenConfirmOpen, setRegenConfirmOpen] = useState(false)
   const [listTick, setListTick] = useState(0)
 
   const lastSelectedIndexRef = useRef(null)
+  const insightGeneratedRef = useRef(new Map())
   const pollTimerRef = useRef(null)
   const reportsOpenRef = useRef(reportsOpen)
   const reportUnitIdRef = useRef(reportUnitId)
@@ -138,7 +187,19 @@ function AiInsights() {
     [rows]
   )
 
+  rows.forEach((row) => {
+    const id = String(row.form_id || '').trim()
+    if (id) insightGeneratedRef.current.set(id, Boolean(row.has_design_gap_insight))
+  })
+
   const selectedOnPageCount = pageFormIds.filter((id) => selectedFormIds.has(id)).length
+  const generatedSelectionCount = useMemo(() => {
+    let count = 0
+    selectedFormIds.forEach((id) => {
+      if (insightGeneratedRef.current.get(id)) count += 1
+    })
+    return count
+  }, [selectedFormIds, rows])
   const allPageSelected = pageFormIds.length > 0 && selectedOnPageCount === pageFormIds.length
 
   const jobProgressPct = useMemo(() => {
@@ -328,8 +389,7 @@ function AiInsights() {
         setRows(Array.isArray(data.data) ? data.data : [])
         setTotalCount(Number(data.count || 0))
         setUnitOptions(data.filters?.units || [])
-        setBusinessProcessOptions(data.filters?.business_processes || [])
-        setFinancialYearOptions(data.filters?.financial_years || [])
+        setScopeRows(normalizeScopeRows(data.filters?.scope_rows))
       } catch (error) {
         if (!cancelled) {
           setRows([])
@@ -498,6 +558,16 @@ function AiInsights() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportsOpen, reportUnitId, reportBp, reportFy])
 
+  const loadDesignGapReport = async (params) => {
+    const res = await fetch(apiUrl(`/api/company-co/ai-insights/design-gap/report?${params}`), {
+      credentials: 'include',
+    })
+    const data = await res.json()
+    if (!res.ok || !data?.success) throw new Error(data?.message || 'Failed to load report')
+    setReportData(data.data)
+    setReportViewOpen(true)
+  }
+
   const openReportView = async () => {
     try {
       const params = new URLSearchParams({
@@ -505,13 +575,19 @@ function AiInsights() {
         business_process: reportBp,
         financial_year: reportFy,
       })
-      const res = await fetch(apiUrl(`/api/company-co/ai-insights/design-gap/report?${params}`), {
-        credentials: 'include',
-      })
-      const data = await res.json()
-      if (!res.ok || !data?.success) throw new Error(data?.message || 'Failed to load report')
-      setReportData(data.data)
-      setReportViewOpen(true)
+      await loadDesignGapReport(params)
+    } catch (error) {
+      toast.error(error.message || 'Failed to load report')
+    }
+  }
+
+  const openSelectedReports = async () => {
+    const formIds = [...selectedFormIds].filter((id) => insightGeneratedRef.current.get(id))
+    if (formIds.length === 0) return
+    try {
+      const params = new URLSearchParams()
+      formIds.forEach((id) => params.append('form_ids', id))
+      await loadDesignGapReport(params)
     } catch (error) {
       toast.error(error.message || 'Failed to load report')
     }
@@ -559,7 +635,7 @@ function AiInsights() {
     <Box sx={DASHBOARD_PAGE_OUTER_SX}>
       <Paper sx={{ ...DASHBOARD_PAPER_SX, p: 3 }}>
         <Typography variant="h5" sx={{ fontWeight: 700 }}>
-          AI Insights
+          Design Gap Analysis
         </Typography>
         <Typography variant="body2" sx={{ ...PAGE_SUBHEADER_TEXT_SX, mt: 0.75 }}>
           Design gap analysis — select controls from one unit, generate insights, or open a scoped report.
@@ -609,7 +685,12 @@ function AiInsights() {
               label="Unit"
               value={filterUnits}
               onChange={(e) => {
-                setFilterUnits(e.target.value)
+                const nextUnits = typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value
+                const nextBps = keepAllowed(filterBusinessProcesses, businessProcessesForUnits(scopeRows, nextUnits))
+                const nextFys = keepAllowed(filterFinancialYears, financialYearsForScope(scopeRows, nextUnits, nextBps))
+                setFilterUnits(nextUnits)
+                setFilterBusinessProcesses(nextBps)
+                setFilterFinancialYears(nextFys)
                 setPage(0)
                 clearSelection()
               }}
@@ -624,20 +705,22 @@ function AiInsights() {
               {unitOptions.map((unit) => (
                 <MenuItem key={unit.unit_id} value={unit.unit_id}>
                   <Checkbox checked={filterUnits.includes(unit.unit_id)} size="small" />
-                  <ListItemText primary={unit.unit_name || unit.unit_id} secondary={unit.unit_id} />
+                  <ListItemText primary={unit.unit_name || unit.unit_id} />
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
 
-          <FormControl size="small" sx={FILTER_SELECT_SX}>
+          <FormControl size="small" sx={FILTER_SELECT_SX} disabled={filterUnits.length === 0}>
             <InputLabel>Business Process</InputLabel>
             <Select
               multiple
               label="Business Process"
               value={filterBusinessProcesses}
               onChange={(e) => {
-                setFilterBusinessProcesses(e.target.value)
+                const nextBps = typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value
+                setFilterBusinessProcesses(nextBps)
+                setFilterFinancialYears(keepAllowed(filterFinancialYears, financialYearsForScope(scopeRows, filterUnits, nextBps)))
                 setPage(0)
                 clearSelection()
               }}
@@ -652,7 +735,7 @@ function AiInsights() {
             </Select>
           </FormControl>
 
-          <FormControl size="small" sx={FILTER_SELECT_SX}>
+          <FormControl size="small" sx={FILTER_SELECT_SX} disabled={filterBusinessProcesses.length === 0}>
             <InputLabel>Financial Year</InputLabel>
             <Select
               multiple
@@ -693,15 +776,14 @@ function AiInsights() {
 
           <Box sx={{ flex: 1 }} />
 
-          <Button variant="outlined" onClick={() => {
-            setReportsOpen(true)
-            setReportUnitId('')
-            setReportBp('')
-            setReportFy('')
-            setReportScope(null)
-          }}>
+          <Button variant="outlined" onClick={openReports}>
             Reports
           </Button>
+          {generatedSelectionCount > 0 && (
+            <Button variant="outlined" onClick={openSelectedReports}>
+              See Reports ({generatedSelectionCount})
+            </Button>
+          )}
           <Button
             variant="contained"
             disabled={selectedFormIds.size === 0 || jobRunning}
@@ -834,27 +916,55 @@ function AiInsights() {
               <Select
                 label="Unit"
                 value={reportUnitId}
-                onChange={(e) => setReportUnitId(e.target.value)}
+                onChange={(e) => {
+                  const unitId = e.target.value
+                  const nextBp = businessProcessesForUnits(scopeRows, [unitId]).includes(reportBp) ? reportBp : ''
+                  const allowedFys = financialYearsForScope(scopeRows, [unitId], nextBp ? [nextBp] : [])
+                  setReportUnitId(unitId)
+                  setReportBp(nextBp)
+                  setReportFy(allowedFys.includes(reportFy) ? reportFy : '')
+                  setReportScope(null)
+                  setReportData(null)
+                }}
               >
                 {unitOptions.map((u) => (
                   <MenuItem key={u.unit_id} value={u.unit_id}>
-                    {u.unit_name || u.unit_id} ({u.unit_id})
+                    {u.unit_name || u.unit_id}
                   </MenuItem>
                 ))}
               </Select>
             </FormControl>
-            <FormControl fullWidth size="small">
+            <FormControl fullWidth size="small" disabled={!reportUnitId}>
               <InputLabel>Business Process</InputLabel>
-              <Select label="Business Process" value={reportBp} onChange={(e) => setReportBp(e.target.value)}>
-                {businessProcessOptions.map((bp) => (
+              <Select
+                label="Business Process"
+                value={reportBp}
+                onChange={(e) => {
+                  const nextBp = e.target.value
+                  const allowedFys = financialYearsForScope(scopeRows, [reportUnitId], [nextBp])
+                  setReportBp(nextBp)
+                  setReportFy(allowedFys.includes(reportFy) ? reportFy : '')
+                  setReportScope(null)
+                  setReportData(null)
+                }}
+              >
+                {reportBusinessProcessOptions.map((bp) => (
                   <MenuItem key={bp} value={bp}>{bp}</MenuItem>
                 ))}
               </Select>
             </FormControl>
-            <FormControl fullWidth size="small">
+            <FormControl fullWidth size="small" disabled={!reportBp}>
               <InputLabel>Financial Year</InputLabel>
-              <Select label="Financial Year" value={reportFy} onChange={(e) => setReportFy(e.target.value)}>
-                {financialYearOptions.map((fy) => (
+              <Select
+                label="Financial Year"
+                value={reportFy}
+                onChange={(e) => {
+                  setReportFy(e.target.value)
+                  setReportScope(null)
+                  setReportData(null)
+                }}
+              >
+                {reportFinancialYearOptions.map((fy) => (
                   <MenuItem key={fy} value={fy}>{fy}</MenuItem>
                 ))}
               </Select>
@@ -1080,28 +1190,41 @@ function AiInsights() {
                     disableGutters
                     elevation={0}
                     sx={{
-                      bgcolor: 'transparent',
+                      mb: 1.5,
+                      border: `1px solid ${theme.palette.divider}`,
+                      borderRadius: '10px !important',
+                      overflow: 'hidden',
+                      bgcolor: 'background.paper',
                       '&:before': { display: 'none' },
-                      border: 'none',
                       boxShadow: 'none',
                     }}
                   >
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: 0 }}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: 1.75 }}>
                       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                         {statusChip('has_gaps')}
-                        <Typography fontWeight={600}>{c.control_number}</Typography>
-                        <Typography variant="body2" color="text.secondary">{c.summary}</Typography>
+                        <Typography fontWeight={700}>{c.control_number}</Typography>
                       </Box>
                     </AccordionSummary>
-                    <AccordionDetails sx={{ px: 0 }}>
+                    <AccordionDetails sx={{ px: 1.75, pt: 0, pb: 1.75 }}>
+                      {c.summary && (
+                        <Typography variant="body2" sx={{ mb: 1.5 }}>
+                          <Box component="span" fontWeight={700}>Summary: </Box>
+                          {c.summary}
+                        </Typography>
+                      )}
                       {(c.results || []).filter((r) => r.status === 'flagged').map((r) => (
                         <Box key={r.check_id} sx={{ mb: 1.5 }}>
                           <Typography variant="body2" fontWeight={700}>
                             {humanizeCheckLabel(r.check_id)}
-                            {r.alignment ? ` — ${r.alignment}` : ''}
                           </Typography>
+                          {r.alignment && (
+                            <Typography variant="body2" sx={{ mt: 0.5 }}>
+                              <Box component="span" fontWeight={700}>Alignment: </Box>
+                              {r.alignment}
+                            </Typography>
+                          )}
                           {(r.alignment_rationale || r.inconsistency) && (
-                            <Typography variant="body2">
+                            <Typography variant="body2" sx={{ mt: 0.5 }}>
                               {r.alignment_rationale || r.inconsistency}
                             </Typography>
                           )}
@@ -1112,6 +1235,7 @@ function AiInsights() {
                           )}
                         </Box>
                       ))}
+                      <DesignGapUsageLine control={c} />
                     </AccordionDetails>
                   </Accordion>
                 ))}
@@ -1129,24 +1253,22 @@ function AiInsights() {
                 {insufControls.map((c) => {
                   const insuf = (c.results || []).filter((r) => r.status === 'insufficient_data')
                   return (
-                    <Box key={`insuf-${c.form_id}`} sx={{ mb: 1.5 }}>
-                      <Typography variant="body2" fontWeight={700}>{c.control_number}</Typography>
-                      {c.summary && (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                          {c.summary}
-                        </Typography>
-                      )}
+                    <Box
+                      key={`insuf-${c.form_id}`}
+                      sx={{
+                        mb: 1.5,
+                        p: 1.75,
+                        border: `1px solid ${theme.palette.divider}`,
+                        borderRadius: '10px',
+                      }}
+                    >
+                      <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>{c.control_number}</Typography>
                       {insuf.map((r) => (
-                        <Typography key={r.check_id} variant="body2" component="div" color="text.secondary" sx={{ mb: 0.5 }}>
-                          · {humanizeCheckLabel(r.check_id)}
-                          {r.source === 'precheck' ? ' [text validation]' : r.source === 'openrouter' ? ' [AI]' : ''}
-                          {Array.isArray(r.evidence) && r.evidence.length
-                            ? `: ${r.evidence.join('; ')}`
-                            : r.inconsistency
-                              ? `: ${r.inconsistency}`
-                              : ''}
+                        <Typography key={r.check_id} variant="body2" component="div" color="text.secondary" sx={{ mb: 0.75 }}>
+                          {formatInsufficientCheckLine(r)}
                         </Typography>
                       ))}
+                      <DesignGapUsageLine control={c} />
                     </Box>
                   )
                 })}
@@ -1176,6 +1298,21 @@ function AiInsights() {
         </DialogActions>
       </Dialog>
     </Box>
+  )
+}
+
+function DesignGapUsageLine({ control }) {
+  if (!SHOW_DESIGN_GAP_USAGE) return null
+  return (
+    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+      Model: {control.model_name || '—'}
+      {' · '}
+      Prompt tokens: {formatTokenCount(control.prompt_tokens)}
+      {' · '}
+      Completion tokens: {formatTokenCount(control.completion_tokens)}
+      {' · '}
+      Total tokens: {formatTokenCount(control.total_tokens)}
+    </Typography>
   )
 }
 

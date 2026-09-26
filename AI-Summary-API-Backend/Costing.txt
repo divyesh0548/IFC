@@ -1,3 +1,8 @@
 Model : "openai/gpt-4.1-mini"
 
-0.001 dollar per control for generating design gap summary.
+0.002 dollar per control for generating design gap summary.
+
+
+Model : "anthropic/claude-opus-5.5"
+
+0.05 dollar per control for generating design gap summary.

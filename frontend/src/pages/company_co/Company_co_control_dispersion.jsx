@@ -1120,7 +1120,7 @@ function ControlDispersionDashboard() {
         >
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-              AI Insights
+              Design Gap Analysis
             </Typography>
             <Typography variant="body2" sx={{ mt: 0.75, color: theme.palette.text.secondary }}>
               Design gap analysis for RACMs — generate insights and view unit-scoped reports.
@@ -1142,7 +1142,7 @@ function ControlDispersionDashboard() {
               textAlign: 'left',
             }}
           >
-            Open AI Insights {'->'}
+            Open Design Gap Analysis {'->'}
           </Link>
         </Box>
       </Paper>

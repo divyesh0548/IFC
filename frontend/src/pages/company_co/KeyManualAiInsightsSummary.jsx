@@ -1,50 +1,41 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import Button from '@mui/material/Button'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
-import Alert from '@mui/material/Alert'
+import Button from '@mui/material/Button'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
-import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
+import Alert from '@mui/material/Alert'
 import Checkbox from '@mui/material/Checkbox'
-import ListItemText from '@mui/material/ListItemText'
-import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
-import IconButton from '@mui/material/IconButton'
-import Tooltip from '@mui/material/Tooltip'
-import { alpha, useTheme } from '@mui/material/styles'
-import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
-import PsychologyAltRoundedIcon from '@mui/icons-material/PsychologyAltRounded'
-import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import ListItemText from '@mui/material/ListItemText'
+import TablePagination from '@mui/material/TablePagination'
+import Chip from '@mui/material/Chip'
+import { useTheme } from '@mui/material/styles'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { toast } from 'react-hot-toast'
+import {
+  businessProcessesForUnits,
+  financialYearsForScope,
+  keepAllowed,
+  normalizeScopeRows,
+} from '../../utils/controlScopeFilters'
 
-function getSelectedFilterLabel(selected, options, getLabel = (value) => value) {
-  if (!Array.isArray(selected) || selected.length === 0) return 'All'
-  if (selected.length === 1) return getLabel(selected[0])
-  return `${selected.length} selected`
-}
-
+const TABLE_GRID_COLUMNS = '56px 150px 160px 180px 200px 120px minmax(240px, 1fr)'
 const FILTER_CONTROL_HEIGHT = 40
-
 const FILTER_SELECT_SX = {
-  minWidth: { xs: '100%', sm: 220 },
-  maxWidth: { xs: '100%', sm: 260 },
+  minWidth: { xs: '100%', sm: 200 },
+  maxWidth: { xs: '100%', sm: 240 },
   height: FILTER_CONTROL_HEIGHT,
-  '& .MuiInputBase-root': {
-    height: FILTER_CONTROL_HEIGHT,
-  },
+  '& .MuiInputBase-root': { height: FILTER_CONTROL_HEIGHT },
   '& .MuiSelect-select': {
     display: 'flex',
     alignItems: 'center',
@@ -52,22 +43,6 @@ const FILTER_SELECT_SX = {
     height: FILTER_CONTROL_HEIGHT,
     boxSizing: 'border-box',
   },
-}
-
-function renderFilterValue(label) {
-  return (
-    <Typography
-      component="span"
-      variant="body2"
-      sx={{
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {label}
-    </Typography>
-  )
 }
 
 function parseUnitIdsFromSearchParams(searchParams) {
@@ -78,967 +53,498 @@ function parseUnitIdsFromSearchParams(searchParams) {
   return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
 }
 
-function buildAiInsightsQueryString({ runId = '', unitIds = [] } = {}) {
-  const params = new URLSearchParams()
-  const normalizedRunId = String(runId || '').trim()
-  if (normalizedRunId) params.set('run_id', normalizedRunId)
-  unitIds.forEach((unitId) => {
-    const normalized = String(unitId || '').trim()
-    if (normalized) params.append('unit_ids', normalized)
-  })
-  return params.toString()
+function getSelectedFilterLabel(selected) {
+  if (!Array.isArray(selected) || selected.length === 0) return 'All'
+  if (selected.length === 1) return selected[0]
+  return `${selected.length} selected`
 }
 
-function formatDateTime(value) {
-  if (!value) return 'Not available'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Not available'
-  return date.toLocaleString()
-}
-
-function formatRunOptionLabel(run) {
-  return `Run ${run.id} - ${run.model_name || 'Model unavailable'} - ${formatDateTime(run.created_at)}`
-}
-
-function formatModelName(value) {
-  return String(value || 'Model unavailable').trim().toUpperCase()
-}
-
-function getStatusChipSx(theme, status) {
-  const normalizedStatus = String(status || '').trim().toLowerCase()
-
-  if (normalizedStatus === 'completed' || normalizedStatus === 'success') {
-    return {
-      color: theme.palette.mode === 'dark' ? '#dcfce7' : '#166534',
-      borderColor: theme.palette.mode === 'dark' ? 'rgba(74,222,128,0.52)' : 'rgba(34,197,94,0.32)',
-      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(20,83,45,0.72)' : 'rgba(34,197,94,0.14)',
-    }
-  }
-
-  if (normalizedStatus === 'in_progress' || normalizedStatus === 'in progress') {
-    return {
-      color: theme.palette.mode === 'dark' ? '#dbeafe' : '#1d4ed8',
-      borderColor: theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.52)' : 'rgba(59,130,246,0.32)',
-      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(30,64,175,0.72)' : 'rgba(59,130,246,0.14)',
-    }
-  }
-
-  if (normalizedStatus === 'failed') {
-    return {
-      color: theme.palette.mode === 'dark' ? '#fee2e2' : '#b91c1c',
-      borderColor: theme.palette.mode === 'dark' ? 'rgba(248,113,113,0.56)' : 'rgba(239,68,68,0.32)',
-      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(127,29,29,0.78)' : 'rgba(239,68,68,0.14)',
-    }
-  }
-
-  return {
-    color: theme.palette.mode === 'dark' ? '#e2e8f0' : '#0f172a',
-    borderColor: theme.palette.mode === 'dark' ? 'rgba(226,232,240,0.24)' : 'rgba(15,23,42,0.16)',
-    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(226,232,240,0.10)' : 'rgba(15,23,42,0.06)',
-  }
-}
-
-function formatStatusLabel(status) {
-  const normalizedStatus = String(status || '').trim().toLowerCase()
-  if (normalizedStatus === 'in_progress') return 'In Progress'
-  if (normalizedStatus === 'completed') return 'Success'
-  if (normalizedStatus === 'failed') return 'Failed'
-  return String(status || 'Unknown').trim() || 'Unknown'
-}
-
-function openRacmDetail(formId) {
-  const normalizedFormId = String(formId || '').trim()
-  if (!normalizedFormId) return
-  window.open(`/company-co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
-}
-
-function formatServerErrorToast(errorCode) {
-  const normalizedErrorCode = String(errorCode || '').trim() || 'UNKNOWN_ERROR'
-  return `Error occured on server (${normalizedErrorCode})`
-}
-
-function formatRunSummaryFieldLabel(label) {
-  return `${label}:`
-}
-
-function isInProgressStatus(status) {
-  const normalizedStatus = String(status || '').trim().toLowerCase()
-  return normalizedStatus === 'in_progress' || normalizedStatus === 'in progress'
+function renderFilterValue(label) {
+  return (
+    <Typography component="span" variant="body2" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {label}
+    </Typography>
+  )
 }
 
 function KeyManualAiInsightsSummary() {
   const theme = useTheme()
-  const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
-  const generatingRef = useRef(false)
-  const [llmBusy, setLlmBusy] = useState(false)
-  const [refreshingRuns, setRefreshingRuns] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [runs, setRuns] = useState([])
-  const [run, setRun] = useState(null)
   const [rows, setRows] = useState([])
   const [unitOptions, setUnitOptions] = useState([])
+  const [scopeRows, setScopeRows] = useState([])
   const [filterUnits, setFilterUnits] = useState(() => parseUnitIdsFromSearchParams(searchParams))
-  const [excludedEntityLevelCount, setExcludedEntityLevelCount] = useState(0)
-  const [pendingControlCount, setPendingControlCount] = useState(0)
-  const [excludedNoticeDismissed, setExcludedNoticeDismissed] = useState(false)
-  const [pendingNoticeDismissed, setPendingNoticeDismissed] = useState(false)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [filterBusinessProcesses, setFilterBusinessProcesses] = useState([])
+  const [filterFinancialYears, setFilterFinancialYears] = useState([])
+  const [filterGenerationStatus, setFilterGenerationStatus] = useState('')
+  const businessProcessOptions = useMemo(
+    () => businessProcessesForUnits(scopeRows, filterUnits),
+    [scopeRows, filterUnits]
+  )
+  const financialYearOptions = useMemo(
+    () => financialYearsForScope(scopeRows, filterUnits, filterBusinessProcesses),
+    [scopeRows, filterUnits, filterBusinessProcesses]
+  )
+  const [page, setPage] = useState(0)
+  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [totalCount, setTotalCount] = useState(0)
+  const [selectedFormIds, setSelectedFormIds] = useState(new Set())
+  const [selectionUnitId, setSelectionUnitId] = useState(null)
   const [errorMessage, setErrorMessage] = useState('')
-  useSyncGlobalLoading(loading)
+  const [listTick, setListTick] = useState(0)
+  const [regenConfirmOpen, setRegenConfirmOpen] = useState(false)
+  const [pendingGenerate, setPendingGenerate] = useState(null)
+  const [detailRow, setDetailRow] = useState(null)
+  const rowMetaRef = useRef(new Map())
+  const lastSelectedIndexRef = useRef(null)
 
-  const unitFilterKey = useMemo(() => filterUnits.slice().sort().join('|'), [filterUnits])
+  useSyncGlobalLoading(loading || generating)
 
-  const fetchRun = useCallback(async (runIdOverride, { shouldApply = () => true } = {}) => {
-    setLoading(true)
-    setErrorMessage('')
-    try {
-      const requestedRunId = typeof runIdOverride === 'string'
-        ? runIdOverride.trim()
-        : String(searchParams.get('run_id') || '').trim()
-      const suffix = buildAiInsightsQueryString({
-        runId: requestedRunId,
-        unitIds: filterUnits,
-      })
-      const response = await fetch(
-        apiUrl(`/api/company-co/ai-insights/key-manual-summary${suffix ? `?${suffix}` : ''}`),
-        {
+  rows.forEach((row) => {
+    const formId = String(row.form_id || '').trim()
+    if (formId) rowMetaRef.current.set(formId, row)
+  })
+
+  const pageFormIds = useMemo(
+    () => rows.map((row) => String(row.form_id || '').trim()).filter(Boolean),
+    [rows]
+  )
+  const selectedOnPageCount = pageFormIds.filter((id) => selectedFormIds.has(id)).length
+  const allPageSelected = pageFormIds.length > 0 && selectedOnPageCount === pageFormIds.length
+
+  useEffect(() => {
+    let cancelled = false
+    const fetchData = async () => {
+      setLoading(true)
+      setErrorMessage('')
+      try {
+        const params = new URLSearchParams({
+          page: String(page + 1),
+          page_size: String(rowsPerPage),
+        })
+        filterUnits.forEach((unitId) => params.append('unit_ids', unitId))
+        filterBusinessProcesses.forEach((value) => params.append('business_processes', value))
+        filterFinancialYears.forEach((value) => params.append('financial_years', value))
+        if (filterGenerationStatus) params.set('generation_status', filterGenerationStatus)
+
+        const response = await fetch(apiUrl(`/api/company-co/ai-insights/key-manual-summary?${params}`), {
           credentials: 'include',
+        })
+        const data = await response.json()
+        if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to load controls')
+        if (cancelled) return
+        setRows(Array.isArray(data.data) ? data.data : [])
+        setTotalCount(Number(data.count || 0))
+        setUnitOptions(Array.isArray(data.filters?.units) ? data.filters.units : [])
+        setScopeRows(normalizeScopeRows(data.filters?.scope_rows))
+      } catch (error) {
+        if (!cancelled) {
+          setRows([])
+          setTotalCount(0)
+          setErrorMessage(error.message || 'Failed to load controls')
         }
-      )
-      const data = await response.json()
-
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.message || 'Failed to fetch AI insights summary')
-      }
-
-      if (shouldApply()) {
-        setRuns(Array.isArray(data.data?.runs) ? data.data.runs : [])
-        setRun(data.data?.run || null)
-        setRows(Array.isArray(data.data?.rows) ? data.data.rows : [])
-        setExcludedEntityLevelCount(Number(data.data?.excluded_entity_level_count || 0))
-        setPendingControlCount(Number(data.data?.pending_control_count || 0))
-        setUnitOptions(Array.isArray(data.data?.filters?.units) ? data.data.filters.units : [])
-      }
-
-      return data.data || null
-    } catch (error) {
-      console.error('Error fetching key manual AI insights summary:', error)
-      if (shouldApply()) {
-        setRuns([])
-        setRun(null)
-        setRows([])
-        setExcludedEntityLevelCount(0)
-        setPendingControlCount(0)
-        setUnitOptions([])
-        setErrorMessage(error.message || 'Failed to fetch AI insights summary')
-      }
-      return null
-    } finally {
-      if (shouldApply()) {
-        setLoading(false)
+      } finally {
+        if (!cancelled) setLoading(false)
       }
     }
-  }, [filterUnits, searchParams])
+    fetchData()
+    return () => {
+      cancelled = true
+    }
+  }, [page, rowsPerPage, filterUnits, filterBusinessProcesses, filterFinancialYears, filterGenerationStatus, listTick])
 
-  useEffect(() => {
-    const nextUnits = parseUnitIdsFromSearchParams(searchParams)
-    setFilterUnits((current) => {
-      const currentKey = current.slice().sort().join('|')
-      const nextKey = nextUnits.slice().sort().join('|')
-      return currentKey === nextKey ? current : nextUnits
+  const clearSelection = () => {
+    setSelectedFormIds(new Set())
+    setSelectionUnitId(null)
+    lastSelectedIndexRef.current = null
+  }
+
+  const toggleRow = (formId, unitId, index, shiftKey) => {
+    const unit = String(unitId || '').trim()
+    setSelectedFormIds((prev) => {
+      const next = new Set(prev)
+      if (shiftKey && lastSelectedIndexRef.current != null) {
+        const start = Math.min(lastSelectedIndexRef.current, index)
+        const end = Math.max(lastSelectedIndexRef.current, index)
+        const rangeRows = rows.slice(start, end + 1)
+        const rangeUnit = String(rangeRows[0]?.unit_id || '').trim()
+        if (rangeRows.some((row) => String(row.unit_id || '').trim() !== rangeUnit)) {
+          toast.error('Selection must stay within a single unit')
+          return prev
+        }
+        if (selectionUnitId && selectionUnitId !== rangeUnit) {
+          toast.error('Clear selection before choosing another unit')
+          return prev
+        }
+        rangeRows.forEach((row) => {
+          const id = String(row.form_id || '').trim()
+          if (id) next.add(id)
+        })
+        setSelectionUnitId(rangeUnit)
+      } else if (next.has(formId)) {
+        next.delete(formId)
+        if (next.size === 0) setSelectionUnitId(null)
+      } else {
+        if (selectionUnitId && selectionUnitId !== unit) {
+          toast.error('Select controls from one unit only')
+          return prev
+        }
+        next.add(formId)
+        setSelectionUnitId(unit)
+      }
+      return next
     })
-  }, [searchParams])
+    lastSelectedIndexRef.current = index
+  }
 
-  useEffect(() => {
-    setExcludedNoticeDismissed(false)
-    setPendingNoticeDismissed(false)
-  }, [unitFilterKey])
-
-  const fetchAiAvailability = useCallback(async ({ showUnavailableToast = false } = {}) => {
+  const runGenerate = async ({ formIds, regenerateExisting }) => {
+    setGenerating(true)
+    setRegenConfirmOpen(false)
+    setPendingGenerate(null)
     try {
       const availabilityResponse = await fetch(apiUrl('/api/company-co/ai-insights/key-manual-summary/availability'), {
         credentials: 'include',
       })
       const availabilityData = await availabilityResponse.json()
-      const reachable = Boolean(availabilityData?.data?.reachable)
-      const busy = Boolean(availabilityData?.data?.llm_busy)
-
-      if (!availabilityResponse.ok || !availabilityData?.success || !reachable) {
-        setLlmBusy(false)
-        if (showUnavailableToast) toast('This feature is under development')
-        return { reachable: false, busy: false }
-      }
-
-      setLlmBusy(busy)
-      return { reachable, busy }
-    } catch (availabilityError) {
-      console.error('Error checking AI summary availability:', availabilityError)
-      setLlmBusy(false)
-      if (showUnavailableToast) toast('This feature is under development')
-      return { reachable: false, busy: false }
-    }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-
-    fetchRun(undefined, { shouldApply: () => !cancelled })
-
-    return () => {
-      cancelled = true
-    }
-  }, [fetchRun])
-
-  useEffect(() => {
-    let cancelled = false
-
-    const refreshAvailability = async () => {
-      const availability = await fetchAiAvailability()
-      if (!cancelled) {
-        setLlmBusy(Boolean(availability.busy))
-      }
-    }
-
-    refreshAvailability()
-    const intervalId = window.setInterval(refreshAvailability, 5000)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(intervalId)
-    }
-  }, [fetchAiAvailability])
-
-  const handleRunChange = (event) => {
-    const nextRunId = String(event.target.value || '').trim()
-    const nextParams = new URLSearchParams()
-    if (nextRunId) nextParams.set('run_id', nextRunId)
-    filterUnits.forEach((unitId) => nextParams.append('unit_ids', unitId))
-    setSearchParams(nextParams)
-  }
-
-  const handleUnitFilterChange = (event) => {
-    const value = event.target.value
-    const nextUnits = typeof value === 'string' ? value.split(',').filter(Boolean) : value
-    const nextParams = new URLSearchParams()
-    const currentRunId = String(searchParams.get('run_id') || '').trim()
-    if (currentRunId) nextParams.set('run_id', currentRunId)
-    nextUnits.forEach((unitId) => nextParams.append('unit_ids', unitId))
-    setFilterUnits(nextUnits)
-    setSearchParams(nextParams)
-  }
-
-  const handleGenerateAiSummary = async () => {
-    if (generatingRef.current || generating || llmBusy) {
-      toast('LLM Server is busy, Try again after some moments')
-      return
-    }
-
-    generatingRef.current = true
-    setGenerating(true)
-    try {
-      const availability = await fetchAiAvailability({ showUnavailableToast: true })
-      if (!availability.reachable) {
-        return
-      }
-      if (availability.busy) {
-        toast('LLM Server is busy, Try again after some moments')
+      if (!availabilityResponse.ok || !availabilityData?.success || !availabilityData?.data?.reachable) {
+        toast('This feature is under development')
         return
       }
 
-      const suffix = buildAiInsightsQueryString({ unitIds: filterUnits })
-      const response = await fetch(
-        apiUrl(`/api/company-co/ai-insights/key-manual-summary/generate${suffix ? `?${suffix}` : ''}`),
-        {
-          method: 'POST',
-          credentials: 'include',
-        }
-      )
-      const data = await response.json()
-
-      if (!response.ok || !data?.success) {
-        const error = new Error(data?.message || 'Failed to generate AI summary')
-        error.serverCode = String(data?.code || '').trim()
-        error.status = response.status
-        throw error
-      }
-
-      const generatedRunId = String(data.data?.run_id || '').trim()
-      if (generatedRunId) {
-        const updatedParams = new URLSearchParams()
-        updatedParams.set('run_id', generatedRunId)
-        filterUnits.forEach((unitId) => updatedParams.append('unit_ids', unitId))
-        setSearchParams(updatedParams)
-        await fetchRun(generatedRunId)
-      }
-      toast.success(
-        `AI summary generated for ${Number(data.data?.control_count || 0)} high-risk key manual controls using ${data.data?.model_name || 'the configured model'}. Excluded Entity Level Controls: ${Number(data.data?.excluded_entity_level_count || 0)}.`
-      )
-    } catch (error) {
-      console.error('Error generating AI summary:', error)
-      if (error?.status === 409 || error?.serverCode === 'AI_MODEL_BUSY') {
-        setLlmBusy(true)
-        toast('LLM Server is busy, Try again after some moments')
-      } else {
-        toast.error(error?.message || formatServerErrorToast(error?.serverCode))
-      }
-    } finally {
-      generatingRef.current = false
-      setGenerating(false)
-      fetchAiAvailability()
-    }
-  }
-
-  const handleRefreshRuns = async () => {
-    setRefreshingRuns(true)
-    try {
-      await Promise.all([
-        fetchRun(),
-        fetchAiAvailability(),
-      ])
-      toast.success('AI insights runs refreshed.')
-    } finally {
-      setRefreshingRuns(false)
-    }
-  }
-
-  const handleDeleteRun = async () => {
-    const currentRunId = String(run?.id || '').trim()
-    if (!currentRunId) return
-
-    if (isInProgressStatus(run?.status)) {
-      toast('In-progress AI insights runs cannot be deleted. Try again after generation completes.')
-      setDeleteDialogOpen(false)
-      return
-    }
-
-    setDeleting(true)
-    try {
-      const response = await fetch(apiUrl(`/api/company-co/ai-insights/key-manual-summary/${encodeURIComponent(currentRunId)}`), {
-        method: 'DELETE',
+      const response = await fetch(apiUrl('/api/company-co/ai-insights/key-manual-summary/generate'), {
+        method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          form_ids: formIds,
+          regenerate_existing: regenerateExisting,
+        }),
       })
       const data = await response.json()
-
-      if (!response.ok || !data?.success) {
-        const error = new Error(data?.message || 'Failed to delete AI insights run')
-        error.serverCode = String(data?.code || '').trim()
-        error.status = response.status
-        throw error
+      if (response.status === 409) {
+        toast('LLM Server is busy, Try again after some moments')
+        return
       }
-
-      const remainingRuns = runs.filter((item) => item.id !== currentRunId)
-      const nextParams = new URLSearchParams(searchParams)
-
-      if (remainingRuns.length > 0) {
-        nextParams.set('run_id', remainingRuns[0].id)
-      } else {
-        nextParams.delete('run_id')
-      }
-
-      setSearchParams(nextParams)
-      toast.success('AI insights run deleted successfully.')
+      if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to generate AI summary')
+      const generated = Number(data.data?.generated || 0)
+      const skipped = Number(data.data?.skipped || 0)
+      toast.success(`Summary generated for ${generated} control${generated === 1 ? '' : 's'}${skipped ? `. Skipped ${skipped} existing.` : '.'}`)
+      clearSelection()
+      setListTick((value) => value + 1)
     } catch (error) {
-      console.error('Error deleting AI insights run:', error)
-      if (error?.status === 409 || error?.serverCode === 'AI_RUN_IN_PROGRESS') {
-        toast('In-progress AI insights runs cannot be deleted. Try again after generation completes.')
-      } else {
-        toast.error(error.message || 'Failed to delete AI insights run')
-      }
+      toast.error(error.message || 'Failed to generate AI summary')
     } finally {
-      setDeleting(false)
-      setDeleteDialogOpen(false)
+      setGenerating(false)
     }
+  }
+
+  const handleGenerateSelected = async () => {
+    const selectedRows = [...selectedFormIds].map((id) => rowMetaRef.current.get(id)).filter(Boolean)
+    if (selectedRows.length === 0) {
+      toast.error('Select at least one control')
+      return
+    }
+    const formIds = selectedRows.map((row) => String(row.form_id || '').trim()).filter(Boolean)
+    const existingCount = selectedRows.filter((row) => row.has_summary).length
+    if (existingCount > 0) {
+      setPendingGenerate({
+        formIds,
+        existingCount,
+        pendingCount: selectedRows.length - existingCount,
+      })
+      setRegenConfirmOpen(true)
+      return
+    }
+    await runGenerate({ formIds, regenerateExisting: false })
   }
 
   return (
     <Box sx={DASHBOARD_PAGE_OUTER_SX}>
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: { xs: 'column', md: 'row' },
-          alignItems: { xs: 'flex-start', md: 'flex-start' },
-          justifyContent: 'space-between',
-          gap: 2,
-          mb: 3,
-          pb: 2.5,
-          borderBottom: `1px solid ${theme.palette.divider}`,
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        <Box
-          sx={{
-            position: 'absolute',
-            top: -48,
-            right: -12,
-            width: 180,
-            height: 180,
-            borderRadius: '50%',
-            background: theme.palette.mode === 'dark'
-              ? 'radial-gradient(circle, rgba(56,189,248,0.20) 0%, rgba(56,189,248,0) 72%)'
-              : 'radial-gradient(circle, rgba(14,165,233,0.18) 0%, rgba(14,165,233,0) 72%)',
-            pointerEvents: 'none',
-          }}
-        />
-        <Box>
-          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, mb: 1.25 }}>
-            <Chip
-              icon={<AutoAwesomeRoundedIcon />}
-              label="AI Insight Workspace"
-              size="small"
-              sx={{
-                fontWeight: 700,
-                color: theme.palette.mode === 'dark' ? '#dbeafe' : '#0f172a',
-                backgroundColor: theme.palette.mode === 'dark' ? 'rgba(59,130,246,0.18)' : 'rgba(59,130,246,0.12)',
+      <Paper sx={{ ...DASHBOARD_PAPER_SX, p: 3 }}>
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>
+          Key + Manual AI Insights
+        </Typography>
+        <Typography variant="body2" sx={{ ...PAGE_SUBHEADER_TEXT_SX, mt: 0.75 }}>
+          Key and manual controls only. Select controls from one unit and generate a summary. Generating again replaces the saved summary for that control.
+        </Typography>
+
+        {errorMessage && (
+          <Alert severity="error" sx={{ mt: 2 }}>{errorMessage}</Alert>
+        )}
+
+        <Box sx={{ mt: 2.5, display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
+          <FormControl size="small" sx={FILTER_SELECT_SX}>
+            <InputLabel>Unit</InputLabel>
+            <Select
+              multiple
+              label="Unit"
+              value={filterUnits}
+              onChange={(event) => {
+                const nextUnits = typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value
+                const nextBps = keepAllowed(filterBusinessProcesses, businessProcessesForUnits(scopeRows, nextUnits))
+                setFilterUnits(nextUnits)
+                setFilterBusinessProcesses(nextBps)
+                setFilterFinancialYears(keepAllowed(filterFinancialYears, financialYearsForScope(scopeRows, nextUnits, nextBps)))
+                setPage(0)
+                clearSelection()
               }}
-            />
-            <Box sx={{ display: 'flex', gap: 0.75, color: theme.palette.primary.main }}>
-              <PsychologyAltRoundedIcon sx={{ fontSize: 20 }} />
-              <SmartToyRoundedIcon sx={{ fontSize: 20 }} />
-            </Box>
-          </Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, color: theme.palette.text.primary }}>
-            High Risk Manual Key Control Summary
-          </Typography>
-          <Typography variant="body2" sx={PAGE_SUBHEADER_TEXT_SX}>
-            Scoped to your assigned units. Entity Level Controls are excluded from AI insight generation because they are not treated as high risk controls in this category.
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+              renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(
+                selected.map((id) => unitOptions.find((unit) => unit.unit_id === id)?.unit_name || id)
+              ))}
+            >
+              {unitOptions.map((unit) => (
+                <MenuItem key={unit.unit_id} value={unit.unit_id}>
+                  <Checkbox checked={filterUnits.includes(unit.unit_id)} size="small" />
+                  <ListItemText primary={unit.unit_name || unit.unit_id} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={FILTER_SELECT_SX} disabled={filterUnits.length === 0}>
+            <InputLabel>Business Process</InputLabel>
+            <Select
+              multiple
+              label="Business Process"
+              value={filterBusinessProcesses}
+              onChange={(event) => {
+                const nextBps = typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value
+                setFilterBusinessProcesses(nextBps)
+                setFilterFinancialYears(keepAllowed(filterFinancialYears, financialYearsForScope(scopeRows, filterUnits, nextBps)))
+                setPage(0)
+                clearSelection()
+              }}
+              renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected))}
+            >
+              {businessProcessOptions.map((value) => (
+                <MenuItem key={value} value={value}>
+                  <Checkbox checked={filterBusinessProcesses.includes(value)} size="small" />
+                  <ListItemText primary={value} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={FILTER_SELECT_SX} disabled={filterBusinessProcesses.length === 0}>
+            <InputLabel>Financial Year</InputLabel>
+            <Select
+              multiple
+              label="Financial Year"
+              value={filterFinancialYears}
+              onChange={(event) => {
+                setFilterFinancialYears(typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value)
+                setPage(0)
+                clearSelection()
+              }}
+              renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected))}
+            >
+              {financialYearOptions.map((value) => (
+                <MenuItem key={value} value={value}>
+                  <Checkbox checked={filterFinancialYears.includes(value)} size="small" />
+                  <ListItemText primary={value} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={FILTER_SELECT_SX}>
+            <InputLabel>Generation</InputLabel>
+            <Select
+              label="Generation"
+              value={filterGenerationStatus}
+              onChange={(event) => {
+                setFilterGenerationStatus(event.target.value)
+                setPage(0)
+                clearSelection()
+              }}
+            >
+              <MenuItem value="">All</MenuItem>
+              <MenuItem value="generated">Generated</MenuItem>
+              <MenuItem value="not_generated">Not Generated</MenuItem>
+            </Select>
+          </FormControl>
+
+          <Box sx={{ flex: 1 }} />
+
           <Button
             variant="contained"
-            color="secondary"
-            onClick={handleGenerateAiSummary}
-            disabled={generating}
+            disabled={selectedFormIds.size === 0 || generating}
+            onClick={handleGenerateSelected}
           >
-            {generating ? 'Generating AI Summary...' : 'Generate AI Summary'}
-          </Button>
-          <Button variant="contained" onClick={() => navigate('/company-co/control-dispersion-dashboard')}>
-            Back To Dashboard
+            {generating ? 'Generating…' : `Generate Selected (${selectedFormIds.size})`}
           </Button>
         </Box>
-      </Box>
 
-      {errorMessage ? (
-        <Alert severity="info" sx={{ mb: 3 }}>
-          {errorMessage}
-        </Alert>
-      ) : null}
+        {selectionUnitId && (
+          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'text.secondary' }}>
+            Selection locked to one unit.
+          </Typography>
+        )}
 
-      {excludedEntityLevelCount > 0 && !excludedNoticeDismissed ? (
-        <Alert
-          severity="info"
-          onClose={() => setExcludedNoticeDismissed(true)}
-          sx={{ mb: 3 }}
-        >
-          {excludedEntityLevelCount} Entity Level Control{excludedEntityLevelCount === 1 ? '' : 's'} excluded from AI insight generation because they are not treated as high risk controls in this category.
-        </Alert>
-      ) : null}
-
-      {pendingControlCount > 0 && !pendingNoticeDismissed ? (
-        <Alert
-          severity="warning"
-          onClose={() => setPendingNoticeDismissed(true)}
-          sx={{ mb: 3 }}
-        >
-          {pendingControlCount} High Risk Key Manual Control{pendingControlCount === 1 ? '' : 's'} pending AI rationalisation summary. They are listed below with generated controls.
-        </Alert>
-      ) : null}
-
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.25,
-          flexWrap: 'wrap',
-          mb: 3,
-        }}
-      >
-        <FormControl size="small" variant="outlined" sx={FILTER_SELECT_SX}>
-          <InputLabel id="ai-insights-unit-label" shrink>Unit</InputLabel>
-          <Select
-            labelId="ai-insights-unit-label"
-            multiple
-            value={filterUnits}
-            label="Unit"
-            displayEmpty
-            notched
-            onChange={handleUnitFilterChange}
-            renderValue={(selected) => renderFilterValue(
-              getSelectedFilterLabel(
-                selected,
-                unitOptions,
-                (unitId) => unitOptions.find((unit) => String(unit.unit_id) === String(unitId))?.unit_name || unitId
-              )
-            )}
-          >
-            {unitOptions.map((unit) => (
-              <MenuItem key={unit.unit_id} value={unit.unit_id}>
-                <Checkbox checked={filterUnits.includes(unit.unit_id)} size="small" />
-                <ListItemText primary={unit.unit_name || unit.unit_id} />
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-
-        <FormControl size="small" variant="outlined" sx={{ ...FILTER_SELECT_SX, minWidth: { xs: '100%', sm: 320 }, flex: { sm: '1 1 280px' } }}>
-          <InputLabel id="ai-run-select-label">Select Run</InputLabel>
-          <Select
-            labelId="ai-run-select-label"
-            id="ai-run-select"
-            value={run?.id || ''}
-            label="Select Run"
-            onChange={handleRunChange}
-            displayEmpty
-            renderValue={(selected) => {
-              if (!selected) return 'Select run'
-              const selectedRun = runs.find((item) => item.id === selected)
-              if (!selectedRun) return `Run ${selected}`
-              return (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      fontWeight: 600,
-                      color: theme.palette.text.primary,
-                      minWidth: 0,
-                      flex: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {formatRunOptionLabel(selectedRun)}
-                  </Typography>
-                  <Chip
-                    label={formatStatusLabel(selectedRun.status)}
-                    size="small"
-                    variant="outlined"
-                    sx={{
-                      fontWeight: 700,
-                      height: 24,
-                      ...getStatusChipSx(theme, selectedRun.status),
-                    }}
-                  />
-                </Box>
-              )
+        <Box sx={{ mt: 2.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2, overflow: 'hidden' }}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: TABLE_GRID_COLUMNS,
+              gap: 1,
+              px: 1.5,
+              py: 1,
+              borderBottom: `1px solid ${theme.palette.divider}`,
+              alignItems: 'center',
             }}
           >
-            {runs.map((item) => (
-              <MenuItem key={item.id} value={item.id}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', minWidth: 0 }}>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: theme.palette.text.primary,
-                      fontWeight: 500,
-                      minWidth: 0,
-                      flex: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {formatRunOptionLabel(item)}
-                  </Typography>
-                  <Chip
-                    label={formatStatusLabel(item.status)}
-                    size="small"
-                    variant="outlined"
-                    sx={{
-                      fontWeight: 700,
-                      height: 24,
-                      ...getStatusChipSx(theme, item.status),
-                    }}
-                  />
-                </Box>
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-
-        <Tooltip title={refreshingRuns ? 'Refreshing…' : 'Refresh Runs'}>
-          <span>
-            <IconButton
-              onClick={handleRefreshRuns}
-              disabled={refreshingRuns}
-              aria-label="Refresh runs"
-              sx={{
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 1.5,
-                color: 'text.secondary',
-              }}
-            >
-              <RefreshRoundedIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-
-        <Tooltip title={deleting ? 'Deleting…' : 'Delete Run'}>
-          <span>
-            <IconButton
-              color="error"
-              onClick={() => {
-                if (isInProgressStatus(run?.status)) {
-                  toast('In-progress AI insights runs cannot be deleted. Try again after generation completes.')
+            <Checkbox
+              size="small"
+              checked={allPageSelected}
+              indeterminate={selectedOnPageCount > 0 && !allPageSelected}
+              onChange={() => {
+                if (allPageSelected) {
+                  setSelectedFormIds((prev) => {
+                    const next = new Set(prev)
+                    pageFormIds.forEach((id) => next.delete(id))
+                    if (next.size === 0) setSelectionUnitId(null)
+                    return next
+                  })
                   return
                 }
-                setDeleteDialogOpen(true)
+                const pageUnits = [...new Set(rows.map((row) => String(row.unit_id || '').trim()).filter(Boolean))]
+                if (pageUnits.length > 1) {
+                  toast.error('This page has multiple units — select rows from one unit only')
+                  return
+                }
+                if (selectionUnitId && pageUnits[0] && selectionUnitId !== pageUnits[0]) {
+                  toast.error('Clear selection before choosing another unit')
+                  return
+                }
+                setSelectedFormIds((prev) => {
+                  const next = new Set(prev)
+                  pageFormIds.forEach((id) => next.add(id))
+                  return next
+                })
+                if (pageUnits[0]) setSelectionUnitId(pageUnits[0])
               }}
-              disabled={!run || deleting}
-              aria-label="Delete run"
-              sx={{
-                border: '1px solid',
-                borderColor: (t) => alpha(t.palette.error.main, 0.4),
-                borderRadius: 1.5,
-              }}
-            >
-              <DeleteOutlineRoundedIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-      </Box>
+            />
+            <Typography variant="caption" fontWeight={700}>Control</Typography>
+            <Typography variant="caption" fontWeight={700}>Summary</Typography>
+            <Typography variant="caption" fontWeight={700}>Unit</Typography>
+            <Typography variant="caption" fontWeight={700}>Business Process</Typography>
+            <Typography variant="caption" fontWeight={700}>FY</Typography>
+            <Typography variant="caption" fontWeight={700}>Risk</Typography>
+          </Box>
 
-      <Dialog
-        open={deleteDialogOpen}
-        onClose={deleting ? undefined : () => setDeleteDialogOpen(false)}
-        fullWidth
-        maxWidth="sm"
-        PaperProps={{
-          sx: {
-            borderRadius: 3,
-            border: `1px solid ${theme.palette.divider}`,
-            background: theme.palette.mode === 'dark'
-              ? 'linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.96) 100%)'
-              : 'linear-gradient(180deg, rgba(255,255,255,0.99) 0%, rgba(248,250,252,0.98) 100%)',
-          },
-        }}
-      >
-        <DialogTitle sx={{ fontWeight: 800, pb: 1 }}>
-          Delete AI Insights Run
-        </DialogTitle>
-        <DialogContent sx={{ pt: '8px !important' }}>
-          <Typography variant="body2" sx={{ mb: 2, color: theme.palette.text.secondary }}>
-            {isInProgressStatus(run?.status)
-              ? 'This run is still being generated and cannot be deleted until processing completes.'
-              : 'This will permanently remove the selected run and all stored insight rows linked to it.'}
-          </Typography>
-
-          {run ? (
-            <Box
-              sx={{
-                borderRadius: 2.5,
-                border: `1px solid ${theme.palette.divider}`,
-                backgroundColor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.08)' : 'rgba(15,23,42,0.03)',
-                p: 2,
-                display: 'grid',
-                gap: 1.25,
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-                <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-                  {formatRunSummaryFieldLabel('Run ID')} {run.id}
-                </Typography>
-                <Chip
-                  label={formatStatusLabel(run.status)}
+          {rows.length === 0 && !loading ? (
+            <Box sx={{ p: 3 }}>
+              <Typography color="text.secondary">No key manual controls found for the current filters.</Typography>
+            </Box>
+          ) : rows.map((row, index) => {
+            const formId = String(row.form_id || '').trim()
+            const checked = selectedFormIds.has(formId)
+            return (
+              <Box
+                key={formId || index}
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: TABLE_GRID_COLUMNS,
+                  gap: 1,
+                  px: 1.5,
+                  py: 1.1,
+                  alignItems: 'center',
+                  borderBottom: `1px solid ${theme.palette.divider}`,
+                  cursor: 'pointer',
+                }}
+                onClick={() => setDetailRow(row)}
+              >
+                <Checkbox
                   size="small"
-                  variant="outlined"
-                  sx={{
-                    fontWeight: 700,
-                    height: 26,
-                    ...getStatusChipSx(theme, run.status),
+                  checked={checked}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    toggleRow(formId, row.unit_id, index, event.shiftKey)
                   }}
                 />
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>{row.control_number || '—'}</Typography>
+                <Box>
+                  <Chip
+                    size="small"
+                    label={row.has_summary ? 'Generated' : 'Not generated'}
+                    color={row.has_summary ? 'success' : 'default'}
+                    variant={row.has_summary ? 'filled' : 'outlined'}
+                  />
+                </Box>
+                <Typography variant="body2" noWrap>{row.unit_name || '—'}</Typography>
+                <Typography variant="body2" noWrap>{row.business_process || '—'}</Typography>
+                <Typography variant="body2" noWrap>{row.financial_year || '—'}</Typography>
+                <Typography variant="body2" noWrap color="text.secondary">{row.risk_description || '—'}</Typography>
               </Box>
-              <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
-                <Box component="span" sx={{ fontWeight: 700 }}>
-                  {formatRunSummaryFieldLabel('Model')}
-                </Box>{' '}
-                {formatModelName(run.model_name)}
-              </Typography>
-              <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
-                <Box component="span" sx={{ fontWeight: 700 }}>
-                  {formatRunSummaryFieldLabel('Created')}
-                </Box>{' '}
-                {formatDateTime(run.created_at)}
-              </Typography>
-              <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
-                <Box component="span" sx={{ fontWeight: 700 }}>
-                  {formatRunSummaryFieldLabel('Stored Controls')}
-                </Box>{' '}
-                {Number(run.row_count || 0)}
-              </Typography>
-            </Box>
-          ) : null}
+            )
+          })}
+        </Box>
+
+        <TablePagination
+          component="div"
+          count={totalCount}
+          page={page}
+          onPageChange={(_event, next) => setPage(next)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(event) => {
+            setRowsPerPage(Number.parseInt(event.target.value, 10))
+            setPage(0)
+          }}
+          rowsPerPageOptions={[10, 25, 50]}
+        />
+      </Paper>
+
+      <Dialog open={Boolean(detailRow)} onClose={() => setDetailRow(null)} fullWidth maxWidth="sm">
+        <DialogTitle>{detailRow?.control_number || 'Control'}</DialogTitle>
+        <DialogContent>
+          {detailRow?.has_summary ? (
+            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+              {detailRow.rationalisation_opportunity || 'Summary is empty.'}
+            </Typography>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No summary has been generated for this control.
+            </Typography>
+          )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 0.5 }}>
-          <Button
-            onClick={() => setDeleteDialogOpen(false)}
-            disabled={deleting}
-            variant="text"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleDeleteRun}
-            disabled={!run || deleting || isInProgressStatus(run?.status)}
-            variant="contained"
-            color="error"
-            startIcon={<DeleteOutlineRoundedIcon />}
-          >
-            {deleting ? 'Deleting…' : 'Delete Run'}
-          </Button>
+        <DialogActions>
+          <Button onClick={() => setDetailRow(null)}>Close</Button>
         </DialogActions>
       </Dialog>
 
-      {run ? (
-        <Paper
-          elevation={3}
-          sx={{
-            ...DASHBOARD_PAPER_SX,
-            p: 2.5,
-            mb: 3,
-            borderRadius: 3,
-            border: `1px solid ${theme.palette.divider}`,
-            boxShadow: theme.palette.mode === 'dark'
-              ? '0 10px 28px rgba(0, 0, 0, 0.28)'
-              : '0 12px 30px rgba(15, 23, 42, 0.08)',
-          }}
-        >
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1.5,
-              flexWrap: 'wrap',
-            }}
-          >
-            <AutoAwesomeRoundedIcon sx={{ color: theme.palette.primary.main }} />
-            <Typography variant="body1" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-              {formatModelName(run.model_name)}
-            </Typography>
-            <Chip
-              label={`${run.row_count} generated`}
-              size="small"
-              variant="outlined"
-              sx={{
-                fontWeight: 700,
-                color: theme.palette.mode === 'dark' ? '#e2e8f0' : '#0f172a',
-                borderColor: theme.palette.mode === 'dark' ? 'rgba(226,232,240,0.45)' : 'rgba(15,23,42,0.24)',
-                backgroundColor: theme.palette.mode === 'dark' ? 'rgba(226,232,240,0.10)' : 'rgba(15,23,42,0.06)',
-              }}
-            />
-            {pendingControlCount > 0 ? (
-              <Chip
-                label={`${pendingControlCount} pending`}
-                size="small"
-                color="warning"
-                variant="outlined"
-                sx={{ fontWeight: 700 }}
-              />
-            ) : null}
-          </Box>
-        </Paper>
-      ) : pendingControlCount > 0 ? (
-        <Paper
-          elevation={3}
-          sx={{
-            ...DASHBOARD_PAPER_SX,
-            p: 2.5,
-            mb: 3,
-            borderRadius: 3,
-            border: `1px solid ${theme.palette.divider}`,
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-            <Chip
-              label={`${pendingControlCount} pending AI summary`}
-              size="small"
-              color="warning"
-              variant="outlined"
-              sx={{ fontWeight: 700 }}
-            />
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              High Risk Key Manual controls waiting for rationalisation generation.
-            </Typography>
-          </Box>
-        </Paper>
-      ) : null}
-
-      <Paper
-        elevation={3}
-        sx={{
-          ...DASHBOARD_PAPER_SX,
-          borderRadius: 3,
-          overflow: 'hidden',
-          border: `1px solid ${theme.palette.divider}`,
-          boxShadow: theme.palette.mode === 'dark'
-            ? '0 10px 28px rgba(0, 0, 0, 0.28)'
-            : '0 12px 30px rgba(15, 23, 42, 0.08)',
-        }}
-      >
-        {/* <Box
-          sx={{
-            px: 3,
-            pt: 3,
-            pb: 2,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
-          <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-            Stored Insight Rows
+      <Dialog open={regenConfirmOpen} onClose={() => !generating && setRegenConfirmOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Regenerate summary?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            Some selected controls already have a summary. Generating again replaces the saved summary for that control.
           </Typography>
-        </Box> */}
-
-        <Box sx={{ width: '100%', overflowX: 'auto' }}>
-          <Box sx={{ minWidth: 980 }}>
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: '220px 220px minmax(420px, 1fr)',
-                borderBottom: `1px solid ${theme.palette.divider}`,
-                backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : theme.palette.grey[100],
-              }}
-            >
-              {['Control Number', 'Business Process', 'Rationalisation Opportunity'].map((column) => (
-                <Box key={column} sx={{ px: 2, py: 1.75, borderRight: `1px solid ${theme.palette.divider}`, '&:last-of-type': { borderRight: 'none' } }}>
-                  <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
-                    {column}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-
-            {loading ? (
-              <Box sx={{ px: 3, py: 4 }}>
-                <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
-                  Loading AI insight rows...
-                </Typography>
-              </Box>
-            ) : rows.length === 0 ? (
-              <Box sx={{ px: 3, py: 4 }}>
-                <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
-                  No High Risk Key Manual controls found for the selected filters.
-                </Typography>
-              </Box>
-            ) : (
-              rows.map((row, index) => {
-                const isPending = Boolean(row.is_pending)
-                return (
-                <Box
-                  key={row.id}
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: '220px 220px minmax(420px, 1fr)',
-                    borderBottom: index === rows.length - 1 ? 'none' : `1px solid ${theme.palette.divider}`,
-                    backgroundColor: isPending
-                      ? (theme.palette.mode === 'dark' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.06)')
-                      : index % 2 === 0
-                        ? 'transparent'
-                        : theme.palette.mode === 'dark'
-                          ? 'rgba(255,255,255,0.02)'
-                          : theme.palette.grey[50],
-                  }}
-                >
-                  <Box
-                    sx={{
-                      px: 2,
-                      py: 1.75,
-                      borderRight: `1px solid ${theme.palette.divider}`,
-                    }}
-                  >
-                    <Box
-                      component="button"
-                      type="button"
-                      onClick={() => openRacmDetail(row.form_id)}
-                      disabled={!row.form_id}
-                      sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        p: 0,
-                        border: 'none',
-                        background: 'transparent',
-                        color: row.form_id ? theme.palette.primary.main : theme.palette.text.secondary,
-                        cursor: row.form_id ? 'pointer' : 'not-allowed',
-                        font: 'inherit',
-                      }}
-                    >
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: 'inherit',
-                          fontWeight: 700,
-                          textDecoration: row.form_id ? 'underline' : 'none',
-                          textUnderlineOffset: '3px',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {row.control_number}
-                      </Typography>
-                      {row.form_id ? <OpenInNewRoundedIcon sx={{ fontSize: 16 }} /> : null}
-                    </Box>
-                    {isPending ? (
-                      <Chip
-                        label="Pending"
-                        size="small"
-                        color="warning"
-                        variant="outlined"
-                        sx={{ mt: 0.75, height: 22, fontWeight: 700 }}
-                      />
-                    ) : null}
-                  </Box>
-
-                  <Box
-                    sx={{
-                      px: 2,
-                      py: 1.75,
-                      borderRight: `1px solid ${theme.palette.divider}`,
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: theme.palette.text.primary,
-                        fontWeight: 500,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {row.business_process || 'Unassigned'}
-                    </Typography>
-                  </Box>
-
-                  <Box
-                    sx={{
-                      px: 2,
-                      py: 1.75,
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: isPending ? 'text.secondary' : theme.palette.text.primary,
-                        fontWeight: 500,
-                        fontStyle: isPending ? 'italic' : 'normal',
-                        whiteSpace: 'normal',
-                      }}
-                    >
-                      {isPending
-                        ? 'AI rationalisation summary not generated yet.'
-                        : (row.rationalisation_opportunity || '—')}
-                    </Typography>
-                  </Box>
-                </Box>
-                )
-              })
-            )}
-          </Box>
-        </Box>
-      </Paper>
+          <Typography variant="body2" sx={{ mt: 1.5 }}>
+            Already have summary: <strong>{Number(pendingGenerate?.existingCount || 0)}</strong>
+          </Typography>
+          <Typography variant="body2">
+            Pending to generate: <strong>{Number(pendingGenerate?.pendingCount || 0)}</strong>
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRegenConfirmOpen(false)} disabled={generating}>Cancel</Button>
+          <Button
+            disabled={generating || Number(pendingGenerate?.pendingCount || 0) === 0}
+            onClick={() => runGenerate({ formIds: pendingGenerate?.formIds || [], regenerateExisting: false })}
+          >
+            Skip existing
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={generating}
+            onClick={() => runGenerate({ formIds: pendingGenerate?.formIds || [], regenerateExisting: true })}
+          >
+            Regenerate all
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

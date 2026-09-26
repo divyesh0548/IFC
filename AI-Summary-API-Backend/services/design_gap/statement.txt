@@ -1,13 +1,7 @@
 Whether risks and controls are adequately aligned with each other
 
 
-Whether adequate risks are identified and covered across the entire business cycle ------- This will be covered in Risk analysis, No need to add this in design gap
-
-
 Whether appropriate financial statement assertions are allocated to each risk
-
-
-Whether the risk constitutes a Risk of Material Misstatement (RoMM)  ----- This can't be done, because not all controls will have column ROMM
 
 
 Whether the control objective and control description are adequate to mitigate the associated risk
@@ -18,8 +12,6 @@ Whether the control classification (Preventive/Detective) is appropriate
 
 Whether the nature of the control is appropriately classified
 
-Whether the control is Manual, Automated, or System-driven, and identify opportunities for automation   ------ Different module exists for same
-
 
 Whether any fraud risk exists in relation to the identified risk/process
 
@@ -29,5 +21,20 @@ Whether the control should be classified as a Key Control
 
 
 
-Get three ouputs for each design gap checks.
+Whether adequate risks are identified and covered across the entire business cycle ------- This will be covered in Risk analysis, No need to add this in design gap
 
+
+Whether the risk constitutes a Risk of Material Misstatement (RoMM)  ----- This can't be done, because not all controls will have column ROMM
+
+Whether the control is Manual, Automated, or System-driven, and identify opportunities for automation   ------ Different module exists for same
+
+
+
+
+Risk-Control Alignment — Does the control directly and specifically address the risk it is mapped to, with no gap or mismatch in scope?
+Financial Statement Assertions — Are the relevant assertions (Existence, Completeness, Accuracy, Valuation, Cut-off, Rights & Obligations, Presentation & Disclosure) correctly and completely mapped to the risk?
+Control Objective & Description Adequacy — Is the control objective and description detailed and specific enough to effectively mitigate the associated risk (not vague or generic)?
+Preventive/Detective Classification — Is the control correctly classified as Preventive (stops an error/misstatement before it occurs) or Detective (identifies it after occurrence), based on its actual design?
+Nature of Control Classification — Is the control's nature — Manual, Automated, or IT-Dependent Manual — correctly classified based on how it is actually performed?
+Fraud Risk Assessment — Does the identified risk or process carry any fraud risk (e.g., management override, manipulation potential) that hasn't been flagged?
+Key Control Determination — Should this control be classified as Key, i.e., would its failure or absence create a reasonable possibility of material misstatement?

@@ -1,5 +1,5 @@
 {
   "id": "control_objective_adequacy",
-  "title": "Control objective adequacy",
-  "prompt": "Determine whether the control objective and control description are adequate to mitigate the associated risk.\n\nAssess alignment of objective/description to the risk as: Strong, Partial, or Weak.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences)."
+  "title": "Control Objective & Description Adequacy",
+  "prompt": "Control Objective & Description Adequacy — Is the control objective and description detailed and specific enough to effectively mitigate the associated risk (not vague or generic)?\n\nAssess alignment of the objective and description to the risk as: Strong, Partial, or Weak.\n- Strong: both are specific and detailed enough to mitigate the stated risk.\n- Partial: they address the risk but remain partly generic or incomplete.\n- Weak: they are vague, generic, or not specific enough to mitigate the risk.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences)."
 }

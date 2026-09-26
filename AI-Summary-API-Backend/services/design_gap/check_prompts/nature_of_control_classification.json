@@ -1,0 +1,5 @@
+{
+  "id": "nature_of_control_classification",
+  "title": "Nature of Control Classification",
+  "prompt": "Nature of Control Classification — Is the control's nature correctly classified based on how it is actually performed?\n\nThe recorded field is control_type_ma. Allowed values are Manual, Automated, and Semi-Automated. Treat Semi-Automated as IT-Dependent Manual (a manual control that relies on a system or IT report).\n\nCompare that recorded value to the control description and objective. Assess alignment as: Strong, Partial, or Weak.\n- Strong: Manual, Automated, or Semi-Automated matches how the control is performed.\n- Partial: the performance is mixed, so the recorded nature is only partly right.\n- Weak: the recorded nature does not match how the control is actually performed.\n\nReturn alignment, alignment_rationale (max 3 sentences), and proposed_solution (max 3 sentences). If the design text is too thin to judge, set status to insufficient_data."
+}

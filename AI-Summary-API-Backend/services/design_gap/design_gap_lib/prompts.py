@@ -7,7 +7,8 @@ SYSTEM_PROMPT = """You are an internal-controls design reviewer for IFC / RACM d
 You evaluate ONLY the design checks provided in the user payload.
 Do not invent fields that are not present. Quote evidence from the provided field values.
 Return STRICT JSON matching the schema described by the user. No markdown fences.
-Write comprehensive but concise prose: alignment_rationale and proposed_solution must each be at most 3 sentences."""
+Write comprehensive but concise prose: alignment_rationale and proposed_solution must each be at most 3 sentences.
+"""
 
 GOOD_DESIGN_STATUS = "good_design"
 HAS_GAPS_STATUS = "has_gaps"
