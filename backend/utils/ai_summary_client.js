@@ -118,6 +118,29 @@ async function analyzeDesignGapControl(control, { dryRun = false } = {}) {
   });
 }
 
+async function analyzeKeyManual(control, businessProcess, companyIdentifier) {
+  return callAiSummaryApi('/v1/key-manual/analyze', {
+    method: 'POST',
+    body: {
+      business_process: businessProcess,
+      company_identifier: companyIdentifier,
+      control,
+    },
+  });
+}
+
+async function analyzeRiskAnalysis(control, businessProcess, { dryRun = false, formId = '' } = {}) {
+  return callAiSummaryApi('/v1/risk-analysis/analyze', {
+    method: 'POST',
+    body: {
+      business_process: businessProcess,
+      control,
+      dry_run: Boolean(dryRun),
+      form_id: String(formId || '').trim(),
+    },
+  });
+}
+
 async function probeAiSummaryHealthOnce(baseUrl) {
   const response = await fetchWithTimeout(`${baseUrl}/health`, {
     method: 'GET',
@@ -154,5 +177,7 @@ module.exports = {
   getAiSummaryConfig,
   callAiSummaryApi,
   analyzeDesignGapControl,
+  analyzeKeyManual,
+  analyzeRiskAnalysis,
   checkAiSummaryHealth,
 };

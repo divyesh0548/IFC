@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "controlNumber": { "type": "string" },
+    "rationalisationOpportunity": { "type": "string" }
+  },
+  "required": ["controlNumber", "rationalisationOpportunity"]
+}

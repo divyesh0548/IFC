@@ -1,10 +1,8 @@
 const crypto = require('crypto');
 const { pool, getDatabaseUnavailableMessage } = require('../../utils/db');
 const { prisma, withPrismaRetry, isPrismaConnectionError } = require('../../lib/prisma');
-const { requestControlSummary, OLLAMA_MODEL, isOllamaReachable } = require('../../ai_summary/key_manual_summary/ollama_client');
-const { requestRiskAnalysis } = require('../../ai_summary/risk_analysis/ollama_client');
+const { analyzeKeyManual, analyzeRiskAnalysis, checkAiSummaryHealth } = require('../../utils/ai_summary_client');
 const {
-  loadRiskAnalysisMasterByBusinessProcess,
   listRiskAnalysisBusinessProcesses,
 } = require('../../ai_summary/risk_analysis/risk_analysis_master');
 const { hashPassword, getPasswordPepper } = require('../../utils/password');
@@ -831,7 +829,8 @@ async function listRiskAnalysisControls(req, res) {
           cf.financial_year,
           cf.risk_description,
           CASE WHEN ra.form_id IS NULL THEN false ELSE true END AS has_risk_analysis,
-          ra.coverage_status
+          ra.coverage_status,
+          ra.model_name
         ${fromClause}
         WHERE ${whereClause}
         ORDER BY
@@ -900,7 +899,7 @@ async function listRiskAnalysisControls(req, res) {
 
 async function getRiskAnalysisAvailability(req, res) {
   try {
-    const reachable = await isOllamaReachable();
+    const reachable = await checkAiSummaryHealth();
 
     return res.status(200).json({
       success: true,
@@ -984,24 +983,8 @@ async function executeRiskAnalysisForControl(companyIdentifier, controlRow) {
     throw error;
   }
 
-  const { master } = loadRiskAnalysisMasterByBusinessProcess(businessProcess);
-  const candidateSubProcesses = (Array.isArray(master?.sub_processes) ? master.sub_processes : [])
-    .map((entry) => ({
-      subProcess: String(entry?.sub_process || '').trim(),
-      risks: Array.isArray(entry?.risks) ? entry.risks.map((risk) => String(risk || '').trim()).filter(Boolean) : [],
-    }))
-    .filter((entry) => entry.subProcess && entry.risks.length > 0);
-
-  if (candidateSubProcesses.length === 0) {
-    const error = new Error('No candidate sub-processes found in the risk analysis master file');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const llmResult = await requestRiskAnalysis({
-    companyIdentifier,
-    businessProcess,
-    control: shapeControlForRiskAnalysis({
+  const result = await analyzeRiskAnalysis(
+    shapeControlForRiskAnalysis({
       control_number: controlRow.control_number,
       business_process: controlRow.business_process,
       sub_process: controlRow.sub_process,
@@ -1009,8 +992,24 @@ async function executeRiskAnalysisForControl(companyIdentifier, controlRow) {
       control_objective: controlRow.control_objective,
       standard_control_description: controlRow.standard_control_description,
     }),
-    candidateSubProcesses,
-  });
+    businessProcess,
+    { formId: controlRow.form_id }
+  );
+  if (result?.dry_run) {
+    return {
+      dry_run: true,
+      dry_run_txt: String(result.dry_run_txt || ''),
+      model_name: result.model_name || null,
+      control_number: String(controlRow.control_number || '').trim(),
+      form_id: controlRow.form_id ? String(controlRow.form_id).trim() : null,
+    };
+  }
+  const llmResult = result?.analysis || {};
+  if (!llmResult.matchedSubProcess) {
+    const error = new Error(result?.message || 'Risk analysis did not return a result');
+    error.statusCode = 502;
+    throw error;
+  }
 
   const upsertResult = await pool.query(
     `
@@ -1054,7 +1053,7 @@ async function executeRiskAnalysisForControl(companyIdentifier, controlRow) {
       controlRow.form_id ? String(controlRow.form_id).trim() : null,
       businessProcess,
       String(controlRow.sub_process || '').trim() || null,
-      OLLAMA_MODEL,
+      result?.model_name || null,
       llmResult.matchedSubProcess,
       llmResult.matchConfidence,
       llmResult.coverageStatus,
@@ -1103,6 +1102,17 @@ async function generateRiskAnalysisByControl(req, res) {
     }
 
     const analysis = await executeRiskAnalysisForControl(companyIdentifier, controlRow);
+    if (analysis?.dry_run) {
+      return res.status(200).json({
+        success: true,
+        message: 'Dry-run complete. Prompt downloaded. No AI call; analysis not saved.',
+        data: {
+          dry_run: true,
+          dry_run_txt: analysis.dry_run_txt,
+          model_name: analysis.model_name,
+        },
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -1205,13 +1215,36 @@ async function generateRiskAnalysesSelected(req, res) {
 
     let generated = 0;
     let skipped = 0;
+    let dryRun = false;
+    const dryRunTexts = [];
     for (const row of formsResult.rows) {
       if (!regenerateExisting && row.has_risk_analysis) {
         skipped += 1;
         continue;
       }
-      await executeRiskAnalysisForControl(companyIdentifier, row);
+      const analysis = await executeRiskAnalysisForControl(companyIdentifier, row);
+      if (analysis?.dry_run) {
+        dryRun = true;
+        if (analysis.dry_run_txt) dryRunTexts.push(analysis.dry_run_txt);
+        continue;
+      }
       generated += 1;
+    }
+
+    if (dryRun) {
+      return res.status(200).json({
+        success: true,
+        message: dryRunTexts.length
+          ? `Dry-run complete: ${dryRunTexts.length} prompt(s) ready. No AI calls; analyses not saved.`
+          : 'Dry-run is on. No controls were sent because the selected ones already have an analysis.',
+        data: {
+          dry_run: true,
+          dry_run_txt: dryRunTexts.join(`\n\n${'='.repeat(72)}\n\n`),
+          generated: 0,
+          skipped,
+          prompt_count: dryRunTexts.length,
+        },
+      });
     }
 
     return res.status(200).json({
@@ -2351,16 +2384,24 @@ async function getDashboardRacms(req, res) {
   }
 }
 
-async function getOrCreateCurrentKeyManualRun(companyIdentifier) {
+async function getOrCreateCurrentKeyManualRun(companyIdentifier, modelName) {
   const existing = await prisma.keyManualAiInsightsRunTable.findFirst({
     where: { companyIdentifier },
     orderBy: { id: 'asc' },
   });
-  if (existing) return existing;
+  if (existing) {
+    if (modelName && existing.modelName !== modelName) {
+      return prisma.keyManualAiInsightsRunTable.update({
+        where: { id: existing.id },
+        data: { modelName },
+      });
+    }
+    return existing;
+  }
   return prisma.keyManualAiInsightsRunTable.create({
     data: {
       companyIdentifier,
-      modelName: OLLAMA_MODEL,
+      modelName: modelName || 'unspecified',
       promptVersion: KEY_MANUAL_AI_PROMPT_VERSION,
       status: 'completed',
     },
@@ -2629,9 +2670,10 @@ async function generateKeyManualAiInsightsRun(req, res) {
       });
     }
 
-    const run = await getOrCreateCurrentKeyManualRun(companyIdentifier);
+    let run = null;
     let generated = 0;
     let skipped = 0;
+    let modelName = null;
 
     for (const row of formsResult.rows) {
       const formId = String(row.form_id || '').trim();
@@ -2647,15 +2689,14 @@ async function generateKeyManualAiInsightsRun(req, res) {
       }
 
       const businessProcess = String(row.business_process || '').trim() || 'Unspecified Business Process';
-      const llmResult = await requestControlSummary({
-        companyIdentifier,
-        businessProcess,
-        control: shapeControlForAi(row),
-      });
+      const llmResponse = await analyzeKeyManual(shapeControlForAi(row), businessProcess, companyIdentifier);
+      const llmResult = llmResponse?.summary || {};
+      modelName = llmResponse?.model_name || modelName;
       if (String(llmResult.controlNumber || '').trim() !== String(row.control_number || '').trim()) {
-        throw new Error(`Ollama returned control ${llmResult.controlNumber} for input ${row.control_number}`);
+        throw new Error(`Model returned control ${llmResult.controlNumber} for input ${row.control_number}`);
       }
 
+      run = await getOrCreateCurrentKeyManualRun(companyIdentifier, modelName);
       await upsertKeyManualSummary({
         companyIdentifier,
         runId: run.id,
@@ -2673,12 +2714,12 @@ async function generateKeyManualAiInsightsRun(req, res) {
       data: {
         generated,
         skipped,
-        model_name: OLLAMA_MODEL,
+        model_name: modelName,
       },
     });
   } catch (error) {
     console.error('Company coordinator generate key manual AI insights error:', error);
-    return res.status(500).json({
+    return res.status(Number(error?.statusCode || 500)).json({
       success: false,
       message: String(error?.message || '').trim() || 'Failed to generate AI summary',
       code: String(error?.code || 'INTERNAL_SERVER_ERROR').trim() || 'INTERNAL_SERVER_ERROR',
@@ -2693,9 +2734,109 @@ async function generateKeyManualAiInsightsRun(req, res) {
   }
 }
 
+async function getKeyManualReport(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const formIds = normalizeRequestedUnitIds({ unit_ids: req.query?.form_ids });
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company coordinator context is required',
+      });
+    }
+    if (formIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'form_ids is required',
+      });
+    }
+
+    const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+    const mappedUnitIds = mappedUnits.map((row) => String(row?.unit_id || '').trim()).filter(Boolean);
+    const rowsResult = await pool.query(
+      `
+        SELECT
+          cf.form_id,
+          cf.control_number,
+          cf.unit_id,
+          cum.unit_name,
+          cf.business_process,
+          cf.financial_year,
+          kmi.rationalisation_opportunity
+        FROM control_forms cf
+        LEFT JOIN company_unit_master cum
+          ON cum.company_identifier = cf.company_identifier
+         AND cum.unit_id = cf.unit_id
+        JOIN LATERAL (
+          SELECT rd.rationalisation_opportunity
+          FROM key_manual_ai_insights_row_data rd
+          WHERE rd.company_identifier = cf.company_identifier
+            AND rd.form_id = cf.form_id
+          ORDER BY rd.updated_at DESC NULLS LAST, rd.id DESC
+          LIMIT 1
+        ) kmi ON true
+        WHERE cf.company_identifier = $1
+          AND cf.form_id = ANY($2::text[])
+          AND cf.unit_id = ANY($3::text[])
+          AND ${KEY_MANUAL_CONTROL_SQL}
+        ORDER BY ${sqlOrderByControlNumberAsc('cf.control_number')}
+      `,
+      [companyIdentifier, formIds, mappedUnitIds]
+    );
+
+    if (rowsResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No generated summaries found for the selected controls',
+      });
+    }
+
+    const unitNames = [...new Set(rowsResult.rows.map((row) => String(row.unit_name || '').trim()).filter(Boolean))];
+    const businessProcesses = [...new Set(rowsResult.rows.map((row) => String(row.business_process || '').trim()).filter(Boolean))];
+    let companyName = null;
+    try {
+      const company = await prisma.company.findUnique({
+        where: { companyIdentifier },
+        select: { companyName: true },
+      });
+      companyName = String(company?.companyName || '').trim() || null;
+    } catch (lookupError) {
+      console.error('Key manual report company name lookup failed:', lookupError);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        meta: {
+          company_name: companyName,
+          unit_name: unitNames.join(', ') || null,
+          business_process: businessProcesses.join(', ') || null,
+          controls_reviewed: rowsResult.rows.length,
+        },
+        controls: rowsResult.rows.map((row) => ({
+          form_id: row.form_id,
+          control_number: row.control_number,
+          unit_id: row.unit_id,
+          unit_name: row.unit_name,
+          business_process: row.business_process,
+          financial_year: row.financial_year,
+          rationalisation_opportunity: row.rationalisation_opportunity,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Key manual report error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load key manual report',
+    });
+  }
+}
+
 async function getKeyManualAiInsightsAvailability(req, res) {
   try {
-    const reachable = await isOllamaReachable();
+    const reachable = await checkAiSummaryHealth();
 
     return res.status(200).json({
       success: true,
@@ -5913,6 +6054,7 @@ module.exports = {
   generateRiskAnalysisByControl,
   generateRiskAnalysesSelected,
   getKeyManualAiInsightsAvailability,
+  getKeyManualReport,
   listKeyManualControls,
   getKeyManualAiInsightsRun,
   generateKeyManualAiInsightsRun,

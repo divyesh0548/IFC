@@ -3,6 +3,8 @@ from __future__ import annotations
 from flask import Flask, jsonify
 
 from app.routes_design_gap import design_gap_bp
+from app.routes_key_manual import key_manual_bp
+from app.routes_risk_analysis import risk_analysis_bp
 from services.design_gap.design_gap_lib.config import load_env
 
 
@@ -10,6 +12,8 @@ def create_app() -> Flask:
     load_env()
     app = Flask(__name__)
     app.register_blueprint(design_gap_bp)
+    app.register_blueprint(risk_analysis_bp)
+    app.register_blueprint(key_manual_bp)
 
     @app.get("/health")
     def health():

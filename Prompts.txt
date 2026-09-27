@@ -1,7 +1,6 @@
-Change the wording on the frontend for "AI Insights", Keep this "Design Gap Analyis".
+"company-co/key-manual-ai-insights" on this page display the report as in design gap analysis. 
+Means one pop-up and list all results of selected controls. 
 
-And currently in our project there are three types of AI summary generation modules. Please take the "AI Insights" as standard and redesign the other two according to that. Means the UI, filters, the summary genearion, etc. 
+Also in each control provide a link which will open that control in new window.
 
-I know those two are running on Local LLM API so keep it as it is. But change the working of them. I want same UI and same way of generation of AI summary. No need to add reports in those two.
-
-Ask if I am missing something to define.
+Also move the logic of this into "C:\Divyesh\IFC\IFC_Prisma\AI-Summary-API-Backend" and wire this with openrouter API.

@@ -17,6 +17,7 @@ import DialogActions from '@mui/material/DialogActions'
 import ListItemText from '@mui/material/ListItemText'
 import TablePagination from '@mui/material/TablePagination'
 import Chip from '@mui/material/Chip'
+import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { useTheme } from '@mui/material/styles'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
@@ -96,16 +97,30 @@ function KeyManualAiInsightsSummary() {
   const [listTick, setListTick] = useState(0)
   const [regenConfirmOpen, setRegenConfirmOpen] = useState(false)
   const [pendingGenerate, setPendingGenerate] = useState(null)
-  const [detailRow, setDetailRow] = useState(null)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportData, setReportData] = useState(null)
   const rowMetaRef = useRef(new Map())
+  const summaryGeneratedRef = useRef(new Map())
   const lastSelectedIndexRef = useRef(null)
 
   useSyncGlobalLoading(loading || generating)
 
   rows.forEach((row) => {
     const formId = String(row.form_id || '').trim()
-    if (formId) rowMetaRef.current.set(formId, row)
+    if (formId) {
+      rowMetaRef.current.set(formId, row)
+      summaryGeneratedRef.current.set(formId, Boolean(row.has_summary))
+    }
   })
+
+  const generatedSelectionCount = useMemo(() => {
+    let count = 0
+    selectedFormIds.forEach((id) => {
+      if (summaryGeneratedRef.current.get(id)) count += 1
+    })
+    return count
+  }, [selectedFormIds, rows])
 
   const pageFormIds = useMemo(
     () => rows.map((row) => String(row.form_id || '').trim()).filter(Boolean),
@@ -209,7 +224,7 @@ function KeyManualAiInsightsSummary() {
       })
       const availabilityData = await availabilityResponse.json()
       if (!availabilityResponse.ok || !availabilityData?.success || !availabilityData?.data?.reachable) {
-        toast('This feature is under development')
+        toast('AI Summary API is not reachable')
         return
       }
 
@@ -258,6 +273,38 @@ function KeyManualAiInsightsSummary() {
       return
     }
     await runGenerate({ formIds, regenerateExisting: false })
+  }
+
+  const openControlWindow = (formId) => {
+    const normalizedFormId = String(formId || '').trim()
+    if (!normalizedFormId) {
+      toast.error('Form ID is not available for this control')
+      return
+    }
+    window.open(`/company-co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
+  }
+
+  const openSelectedReports = async () => {
+    const formIds = [...selectedFormIds].filter((id) => summaryGeneratedRef.current.get(id))
+    if (formIds.length === 0) return
+    setReportLoading(true)
+    setReportData(null)
+    setReportOpen(true)
+    try {
+      const params = new URLSearchParams()
+      formIds.forEach((id) => params.append('form_ids', id))
+      const response = await fetch(apiUrl(`/api/company-co/ai-insights/key-manual-summary/report?${params}`), {
+        credentials: 'include',
+      })
+      const data = await response.json()
+      if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to load report')
+      setReportData(data.data)
+    } catch (error) {
+      setReportOpen(false)
+      toast.error(error.message || 'Failed to load report')
+    } finally {
+      setReportLoading(false)
+    }
   }
 
   return (
@@ -368,6 +415,11 @@ function KeyManualAiInsightsSummary() {
 
           <Box sx={{ flex: 1 }} />
 
+          {generatedSelectionCount > 0 && (
+            <Button variant="outlined" disabled={reportLoading} onClick={openSelectedReports}>
+              See Reports ({generatedSelectionCount})
+            </Button>
+          )}
           <Button
             variant="contained"
             disabled={selectedFormIds.size === 0 || generating}
@@ -452,9 +504,7 @@ function KeyManualAiInsightsSummary() {
                   py: 1.1,
                   alignItems: 'center',
                   borderBottom: `1px solid ${theme.palette.divider}`,
-                  cursor: 'pointer',
                 }}
-                onClick={() => setDetailRow(row)}
               >
                 <Checkbox
                   size="small"
@@ -496,21 +546,65 @@ function KeyManualAiInsightsSummary() {
         />
       </Paper>
 
-      <Dialog open={Boolean(detailRow)} onClose={() => setDetailRow(null)} fullWidth maxWidth="sm">
-        <DialogTitle>{detailRow?.control_number || 'Control'}</DialogTitle>
+      <Dialog open={reportOpen} onClose={() => !reportLoading && setReportOpen(false)} fullWidth maxWidth="lg">
+        <DialogTitle>Key + Manual Report</DialogTitle>
         <DialogContent>
-          {detailRow?.has_summary ? (
-            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-              {detailRow.rationalisation_opportunity || 'Summary is empty.'}
-            </Typography>
+          {reportLoading ? (
+            <Typography variant="body2" color="text.secondary">Loading report...</Typography>
           ) : (
-            <Typography variant="body2" color="text.secondary">
-              No summary has been generated for this control.
-            </Typography>
+            <Box>
+              <Typography variant="body2" color="text.secondary">
+                {String(reportData?.meta?.company_name || '').trim() || '—'}
+                {' | '}
+                {String(reportData?.meta?.unit_name || '').trim() || '—'}
+              </Typography>
+              {reportData?.meta?.business_process ? (
+                <Typography variant="subtitle1" fontWeight={700} sx={{ mt: 0.5 }}>
+                  {reportData.meta.business_process}
+                </Typography>
+              ) : null}
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', mt: 0.5, pb: 1.5, borderBottom: `1px solid ${theme.palette.divider}` }}
+              >
+                Controls reviewed: {Number(reportData?.meta?.controls_reviewed || reportData?.controls?.length || 0)}
+              </Typography>
+              <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {(reportData?.controls || []).map((control) => (
+                  <Box
+                    key={control.form_id}
+                    sx={{
+                      p: 1.75,
+                      border: `1px solid ${theme.palette.divider}`,
+                      borderRadius: '10px',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1 }}>
+                      <Typography variant="body2" fontWeight={700}>
+                        {control.control_number || '—'}
+                      </Typography>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() => openControlWindow(control.form_id)}
+                        endIcon={<ArrowOutwardRoundedIcon sx={{ fontSize: 16 }} />}
+                        sx={{ whiteSpace: 'nowrap' }}
+                      >
+                        Open control
+                      </Button>
+                    </Box>
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                      {control.rationalisation_opportunity || 'Summary is empty.'}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDetailRow(null)}>Close</Button>
+          <Button onClick={() => setReportOpen(false)} disabled={reportLoading}>Close</Button>
         </DialogActions>
       </Dialog>
 

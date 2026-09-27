@@ -1,0 +1,58 @@
+You are reviewing one RACM control for risk coverage analysis.
+The business process cycle is "{business_process}".
+
+Your task has two steps:
+1. Match the input control to the most appropriate candidate sub-process.
+2. For the matched candidate sub-process, compare each listed candidate risk category with the input control details and identify only those listed risks that are not addressed by the control.
+
+Use only the information provided in the input control and candidate sub-process list.
+Do not use external knowledge, assumptions, industry examples, or inferred control details that are not supported by the input control fields.
+Do not invent risks, sub-processes, control activities, or evidence requirements.
+
+Sub-process matching rules:
+matchedSubProcess must be copied exactly from one of the Candidate sub-process names.
+Select the candidate sub-process that is closest in meaning to the control sub-process and control description.
+Do not return the input control sub-process as matchedSubProcess unless it exactly exists in Candidate sub-process names.
+If multiple candidate sub-processes appear similar, select the one whose listed risks are most closely connected to the input control.
+Do not create, rename, shorten, expand, or paraphrase the candidate sub-process name.
+
+Risk coverage comparison rules:
+After selecting matchedSubProcess, review only the risks listed under that matched candidate sub-process. Those listed items are the risk categories for that sub-process.
+For each listed candidate risk, ask: does this RACM already address that risk category?
+Read riskDescription, controlObjective, and standardControlDescription together. These are the control details.
+riskDescription is the risk this RACM is written to address. If a candidate risk has the same meaning as riskDescription, that candidate risk is COVERED by this control. Do not list it as missing.
+controlObjective and standardControlDescription describe what the control does. If they already mitigate, review, approve, test, or select against the same issue as a candidate risk, that candidate risk is COVERED.
+Match on meaning and risk theme, not exact wording.
+A candidate risk is MISSING only when the control details do not address that risk category at all.
+Do not invert the control details into a missing risk.
+Do not create a new missing-risk sentence from the control text. Use only candidate risk wording, and only when that candidate risk is truly not addressed.
+Do not flag a risk as missing merely because the control uses different words, a shorter description, or a more specific activity.
+Do not mark a risk as covered merely because it belongs to the same business process or sub-process. Coverage must come from the control details.
+If every listed candidate risk that relates to this control is already addressed, return missingRisks as an empty array.
+
+missingRisks rules:
+missingRisks must contain only risks copied exactly from the selected candidate sub-process list, and only those not addressed by the input control details.
+Copy missingRisks exactly as written in the candidate sub-process risk list.
+Do not add new risks to missingRisks.
+Do not paraphrase, shorten, invert, or rewrite candidate risks.
+Do not include risks from other candidate sub-processes.
+Do not include a listed candidate risk in missingRisks if riskDescription, controlObjective, or standardControlDescription already covers that risk category.
+
+missingRiskPointers rules:
+For every meaningful missing risk area, add one concise pointer explaining what aspect is not addressed by the RACM.
+Use short, factual pointers in simple business language.
+Each pointer should explain the practical coverage gap, not repeat the risk sentence.
+Rephrase every pointer. Do not copy exact sentences, exact phrases, or long wording from the input control or candidate risks.
+Each pointer must describe a distinct gap.
+Do not repeat the same point with small wording changes.
+If two or more missing risks lead to the same practical gap, combine them into one clear pointer.
+STRICT WARNING: missingRiskPointers must not contain duplicate or near-duplicate pointers.
+Keep each pointer specific, plain, and easy to read.
+Do not include generic statements such as "control is inadequate" unless the specific missing aspect is also stated.
+
+Output restrictions:
+Return strictly valid JSON matching the schema below.
+Do not include markdown, comments, explanation, or extra text outside JSON.
+Do not return the input control number, control sub-process, covered risks, or general notes.
+Do not include fields that are not present in the schema.
+Ensure all JSON arrays are valid arrays, even when empty.

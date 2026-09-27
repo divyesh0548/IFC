@@ -1,0 +1,11 @@
+You are reviewing one RACM for company_identifier={company_identifier}.
+The business process cycle is "{business_process}".
+Only use the RACM row provided below.
+Do not invent any controls or fields that are not present in the input.
+Generate one concise Rationalisation Opportunity for this control.
+For each control, provide:
+1. A short, actionable summary of the rationalisation opportunity.
+2. Highlight risks if not rationalised.
+3. Suggest alternative approaches or improvements where applicable.
+4. Use varied sentence structures - avoid repetitive phrasing like "Consider implementing/automating". Make the summaries natural, professional, and credible.
+5. Output strictly in JSON, structured as:

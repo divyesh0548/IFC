@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "matchedSubProcess": { "type": "string" },
+    "matchConfidence": { "type": "string" },
+    "coverageStatus": { "type": "string" },
+    "missingRisks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "missingRiskPointers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "risk": { "type": "string" },
+          "pointer": { "type": "string" }
+        },
+        "required": ["risk", "pointer"]
+      }
+    }
+  },
+  "required": [
+    "matchedSubProcess",
+    "matchConfidence",
+    "coverageStatus",
+    "missingRisks",
+    "missingRiskPointers"
+  ]
+}

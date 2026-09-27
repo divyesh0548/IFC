@@ -54,7 +54,7 @@ const INSIGHT_CARD_LABEL_SX = {
   mb: 0.75,
 }
 
-const TABLE_GRID_COLUMNS = '56px 160px 180px 220px 140px 240px minmax(340px, 1fr)'
+const TABLE_GRID_COLUMNS = '56px 220px 180px 220px 140px 240px minmax(340px, 1fr)'
 
 function getSelectedFilterLabel(selected, options, getLabel = (value) => value) {
   if (!Array.isArray(selected) || selected.length === 0) return 'All'
@@ -94,6 +94,18 @@ function renderFilterValue(label) {
       {label}
     </Typography>
   )
+}
+
+function downloadDryRunPrompt(text, filename) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
 }
 
 function formatRiskAnalysisTimestamp(value) {
@@ -328,6 +340,14 @@ function RiskAnalysis() {
         throw error
       }
 
+      if (data.data?.dry_run) {
+        if (data.data.dry_run_txt) {
+          downloadDryRunPrompt(data.data.dry_run_txt, `risk_analysis_dry_run_${controlNumber || 'prompt'}.txt`)
+        }
+        toast.success(data.message || 'Dry-run prompt downloaded')
+        return
+      }
+
       setAnalysisData((prev) => ({
         control: prev?.control || {
           form_id: getFieldValue(selectedControl, 'form_id', 'formId'),
@@ -372,6 +392,13 @@ function RiskAnalysis() {
       }
       if (!response.ok || !data?.success) {
         throw new Error(data?.message || 'Failed to generate risk analysis')
+      }
+      if (data.data?.dry_run) {
+        if (data.data.dry_run_txt) {
+          downloadDryRunPrompt(data.data.dry_run_txt, 'risk_analysis_dry_run_prompts.txt')
+        }
+        toast.success(data.message || 'Dry-run prompts downloaded')
+        return
       }
       const generated = Number(data.data?.generated || 0)
       const skipped = Number(data.data?.skipped || 0)
@@ -719,7 +746,7 @@ function RiskAnalysis() {
         </Box>
 
         <Box sx={{ width: '100%', overflowX: 'auto', userSelect: 'none' }}>
-          <Box sx={{ minWidth: 900 }}>
+          <Box sx={{ minWidth: 960 }}>
             <Box
               sx={{
                 display: 'grid',
@@ -851,6 +878,21 @@ function RiskAnalysis() {
                       variant={row.has_risk_analysis ? 'filled' : 'outlined'}
                       sx={{ mt: 0.75 }}
                     />
+                    {row.has_risk_analysis && String(getFieldValue(row, 'model_name', 'modelName') || '').trim() ? (
+                      <Tooltip title={String(getFieldValue(row, 'model_name', 'modelName') || '').trim()} arrow>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: 'block',
+                            mt: 0.5,
+                            color: theme.palette.text.secondary,
+                            ...TABLE_TEXT_TRUNCATE_SX,
+                          }}
+                        >
+                          {String(getFieldValue(row, 'model_name', 'modelName') || '').trim()}
+                        </Typography>
+                      </Tooltip>
+                    ) : null}
                   </Box>
                   <Box sx={{ px: 2, py: 1.75, borderRight: `1px solid ${theme.palette.divider}` }}>
                     <Tooltip title={String(getFieldValue(row, 'unit_name', 'unitName') || getFieldValue(row, 'unit_id', 'unitId') || '').trim() || 'Unassigned'} arrow>
@@ -976,6 +1018,11 @@ function RiskAnalysis() {
                 </Typography>
               ) : <Box />}
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                {String(analysisData?.analysis?.model_name || '').trim() ? (
+                  <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                    Model: {String(analysisData.analysis.model_name).trim()}
+                  </Typography>
+                ) : null}
                 {analysisData?.analysis?.response_json ? (
                   <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
                     Confidence: {analysisData.analysis.response_json.matchConfidence || 'N/A'}

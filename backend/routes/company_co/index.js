@@ -28,6 +28,7 @@ router.get('/ai-insights/design-gap/jobs/:job_id', verifyCompanyCoordinator, des
 router.post('/ai-insights/design-gap/generate', verifyCompanyCoordinator, designGapInsights.generateDesignGapInsights);
 
 router.get('/ai-insights/key-manual-summary/availability', verifyCompanyCoordinator, controller.getKeyManualAiInsightsAvailability);
+router.get('/ai-insights/key-manual-summary/report', verifyCompanyCoordinator, controller.getKeyManualReport);
 router.get('/ai-insights/key-manual-summary', verifyCompanyCoordinator, controller.listKeyManualControls);
 router.post('/ai-insights/key-manual-summary/generate', verifyCompanyCoordinator, controller.generateKeyManualAiInsightsRun);
 router.delete('/ai-insights/key-manual-summary/:run_id', verifyCompanyCoordinator, controller.deleteKeyManualAiInsightsRun);

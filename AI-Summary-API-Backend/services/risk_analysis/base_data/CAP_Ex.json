@@ -1,0 +1,174 @@
+{
+  "business_process": "Capital Expenditure",
+  "business_process_code": "CAPEX",
+  "sub_processes": [
+    {
+      "sub_process": "Capex Governance and DOA",
+      "risks": [
+        "Absence of documented SOPs and delegation of authority may result in inconsistent capex practices, unclear accountability and approvals being performed outside approved authority limits.",
+        "Non-standard procedures may be followed across departments or locations, resulting in weak control discipline and inconsistent treatment of capital expenditure transactions."
+      ]
+    },
+    {
+      "sub_process": "Capex Planning",
+      "risks": [
+        "Inadequate assessment of asset requirements may result in incorrect capex planning, unnecessary asset procurement or failure to provide for essential business needs.",
+        "Unauthorized changes to the approved capex plan may result in projects being initiated or modified without proper business justification and management approval.",
+        "Inaccurate assumptions used for payback or IRR evaluation may lead to approval of commercially unviable capital projects."
+      ]
+    },
+    {
+      "sub_process": "Budgeting and Approval",
+      "risks": [
+        "Incorrect budget provisions may result in inadequate or excessive allocation of funds for capital expenditure projects.",
+        "Capital expenditure may be incurred without approved budget or beyond sanctioned limits, resulting in unauthorized financial commitments.",
+        "Approved capex budgets may not be accurately updated in the system, leading to incorrect budget tracking and weak monitoring of actual expenditure."
+      ]
+    },
+    {
+      "sub_process": "Capex Project Creation",
+      "risks": [
+        "Capex projects may be created in the system without valid approval, resulting in unauthorized purchase or creation of fixed assets.",
+        "Incorrect project master data may lead to inaccurate cost accumulation, budget monitoring and capitalization of project expenditure."
+      ]
+    },
+    {
+      "sub_process": "Capital Requisition",
+      "risks": [
+        "Capital purchase requisitions may be raised without proper approval or business justification, resulting in unauthorized procurement initiation.",
+        "Requisitions may not be aligned with approved budget, technical requirement or project scope, leading to unsuitable or unnecessary asset procurement."
+      ]
+    },
+    {
+      "sub_process": "Capital Procurement",
+      "risks": [
+        "Capital purchase orders may be created or amended without proper authorization, resulting in unauthorized commitments to vendors.",
+        "Incorrect rates, quantities, tax details or technical specifications in capital purchase orders may result in excess cost, wrong procurement or financial reporting errors.",
+        "Selection of technically unsuitable or suboptimal vendors may result in quality issues, project delays, cost overruns or poor service outcomes."
+      ]
+    },
+    {
+      "sub_process": "Goods Receipt and Acceptance",
+      "risks": [
+        "Goods receipt notes may be prepared without actual receipt or acceptance of the asset, resulting in fictitious or premature recording of fixed assets.",
+        "Incomplete or inaccurate GRN preparation may result in incorrect asset records, vendor liabilities and capitalization entries.",
+        "Assets received in defective or faulty condition may be accepted without adequate inspection, resulting in operational issues and avoidable costs.",
+        "Delay in GRN creation may affect timely recording of assets, project cost tracking and vendor invoice processing."
+      ]
+    },
+    {
+      "sub_process": "Invoice Booking",
+      "risks": [
+        "Capital invoices may be booked without confirmation of receipt, approval or supporting documentation, resulting in unauthorized or inaccurate liability recognition.",
+        "Incorrect invoice booking may result in wrong asset cost, tax treatment, vendor balance or financial statement classification."
+      ]
+    },
+    {
+      "sub_process": "Payment Processing",
+      "risks": [
+        "Payments may be processed to vendors without proper authorization, invoice validation or confirmation of asset receipt.",
+        "Payments made without adequate three-way matching may result in duplicate payments, excess payments or payments for assets not received."
+      ]
+    },
+    {
+      "sub_process": "Asset Capitalization",
+      "risks": [
+        "Fixed assets may be capitalized without actual receipt, acceptance or readiness for use, resulting in premature or inaccurate capitalization.",
+        "Assets that have been put to use may not be capitalized on a timely basis, resulting in understatement of fixed assets and incorrect depreciation charge.",
+        "Revenue expenditure such as repairs and maintenance may be incorrectly capitalized, resulting in overstatement of assets and understatement of expenses.",
+        "Incidental costs directly attributable to asset acquisition or construction may not be capitalized appropriately, resulting in inaccurate asset cost."
+      ]
+    },
+    {
+      "sub_process": "CWIP Monitoring",
+      "risks": [
+        "Project costs may not be correctly accumulated or settled from CWIP to fixed assets, resulting in inaccurate capitalization and project accounting.",
+        "CWIP balances may not be periodically reviewed for completion status, resulting in delayed capitalization and incorrect depreciation recognition.",
+        "Borrowing costs may be incorrectly included or excluded from project cost, resulting in non-compliance with applicable accounting standards."
+      ]
+    },
+    {
+      "sub_process": "Asset Master and FAR",
+      "risks": [
+        "Fixed asset master records may be created or modified inaccurately or without authorization, resulting in unreliable fixed asset register data.",
+        "Asset numbers may not be allotted or recorded for all assets, reducing traceability between physical assets and accounting records.",
+        "Incorrect GL account, asset class, depreciation key or useful life may be assigned, resulting in incorrect classification and accounting of fixed assets.",
+        "Fixed asset register may not be updated completely and accurately for additions, transfers, disposals or changes in asset details."
+      ]
+    },
+    {
+      "sub_process": "Asset Tagging",
+      "risks": [
+        "Physical assets may not be tagged with asset numbers or barcodes, resulting in weak traceability and difficulty in physical verification.",
+        "Mismatch between tagged physical assets and fixed asset register may result in fictitious, duplicate or unrecorded assets remaining unidentified."
+      ]
+    },
+    {
+      "sub_process": "Depreciation and Amortisation",
+      "risks": [
+        "Depreciation may be calculated or recorded inaccurately due to incorrect rates, useful life, asset class or capitalization date.",
+        "Incorrect amortisation of intangible assets may result in misstated asset values and non-compliance with accounting requirements.",
+        "Depreciation rates or keys may not be updated correctly in the fixed asset register, resulting in recurring financial reporting errors."
+      ]
+    },
+    {
+      "sub_process": "Useful Life Review",
+      "risks": [
+        "Useful lives of assets may not be reviewed periodically, resulting in depreciation that does not reflect actual usage, condition or economic benefit of assets.",
+        "Incorrect or inadequate useful life assignment may result in non-compliance with Companies Act requirements and misstatement of depreciation expense."
+      ]
+    },
+    {
+      "sub_process": "Physical Verification",
+      "risks": [
+        "Physical assets may not be verified periodically, resulting in lack of assurance over existence, condition and location of assets recorded in the books.",
+        "Differences between physical assets and fixed asset register may remain unidentified, resulting in fictitious, missing or misplaced assets.",
+        "Inadequate control over physical location of assets may result in loss, unauthorized movement or misuse of company assets."
+      ]
+    },
+    {
+      "sub_process": "Asset Transfers",
+      "risks": [
+        "Inter-unit or inter-location movement of fixed assets may not be approved, recorded or tracked accurately, resulting in incorrect asset location records.",
+        "Unauthorized transfer or removal of assets from company premises may result in loss of assets and weak accountability."
+      ]
+    },
+    {
+      "sub_process": "Asset Disposal and Retirement",
+      "risks": [
+        "Fixed assets may be disposed of or retired without proper approval, resulting in unauthorized removal or sale of company assets.",
+        "Assets may be disposed at inappropriate rates or without adequate valuation, resulting in financial loss to the company.",
+        "Incorrect accounting of asset disposal may result in inaccurate reversal of cost, accumulated depreciation, gain or loss on sale and invoicing.",
+        "Assets identified for disposal may not be properly tracked, leading to risk of misuse, theft or delayed accounting recognition."
+      ]
+    },
+    {
+      "sub_process": "Asset Impairment",
+      "risks": [
+        "Impairment indicators for fixed assets may not be identified or assessed by management, resulting in overstatement of asset carrying value.",
+        "Incorrect impairment assessment may result in non-compliance with applicable accounting standards and inaccurate financial reporting."
+      ]
+    },
+    {
+      "sub_process": "Asset Insurance",
+      "risks": [
+        "Fixed assets may not be adequately insured against relevant risks, resulting in potential financial loss in case of damage, theft or other insured events.",
+        "Insurance coverage may not be updated for new additions, disposals or changes in asset values, resulting in underinsurance or unnecessary premium cost."
+      ]
+    },
+    {
+      "sub_process": "Insurance Spares",
+      "risks": [
+        "Insurance spares may not be properly identified, classified or capitalized, resulting in incorrect accounting treatment and weak tracking of critical spares.",
+        "Critical insurance spares may not be monitored separately, resulting in operational risk if such spares are unavailable when required."
+      ]
+    },
+    {
+      "sub_process": "Payback Monitoring",
+      "risks": [
+        "Actual benefits from approved capex projects may not be monitored against payback or IRR assumptions, resulting in weak post-implementation review.",
+        "Significant deviations in capex outcomes may not be identified and escalated, resulting in repeated investment decisions based on inaccurate assumptions."
+      ]
+    }
+  ]
+}
