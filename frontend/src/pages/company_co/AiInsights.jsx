@@ -677,7 +677,7 @@ function AiInsights() {
           </Alert>
         )}
 
-        <Box sx={{ mt: 2.5, display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
+        <Box sx={{ mt: 2.5, position: 'relative', display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
           <FormControl size="small" sx={FILTER_SELECT_SX}>
             <InputLabel>Unit</InputLabel>
             <Select
@@ -791,13 +791,26 @@ function AiInsights() {
           >
             Generate Selected ({selectedFormIds.size})
           </Button>
-        </Box>
-
-        {selectionUnitId && (
-          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'text.secondary' }}>
-            Selection locked to unit: {unitLabel(selectionUnitId)}
+          <Typography
+            variant="caption"
+            sx={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: '100%',
+              mt: 0.25,
+              height: 16,
+              lineHeight: '16px',
+              color: 'text.secondary',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              visibility: selectionUnitId ? 'visible' : 'hidden',
+            }}
+          >
+            Selection locked to unit: {selectionUnitId ? unitLabel(selectionUnitId) : ''}
           </Typography>
-        )}
+        </Box>
 
         <Box
           sx={{
@@ -1268,7 +1281,6 @@ function AiInsights() {
                           {formatInsufficientCheckLine(r)}
                         </Typography>
                       ))}
-                      <DesignGapUsageLine control={c} />
                     </Box>
                   )
                 })}

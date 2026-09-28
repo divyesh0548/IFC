@@ -3,7 +3,20 @@
   "additionalProperties": false,
   "properties": {
     "controlNumber": { "type": "string" },
-    "rationalisationOpportunity": { "type": "string" }
+    "currentManualActivity": { "type": "string" },
+    "automationOpportunity": { "type": "string" },
+    "proposedSolution": { "type": "string" },
+    "benefit": { "type": "string" },
+    "dependency": { "type": "string" },
+    "residualRiskOrLimitation": { "type": "string" }
   },
-  "required": ["controlNumber", "rationalisationOpportunity"]
+  "required": [
+    "controlNumber",
+    "currentManualActivity",
+    "automationOpportunity",
+    "proposedSolution",
+    "benefit",
+    "dependency",
+    "residualRiskOrLimitation"
+  ]
 }

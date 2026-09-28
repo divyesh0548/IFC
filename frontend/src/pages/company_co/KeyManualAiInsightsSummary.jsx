@@ -46,6 +46,73 @@ const FILTER_SELECT_SX = {
   },
 }
 
+const AUTOMATION_FIELD_LABELS = [
+  'Current manual activity',
+  'Automation opportunity',
+  'Proposed solution',
+  'Benefit',
+  'Dependency',
+  'Residual risk or limitation',
+]
+
+function parseAutomationOpportunity(text) {
+  const raw = String(text || '').replace(/\r\n/g, '\n').trim()
+  const hasKnownOpening = AUTOMATION_FIELD_LABELS.some((label) => raw.startsWith(`${label}\n`))
+  if (!hasKnownOpening) return null
+  const labelPattern = AUTOMATION_FIELD_LABELS
+    .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  return raw
+    .split(new RegExp(`\\n(?=(?:${labelPattern})\\n)`))
+    .map((part) => {
+      const newline = part.indexOf('\n')
+      if (newline === -1) return null
+      const label = part.slice(0, newline).trim()
+      const value = part.slice(newline + 1).trim()
+      if (!AUTOMATION_FIELD_LABELS.includes(label) || !value) return null
+      return { label, value }
+    })
+    .filter(Boolean)
+}
+
+function AutomationOpportunityFields({ text }) {
+  const raw = String(text || '').trim()
+  const sections = parseAutomationOpportunity(raw)
+  if (!sections || sections.length === 0) {
+    return (
+      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>
+        {raw || 'Summary is empty.'}
+      </Typography>
+    )
+  }
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+      {sections.map((section) => (
+        <Box key={section.label}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, lineHeight: 1.3 }}>
+            {section.label}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 0.25, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>
+            {section.value}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+function downloadDryRunPrompt(text, filename) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 function parseUnitIdsFromSearchParams(searchParams) {
   const values = [
     ...searchParams.getAll('unit_ids'),
@@ -243,6 +310,13 @@ function KeyManualAiInsightsSummary() {
         return
       }
       if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to generate AI summary')
+      if (data.data?.dry_run) {
+        if (data.data.dry_run_txt) {
+          downloadDryRunPrompt(data.data.dry_run_txt, 'automation_opportunity_dry_run.txt')
+        }
+        toast.success('Dry run: the prompt file was downloaded. The model was not called.')
+        return
+      }
       const generated = Number(data.data?.generated || 0)
       const skipped = Number(data.data?.skipped || 0)
       toast.success(`Summary generated for ${generated} control${generated === 1 ? '' : 's'}${skipped ? `. Skipped ${skipped} existing.` : '.'}`)
@@ -321,7 +395,7 @@ function KeyManualAiInsightsSummary() {
           <Alert severity="error" sx={{ mt: 2 }}>{errorMessage}</Alert>
         )}
 
-        <Box sx={{ mt: 2.5, display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
+        <Box sx={{ mt: 2.5, position: 'relative', display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
           <FormControl size="small" sx={FILTER_SELECT_SX}>
             <InputLabel>Unit</InputLabel>
             <Select
@@ -427,13 +501,26 @@ function KeyManualAiInsightsSummary() {
           >
             {generating ? 'Generating…' : `Generate Selected (${selectedFormIds.size})`}
           </Button>
-        </Box>
-
-        {selectionUnitId && (
-          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'text.secondary' }}>
+          <Typography
+            variant="caption"
+            sx={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: '100%',
+              mt: 0.25,
+              height: 16,
+              lineHeight: '16px',
+              color: 'text.secondary',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              visibility: selectionUnitId ? 'visible' : 'hidden',
+            }}
+          >
             Selection locked to one unit.
           </Typography>
-        )}
+        </Box>
 
         <Box sx={{ mt: 2.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2, overflow: 'hidden' }}>
           <Box
@@ -594,9 +681,7 @@ function KeyManualAiInsightsSummary() {
                         Open control
                       </Button>
                     </Box>
-                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                      {control.rationalisation_opportunity || 'Summary is empty.'}
-                    </Typography>
+                    <AutomationOpportunityFields text={control.rationalisation_opportunity} />
                   </Box>
                 ))}
               </Box>

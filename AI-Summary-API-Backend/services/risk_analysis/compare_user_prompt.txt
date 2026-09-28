@@ -1,0 +1,17 @@
+Compare this selected risk with the other controls from the same unit and business process.
+
+Selected risk:
+{risk}
+
+Other controls:
+{peers}
+
+Decide whether the selected risk is already addressed by those controls.
+Use only the listed control details.
+addressedStatus must be exactly "Fully addressed", "Partially addressed", or "Not addressed".
+Fully addressed means at least one listed control covers the same risk.
+Partially addressed means a listed control covers only part of the selected risk.
+Not addressed means none of the listed controls address it.
+addressedBy must list only control numbers copied from Other controls. Use an empty array when the status is Not addressed.
+reason must be one short sentence.
+Return JSON matching the schema and no other text.

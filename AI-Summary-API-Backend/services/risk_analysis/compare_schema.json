@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "addressedStatus": { "type": "string" },
+    "addressedBy": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reason": { "type": "string" }
+  },
+  "required": ["addressedStatus", "addressedBy", "reason"]
+}

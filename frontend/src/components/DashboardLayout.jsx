@@ -275,11 +275,12 @@ function DashboardLayout() {
                 },
                 list: {
                   sx: {
-                    py: 0,
+                    py: 0.5,
                     '& .MuiMenuItem-root': {
-                      py: 1.25,
-                      px: 2,
-                      minHeight: 44,
+                      py: 0.75,
+                      px: 1.5,
+                      minHeight: 36,
+                      lineHeight: 1.2,
                     },
                     '& .MuiDivider-root': {
                       my: 0,

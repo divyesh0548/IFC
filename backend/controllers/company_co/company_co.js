@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { pool, getDatabaseUnavailableMessage } = require('../../utils/db');
 const { prisma, withPrismaRetry, isPrismaConnectionError } = require('../../lib/prisma');
-const { analyzeKeyManual, analyzeRiskAnalysis, checkAiSummaryHealth } = require('../../utils/ai_summary_client');
+const { analyzeKeyManual, analyzeRiskAnalysis, compareRiskCoverage, checkAiSummaryHealth } = require('../../utils/ai_summary_client');
 const {
   listRiskAnalysisBusinessProcesses,
 } = require('../../ai_summary/risk_analysis/risk_analysis_master');
@@ -54,7 +54,7 @@ const {
 
 const RACM_SPECIFIC_APPROVER_ASSIGNMENT_ACTION = 'RACM Specific approver assignment';
 
-const KEY_MANUAL_AI_PROMPT_VERSION = 'v1';
+const KEY_MANUAL_AI_PROMPT_VERSION = 'v2';
 
 function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();
@@ -598,6 +598,26 @@ function sortAiInsightDisplayRows(rows) {
   });
 }
 
+const KEY_MANUAL_SUMMARY_FIELDS = [
+  ['currentManualActivity', 'Current manual activity'],
+  ['automationOpportunity', 'Automation opportunity'],
+  ['proposedSolution', 'Proposed solution'],
+  ['benefit', 'Benefit'],
+  ['dependency', 'Dependency'],
+  ['residualRiskOrLimitation', 'Residual risk or limitation'],
+];
+
+function formatKeyManualSummary(summary) {
+  const sections = KEY_MANUAL_SUMMARY_FIELDS
+    .map(([key, label]) => {
+      const value = String(summary?.[key] || '').trim();
+      return value ? `${label}\n${value}` : '';
+    })
+    .filter(Boolean);
+  if (sections.length > 0) return sections.join('\n\n');
+  return String(summary?.rationalisationOpportunity || '').trim();
+}
+
 function shapeControlForAi(row) {
   return {
     controlNumber: String(row?.control_number || '').trim(),
@@ -644,6 +664,7 @@ async function getRiskAnalysisControlRow(companyIdentifier, controlNumber, coord
         cf.company_identifier,
         cf.business_process,
         cf.sub_process,
+        cf.unit_id,
         cf.risk_description,
         cf.control_objective,
         cf.standard_control_description,
@@ -949,6 +970,19 @@ async function getRiskAnalysisByControl(req, res) {
     }
 
     const storedAnalysis = await getStoredRiskAnalysis(companyIdentifier, controlRow.form_id);
+    if (storedAnalysis) {
+      const responseJson = readResponseJson(storedAnalysis.response_json);
+      const storedComparisons = responseJson.riskComparisons && typeof responseJson.riskComparisons === 'object'
+        ? responseJson.riskComparisons
+        : {};
+      const savedComparisons = {};
+      for (const [risk, value] of Object.entries(storedComparisons)) {
+        const key = normalizeRiskText(risk);
+        if (key && value?.addressedStatus) savedComparisons[key] = value;
+      }
+      responseJson.riskComparisons = savedComparisons;
+      storedAnalysis.response_json = responseJson;
+    }
 
     return res.status(200).json({
       success: true,
@@ -972,6 +1006,293 @@ async function getRiskAnalysisByControl(req, res) {
       success: false,
       message: 'Failed to fetch risk analysis',
     });
+  }
+}
+
+function normalizeRiskText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function riskComparisonKey(value) {
+  return normalizeRiskText(value).toLowerCase();
+}
+
+function readResponseJson(value) {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) return value;
+  return {};
+}
+
+function findCanonicalMissingRisk(responseJson, requestedRisk) {
+  const wanted = riskComparisonKey(requestedRisk);
+  if (!wanted) return '';
+  const candidates = [];
+  for (const item of responseJson.missingRisks || []) {
+    candidates.push(String(item || ''));
+  }
+  for (const item of responseJson.missingRiskPointers || []) {
+    candidates.push(String(item?.risk || ''));
+  }
+    const canonical = candidates.find((item) => riskComparisonKey(item) === wanted);
+    return canonical ? normalizeRiskText(canonical) : '';
+}
+
+function fingerprintPeers(peers) {
+  const canonical = peers
+    .map((peer) => [
+      peer.controlNumber,
+      peer.riskDescription,
+      peer.controlObjective,
+      peer.standardControlDescription,
+    ].join('\u0001'))
+    .sort()
+    .join('\u0002');
+  return crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 20);
+}
+
+function publicRiskComparison(risk, stored) {
+  return {
+    risk,
+    addressedStatus: String(stored?.addressedStatus || '').trim(),
+    addressedBy: Array.isArray(stored?.addressedBy)
+      ? stored.addressedBy.map((item) => String(item || '').trim()).filter(Boolean)
+      : [],
+    reason: String(stored?.reason || '').trim(),
+  };
+}
+
+async function keepReusableRiskComparisons(companyIdentifier, controlRow, llmResult) {
+  if (!String(controlRow?.unit_id || '').trim() || !String(controlRow?.form_id || '').trim()) return;
+  const storedAnalysis = await getStoredRiskAnalysis(companyIdentifier, controlRow.form_id);
+  const previous = readResponseJson(storedAnalysis?.response_json).riskComparisons;
+  if (!previous || typeof previous !== 'object') return;
+
+  const peers = await listPeerControlsForComparison(companyIdentifier, controlRow);
+  const peerFingerprint = fingerprintPeers(peers);
+  const stillMissing = new Set();
+  for (const risk of llmResult.missingRisks || []) {
+    const key = normalizeRiskText(risk);
+    if (key) stillMissing.add(key);
+  }
+  for (const item of llmResult.missingRiskPointers || []) {
+    const key = normalizeRiskText(item?.risk);
+    if (key) stillMissing.add(key);
+  }
+
+  const kept = {};
+  for (const [risk, value] of Object.entries(previous)) {
+    const key = normalizeRiskText(risk);
+    if (!key || !stillMissing.has(key)) continue;
+    if (value?.peerFingerprint === peerFingerprint && value?.addressedStatus) {
+      kept[key] = value;
+    }
+  }
+  if (Object.keys(kept).length > 0) {
+    llmResult.riskComparisons = kept;
+  }
+}
+
+async function listPeerControlsForComparison(companyIdentifier, controlRow) {
+  const result = await pool.query(
+    `
+      SELECT
+        cf.control_number,
+        cf.risk_description,
+        cf.control_objective,
+        cf.standard_control_description
+      FROM control_forms cf
+      WHERE cf.company_identifier = $1
+        AND cf.unit_id = $2
+        AND LOWER(TRIM(COALESCE(cf.business_process, ''))) = LOWER(TRIM($3))
+        AND cf.form_id <> $4
+        AND LOWER(TRIM(COALESCE(cf.control_number, ''))) <> LOWER(TRIM($5))
+        AND (
+          NULLIF(TRIM(cf.risk_description), '') IS NOT NULL
+          OR NULLIF(TRIM(cf.control_objective), '') IS NOT NULL
+          OR NULLIF(TRIM(cf.standard_control_description), '') IS NOT NULL
+        )
+    `,
+    [
+      companyIdentifier,
+      String(controlRow.unit_id || '').trim(),
+      String(controlRow.business_process || '').trim(),
+      String(controlRow.form_id || '').trim(),
+      String(controlRow.control_number || '').trim(),
+    ]
+  );
+
+  return result.rows.map((row) => ({
+    controlNumber: String(row.control_number || '').trim(),
+    riskDescription: String(row.risk_description || '').trim(),
+    controlObjective: String(row.control_objective || '').trim(),
+    standardControlDescription: String(row.standard_control_description || '').trim(),
+  })).filter((peer) => peer.controlNumber);
+}
+
+async function saveRiskComparison(companyIdentifier, formId, canonicalRisk, comparison) {
+  await pool.query(
+    `
+      UPDATE risk_analysis
+      SET response_json = jsonb_set(
+        COALESCE(response_json, '{}'::jsonb),
+        ARRAY['riskComparisons', $4],
+        $3::jsonb,
+        true
+      )
+      WHERE company_identifier = $1
+        AND form_id = $2
+    `,
+    [
+      companyIdentifier,
+      formId,
+      JSON.stringify(comparison),
+      canonicalRisk,
+    ]
+  );
+}
+
+async function compareRiskAnalysis(req, res) {
+  let lockClient = null;
+  let lockHeld = false;
+
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const controlNumber = String(req.params?.control_number || '').trim();
+    const requestedRisk = normalizeRiskText(req.body?.risk);
+
+    if (!companyIdentifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company identifier is required',
+      });
+    }
+    if (!controlNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Control number is required',
+      });
+    }
+    if (!requestedRisk) {
+      return res.status(400).json({
+        success: false,
+        message: 'A risk is required',
+      });
+    }
+
+    const controlRow = await getRiskAnalysisControlRow(companyIdentifier, controlNumber, req.user?.email_id);
+    if (!controlRow) {
+      return res.status(404).json({
+        success: false,
+        message: 'Control not found for this company',
+      });
+    }
+    if (!String(controlRow.unit_id || '').trim() || !String(controlRow.business_process || '').trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unit and business process are required to compare this risk',
+      });
+    }
+
+    const storedAnalysis = await getStoredRiskAnalysis(companyIdentifier, controlRow.form_id);
+    const responseJson = readResponseJson(storedAnalysis?.response_json);
+    const canonicalRisk = findCanonicalMissingRisk(responseJson, requestedRisk);
+    if (!canonicalRisk) {
+      return res.status(400).json({
+        success: false,
+        message: 'Select a missing risk from this control analysis',
+      });
+    }
+
+    const peers = await listPeerControlsForComparison(companyIdentifier, controlRow);
+    const peerFingerprint = fingerprintPeers(peers);
+    const storedComparisons = responseJson.riskComparisons && typeof responseJson.riskComparisons === 'object'
+      ? responseJson.riskComparisons
+      : {};
+    const cached = storedComparisons[canonicalRisk];
+    if (cached && cached.peerFingerprint === peerFingerprint && cached.addressedStatus) {
+      return res.status(200).json({
+        success: true,
+        message: 'Stored risk comparison',
+        data: {
+          comparison: publicRiskComparison(canonicalRisk, cached),
+          reused: true,
+        },
+      });
+    }
+
+    let result;
+    if (peers.length > 0) {
+      lockClient = await pool.connect();
+      const locked = await tryAcquireGlobalAiModelLock(lockClient);
+      if (!locked) {
+        return res.status(409).json({
+          success: false,
+          message: 'Model is busy, try after some moments',
+        });
+      }
+      lockHeld = true;
+    }
+
+    result = await compareRiskCoverage(canonicalRisk, peers);
+    if (result?.dry_run) {
+      return res.status(200).json({
+        success: true,
+        message: 'Dry-run complete. Prompt downloaded. No AI call; comparison not saved.',
+        data: {
+          dry_run: true,
+          dry_run_txt: String(result.dry_run_txt || ''),
+        },
+      });
+    }
+
+    const comparison = result?.comparison || {};
+    const storedComparison = {
+      addressedStatus: String(comparison.addressedStatus || '').trim(),
+      addressedBy: Array.isArray(comparison.addressedBy) ? comparison.addressedBy : [],
+      reason: String(comparison.reason || '').trim(),
+      peerFingerprint,
+    };
+    if (!storedComparison.addressedStatus) {
+      const error = new Error(result?.message || 'Risk comparison did not return a result');
+      error.statusCode = 502;
+      throw error;
+    }
+
+    await saveRiskComparison(companyIdentifier, String(controlRow.form_id || '').trim(), canonicalRisk, storedComparison);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Risk comparison completed',
+      data: {
+        comparison: publicRiskComparison(canonicalRisk, storedComparison),
+        reused: false,
+      },
+    });
+  } catch (error) {
+    console.error('Company coordinator compare risk error:', error);
+    const errorCode = String(error?.code || 'INTERNAL_SERVER_ERROR').trim() || 'INTERNAL_SERVER_ERROR';
+    return res.status(Number(error?.statusCode || 500)).json({
+      success: false,
+      message: error?.message || 'Failed to compare risk',
+      code: errorCode,
+    });
+  } finally {
+    if (lockHeld) {
+      try {
+        await releaseGlobalAiModelLock(lockClient);
+      } catch (unlockError) {
+        console.error('Failed to release AI model lock:', unlockError);
+      }
+    }
+    if (lockClient) lockClient.release();
   }
 }
 
@@ -1010,6 +1331,7 @@ async function executeRiskAnalysisForControl(companyIdentifier, controlRow) {
     error.statusCode = 502;
     throw error;
   }
+  await keepReusableRiskComparisons(companyIdentifier, controlRow, llmResult);
 
   const upsertResult = await pool.query(
     `
@@ -2390,10 +2712,15 @@ async function getOrCreateCurrentKeyManualRun(companyIdentifier, modelName) {
     orderBy: { id: 'asc' },
   });
   if (existing) {
-    if (modelName && existing.modelName !== modelName) {
+    const data = {};
+    if (modelName && existing.modelName !== modelName) data.modelName = modelName;
+    if (existing.promptVersion !== KEY_MANUAL_AI_PROMPT_VERSION) {
+      data.promptVersion = KEY_MANUAL_AI_PROMPT_VERSION;
+    }
+    if (Object.keys(data).length > 0) {
       return prisma.keyManualAiInsightsRunTable.update({
         where: { id: existing.id },
-        data: { modelName },
+        data,
       });
     }
     return existing;
@@ -2674,6 +3001,8 @@ async function generateKeyManualAiInsightsRun(req, res) {
     let generated = 0;
     let skipped = 0;
     let modelName = null;
+    let dryRun = false;
+    const dryRunTexts = [];
 
     for (const row of formsResult.rows) {
       const formId = String(row.form_id || '').trim();
@@ -2690,6 +3019,12 @@ async function generateKeyManualAiInsightsRun(req, res) {
 
       const businessProcess = String(row.business_process || '').trim() || 'Unspecified Business Process';
       const llmResponse = await analyzeKeyManual(shapeControlForAi(row), businessProcess, companyIdentifier);
+      if (llmResponse?.dry_run) {
+        dryRun = true;
+        const promptText = String(llmResponse.dry_run_txt || '').trim();
+        if (promptText) dryRunTexts.push(promptText);
+        continue;
+      }
       const llmResult = llmResponse?.summary || {};
       modelName = llmResponse?.model_name || modelName;
       if (String(llmResult.controlNumber || '').trim() !== String(row.control_number || '').trim()) {
@@ -2703,9 +3038,23 @@ async function generateKeyManualAiInsightsRun(req, res) {
         formId: formId || null,
         controlNumber: String(llmResult.controlNumber || row.control_number || '').trim(),
         businessProcess,
-        text: String(llmResult.rationalisationOpportunity || '').trim(),
+        text: formatKeyManualSummary(llmResult),
       });
       generated += 1;
+    }
+
+    if (dryRun) {
+      return res.status(200).json({
+        success: true,
+        message: 'Dry run returned the automation opportunity prompt. The model was not called and nothing was saved.',
+        data: {
+          dry_run: true,
+          dry_run_txt: dryRunTexts.join('\n\n'),
+          generated: 0,
+          skipped,
+          model_name: modelName,
+        },
+      });
     }
 
     return res.status(200).json({
@@ -6053,6 +6402,7 @@ module.exports = {
   getRiskAnalysisByControl,
   generateRiskAnalysisByControl,
   generateRiskAnalysesSelected,
+  compareRiskAnalysis,
   getKeyManualAiInsightsAvailability,
   getKeyManualReport,
   listKeyManualControls,

@@ -108,6 +108,16 @@ function downloadDryRunPrompt(text, filename) {
   URL.revokeObjectURL(url)
 }
 
+function normalizeRiskLabel(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
+function comparisonChipColor(status) {
+  if (status === 'Fully addressed') return 'success'
+  if (status === 'Partially addressed') return 'warning'
+  return 'default'
+}
+
 function formatRiskAnalysisTimestamp(value) {
   if (!value) return ''
   const date = new Date(value)
@@ -152,6 +162,7 @@ function RiskAnalysis() {
   const [analysisDialogOpen, setAnalysisDialogOpen] = useState(false)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [analysisGenerating, setAnalysisGenerating] = useState(false)
+  const [comparingRisk, setComparingRisk] = useState('')
   const [batchGenerating, setBatchGenerating] = useState(false)
   const [analysisData, setAnalysisData] = useState(null)
   const lastSelectedIndexRef = useRef(null)
@@ -440,11 +451,12 @@ function RiskAnalysis() {
   }
 
   const handleCloseDialog = () => {
-    if (analysisGenerating) return
+    if (analysisGenerating || comparingRisk) return
     setAnalysisDialogOpen(false)
     setSelectedControl(null)
     setAnalysisLoading(false)
     setAnalysisData(null)
+    setComparingRisk('')
   }
 
   const handleOpenControlInNewWindow = () => {
@@ -460,6 +472,70 @@ function RiskAnalysis() {
     window.open(`/company-co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
   }
 
+  const handleCompareRisk = async (risk) => {
+    const controlNumber = String(
+      analysisData?.control?.control_number
+      || getFieldValue(selectedControl, 'control_number', 'controlNumber')
+      || ''
+    ).trim()
+    const selectedRisk = normalizeRiskLabel(risk)
+    if (!controlNumber || !selectedRisk || comparingRisk) return
+
+    setComparingRisk(selectedRisk)
+    try {
+      const response = await fetch(
+        apiUrl(`/api/company-co/risk-analysis/control/${encodeURIComponent(controlNumber)}/compare`),
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ risk: selectedRisk }),
+        }
+      )
+      const data = await response.json()
+      if (response.status === 409) {
+        toast('LLM Server is busy, Try again after some moments')
+        return
+      }
+      if (!response.ok || !data?.success) {
+        const error = new Error(data?.message || 'Failed to compare risk')
+        error.serverCode = String(data?.code || '').trim()
+        throw error
+      }
+      if (data.data?.dry_run) {
+        if (data.data.dry_run_txt) {
+          downloadDryRunPrompt(data.data.dry_run_txt, `risk_comparison_dry_run_${controlNumber || 'prompt'}.txt`)
+        }
+        toast.success(data.message || 'Dry-run prompt downloaded')
+        return
+      }
+
+      const comparison = data.data?.comparison
+      if (!comparison?.addressedStatus) {
+        throw new Error('Risk comparison did not return a result')
+      }
+      setAnalysisData((prev) => {
+        const responseJson = { ...(prev?.analysis?.response_json || {}) }
+        responseJson.riskComparisons = {
+          ...(responseJson.riskComparisons || {}),
+          [comparison.risk || selectedRisk]: comparison,
+        }
+        return {
+          ...prev,
+          analysis: {
+            ...(prev?.analysis || {}),
+            response_json: responseJson,
+          },
+        }
+      })
+    } catch (error) {
+      console.error('Error comparing risk:', error)
+      toast.error(error?.serverCode ? formatServerErrorToast(error.serverCode) : (error.message || 'Failed to compare risk'))
+    } finally {
+      setComparingRisk('')
+    }
+  }
+
   const renderAnalysisResponse = () => {
     const response = analysisData?.analysis?.response_json
     if (!response) {
@@ -469,6 +545,7 @@ function RiskAnalysis() {
         </Typography>
       )
     }
+    const missingRiskPointers = Array.isArray(response.missingRiskPointers) ? response.missingRiskPointers : []
 
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -499,39 +576,71 @@ function RiskAnalysis() {
           <Typography variant="body2" sx={INSIGHT_CARD_LABEL_SX}>
             Missing Risks
           </Typography>
-          {Array.isArray(response.missingRiskPointers) && response.missingRiskPointers.length > 0 ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {response.missingRiskPointers.map((item, index) => (
-                <Box
-                  key={`${item.risk}-${index}`}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 1.25,
-                  }}
-                >
-                  <Typography
-                    variant="body2"
-                    component="span"
+          {missingRiskPointers.length > 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {missingRiskPointers.map((item, index) => {
+                const risk = normalizeRiskLabel(item?.risk)
+                const pointer = String(item?.pointer || '').trim()
+                const comparison = response.riskComparisons?.[risk]
+                const isComparing = comparingRisk === risk
+                const addressedBy = Array.isArray(comparison?.addressedBy)
+                  ? comparison.addressedBy.filter(Boolean)
+                  : []
+                return (
+                  <Box
+                    key={`${risk}-${index}`}
                     sx={{
-                      flexShrink: 0,
-                      minWidth: '1.5rem',
-                      fontWeight: 700,
-                      color: theme.palette.text.primary,
-                      lineHeight: 1.6,
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 1.25,
                     }}
                   >
-                    {index + 1}.
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    component="span"
-                    sx={{ color: theme.palette.text.primary, lineHeight: 1.6 }}
-                  >
-                    {item.pointer}
-                  </Typography>
-                </Box>
-              ))}
+                    <Typography
+                      variant="body2"
+                      component="span"
+                      sx={{
+                        flexShrink: 0,
+                        minWidth: '1.5rem',
+                        fontWeight: 700,
+                        color: theme.palette.text.primary,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      {index + 1}.
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ color: theme.palette.text.primary, lineHeight: 1.6 }}>
+                        {pointer}
+                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        {comparison?.addressedStatus ? (
+                          <Chip
+                            size="small"
+                            label={comparison.addressedStatus}
+                            color={comparisonChipColor(comparison.addressedStatus)}
+                            variant={comparison.addressedStatus === 'Not addressed' ? 'outlined' : 'filled'}
+                          />
+                        ) : null}
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => handleCompareRisk(risk)}
+                          disabled={!risk || Boolean(comparingRisk) || analysisGenerating}
+                          sx={{ whiteSpace: 'normal', textAlign: 'left', lineHeight: 1.4 }}
+                        >
+                          {isComparing ? 'Comparing…' : comparison?.addressedStatus ? 'Compare again' : 'Check if this risk is addressed in other controls or not'}
+                        </Button>
+                      </Box>
+                      {comparison?.addressedStatus ? (
+                        <Typography variant="body2" sx={{ color: theme.palette.text.secondary, lineHeight: 1.6 }}>
+                          {comparison.reason}
+                          {addressedBy.length > 0 ? ` Addressed by ${addressedBy.join(', ')}.` : ''}
+                        </Typography>
+                      ) : null}
+                    </Box>
+                  </Box>
+                )
+              })}
             </Box>
           ) : (
             <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
@@ -1046,14 +1155,14 @@ function RiskAnalysis() {
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={handleCloseDialog} disabled={analysisGenerating}>
+          <Button onClick={handleCloseDialog} disabled={analysisGenerating || Boolean(comparingRisk)}>
             Close
           </Button>
           <Button
             variant="contained"
             color="secondary"
             onClick={handleGenerateAnalysis}
-            disabled={analysisLoading || analysisGenerating || !selectedControl}
+            disabled={analysisLoading || analysisGenerating || !selectedControl || Boolean(comparingRisk)}
           >
             {analysisGenerating ? 'Generating…' : 'Generate Risk Analysis'}
           </Button>

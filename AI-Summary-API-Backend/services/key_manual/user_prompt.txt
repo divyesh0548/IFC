@@ -1,11 +1,51 @@
-You are reviewing one RACM for company_identifier={company_identifier}.
+You are reviewing ONE RACM row for company_identifier={company_identifier}.
 The business process cycle is "{business_process}".
-Only use the RACM row provided below.
-Do not invent any controls or fields that are not present in the input.
-Generate one concise Rationalisation Opportunity for this control.
-For each control, provide:
-1. A short, actionable summary of the rationalisation opportunity.
-2. Highlight risks if not rationalised.
-3. Suggest alternative approaches or improvements where applicable.
-4. Use varied sentence structures - avoid repetitive phrasing like "Consider implementing/automating". Make the summaries natural, professional, and credible.
-5. Output strictly in JSON, structured as:
+
+OBJECTIVE
+Determine whether this control could reasonably be automated or strengthened through an alternate/support system or technology, and if so, describe the opportunity.
+
+RULES
+- Use only the RACM row provided below. Do not invent controls, systems, tools, data fields or facts that are not in the input.
+- Do not assume the control is complete or well designed; judge it against its stated risk and control objective.
+- If applicationName or controlReliesOnIpe is blank, treat it as not provided. Do not assume a specific system unless the control description itself names one (e.g. SAP).
+- Do not recommend automation merely because it is technically possible. Recommend it only if it would improve control reliability, consistency, timeliness or coverage.
+- If the control is already automated, look for strengthening opportunities (e.g. system-enforced validations, exception reporting, continuous monitoring) instead of repeating the current design.
+- If no meaningful automation opportunity exists, say so plainly in "automationOpportunity" and briefly explain why. Set the remaining descriptive fields to "Not applicable".
+- Do not cite laws, standards, websites or external documents.
+
+STEP 1 – UNDERSTAND THE CONTROL
+From the input row, establish: the sub-process and key activity, how the transaction is initiated, processed, reviewed and approved, which parts are manual, spreadsheet-dependent or IT-dependent, who performs and reviews the control, and what could go wrong (error, fraud, override or missed exception).
+
+STEP 2 – LOOK FOR AUTOMATION PATTERNS
+Check whether the control involves any of the following:
+- Manual reconciliations or interface reconciliations
+- Repetitive manual validations or data comparisons
+- Manual approval routing
+- Spreadsheet-dependent calculations or controls
+- Manual duplicate checks
+- Manual threshold or limit checks
+- Manual master-data validation
+- Manual exception identification
+- Manual completeness checks
+- Manual ageing analysis
+- Manual price or quantity validation
+- Manual segregation-of-duties monitoring
+- Manual journal review
+
+STEP 3 – DESCRIBE THE OPPORTUNITY
+Write each field in 1–2 concise, professional sentences. Vary sentence structure and avoid repetitive openings such as "Consider implementing/automating".
+
+- currentManualActivity: the manual or spreadsheet-dependent activity as performed today, based on the input.
+- automationOpportunity: what could be automated or system-enforced, and why it improves reliability, consistency, timeliness or coverage.
+- proposedSolution: a practical automation approach (e.g. system-enforced validation, workflow-based approval, automated exception report, auto-populated calculation template).
+- benefit: the expected control or efficiency benefit, including the risk reduced.
+- dependency: the key implementation dependency (e.g. master-data quality, system configuration, workflow set-up, data availability).
+- residualRiskOrLimitation: the residual risk or limitation that remains even after automation.
+
+OUTPUT
+Return strictly one JSON object matching this schema:
+{"type": "object", "additionalProperties": false, "properties": {"controlNumber": {"type": "string"}, "currentManualActivity": {"type": "string"}, "automationOpportunity": {"type": "string"}, "proposedSolution": {"type": "string"}, "benefit": {"type": "string"}, "dependency": {"type": "string"}, "residualRiskOrLimitation": {"type": "string"}}, "required": ["controlNumber", "currentManualActivity", "automationOpportunity", "proposedSolution", "benefit", "dependency", "residualRiskOrLimitation"]}
+
+Use the exact input controlNumber value in the output.
+
+Input control: {control_json}

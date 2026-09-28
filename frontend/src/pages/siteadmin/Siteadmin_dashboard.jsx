@@ -86,53 +86,45 @@ function Siteadmin_Dashboard() {
             tint: theme.palette.success.main,
         },
     ]
+    const tileAccent = theme.palette.primary.main
     const tiles = [
         {
-            eyebrow: 'Administration',
+            eyebrow: 'Companies',
             title: 'Company Management',
-            description: 'Create companies, review company profiles, and open company-level details.',
+            description: 'Create companies and open company details.',
             path: '/siteadmin/company-management',
-            action: 'Manage companies',
-            icon: BusinessRoundedIcon,
-            accent: theme.palette.primary.main,
+            icon: <BusinessRoundedIcon sx={{ fontSize: 38 }} />,
         },
         {
-            eyebrow: 'Onboarding',
+            eyebrow: 'Processes',
             title: 'Business Process Management',
-            description: 'Maintain the central business-process master across all companies.',
+            description: 'Maintain the business-process master.',
             path: '/siteadmin/business-processes',
-            action: 'Open processes',
-            icon: AccountTreeRoundedIcon,
-            accent: theme.palette.info.main,
+            icon: <AccountTreeRoundedIcon sx={{ fontSize: 38 }} />,
         },
         {
-            eyebrow: 'Control Library',
+            eyebrow: 'Library',
             title: 'Controls Library',
-            description: 'Upload control-library suggestions by business process for coordinator use.',
+            description: 'Upload control suggestions by business process.',
             path: '/siteadmin/controls-library',
-            action: 'Open library',
-            icon: LibraryBooksRoundedIcon,
-            accent: theme.palette.success.main,
+            icon: <LibraryBooksRoundedIcon sx={{ fontSize: 38 }} />,
         },
         {
             eyebrow: 'Access',
             title: 'Auditor Management',
-            description: 'Add auditors, track login email status, and manage platform access cleanly.',
+            description: 'Add auditors and manage their access.',
             path: '/siteadmin/auditors',
-            action: 'Manage auditors',
-            icon: ManageAccountsRoundedIcon,
-            accent: theme.palette.warning.main,
+            icon: <ManageAccountsRoundedIcon sx={{ fontSize: 38 }} />,
         },
         {
             eyebrow: 'Support',
             title: 'User Queries',
-            description: 'Review website issues and suggestions submitted by users across the platform.',
+            description: 'Review issues and suggestions from users.',
             path: '/siteadmin/user-queries',
-            action: 'Review queries',
-            icon: QuestionAnswerRoundedIcon,
-            accent: theme.palette.secondary.main,
+            icon: <QuestionAnswerRoundedIcon sx={{ fontSize: 38 }} />,
         },
     ]
+    const chartAxisColor = theme.palette.text.secondary
 
     const fetchMonthlyData = async (year) => {
         setMonthlyLoading(true);
@@ -477,180 +469,114 @@ function Siteadmin_Dashboard() {
                     </Box>
                 </Box>
 
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.75, mb: sectionGap }}>
-                    <Box sx={{ px: { xs: 0.25, sm: 0.5 } }}>
-                        <Typography
+                <Box
+                    sx={{
+                        width: '100%',
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                        gap: 2.5,
+                        mb: sectionGap,
+                    }}
+                >
+                    {tiles.map((tile) => (
+                        <Paper
+                            key={tile.title}
+                            onClick={() => navigate(tile.path)}
+                            elevation={0}
                             sx={{
-                                fontSize: '0.78rem',
-                                fontWeight: 800,
-                                letterSpacing: '0.08em',
-                                textTransform: 'uppercase',
-                                color: theme.palette.text.secondary,
+                                p: 0,
+                                width: '100%',
+                                minHeight: 158,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'flex-start',
+                                justifyContent: 'flex-start',
+                                borderRadius: 3,
+                                cursor: 'pointer',
+                                overflow: 'hidden',
+                                transition: 'box-shadow 220ms ease-out, border-color 220ms ease-out, background-color 220ms ease-out',
+                                backgroundColor: alpha(theme.palette.background.paper, 0.92),
+                                border: `1px solid ${
+                                    theme.palette.mode === 'dark'
+                                        ? alpha(tileAccent, 0.12)
+                                        : alpha(theme.palette.divider, 0.9)
+                                }`,
+                                boxShadow: theme.palette.mode === 'dark'
+                                    ? '0 10px 24px rgba(0, 0, 0, 0.18)'
+                                    : '0 10px 24px rgba(15, 23, 42, 0.05)',
+                                '&:hover': {
+                                    borderColor: alpha(tileAccent, 0.5),
+                                    boxShadow: theme.palette.mode === 'dark'
+                                        ? `0 18px 36px rgba(0, 0, 0, 0.24), inset 0 0 0 1px ${alpha(tileAccent, 0.18)}`
+                                        : `0 18px 36px rgba(15, 23, 42, 0.08), inset 0 0 0 1px ${alpha(tileAccent, 0.12)}`,
+                                    backgroundColor: theme.palette.mode === 'dark'
+                                        ? alpha(theme.palette.background.paper, 0.98)
+                                        : alpha(theme.palette.background.paper, 1),
+                                },
                             }}
                         >
-                            Quick access
-                        </Typography>
-                        <Typography sx={{ mt: 0.5, color: alpha(theme.palette.text.secondary, 0.9), fontSize: '0.95rem' }}>
-                            Jump into the module you need — each path keeps its own focus.
-                        </Typography>
-                    </Box>
-
-                    <Box
-                        sx={{
-                            display: 'grid',
-                            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' },
-                            gap: 2,
-                            alignItems: 'stretch',
-                        }}
-                    >
-                        {tiles.map((tile) => {
-                            const Icon = tile.icon
-                            const isDark = theme.palette.mode === 'dark'
-                            return (
-                                <Box
-                                    key={tile.title}
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={() => navigate(tile.path)}
-                                    onKeyDown={(event) => {
-                                        if (event.key === 'Enter' || event.key === ' ') {
-                                            event.preventDefault()
-                                            navigate(tile.path)
-                                        }
-                                    }}
-                                    sx={{
-                                        position: 'relative',
-                                        display: 'flex',
-                                        alignItems: 'stretch',
-                                        minHeight: 132,
-                                        borderRadius: 3,
-                                        overflow: 'hidden',
-                                        cursor: 'pointer',
-                                        outline: 'none',
-                                        border: '1px solid',
-                                        borderColor: isDark ? alpha(tile.accent, 0.22) : alpha(theme.palette.divider, 0.95),
-                                        backgroundColor: alpha(theme.palette.background.paper, isDark ? 0.88 : 1),
-                                        boxShadow: isDark
-                                            ? '0 8px 20px rgba(0, 0, 0, 0.2)'
-                                            : '0 8px 20px rgba(15, 23, 42, 0.04)',
-                                        transition: 'transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease',
-                                        '&:hover': {
-                                            transform: 'translateY(-2px)',
-                                            borderColor: alpha(tile.accent, 0.55),
-                                            boxShadow: isDark
-                                                ? '0 16px 32px rgba(0, 0, 0, 0.28)'
-                                                : `0 16px 32px ${alpha(tile.accent, 0.12)}`,
-                                            '& .tile-arrow': {
-                                                transform: 'translate(2px, -2px)',
-                                                opacity: 1,
-                                            },
-                                            '& .tile-icon-wrap': {
-                                                transform: 'scale(1.04)',
-                                                backgroundColor: alpha(tile.accent, isDark ? 0.28 : 0.16),
-                                            },
-                                        },
-                                        '&:focus-visible': {
-                                            borderColor: tile.accent,
-                                            boxShadow: `0 0 0 3px ${alpha(tile.accent, 0.28)}`,
-                                        },
-                                    }}
-                                >
+                            <Box
+                                sx={{
+                                    width: '100%',
+                                    p: 2.75,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 2.2,
+                                    minHeight: 158,
+                                    background: `linear-gradient(180deg, ${alpha(tileAccent, theme.palette.mode === 'dark' ? 0.18 : 0.08)} 0%, transparent 100%)`,
+                                }}
+                            >
+                                <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, width: '100%' }}>
                                     <Box
                                         sx={{
-                                            width: 5,
+                                            width: 56,
+                                            height: 56,
+                                            borderRadius: '16px',
+                                            display: 'grid',
+                                            placeItems: 'center',
+                                            color: theme.palette.mode === 'dark'
+                                                ? alpha(theme.palette.common.white, 0.92)
+                                                : alpha(tileAccent, 0.92),
+                                            backgroundColor: alpha(tileAccent, theme.palette.mode === 'dark' ? 0.18 : 0.12),
+                                            border: `1px solid ${alpha(tileAccent, theme.palette.mode === 'dark' ? 0.18 : 0.16)}`,
                                             flexShrink: 0,
-                                            background: `linear-gradient(180deg, ${tile.accent} 0%, ${alpha(tile.accent, 0.45)} 100%)`,
-                                        }}
-                                    />
-                                    <Box
-                                        sx={{
-                                            flex: 1,
-                                            minWidth: 0,
-                                            display: 'flex',
-                                            gap: 2,
-                                            alignItems: 'flex-start',
-                                            p: { xs: 2, sm: 2.25 },
-                                            background: `linear-gradient(135deg, ${alpha(tile.accent, isDark ? 0.14 : 0.06)} 0%, transparent 55%)`,
                                         }}
                                     >
-                                        <Box
-                                            className="tile-icon-wrap"
-                                            sx={{
-                                                width: 52,
-                                                height: 52,
-                                                borderRadius: 2.5,
-                                                flexShrink: 0,
-                                                display: 'grid',
-                                                placeItems: 'center',
-                                                color: tile.accent,
-                                                backgroundColor: alpha(tile.accent, isDark ? 0.2 : 0.1),
-                                                border: `1px solid ${alpha(tile.accent, isDark ? 0.28 : 0.18)}`,
-                                                transition: 'transform 180ms ease, background-color 180ms ease',
-                                            }}
-                                        >
-                                            <Icon sx={{ fontSize: 28 }} />
-                                        </Box>
-
-                                        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0.85 }}>
-                                            <Typography
-                                                sx={{
-                                                    fontSize: '0.7rem',
-                                                    fontWeight: 800,
-                                                    letterSpacing: '0.06em',
-                                                    textTransform: 'uppercase',
-                                                    color: tile.accent,
-                                                }}
-                                            >
-                                                {tile.eyebrow}
-                                            </Typography>
-                                            <Typography
-                                                sx={{
-                                                    fontWeight: 800,
-                                                    fontSize: '1.05rem',
-                                                    lineHeight: 1.25,
-                                                    color: theme.palette.text.primary,
-                                                    letterSpacing: '-0.01em',
-                                                }}
-                                            >
-                                                {tile.title}
-                                            </Typography>
-                                            <Typography
-                                                sx={{
-                                                    color: alpha(theme.palette.text.secondary, 0.95),
-                                                    fontSize: '0.88rem',
-                                                    lineHeight: 1.55,
-                                                }}
-                                            >
-                                                {tile.description}
-                                            </Typography>
-                                            <Box
-                                                sx={{
-                                                    mt: 0.5,
-                                                    display: 'inline-flex',
-                                                    alignItems: 'center',
-                                                    gap: 0.6,
-                                                    alignSelf: 'flex-start',
-                                                    color: tile.accent,
-                                                }}
-                                            >
-                                                <Typography sx={{ fontSize: '0.84rem', fontWeight: 800 }}>
-                                                    {tile.action}
-                                                </Typography>
-                                                <ArrowOutwardRoundedIcon
-                                                    className="tile-arrow"
-                                                    sx={{
-                                                        fontSize: 17,
-                                                        opacity: 0.85,
-                                                        transition: 'transform 180ms ease, opacity 180ms ease',
-                                                    }}
-                                                />
-                                            </Box>
-                                        </Box>
+                                        {tile.icon}
+                                    </Box>
+                                    <Box
+                                        sx={{
+                                            px: 1.1,
+                                            py: 0.65,
+                                            borderRadius: 999,
+                                            backgroundColor: alpha(tileAccent, theme.palette.mode === 'dark' ? 0.14 : 0.1),
+                                            color: theme.palette.mode === 'dark'
+                                                ? alpha(theme.palette.common.white, 0.86)
+                                                : tileAccent,
+                                        }}
+                                    >
+                                        <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                                            {tile.eyebrow}
+                                        </Typography>
                                     </Box>
                                 </Box>
-                            )
-                        })}
-                    </Box>
+                                <Box sx={{ display: 'grid', gap: 0.9 }}>
+                                    <Typography sx={{ fontWeight: 800, color: theme.palette.text.primary, fontSize: '1.08rem', lineHeight: 1.3 }}>
+                                        {tile.title}
+                                    </Typography>
+                                    <Typography sx={{ textAlign: 'left', color: alpha(theme.palette.text.secondary, 0.92), fontSize: '0.92rem', lineHeight: 1.6 }}>
+                                        {tile.description}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ mt: 'auto', display: 'flex', alignItems: 'center', gap: 0.8, color: tileAccent }}>
+                                    <Typography sx={{ fontSize: '0.88rem', fontWeight: 800 }}>
+                                        Open module
+                                    </Typography>
+                                    <ArrowOutwardRoundedIcon sx={{ fontSize: 18 }} />
+                                </Box>
+                            </Box>
+                        </Paper>
+                    ))}
                 </Box>
 
                 <Box sx={{ 
@@ -709,7 +635,6 @@ function Siteadmin_Dashboard() {
                             <CardContent sx={{ 
                                 px: { xs: 2, sm: 2.5 },
                                 py: { xs: 2, sm: 2.5 },
-                                '&:last-child': { pb: 0 } 
                             }}>
                                 <Stack 
                                     direction="row" 
@@ -742,15 +667,21 @@ function Siteadmin_Dashboard() {
                                     </FormControl>
                                 </Stack>
 
-                                <Box sx={{ 
-                                    height: barChartHeight - 30, 
-                                    width: '100%',
-                                    minWidth: 0
-                                }}>
+                                <Box sx={{ width: '100%', minWidth: 0 }}>
                                     <BarChart
                                         xAxis={[{
                                             data: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-                                            scaleType: 'band'
+                                            scaleType: 'band',
+                                            tickLabelStyle: {
+                                                fill: chartAxisColor,
+                                                fontSize: 12,
+                                            },
+                                        }]}
+                                        yAxis={[{
+                                            tickLabelStyle: {
+                                                fill: chartAxisColor,
+                                                fontSize: 12,
+                                            },
                                         }]}
                                         series={[{ 
                                             data: monthlyData, 
@@ -758,8 +689,16 @@ function Siteadmin_Dashboard() {
                                             color: theme.palette.mode === 'dark' ? '#90caf9' : '#1976d2'
                                         }]}
                                         height={barChartHeight}
-                                        width={undefined}
-                                        sx={{ width: '100%' }}
+                                        margin={{ top: 16, right: 8, bottom: 32, left: 40 }}
+                                        sx={{
+                                            width: '100%',
+                                            '& .MuiChartsAxis-line, & .MuiChartsAxis-tick': {
+                                                stroke: chartAxisColor,
+                                            },
+                                            '& .MuiChartsAxis-tickLabel': {
+                                                fill: chartAxisColor,
+                                            },
+                                        }}
                                     />
                                 </Box>
                             </CardContent>

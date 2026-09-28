@@ -16,6 +16,7 @@ import { toast } from 'react-hot-toast'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { apiUrl } from '../../config/api'
 import { useOrganizationEmailWarning } from '../../hooks/useOrganizationEmailWarning'
+import { getGstValidationError, normalizeGstin } from '../../utils/gstValidation'
 import { getMobileValidationError, normalizeMobileDigits } from '../../utils/mobileValidation'
 
 const twoColRowSx = {
@@ -50,40 +51,22 @@ function CompanyCreation() {
   const { getEmailWarning, getEmailWarningHelperTextSx } = useOrganizationEmailWarning()
   useSyncGlobalLoading(loading)
 
-  const validateGST = (gst) => {
-    if (!gst) return true
-    if (gst.length !== 15) return false
-    if (!/^\d{2}/.test(gst)) return false
-    if (!/^\d{2}[A-Z0-9]{11}/.test(gst)) return false
-    if (gst[13] !== 'Z' && gst[13] !== 'z') return false
-    if (!/^\d$/.test(gst[14])) return false
-    return /^\d{2}[A-Z0-9]{11}[Zz]\d$/.test(gst)
-  }
-
   const handleGSTChange = (e) => {
-    const gstValue = e.target.value.toUpperCase()
-    setFormData((prev) => {
-      const next = { ...prev, gst: gstValue }
-      if (gstValue.length >= 12 && validateGST(gstValue)) {
-        next.pan = gstValue.substring(2, 12)
-      } else if (gstValue.length < 12) {
-        next.pan = ''
-      }
+    const gstValue = normalizeGstin(e.target.value)
+    const pan = gstValue.slice(2, 12)
+    setFormData((prev) => ({
+      ...prev,
+      gst: gstValue,
+      pan: /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan) ? pan : '',
+    }))
+
+    const gstError = getGstValidationError(gstValue)
+    setErrors((prev) => {
+      const next = { ...prev }
+      if (gstError) next.gst = gstError
+      else delete next.gst
       return next
     })
-
-    if (gstValue && !validateGST(gstValue)) {
-      setErrors((prev) => ({
-        ...prev,
-        gst: 'Invalid GST number. Format: 2 digits + 11 alphanumeric + Z + 1 digit (15 characters total)',
-      }))
-    } else {
-      setErrors((prev) => {
-        const next = { ...prev }
-        delete next.gst
-        return next
-      })
-    }
   }
 
   const handleChange = (e) => {
@@ -141,8 +124,9 @@ function CompanyCreation() {
     }
     if (!formData.gst.trim()) {
       newErrors.gst = 'GST number is required'
-    } else if (!validateGST(formData.gst)) {
-      newErrors.gst = 'Invalid GST number. Format: 2 digits + 11 alphanumeric + Z + 1 digit (15 characters total)'
+    } else {
+      const gstError = getGstValidationError(formData.gst)
+      if (gstError) newErrors.gst = gstError
     }
     if (!formData.number_of_corporate_offices.trim()) {
       newErrors.number_of_corporate_offices = 'Number of Corporate Offices is required'

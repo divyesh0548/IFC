@@ -22,3 +22,10 @@ Model : "openai/gpt-5.6-terra"
 Model : "anthropic/claude-sonnet-4.6"
 
 0.01 dollar per control for generating automation opportunity.
+
+
+
+
+Model : "anthropic/claude-sonnet-4.6"
+
+0.01 dollar per control for generating risk analysis.

@@ -1,6 +1,2 @@
-"company-co/key-manual-ai-insights" on this page display the report as in design gap analysis. 
-Means one pop-up and list all results of selected controls. 
-
-Also in each control provide a link which will open that control in new window.
-
-Also move the logic of this into "C:\Divyesh\IFC\IFC_Prisma\AI-Summary-API-Backend" and wire this with openrouter API.
+In Ai insights pages the "Selection locked to one unit." text pushes the content slighlty downwards, Please fix that. 
+The content should not be moved to fix these types of text notice.

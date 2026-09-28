@@ -346,8 +346,8 @@ function UserHome() {
                   borderRadius: 2.5,
                   display: 'grid',
                   placeItems: 'center',
-                  color: theme.palette.primary.contrastText,
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                  color: theme.palette.mode === 'dark' ? theme.palette.text.primary : theme.palette.primary.contrastText,
+                  background: `linear-gradient(135deg, ${theme.palette.mode === 'dark' ? (blueTokens.buttonBg || '#0F4C75') : theme.palette.primary.main}, ${theme.palette.secondary.main})`,
                 }}
               >
                 <InsightsRoundedIcon sx={{ fontSize: 22 }} />

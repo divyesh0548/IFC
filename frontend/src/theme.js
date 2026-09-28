@@ -53,6 +53,15 @@ function buildHeroGradient(tokens) {
   return `linear-gradient(145deg, ${alpha(tokens.heroGradientStart, 0.9)} 0%, ${alpha(tokens.paper, 0.94)} 52%, ${alpha(tokens.heroGradientEnd, 0.96)} 100%)`
 }
 
+function isLightHex(color) {
+  const hex = String(color || '').trim().replace('#', '')
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false
+  const red = parseInt(hex.slice(0, 2), 16)
+  const green = parseInt(hex.slice(2, 4), 16)
+  const blue = parseInt(hex.slice(4, 6), 16)
+  return (0.299 * red + 0.587 * green + 0.114 * blue) / 255 > 0.72
+}
+
 export const BLUE_GRADIENTS = {
   lightHero: buildHeroGradient(BLUE_THEME_TOKENS.light),
   darkHero: buildHeroGradient(BLUE_THEME_TOKENS.dark),
@@ -215,7 +224,11 @@ export function createAppTheme(mode = 'light', paletteId = ACTIVE_COLOR_PALETTE_
         main: paletteSet.primary,
         light: paletteSet.primarySoft,
         dark: paletteSet.primaryDeep,
-        contrastText: isDark ? paletteSet.text : '#ffffff',
+        contrastText: !isDark
+          ? '#ffffff'
+          : isLightHex(paletteSet.primary)
+            ? (paletteSet.buttonBg || '#0b1420')
+            : paletteSet.text,
       },
       secondary: {
         main: paletteSet.surfaceStrong,
@@ -340,11 +353,9 @@ export function createAppTheme(mode = 'light', paletteId = ACTIVE_COLOR_PALETTE_
           containedPrimary: ({ theme }) => {
             const isDark = theme.palette.mode === 'dark'
             const tokens = theme.palette.blueTheme?.[isDark ? 'dark' : 'light']
-            const bg = isDark ? (tokens?.buttonBg || '#0F4C75') : theme.palette.primary.main
-            const bgHover = isDark
-              ? (tokens?.buttonBgHover || darken(bg, 0.12))
-              : darken(theme.palette.primary.main, 0.2)
-            const fg = isDark ? '#ffffff' : theme.palette.primary.contrastText
+            const bg = isDark ? (tokens?.primary || '#BBE1FA') : theme.palette.primary.main
+            const bgHover = isDark ? darken(bg, 0.08) : darken(theme.palette.primary.main, 0.2)
+            const fg = isDark ? (tokens?.surfaceStrong || '#061636') : theme.palette.primary.contrastText
             return {
               backgroundColor: bg,
               color: fg,
@@ -352,22 +363,28 @@ export function createAppTheme(mode = 'light', paletteId = ACTIVE_COLOR_PALETTE_
                 backgroundColor: bgHover,
                 color: fg,
               },
+              '&.Mui-disabled': {
+                backgroundColor: alpha(bg, isDark ? 0.38 : 0.12),
+                color: alpha(fg, 0.55),
+              },
             }
           },
           containedSecondary: ({ theme }) => {
             const isDark = theme.palette.mode === 'dark'
             const tokens = theme.palette.blueTheme?.[isDark ? 'dark' : 'light']
-            const bg = isDark ? (tokens?.buttonBg || '#0F4C75') : theme.palette.primary.main
-            const bgHover = isDark
-              ? (tokens?.buttonBgHover || darken(bg, 0.12))
-              : darken(theme.palette.primary.main, 0.16)
-            const fg = isDark ? '#ffffff' : theme.palette.common.white
+            const bg = isDark ? (tokens?.primary || '#BBE1FA') : theme.palette.primary.main
+            const bgHover = isDark ? darken(bg, 0.08) : darken(theme.palette.primary.main, 0.16)
+            const fg = isDark ? (tokens?.surfaceStrong || '#061636') : theme.palette.common.white
             return {
               backgroundColor: bg,
               color: fg,
               '&:hover': {
                 backgroundColor: bgHover,
                 color: fg,
+              },
+              '&.Mui-disabled': {
+                backgroundColor: alpha(bg, isDark ? 0.38 : 0.12),
+                color: alpha(fg, 0.55),
               },
             }
           },

@@ -10,6 +10,16 @@ from services.design_gap.design_gap_lib.config import load_env
 
 PACKAGE_DIR = __import__("pathlib").Path(__file__).resolve().parent
 
+SUMMARY_FIELDS = (
+    "controlNumber",
+    "currentManualActivity",
+    "automationOpportunity",
+    "proposedSolution",
+    "benefit",
+    "dependency",
+    "residualRiskOrLimitation",
+)
+
 
 def load_text(name: str) -> str:
     return (PACKAGE_DIR / name).read_text(encoding="utf-8").strip()
@@ -58,7 +68,7 @@ def _complete_openrouter(model: str, system_prompt: str, user_prompt: str) -> di
         json={
             "model": model,
             "temperature": 0,
-            "max_tokens": 400,
+            "max_tokens": 1600,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -84,7 +94,7 @@ def _complete_ollama(model: str, system_prompt: str, user_prompt: str) -> dict[s
             "model": model,
             "stream": False,
             "format": schema,
-            "options": {"temperature": 0, "num_predict": 180, "top_p": 0.9},
+            "options": {"temperature": 0, "num_predict": 1200, "top_p": 0.9},
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -112,11 +122,10 @@ def _parse_json(content: str) -> dict[str, Any]:
     parsed = json.loads(text)
     if not isinstance(parsed, dict):
         raise RuntimeError("Key manual response is not a JSON object.")
-    control_number = str(parsed.get("controlNumber") or "").strip()
-    opportunity = str(parsed.get("rationalisationOpportunity") or "").strip()
-    if not control_number or not opportunity:
-        raise RuntimeError("Key manual response is missing required control fields.")
-    return {
-        "controlNumber": control_number,
-        "rationalisationOpportunity": opportunity,
-    }
+    cleaned: dict[str, str] = {}
+    for key in SUMMARY_FIELDS:
+        value = str(parsed.get(key) or "").strip()
+        if not value:
+            raise RuntimeError(f"Key manual response is missing {key}.")
+        cleaned[key] = value
+    return cleaned

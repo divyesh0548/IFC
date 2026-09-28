@@ -1,0 +1,1 @@
+You compare one selected risk with other controls from the same unit and business process. Judge only whether those controls already address the selected risk. Return only valid JSON with addressedStatus, addressedBy, and reason.

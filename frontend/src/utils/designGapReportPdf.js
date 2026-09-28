@@ -41,25 +41,32 @@ export function formatInsufficientCheckLine(result) {
   return title
 }
 
+function controlsWithResultStatus(controls, status) {
+  return controls.filter((control) =>
+    (control.results || []).some((result) => result.status === status)
+  ).length
+}
+
 function getControlStatusCounts(reportData) {
   const fromSummary = reportData?.summary?.control_design_status_counts || {}
   const controls = Array.isArray(reportData?.controls) ? reportData.controls : []
+  // A control can have both gaps and empty fields. Count every control listed
+  // in the Insufficient data section, not only controls whose overall status is insufficient_data.
+  const insufficientData = controlsWithResultStatus(controls, 'insufficient_data')
   if (Object.keys(fromSummary).length > 0) {
     return {
       withoutGaps: Number(fromSummary.good_design || 0),
       gaps: Number(fromSummary.has_gaps || 0),
-      insufficientData: Number(fromSummary.insufficient_data || 0),
+      insufficientData,
       reviewed: Number(reportData?.summary?.controls_reviewed ?? controls.length),
     }
   }
   let withoutGaps = 0
   let gaps = 0
-  let insufficientData = 0
   for (const c of controls) {
     const status = String(c.control_design_status || '').toLowerCase()
     if (status === 'good_design') withoutGaps += 1
     else if (status === 'has_gaps') gaps += 1
-    else if (status === 'insufficient_data') insufficientData += 1
   }
   return {
     withoutGaps,

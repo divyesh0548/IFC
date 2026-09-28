@@ -173,7 +173,12 @@ function CompanyAdminUnitManagement() {
       setRoleDialog((prev) => ({ ...prev, error: 'Email ID is required' }))
       return
     }
-    const mobileError = roleDialog.mobile ? getMobileValidationError(roleDialog.mobile) : null
+    const mobile = normalizeMobileDigits(roleDialog.mobile)
+    if (!mobile) {
+      setRoleDialog((prev) => ({ ...prev, error: 'Mobile number is required' }))
+      return
+    }
+    const mobileError = getMobileValidationError(mobile)
     if (mobileError) {
       setRoleDialog((prev) => ({ ...prev, error: mobileError }))
       return
@@ -189,7 +194,7 @@ function CompanyAdminUnitManagement() {
       emp_name: roleDialog.emp_name || null,
       department: roleDialog.department || null,
       designation: roleDialog.designation || null,
-      mobile: normalizeMobileDigits(roleDialog.mobile) || null,
+      mobile,
     }
 
     if (roleDialog.type === 'company_co' && Array.isArray(roleDialog.unitIds) && roleDialog.unitIds.length > 0) {
@@ -504,8 +509,17 @@ function CompanyAdminUnitManagement() {
           value={roleDialog.mobile}
           onChange={(event) => setRoleDialog((prev) => ({ ...prev, mobile: event.target.value, error: '' }))}
           fullWidth
-          error={!!roleDialog.mobile && !!getMobileValidationError(roleDialog.mobile)}
-          helperText={(roleDialog.mobile && getMobileValidationError(roleDialog.mobile)) || 'Optional. Enter a valid 10-digit mobile number.'}
+          required
+          inputProps={{ inputMode: 'numeric', maxLength: 10 }}
+          error={
+            (!!roleDialog.mobile && !!getMobileValidationError(roleDialog.mobile))
+            || roleDialog.error === 'Mobile number is required'
+          }
+          helperText={
+            (roleDialog.mobile && getMobileValidationError(roleDialog.mobile))
+            || (roleDialog.error === 'Mobile number is required' ? roleDialog.error : '')
+            || 'Enter a valid 10-digit mobile number.'
+          }
         />
         {roleDialog.error && <Alert severity="error">{roleDialog.error}</Alert>}
       </AppDialog>

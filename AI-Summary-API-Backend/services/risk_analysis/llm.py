@@ -36,15 +36,38 @@ def resolve_model() -> str:
     return model
 
 
+def _load_schema(name: str) -> dict[str, Any]:
+    return json.loads((PACKAGE_DIR / name).read_text(encoding="utf-8"))
+
+
 def complete_json(system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], str]:
+    return _complete(system_prompt, user_prompt, schema=_load_schema("schema.json"), parser=_parse_json)
+
+
+def complete_comparison_json(system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], str]:
+    return _complete(
+        system_prompt,
+        user_prompt,
+        schema=_load_schema("compare_schema.json"),
+        parser=_parse_object,
+    )
+
+
+def _complete(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    schema: dict[str, Any],
+    parser,
+) -> tuple[dict[str, Any], str]:
     provider = provider_name()
     model = resolve_model()
     if provider == "ollama":
-        return _complete_ollama(model, system_prompt, user_prompt), model
-    return _complete_openrouter(model, system_prompt, user_prompt), model
+        return parser(_complete_ollama(model, system_prompt, user_prompt, schema)), model
+    return parser(_complete_openrouter(model, system_prompt, user_prompt)), model
 
 
-def _complete_openrouter(model: str, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+def _complete_openrouter(model: str, system_prompt: str, user_prompt: str) -> str:
     api_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not set")
@@ -70,15 +93,13 @@ def _complete_openrouter(model: str, system_prompt: str, user_prompt: str) -> di
     if response.status_code >= 400:
         raise RuntimeError(f"OpenRouter HTTP {response.status_code}: {response.text[:800]}")
     data = response.json()
-    content = data["choices"][0]["message"]["content"]
-    return _parse_json(content)
+    return str(data["choices"][0]["message"]["content"] or "")
 
 
-def _complete_ollama(model: str, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+def _complete_ollama(model: str, system_prompt: str, user_prompt: str, schema: dict[str, Any]) -> str:
     url = (os.getenv("RISK_ANALYSIS_OLLAMA_URL") or os.getenv("OLLAMA_CHAT_URL") or "").strip()
     if not url:
         raise RuntimeError("RISK_ANALYSIS_OLLAMA_URL is not set")
-    schema = json.loads((PACKAGE_DIR / "schema.json").read_text(encoding="utf-8"))
     response = requests.post(
         url,
         json={
@@ -98,10 +119,10 @@ def _complete_ollama(model: str, system_prompt: str, user_prompt: str) -> dict[s
     content = str((response.json().get("message") or {}).get("content") or "").strip()
     if not content:
         raise RuntimeError("Ollama response content is empty.")
-    return _parse_json(content)
+    return content
 
 
-def _parse_json(content: str) -> dict[str, Any]:
+def _parse_object(content: str) -> dict[str, Any]:
     text = (content or "").strip()
     if text.startswith("```"):
         lines = text.splitlines()
@@ -112,7 +133,12 @@ def _parse_json(content: str) -> dict[str, Any]:
         text = "\n".join(lines).strip()
     parsed = json.loads(text)
     if not isinstance(parsed, dict):
-        raise RuntimeError("Risk analysis response is not a JSON object.")
+        raise RuntimeError("Model response is not a JSON object.")
+    return parsed
+
+
+def _parse_json(content: str) -> dict[str, Any]:
+    parsed = _parse_object(content)
     for field in ("matchedSubProcess", "matchConfidence", "coverageStatus"):
         if not str(parsed.get(field) or "").strip():
             raise RuntimeError("Risk analysis response is missing required fields.")
