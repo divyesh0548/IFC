@@ -160,6 +160,7 @@ function FormDetail() {
   const [savingSchedule, setSavingSchedule] = useState(false)
   const fileInputRef = useRef(null)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
+  const [assignWithoutSampleDialogOpen, setAssignWithoutSampleDialogOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [approverAssignmentDialogOpen, setApproverAssignmentDialogOpen] = useState(false)
   const [selectedApprover, setSelectedApprover] = useState(null)
@@ -511,10 +512,6 @@ function FormDetail() {
       }
     }
 
-    if (newActiveStatus === '1' && !hasSampleDocs()) {
-      toast('Sample document is missing. Proceeding to set Active.')
-    }
-
     setSetActiveConfirmDialogOpen(true)
   }
 
@@ -743,10 +740,11 @@ function FormDetail() {
   const handleCloseAssignmentDialog = () => {
     if (updating) return
     setAssignmentDialogOpen(false)
+    setAssignWithoutSampleDialogOpen(false)
     setSelectedUser(null)
   }
 
-  const handleUpdateAssignment = async () => {
+  const handleUpdateAssignment = async ({ allowWithoutSample = false } = {}) => {
     const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
     if (reassignmentBlockMessage) {
       toast.error(reassignmentBlockMessage)
@@ -754,6 +752,13 @@ function FormDetail() {
     }
 
     if (!form_id || !selectedUser?.email_id) return
+
+    if (!allowWithoutSample && !hasSampleDocs()) {
+      setAssignWithoutSampleDialogOpen(true)
+      return
+    }
+
+    setAssignWithoutSampleDialogOpen(false)
 
     const isTransferFromSelfAssign = Boolean(formData?.assigned_to_coordinator)
 
@@ -766,7 +771,6 @@ function FormDetail() {
       formData?.reminder_frequency !== undefined &&
       String(formData.reminder_frequency).trim() !== ''
     const hasReminderSettings = hasDueDate && hasReminderFrequency
-    const hasSampleDoc = hasSampleDocs()
     const canAutoActivate = !alreadyActive && hasReminderSettings && !isTransferFromSelfAssign
 
     setUpdating(true)
@@ -800,9 +804,6 @@ function FormDetail() {
             ? (data.message || 'Self-assigned RACM transferred to process owner successfully')
             : 'Sucessfully Updated RACM Assignment'
         )
-        if (!isTransferFromSelfAssign && canAutoActivate && !hasSampleDoc) {
-          toast('Sample document is missing. RACM was set Active.')
-        }
         if (!isTransferFromSelfAssign && !alreadyActive && !canAutoActivate) {
           const missing = []
           if (!hasReminderSettings) missing.push('Reminder settings')
@@ -4761,6 +4762,36 @@ function FormDetail() {
       </Dialog>
 
       <Dialog
+        open={assignWithoutSampleDialogOpen}
+        onClose={() => {
+          if (!updating) setAssignWithoutSampleDialogOpen(false)
+        }}
+        aria-labelledby="assign-without-sample-dialog-title"
+      >
+        <DialogTitle id="assign-without-sample-dialog-title" sx={{ fontWeight: 600 }}>
+          Sample document is missing
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ color: 'text.secondary', lineHeight: 1.5 }}>
+            This RACM does not have a sample document. Assign it without a sample document?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button onClick={() => setAssignWithoutSampleDialogOpen(false)} disabled={updating} variant="outlined">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => handleUpdateAssignment({ allowWithoutSample: true })}
+            disabled={updating}
+            variant="contained"
+            color="secondary"
+          >
+            {updating ? 'Updating...' : 'Assign'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
         open={approverAssignmentDialogOpen}
         onClose={handleCloseApproverAssignmentDialog}
         aria-labelledby="racm-approver-assignment-dialog-title"
@@ -5101,6 +5132,7 @@ function FormDetail() {
             {validProcessOwnerAssigned
               ? `Self-assign this RACM (currently assigned to ${String(formData?.control_owner || '').trim()}) to yourself? The RACM will remain Active.`
               : 'Assign this RACM to yourself for document upload and submission.'}
+            {!hasSampleDocs() ? ' This RACM does not have a sample document. Self-assign it without a sample document?' : ''}
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3, gap: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
@@ -5108,7 +5140,7 @@ function FormDetail() {
             Cancel
           </Button>
           <Button onClick={handleSelfAssignConfirm} disabled={selfAssigning} variant="contained" color="primary">
-            {selfAssigning ? 'Assigning...' : 'Self Assign'}
+            {selfAssigning ? 'Assigning...' : (hasSampleDocs() ? 'Self Assign' : 'Self-assign without sample document')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -5316,6 +5348,7 @@ function FormDetail() {
             }}
           >
             Are you sure you want to set this RACM Active?
+            {!hasSampleDocs() ? ' It does not have a sample document. Set it Active without a sample document?' : ''}
           </DialogContentText>
         </DialogContent>
         <DialogActions
@@ -5331,7 +5364,7 @@ function FormDetail() {
             Cancel
           </Button>
           <Button onClick={handleSetActiveConfirm} disabled={updating} variant="contained" color="secondary" sx={{ textTransform: 'none', px: 3, py: 1, fontWeight: 600 }}>
-            {updating ? 'Setting...' : 'Set Active'}
+            {updating ? 'Setting...' : (hasSampleDocs() ? 'Set Active' : 'Set Active without sample document')}
           </Button>
         </DialogActions>
       </Dialog>

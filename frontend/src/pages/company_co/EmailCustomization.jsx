@@ -56,6 +56,8 @@ Once you submit your evidence, our tester will review it to check if the control
 
 Deadline: {{formattedDueDate}}
 
+Reply to this email if you notice any change in user responsibilities, department, or designation. In that case, control ownership will be reassigned to the appropriate user.
+
 Just shout if you hit any snags or have questions or you have any feedback on the performance of the controls or have noted any significant breaches; I'm happy to help.
 
 RACM: {{racmLink}}

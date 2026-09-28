@@ -100,16 +100,18 @@ function buildRacmActiveUserEmail({
       subject: customTemplate.email_subject
         ? replaceTemplateVariables(customTemplate.email_subject, vars)
         : `Your IFC testing for ${businessProcess || 'your assignment'} is ready`,
-      text: customTemplate.email_body
-        ? replaceTemplateVariables(customTemplate.email_body, vars)
-        : buildDefaultActiveEmailBody({ recipientName, businessProcess, formattedDueDate, formUrl, portalUrl, coordinatorCompanyDisplayName }),
+      text: insertOwnershipChangeNote(
+        customTemplate.email_body
+          ? replaceTemplateVariables(customTemplate.email_body, vars)
+          : buildDefaultActiveEmailBody({ recipientName, businessProcess, formattedDueDate, formUrl, portalUrl, coordinatorCompanyDisplayName })
+      ),
     };
   }
 
   return {
     shouldSend: true,
     subject: `Your IFC testing for ${businessProcess || 'your assignment'} is ready`,
-    text: buildDefaultActiveEmailBody({ recipientName, businessProcess, formattedDueDate, formUrl, portalUrl, coordinatorCompanyDisplayName }),
+    text: insertOwnershipChangeNote(buildDefaultActiveEmailBody({ recipientName, businessProcess, formattedDueDate, formUrl, portalUrl, coordinatorCompanyDisplayName })),
   };
 }
 
@@ -132,6 +134,8 @@ Once you submit your evidence, our tester will review it to check if the control
 
 Deadline: ${formattedDueDate}
 
+Reply to this email if you notice any change in user responsibilities, department, or designation. In that case, control ownership will be reassigned to the appropriate user.
+
 Just shout if you hit any snags or have questions or you have any feedback on the performance of the controls or have noted any significant breaches; I'm happy to help.
 ${formUrl ? `\nRACM: ${formUrl}` : (portalUrl ? `\nRACM: ${portalUrl}` : '')}
 
@@ -140,6 +144,16 @@ Thanks for cooperating.
 Regards,
 ${coordinatorCompanyDisplayName}
 `;
+}
+
+const OWNERSHIP_CHANGE_NOTE = 'Reply to this email if you notice any change in user responsibilities, department, or designation. In that case, control ownership will be reassigned to the appropriate user.';
+
+function insertOwnershipChangeNote(text) {
+  const body = String(text || '');
+  if (body.includes(OWNERSHIP_CHANGE_NOTE)) return body;
+  const deadlineLine = body.match(/^Deadline:.*$/m);
+  if (!deadlineLine) return body;
+  return body.replace(deadlineLine[0], `${deadlineLine[0]}\n\n${OWNERSHIP_CHANGE_NOTE}`);
 }
 
 function buildRacmInactiveUserEmail({

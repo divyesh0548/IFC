@@ -610,10 +610,6 @@ function RacmAssignment() {
 
     setUpdatingAssignment(true)
     try {
-      if (!isApproverMode && !racmHasSampleDocument(selectedForm)) {
-        toast('1 RACM does not have Sample documents, Proceeding to Set Active.')
-      }
-
       const performRequest = async (replaceExisting = false) => {
         if (isApproverMode) {
           return fetch(`${API_BASE_URL}/api/company-co/racm-approver-assignments`, {
@@ -743,20 +739,16 @@ function RacmAssignment() {
       return
     }
 
-    const currentOwner = String(selectedForm?.control_owner || '').trim()
-    const nextOwner = String(selectedUser.email_id || '').trim()
-    const isTransferFromSelfAssign = isCoordinatorAssignedRacm(selectedForm)
+    if (racmHasSampleDocument(selectedForm)) {
+      void executeUpdateAssignment()
+      return
+    }
+
     openConfirmDialog({
       kind: 'assign_single',
-      title: isTransferFromSelfAssign
-        ? 'Transfer Self-Assigned RACM to Process Owner'
-        : 'Confirm Process Owner Assignment',
-      description: isTransferFromSelfAssign
-        ? `Transfer this self-assigned RACM to ${nextOwner}? The RACM will remain Active and the process owner will be notified by email.`
-        : (currentOwner
-          ? `Replace the current process owner (${currentOwner}) with ${nextOwner}? The RACM will be set Active, and the new process owner will be notified by email.`
-          : `Assign ${nextOwner} as the process owner for this RACM? The RACM will be set Active.`),
-      confirmLabel: 'Update Assignment',
+      title: 'Confirm Process Owner Assignment',
+      description: 'This RACM does not have a sample document. Assign it without a sample document?',
+      confirmLabel: 'Assign without sample document',
     })
   }
 
@@ -821,13 +813,16 @@ function RacmAssignment() {
 
     const isTransferFromProcessOwner = hasValidProcessOwnerAssignment(selectedForm)
     const currentOwner = String(selectedForm?.control_owner || '').trim()
+    const missingSampleNote = racmHasSampleDocument(selectedForm)
+      ? ''
+      : ' This RACM does not have a sample document. Self-assign it without a sample document?'
     openConfirmDialog({
       kind: 'self_assign_single',
       title: 'Self Assign RACM',
-      description: isTransferFromProcessOwner
+      description: (isTransferFromProcessOwner
         ? `Self-assign this RACM (currently assigned to ${currentOwner}) to yourself? The RACM will remain Active.`
-        : 'Assign this RACM to yourself for document upload and submission.',
-      confirmLabel: 'Self Assign',
+        : 'Assign this RACM to yourself for document upload and submission.') + missingSampleNote,
+      confirmLabel: missingSampleNote ? 'Self-assign without sample document' : 'Self Assign',
     })
   }
 
@@ -902,13 +897,17 @@ function RacmAssignment() {
     const transferNote = transferFromOwnerCount > 0
       ? ` ${transferFromOwnerCount} currently assigned to a process owner will be self-assigned to you.`
       : ''
+    const missingSampleCount = eligible.filter((form) => !racmHasSampleDocument(form)).length
+    const missingSampleNote = missingSampleCount > 0
+      ? ` ${missingSampleCount} of these RACM(s) do not have a sample document. Self-assign them without a sample document?`
+      : ''
     openConfirmDialog({
       kind: 'self_assign_bulk',
       title: 'Self Assign Selected RACMs',
-      description: skipped > 0
+      description: (skipped > 0
         ? `Self-assign ${eligible.length} of ${selectedRows.length} selected RACM(s)? ${skipped} will be skipped (already coordinator-assigned, locked, or missing reminder settings).${transferNote} Eligible RACMs will be set Active.`
-        : `Self-assign ${eligible.length} selected RACM(s) to yourself?${transferNote} They will be set to Active.`,
-      confirmLabel: 'Self Assign',
+        : `Self-assign ${eligible.length} selected RACM(s) to yourself?${transferNote} They will be set to Active.`) + missingSampleNote,
+      confirmLabel: missingSampleNote ? 'Self-assign without sample document' : 'Self Assign',
     })
   }
 
@@ -947,16 +946,8 @@ function RacmAssignment() {
     setUpdatingAssignment(true)
     try {
       const targetFormIds = Array.from(selectedForms)
-      const missingSampleDocCount = !isApproverMode ? targetFormIds.filter((formId) => {
-        const form = forms.find((item) => item.form_id === formId)
-        return !racmHasSampleDocument(form)
-      }).length : 0
       let successCount = 0
       let failCount = 0
-
-      if (missingSampleDocCount > 0) {
-        toast(`${missingSampleDocCount} RACM(s) do not have Sample documents, Proceeding to Set Active.`)
-      }
 
       if (isApproverMode) {
         const performRequest = async (replaceExisting = false) =>
@@ -1111,16 +1102,19 @@ function RacmAssignment() {
       return
     }
 
-    const selectedSelfAssignedCount = selectedFormRows.filter((form) => isCoordinatorAssignedRacm(form)).length
+    const missingSampleCount = selectedFormRows.filter((form) => !racmHasSampleDocument(form)).length
+    if (missingSampleCount === 0) {
+      void executeBulkUpdateAssignment()
+      return
+    }
+
     openConfirmDialog({
       kind: 'assign_bulk',
-      title: selectedSelfAssignedCount > 0
-        ? 'Confirm Process Owner Assignment / Transfer'
-        : 'Confirm Process Owner Assignment',
-      description: selectedSelfAssignedCount > 0
-        ? `Assign ${bulkSelectedUser.email_id} as the process owner for ${selectedForms.size} selected RACM${selectedForms.size === 1 ? '' : 's'}? ${selectedSelfAssignedCount} self-assigned RACM${selectedSelfAssignedCount === 1 ? '' : 's'} will be transferred (and remain Active). Other RACMs will be set Active, and the process owner will be notified by email.`
-        : `Assign ${bulkSelectedUser.email_id} as the process owner for ${selectedForms.size} selected RACM${selectedForms.size === 1 ? '' : 's'}? Current process owners will be replaced, RACMs will be set Active, and the new process owner will be notified by email.`,
-      confirmLabel: 'Update Assignments',
+      title: 'Confirm Process Owner Assignment',
+      description: missingSampleCount === 1
+        ? '1 selected RACM does not have a sample document. Assign it without a sample document?'
+        : `${missingSampleCount} selected RACMs do not have a sample document. Assign them without a sample document?`,
+      confirmLabel: 'Assign without sample document',
     })
   }
 

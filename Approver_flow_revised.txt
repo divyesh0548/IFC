@@ -1,0 +1,18 @@
+Today, Declare No Submission closes the cycle by itself. The process owner or a self-assigned coordinator can use it only after rejection, or after an approval marked Not Effective. It writes process_owner_declaration, turns off the deficiency action, emails the approver, and reminder jobs skip that RACM. The approver is not asked to set a conclusion, and control_design_conclusion is left as it was.
+
+The two new options should share one pending state and one closing step. The cycle stays open for the approver until they set a conclusion.
+
+Option 1 — No submission available. Show this only before any rejection, while the RACM has not been sent for approval and has no user-uploaded evidence. The popup states that this is only for a period with no transactions, and the user must check a declaration box before submit. Save who declared it, when, and that the reason is “no transactions.” Email the approver. Block further uploads and resubmission, but do not treat the cycle as finished yet.
+
+Option 2 — Declare no submission. Keep this for after rejection. Replace the required comment with the declaration text and a required checkbox, and keep an audit record. Email the approver the same way. The existing Approved + Not Effective path also offers this button today; leaving that in place avoids trapping those RACMs with no exit.
+
+Approver close. On a declared RACM, the approver chooses one of Effective, Not Effective, Accepted under deviation, or Not Applicable. Store Not Applicable only in control_design_conclusion. Any of the four marks the cycle finished: set status so it is no longer pending or rejected, clear deficiency action, and stop every reminder job. Until that choice is saved, the approver should get a reminder, and the process owner should not get “please upload evidence” reminders.
+
+Loopholes if this is wired into the current code:
+
+One declaration flag cannot tell option 1 from option 2, and today any declaration already stops reminders and blocks reassignment. You need a declaration type and a “waiting for approver” state. If you only write the conclusion and leave status as Rejected or blank, dashboards still show it as open and the due-date reminder still runs, because that job skips only Approved RACMs and declared ones.
+Choosing Not Effective in the normal approval flow starts the mitigation cycle and ineffective reminders. On this path it must be terminal, or the cycle reopens after the approver “closes” it.
+Reassignment is blocked for Effective and Accepted under deviation only. Not Applicable would still be reassignable, and evidence could be uploaded afterward.
+The IFC testing report counts only Effective, Not Effective, and Accepted under deviation. Not Applicable would be stored and invisible in that report.
+If option 1 stays available after evidence is uploaded or after “sent for approval,” the approver can receive both evidence and a no-transaction declaration for the same control.
+Restricting option 2 to rejection only removes the current escape from Approved + Not Effective, unless that case is kept.

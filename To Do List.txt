@@ -1,5 +1,3 @@
-In companies table the gst and pan values should be unique, so add that contraint or other logic. - Check this
-
-Test the mapping save feature on excel upload. It is already developed. 
-
 Also test the combination of company + unit + control number must be unique. Test if user selects control number to import from excel rather then auto generate. Controls with same control numbers should not exists at unit level even for different business process.
+
+Implement the new addition to approval flow. Explained in prompts and in this file "C:\Divyesh\IFC\IFC_Prisma\Approver_flow_revised.txt"

@@ -11,6 +11,7 @@ async function fetchPendingLoginEmailUsers(client, limit = 25) {
         u.id,
         u.email_id,
         u.role,
+        u.emp_name,
         u.temp_password_encrypted,
         c.company_name
       FROM ifc_users u
@@ -44,11 +45,11 @@ async function runPendingLoginEmails() {
     let sentCount = 0;
     for (const row of rows) {
       try {
-        const sent = await sendPendingLoginEmail(client, row);
-        if (sent) {
+        const result = await sendPendingLoginEmail(client, row);
+        if (result === 'sent') {
           sentCount += 1;
           console.log(`[login-email] Sent login email to ${row.email_id}`);
-        } else {
+        } else if (result === 'failed') {
           console.warn(`[login-email] Login email pending for ${row.email_id}; SMTP send failed.`);
         }
       } catch (error) {

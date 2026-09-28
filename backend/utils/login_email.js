@@ -12,15 +12,6 @@ function decryptTempPassword(encryptedTempPassword) {
   return decryptIfcUserTempPassword(encryptedTempPassword);
 }
 
-function roleLabel(role) {
-  if (role === 'company_admin') return 'Company Admin';
-  if (role === 'company_co') return 'Company Coordinator';
-  if (role === 'approver') return 'Approver';
-  if (role === 'siteadmin') return 'Site Admin';
-  if (role === 'auditor') return 'Auditor';
-  return 'User';
-}
-
 function getPortalUrl() {
   return process.env.VITE_FRONTEND_URL || 'http://localhost:5173';
 }
@@ -90,7 +81,7 @@ Portal: ${portalUrl}
 
 Thanks & Regards,
 ${resolvedCoordinatorName}
-Sharp and Tannan Associates`,
+${resolvedCompanyName}`,
     };
   }
 
@@ -119,7 +110,7 @@ Portal: ${portalUrl}
 
 Thanks & Regards,
 ${resolvedCoordinatorName}
-Sharp and Tannan Associates`,
+${resolvedCompanyName}`,
     };
   }
 
@@ -147,45 +138,64 @@ Portal: ${portalUrl}
 
 Thanks & Regards,
 ${resolvedCoordinatorName}
-Sharp and Tannan Associates`,
+${resolvedCompanyName}`,
   };
 }
 
-function buildLoginEmail({ emailId, role, companyName, tempPassword }) {
-  const displayRole = roleLabel(role);
-  const frontendUrl = `${getPortalUrl()}/user/login`;
-  const companyLine = companyName ? `\nCompany: ${companyName}\n` : '';
-
-  return {
-    subject: `Welcome to ${companyName || 'IFC'} - Your Temporary Login Credentials`,
-    text: `Dear ${displayRole},
-
-Your account has been created successfully.${companyLine}
-Your temporary login credentials:
-Email: ${emailId}
-Temporary Password: ${tempPassword}
-
-IMPORTANT: Please login using these credentials and update your password immediately for security purposes.
-
-Login URL: ${frontendUrl}
-
-After logging in, you will be prompted to update your temporary password to a permanent one.
-
-Best regards,
-IFC System`,
-  };
+async function claimLoginEmailSend(client, userId) {
+  const result = await client.query(
+    `
+      UPDATE ifc_users
+      SET login_email_sent = TRUE
+      WHERE id = $1
+        AND COALESCE(login_email_sent, FALSE) = FALSE
+      RETURNING id
+    `,
+    [userId]
+  );
+  return result.rowCount > 0;
 }
 
-async function markLoginEmailSent(client, userId) {
+async function releaseLoginEmailSend(client, userId) {
   await client.query(
     `
       UPDATE ifc_users
-      SET login_email_sent = TRUE,
-          temp_password_encrypted = NULL
+      SET login_email_sent = FALSE
       WHERE id = $1
     `,
     [userId]
   );
+}
+
+async function clearTempPassword(client, userId) {
+  await client.query(
+    `
+      UPDATE ifc_users
+      SET temp_password_encrypted = NULL
+      WHERE id = $1
+    `,
+    [userId]
+  );
+}
+
+async function deliverLoginEmail(client, userId, emailId, emailPayload) {
+  const claimed = await claimLoginEmailSend(client, userId);
+  if (!claimed) {
+    return 'skipped';
+  }
+
+  try {
+    const sent = await sendEmail(emailId, emailPayload.subject, emailPayload.text);
+    if (!sent) {
+      await releaseLoginEmailSend(client, userId);
+      return 'failed';
+    }
+    await clearTempPassword(client, userId);
+    return 'sent';
+  } catch (error) {
+    await releaseLoginEmailSend(client, userId);
+    throw error;
+  }
 }
 
 async function sendUserCreationEmail(client, {
@@ -208,43 +218,31 @@ async function sendUserCreationEmail(client, {
     tempPassword,
   });
 
-  const sent = await sendEmail(emailId, emailPayload.subject, emailPayload.text);
-  if (!sent) {
-    return false;
-  }
-
-  await markLoginEmailSent(client, userId);
-  return true;
+  const result = await deliverLoginEmail(client, userId, emailId, emailPayload);
+  return result === 'sent' || result === 'skipped';
 }
 
 async function sendPendingLoginEmail(client, userRow) {
   const emailId = String(userRow.email_id || '').trim();
   if (!emailId || !userRow.temp_password_encrypted) {
-    return false;
+    return 'skipped';
   }
 
   const tempPassword = decryptTempPassword(userRow.temp_password_encrypted);
-  const emailPayload = buildLoginEmail({
+  const emailPayload = buildUserCreationEmail({
     emailId,
     role: userRow.role,
+    userName: userRow.emp_name,
     companyName: userRow.company_name,
     tempPassword,
   });
 
-  const sent = await sendEmail(emailId, emailPayload.subject, emailPayload.text);
-  if (!sent) {
-    return false;
-  }
-
-  await markLoginEmailSent(client, userRow.id);
-
-  return true;
+  return deliverLoginEmail(client, userRow.id, emailId, emailPayload);
 }
 
 module.exports = {
   encryptTempPassword,
   decryptTempPassword,
-  buildLoginEmail,
   buildUserCreationEmail,
   sendUserCreationEmail,
   sendPendingLoginEmail,

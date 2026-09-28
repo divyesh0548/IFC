@@ -119,6 +119,7 @@ function RacmManagementDashboard() {
   const [deleteConfirmDialogOpen, setDeleteConfirmDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [setActiveConfirmDialogOpen, setSetActiveConfirmDialogOpen] = useState(false)
+  const [setActiveWithoutSample, setSetActiveWithoutSample] = useState(null)
   const [replicateDialogOpen, setReplicateDialogOpen] = useState(false)
   const [replicateTargetFY, setReplicateTargetFY] = useState('')
   const [replicating, setReplicating] = useState(false)
@@ -940,7 +941,11 @@ function RacmManagementDashboard() {
     }
 
     if ((sampleDocMissingFormIds?.length || 0) > 0) {
-      toast(`${sampleDocMissingFormIds.length} RACM(s) missing sample document. Proceeding to set Active.`)
+      setSetActiveWithoutSample({
+        formIds: validFormIds,
+        missingCount: sampleDocMissingFormIds.length,
+      })
+      return
     }
 
     await performSetActive(validFormIds)
@@ -1271,10 +1276,6 @@ function RacmManagementDashboard() {
       }
 
       if (selectedFormIds.includes(formId)) {
-        const hasSampleDoc = form?.sample_doc !== null && form?.sample_doc !== undefined && String(form.sample_doc).trim() !== ''
-        if (!hasSampleDoc) {
-          toast('Sample document is missing. RACM can still be set Active.')
-        }
         newSelected.add(formId)
         setSelectedForms(newSelected)
       }
@@ -1330,10 +1331,6 @@ function RacmManagementDashboard() {
         invalidMobileEmails,
       } = await classifyFormsForSetActive(forms)
       setSelectedForms(new Set(selectedFormIds))
-
-      if ((sampleDocMissingFormIds?.length || 0) > 0) {
-        toast(`${sampleDocMissingFormIds.length} RACM(s) missing sample document. They can still be set Active.`)
-      }
 
       if (
         (emptyOwnerFormIds?.length || 0) > 0 ||
@@ -2797,6 +2794,42 @@ function RacmManagementDashboard() {
               sx={{ textTransform: 'none', px: 3, py: 1, borderRadius: 1, fontWeight: 600 }}
             >
               {setDueDateSubmitting ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
+          open={Boolean(setActiveWithoutSample)}
+          onClose={() => {
+            if (!bulkUpdating) setSetActiveWithoutSample(null)
+          }}
+          aria-labelledby="set-active-without-sample-title"
+        >
+          <DialogTitle id="set-active-without-sample-title" sx={{ fontWeight: 600 }}>
+            Sample document is missing
+          </DialogTitle>
+          <DialogContent>
+            <DialogContentText sx={{ color: 'text.secondary', lineHeight: 1.5 }}>
+              {(setActiveWithoutSample?.missingCount || 0) === 1
+                ? '1 selected RACM does not have a sample document. Set it Active without a sample document?'
+                : `${setActiveWithoutSample?.missingCount || 0} selected RACMs do not have a sample document. Set them Active without a sample document?`}
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+            <Button onClick={() => setSetActiveWithoutSample(null)} disabled={bulkUpdating} variant="outlined">
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="secondary"
+              disabled={bulkUpdating}
+              onClick={async () => {
+                const formIds = setActiveWithoutSample?.formIds || []
+                setSetActiveWithoutSample(null)
+                await performSetActive(formIds)
+              }}
+            >
+              {bulkUpdating ? 'Setting...' : 'Set Active without sample document'}
             </Button>
           </DialogActions>
         </Dialog>

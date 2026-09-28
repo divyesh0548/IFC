@@ -128,6 +128,10 @@ const radiusComponentOverrides = {
         paddingRight: theme.spacing(3),
         paddingBottom: theme.spacing(3),
         paddingLeft: theme.spacing(3),
+        // MUI sets padding-top to 0 when content follows a title. Keep the same inset.
+        '.MuiDialogTitle-root + &.MuiDialogContent-root': {
+          paddingTop: theme.spacing(3),
+        },
       }),
       dividers: ({ theme }) => ({
         paddingTop: theme.spacing(3),

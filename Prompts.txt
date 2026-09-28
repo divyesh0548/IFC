@@ -1,2 +1,31 @@
-In Ai insights pages the "Selection locked to one unit." text pushes the content slighlty downwards, Please fix that. 
-The content should not be moved to fix these types of text notice.
+Currently after rejection user has an option "Declare no submission", which will close the IFC testing cycle. 
+
+Some changes are required in this process.
+
+I need to provide two options for this.
+
+First option : 
+At initial stage user will see option "No submission available". This option will be visible to user before rejection only. 
+Display a pop-up with details like "Use this option only if no tranactions available for that period" and put a checkbox for declaration.
+
+After this approver will be notified via email. Approver will decide which status will be applicable to this RACM.
+
+Here approver will get four options "Effective, Not Effective, Accepted under deviation, Not Applicable". Not applicable is a new value in this backend. Just store that in conclusion column that's it.
+
+Once approver set any of the four value, control cycle will be finished and no reminder emails will be sent.
+
+
+
+
+Second option :
+half of this is already developed. 
+After rejection user will se an option "Declare no submission". In this display some text and a checkbox for declaration.
+
+Approver will be notified via email and then same as first option, will set the status of control from any of the four options.
+
+Once approver set any of the four value, control cycle will be finished and no reminder emails will be sent.
+
+
+
+
+Make a plan for this. And point out any potential loopholes in this process. Or this process will disrupt any other functions of this website.

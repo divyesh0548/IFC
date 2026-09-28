@@ -606,7 +606,7 @@ function buildSentForApprovalEmail({
 }) {
   const reviewerName = String(approverName || '').trim() || 'Approver';
   const submittedBy = String(userDisplayName || '').trim() || 'User';
-  const companyDisplayName = String(companyName || '').trim() || 'Sharp and Tannan Associates';
+  const companyDisplayName = String(companyName || '').trim() || 'IFC';
   const controlNumberText = String(controlNumber || '').trim() || String(formId || '').trim() || 'N/A';
   const bp = String(businessProcess || '').trim() || 'Business Process';
   const dueDateText = dueDate ? formatDueDateDisplay(dueDate) : '';
