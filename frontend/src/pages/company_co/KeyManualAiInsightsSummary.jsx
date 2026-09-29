@@ -23,6 +23,7 @@ import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { toast } from 'react-hot-toast'
+import { downloadKeyManualReportPdf } from '../../utils/aiInsightReportPdf'
 import {
   businessProcessesForUnits,
   financialYearsForScope,
@@ -689,6 +690,20 @@ function KeyManualAiInsightsSummary() {
           )}
         </DialogContent>
         <DialogActions>
+          <Button
+            variant="outlined"
+            disabled={!reportData || reportLoading}
+            onClick={() => {
+              try {
+                downloadKeyManualReportPdf(reportData)
+                toast.success('PDF downloaded')
+              } catch (error) {
+                toast.error(error.message || 'Failed to export PDF')
+              }
+            }}
+          >
+            Export PDF
+          </Button>
           <Button onClick={() => setReportOpen(false)} disabled={reportLoading}>Close</Button>
         </DialogActions>
       </Dialog>

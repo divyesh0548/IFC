@@ -25,6 +25,7 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { getFieldValue } from './dashboardClassificationUtils'
 import { toast } from 'react-hot-toast'
+import { downloadRiskAnalysisReportPdf } from '../../utils/aiInsightReportPdf'
 import {
   businessProcessesForUnits,
   financialYearsForScope,
@@ -165,6 +166,9 @@ function RiskAnalysis() {
   const [comparingRisk, setComparingRisk] = useState('')
   const [batchGenerating, setBatchGenerating] = useState(false)
   const [analysisData, setAnalysisData] = useState(null)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportData, setReportData] = useState(null)
   const lastSelectedIndexRef = useRef(null)
   const rowMetaRef = useRef(new Map())
   useSyncGlobalLoading(loading || batchGenerating || analysisGenerating)
@@ -244,6 +248,9 @@ function RiskAnalysis() {
 
   const allPageControlsSelected = rows.length > 0 && selectedControlsOnPage.length === rows.length
   const somePageControlsSelected = selectedControlsOnPage.length > 0 && selectedControlsOnPage.length < rows.length
+  const generatedSelectionCount = useMemo(() => (
+    [...selectedControlNumbers].filter((controlNumber) => Boolean(rowMetaRef.current.get(controlNumber)?.has_risk_analysis)).length
+  ), [rows, selectedControlNumbers])
 
   const resetPageForFilterChange = (setter) => (event) => {
     const value = event.target.value
@@ -420,6 +427,33 @@ function RiskAnalysis() {
       toast.error(error.message || 'Failed to generate risk analysis')
     } finally {
       setBatchGenerating(false)
+    }
+  }
+
+  const openSelectedReports = async () => {
+    const formIds = [...selectedControlNumbers]
+      .map((controlNumber) => rowMetaRef.current.get(controlNumber))
+      .filter((row) => row?.has_risk_analysis)
+      .map((row) => String(row.form_id || '').trim())
+      .filter(Boolean)
+    if (formIds.length === 0) return
+    setReportLoading(true)
+    setReportData(null)
+    setReportOpen(true)
+    try {
+      const params = new URLSearchParams()
+      formIds.forEach((id) => params.append('form_ids', id))
+      const response = await fetch(apiUrl(`/api/company-co/risk-analysis/report?${params}`), {
+        credentials: 'include',
+      })
+      const data = await response.json()
+      if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to load report')
+      setReportData(data.data)
+    } catch (error) {
+      setReportOpen(false)
+      toast.error(error.message || 'Failed to load report')
+    } finally {
+      setReportLoading(false)
     }
   }
 
@@ -811,6 +845,11 @@ function RiskAnalysis() {
             </Select>
           </FormControl>
 
+          {generatedSelectionCount > 0 ? (
+            <Button variant="outlined" disabled={reportLoading} onClick={openSelectedReports} sx={{ whiteSpace: 'nowrap' }}>
+              See Reports ({generatedSelectionCount})
+            </Button>
+          ) : null}
           <Button
             variant="contained"
             color="secondary"
@@ -1166,6 +1205,115 @@ function RiskAnalysis() {
           >
             {analysisGenerating ? 'Generating…' : 'Generate Risk Analysis'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={reportOpen} onClose={() => !reportLoading && setReportOpen(false)} fullWidth maxWidth="lg">
+        <DialogTitle>Risk Analysis Report</DialogTitle>
+        <DialogContent>
+          {reportLoading ? (
+            <Typography variant="body2" color="text.secondary">Loading report...</Typography>
+          ) : (
+            <Box>
+              <Typography variant="body2" color="text.secondary">
+                {String(reportData?.meta?.company_name || '').trim() || '—'}
+                {' | '}
+                {String(reportData?.meta?.unit_name || '').trim() || '—'}
+              </Typography>
+              {reportData?.meta?.business_process ? (
+                <Typography variant="subtitle1" fontWeight={700} sx={{ mt: 0.5 }}>
+                  {reportData.meta.business_process}
+                </Typography>
+              ) : null}
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', mt: 0.5, pb: 1.5, borderBottom: `1px solid ${theme.palette.divider}` }}
+              >
+                Financial year: {String(reportData?.meta?.financial_year || '').trim() || '—'}
+                {' · '}
+                Controls reviewed: {Number(reportData?.meta?.controls_reviewed || reportData?.controls?.length || 0)}
+              </Typography>
+              <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {(reportData?.controls || []).map((control) => {
+                  const response = control.response_json || {}
+                  const pointers = Array.isArray(response.missingRiskPointers) ? response.missingRiskPointers : []
+                  return (
+                    <Box
+                      key={control.form_id}
+                      sx={{
+                        p: 1.75,
+                        border: `1px solid ${theme.palette.divider}`,
+                        borderRadius: '10px',
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1 }}>
+                        <Typography variant="body2" fontWeight={700}>
+                          {control.control_number || '—'}
+                        </Typography>
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => {
+                            const formId = String(control.form_id || '').trim()
+                            if (!formId) return
+                            window.open(`/company-co/form/${encodeURIComponent(formId)}`, '_blank', 'noopener,noreferrer')
+                          }}
+                          endIcon={<ArrowOutwardRoundedIcon sx={{ fontSize: 16 }} />}
+                          sx={{ whiteSpace: 'nowrap' }}
+                        >
+                          Open control
+                        </Button>
+                      </Box>
+                      <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                        Matched sub-process: {response.matchedSubProcess || control.matched_sub_process || 'N/A'}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mb: 1 }}>
+                        Confidence: {response.matchConfidence || control.match_confidence || 'N/A'}
+                      </Typography>
+                      {pointers.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No missing-risk pointers returned.</Typography>
+                      ) : pointers.map((item, index) => {
+                        const risk = String(item?.risk || '').replace(/\s+/g, ' ').trim()
+                        const comparison = response.riskComparisons?.[risk]
+                          || Object.entries(response.riskComparisons || {}).find(([key]) => String(key).trim().toLowerCase() === risk.toLowerCase())?.[1]
+                        const addressedBy = Array.isArray(comparison?.addressedBy) ? comparison.addressedBy.filter(Boolean) : []
+                        return (
+                          <Box key={`${risk}-${index}`} sx={{ mt: 1 }}>
+                            <Typography variant="body2">{`${index + 1}. ${item?.pointer || '—'}`}</Typography>
+                            {comparison?.addressedStatus ? (
+                              <Typography variant="body2" color="text.secondary">
+                                {comparison.addressedStatus}
+                                {comparison.reason ? ` — ${comparison.reason}` : ''}
+                                {addressedBy.length > 0 ? ` Addressed by ${addressedBy.join(', ')}.` : ''}
+                              </Typography>
+                            ) : null}
+                          </Box>
+                        )
+                      })}
+                    </Box>
+                  )
+                })}
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            variant="outlined"
+            disabled={!reportData || reportLoading}
+            onClick={() => {
+              try {
+                downloadRiskAnalysisReportPdf(reportData)
+                toast.success('PDF downloaded')
+              } catch (error) {
+                toast.error(error.message || 'Failed to export PDF')
+              }
+            }}
+          >
+            Export PDF
+          </Button>
+          <Button onClick={() => setReportOpen(false)} disabled={reportLoading}>Close</Button>
         </DialogActions>
       </Dialog>
 

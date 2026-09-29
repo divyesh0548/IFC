@@ -1,0 +1,20 @@
+First prepare the concise version of risk + sub-process for a business process.
+
+Then Ask AI to generate missing risks independantly.
+
+then compare it with given risks.
+
+
+
+Id : coordinator.alembic@gmail.com
+Pass : 123456
+
+Automation Opportunity : Key control field is empty here, so not able to generate
+Design Gap : P2P
+
+
+Id : divyesh.parmar@sharpandtannan.com
+Pass : 123456
+
+Automation Opportunity : HR And CapEx
+Design Gap : HR

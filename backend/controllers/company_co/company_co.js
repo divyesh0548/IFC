@@ -3183,6 +3183,121 @@ async function getKeyManualReport(req, res) {
   }
 }
 
+async function getRiskAnalysisReport(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const formIds = normalizeRequestedUnitIds({ unit_ids: req.query?.form_ids });
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company coordinator context is required',
+      });
+    }
+    if (formIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'form_ids is required',
+      });
+    }
+
+    const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+    const mappedUnitIds = mappedUnits.map((row) => String(row?.unit_id || '').trim()).filter(Boolean);
+    const rowsResult = await pool.query(
+      `
+        SELECT
+          cf.form_id,
+          cf.control_number,
+          cf.unit_id,
+          cum.unit_name,
+          cf.business_process,
+          cf.financial_year,
+          cf.sub_process,
+          ra.matched_sub_process,
+          ra.match_confidence,
+          ra.response_json
+        FROM control_forms cf
+        LEFT JOIN company_unit_master cum
+          ON cum.company_identifier = cf.company_identifier
+         AND cum.unit_id = cf.unit_id
+        JOIN LATERAL (
+          SELECT
+            rd.matched_sub_process,
+            rd.match_confidence,
+            rd.response_json
+          FROM risk_analysis rd
+          WHERE rd.company_identifier = cf.company_identifier
+            AND rd.form_id = cf.form_id
+          ORDER BY rd.updated_at DESC NULLS LAST, rd.id DESC
+          LIMIT 1
+        ) ra ON true
+        WHERE cf.company_identifier = $1
+          AND cf.form_id = ANY($2::text[])
+          AND cf.unit_id = ANY($3::text[])
+        ORDER BY ${sqlOrderByControlNumberAsc('cf.control_number')}
+      `,
+      [companyIdentifier, formIds, mappedUnitIds]
+    );
+
+    if (rowsResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No generated risk analysis found for the selected controls',
+      });
+    }
+
+    const unitNames = [...new Set(rowsResult.rows.map((row) => String(row.unit_name || '').trim()).filter(Boolean))];
+    const unitIds = [...new Set(rowsResult.rows.map((row) => String(row.unit_id || '').trim()).filter(Boolean))];
+    const businessProcesses = [...new Set(rowsResult.rows.map((row) => String(row.business_process || '').trim()).filter(Boolean))];
+    const financialYears = [...new Set(rowsResult.rows.map((row) => String(row.financial_year || '').trim()).filter(Boolean))];
+    let companyName = null;
+    try {
+      const company = await prisma.company.findUnique({
+        where: { companyIdentifier },
+        select: { companyName: true },
+      });
+      companyName = String(company?.companyName || '').trim() || null;
+    } catch (lookupError) {
+      console.error('Risk analysis report company name lookup failed:', lookupError);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        meta: {
+          company_name: companyName,
+          unit_id: unitIds.join('_') || null,
+          unit_name: unitNames.join(', ') || null,
+          business_process: businessProcesses.join(', ') || null,
+          financial_year: financialYears.join(', ') || null,
+          controls_reviewed: rowsResult.rows.length,
+        },
+        controls: rowsResult.rows.map((row) => {
+          const responseJson = readResponseJson(row.response_json);
+          return {
+            form_id: row.form_id,
+            control_number: row.control_number,
+            unit_id: row.unit_id,
+            unit_name: row.unit_name,
+            business_process: row.business_process,
+            financial_year: row.financial_year,
+            sub_process: row.sub_process,
+            matched_sub_process: row.matched_sub_process,
+            match_confidence: row.match_confidence,
+            response_json: responseJson,
+          };
+        }),
+      },
+    });
+  } catch (error) {
+    console.error('Risk analysis report error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load risk analysis report',
+    });
+  }
+}
+
 async function getKeyManualAiInsightsAvailability(req, res) {
   try {
     const reachable = await checkAiSummaryHealth();
@@ -6403,6 +6518,7 @@ module.exports = {
   generateRiskAnalysisByControl,
   generateRiskAnalysesSelected,
   compareRiskAnalysis,
+  getRiskAnalysisReport,
   getKeyManualAiInsightsAvailability,
   getKeyManualReport,
   listKeyManualControls,
