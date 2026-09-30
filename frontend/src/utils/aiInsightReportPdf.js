@@ -312,12 +312,49 @@ export function downloadRiskAnalysisReportPdf(reportData) {
       const response = control.response_json && typeof control.response_json === 'object'
         ? control.response_json
         : {}
+      const storedRisks = Array.isArray(response.risks) ? response.risks : null
       const pointers = Array.isArray(response.missingRiskPointers) ? response.missingRiskPointers : []
       state.y = ensureSpace(doc, state.y, 16)
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(10)
       doc.setTextColor(...COLORS.black)
       state.y = addWrapped(doc, String(control.control_number || control.form_id || 'Control'), margin, state.y, contentWidth, 4.5)
+
+      if (storedRisks) {
+        const groups = [
+          ['Addressed risks', storedRisks.filter((item) => item?.status === 'Addressed Risk'), true],
+          ['Missing risks', storedRisks.filter((item) => item?.status !== 'Addressed Risk'), false],
+        ]
+        groups.forEach(([title, items, withControls]) => {
+          state.y = ensureSpace(doc, state.y, 12)
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(9)
+          doc.setTextColor(...COLORS.text)
+          state.y = addWrapped(doc, String(title), margin, state.y + 1.5, contentWidth, 4)
+          if (!items.length) {
+            doc.setFont('helvetica', 'italic')
+            doc.setTextColor(...COLORS.muted)
+            state.y = addWrapped(doc, 'None', margin + 3, state.y + 0.5, contentWidth - 3, 4)
+            doc.setTextColor(...COLORS.text)
+            return
+          }
+          items.forEach((item, index) => {
+            const controlsLabel = withControls
+              ? ` — ${(Array.isArray(item.addressedBy) ? item.addressedBy : []).map((value) => safeText(value)).filter(Boolean).join(', ') || 'No control number'}`
+              : ''
+            const line = withControls
+              ? `${index + 1}. ${safeText(item.risk) || '—'}${controlsLabel}`
+              : `${index + 1}. ${safeText(item.pointer || item.risk) || '—'}`
+            state.y = ensureSpace(doc, state.y, 10)
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(9)
+            doc.setTextColor(...COLORS.text)
+            state.y = addWrapped(doc, line, margin + 3, state.y + 0.5, contentWidth - 3, 4)
+          })
+        })
+        state.y += 5
+        return
+      }
 
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(9)

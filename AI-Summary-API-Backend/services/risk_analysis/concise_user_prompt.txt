@@ -1,0 +1,10 @@
+Business process: {business_process}
+
+These are the risk descriptions already recorded on controls in this unit and business process. Each item has a control number.
+
+{controls_json}
+
+Merge risks that mean the same thing into one concise statement. Keep risks that mean something different as separate statements. For each statement, controlNumbers must be copied from the input controls that share that risk. Do not invent control numbers. Do not drop a distinct risk only to make the list shorter.
+
+Return JSON matching this schema:
+{schema_json}

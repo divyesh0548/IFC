@@ -129,14 +129,25 @@ async function analyzeKeyManual(control, businessProcess, companyIdentifier) {
   });
 }
 
-async function analyzeRiskAnalysis(control, businessProcess, { dryRun = false, formId = '' } = {}) {
+async function analyzeRiskAnalysis(control, businessProcess, { dryRun = false, formId = '', conciseRisks = [] } = {}) {
   return callAiSummaryApi('/v1/risk-analysis/analyze', {
     method: 'POST',
     body: {
       business_process: businessProcess,
       control,
+      concise_risks: Array.isArray(conciseRisks) ? conciseRisks : [],
       dry_run: Boolean(dryRun),
       form_id: String(formId || '').trim(),
+    },
+  });
+}
+
+async function condenseRiskList(businessProcess, controls) {
+  return callAiSummaryApi('/v1/risk-analysis/concise', {
+    method: 'POST',
+    body: {
+      business_process: businessProcess,
+      controls: Array.isArray(controls) ? controls : [],
     },
   });
 }
@@ -189,6 +200,7 @@ module.exports = {
   analyzeDesignGapControl,
   analyzeKeyManual,
   analyzeRiskAnalysis,
+  condenseRiskList,
   compareRiskCoverage,
   checkAiSummaryHealth,
 };

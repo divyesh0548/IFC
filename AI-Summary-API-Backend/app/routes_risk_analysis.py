@@ -6,7 +6,7 @@ from app.auth import require_api_key
 from services.risk_analysis.catalog import list_business_processes
 from services.risk_analysis.llm import provider_name, resolve_model
 from services.risk_analysis.compare import compare_risk
-from services.risk_analysis.service import analyze_control, is_risk_analysis_dry_run_enabled
+from services.risk_analysis.service import analyze_control, condense_risks, is_risk_analysis_dry_run_enabled
 
 risk_analysis_bp = Blueprint("risk_analysis", __name__, url_prefix="/v1/risk-analysis")
 
@@ -28,6 +28,29 @@ def risk_analysis_health():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@risk_analysis_bp.post("/concise")
+@require_api_key
+def concise_list():
+    body = request.get_json(silent=True) or {}
+    business_process = str(body.get("business_process") or "").strip()
+    controls = body.get("controls")
+    if not business_process:
+        return jsonify({"error": "invalid_request", "message": "business_process is required"}), 400
+    if not isinstance(controls, list) or not controls:
+        return jsonify({"error": "invalid_request", "message": "controls must be a non-empty array"}), 400
+    try:
+        result = condense_risks(
+            controls,
+            business_process,
+            dry_run=bool(body.get("dry_run", False)),
+        )
+    except ValueError as exc:
+        return jsonify({"error": "invalid_request", "message": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": "concise_failed", "message": str(exc)}), 500
+    return jsonify(result)
+
+
 @risk_analysis_bp.post("/analyze")
 @require_api_key
 def analyze_one():
@@ -38,10 +61,16 @@ def analyze_one():
         return jsonify({"error": "invalid_request", "message": "Body must include a non-empty object field 'control'."}), 400
     if not business_process:
         return jsonify({"error": "invalid_request", "message": "business_process is required"}), 400
+    concise_risks = body.get("concise_risks")
+    if concise_risks is None:
+        concise_risks = []
+    if not isinstance(concise_risks, list):
+        return jsonify({"error": "invalid_request", "message": "concise_risks must be an array"}), 400
     try:
         result = analyze_control(
             control,
             business_process,
+            concise_risks=concise_risks,
             dry_run=bool(body.get("dry_run", False)),
             form_id=str(body.get("form_id") or "").strip(),
         )

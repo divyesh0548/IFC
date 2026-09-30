@@ -40,8 +40,14 @@ def _load_schema(name: str) -> dict[str, Any]:
     return json.loads((PACKAGE_DIR / name).read_text(encoding="utf-8"))
 
 
-def complete_json(system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], str]:
-    return _complete(system_prompt, user_prompt, schema=_load_schema("schema.json"), parser=_parse_json)
+def complete_json(system_prompt: str, user_prompt: str, *, schema_name: str = "schema.json", max_tokens: int = 2000) -> tuple[dict[str, Any], str]:
+    return _complete(
+        system_prompt,
+        user_prompt,
+        schema=_load_schema(schema_name),
+        parser=_parse_object,
+        max_tokens=max_tokens,
+    )
 
 
 def complete_comparison_json(system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], str]:
@@ -59,15 +65,16 @@ def _complete(
     *,
     schema: dict[str, Any],
     parser,
+    max_tokens: int = 800,
 ) -> tuple[dict[str, Any], str]:
     provider = provider_name()
     model = resolve_model()
     if provider == "ollama":
-        return parser(_complete_ollama(model, system_prompt, user_prompt, schema)), model
-    return parser(_complete_openrouter(model, system_prompt, user_prompt)), model
+        return parser(_complete_ollama(model, system_prompt, user_prompt, schema, max_tokens)), model
+    return parser(_complete_openrouter(model, system_prompt, user_prompt, max_tokens)), model
 
 
-def _complete_openrouter(model: str, system_prompt: str, user_prompt: str) -> str:
+def _complete_openrouter(model: str, system_prompt: str, user_prompt: str, max_tokens: int = 800) -> str:
     api_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not set")
@@ -81,7 +88,7 @@ def _complete_openrouter(model: str, system_prompt: str, user_prompt: str) -> st
         json={
             "model": model,
             "temperature": 0,
-            "max_tokens": 800,
+            "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -96,7 +103,7 @@ def _complete_openrouter(model: str, system_prompt: str, user_prompt: str) -> st
     return str(data["choices"][0]["message"]["content"] or "")
 
 
-def _complete_ollama(model: str, system_prompt: str, user_prompt: str, schema: dict[str, Any]) -> str:
+def _complete_ollama(model: str, system_prompt: str, user_prompt: str, schema: dict[str, Any], max_tokens: int = 800) -> str:
     url = (os.getenv("RISK_ANALYSIS_OLLAMA_URL") or os.getenv("OLLAMA_CHAT_URL") or "").strip()
     if not url:
         raise RuntimeError("RISK_ANALYSIS_OLLAMA_URL is not set")
@@ -106,7 +113,7 @@ def _complete_ollama(model: str, system_prompt: str, user_prompt: str, schema: d
             "model": model,
             "stream": False,
             "format": schema,
-            "options": {"temperature": 0, "num_predict": 500, "top_p": 0.9},
+            "options": {"temperature": 0, "num_predict": max(max_tokens, 500), "top_p": 0.9},
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -137,21 +144,3 @@ def _parse_object(content: str) -> dict[str, Any]:
     return parsed
 
 
-def _parse_json(content: str) -> dict[str, Any]:
-    parsed = _parse_object(content)
-    for field in ("matchedSubProcess", "matchConfidence", "coverageStatus"):
-        if not str(parsed.get(field) or "").strip():
-            raise RuntimeError("Risk analysis response is missing required fields.")
-    parsed["missingRisks"] = [
-        str(item).strip() for item in (parsed.get("missingRisks") or []) if str(item).strip()
-    ]
-    pointers = []
-    for item in parsed.get("missingRiskPointers") or []:
-        if not isinstance(item, dict):
-            continue
-        risk = str(item.get("risk") or "").strip()
-        pointer = str(item.get("pointer") or "").strip()
-        if risk and pointer:
-            pointers.append({"risk": risk, "pointer": pointer})
-    parsed["missingRiskPointers"] = pointers
-    return parsed

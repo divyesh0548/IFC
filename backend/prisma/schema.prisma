@@ -274,6 +274,25 @@ model RiskAnalysis {
   @@map("risk_analysis")
 }
 
+/// Concise, de-duplicated risk list for one company, unit, and business process.
+/// Not created by a migration in this change. Apply the table before using the feature.
+model RiskAnalysisConciseList {
+  id                   BigInt    @id @default(autoincrement())
+  companyIdentifier    String    @map("company_identifier") @db.VarChar(255)
+  unitId               String    @map("unit_id") @db.VarChar(255)
+  businessProcess      String    @map("business_process") @db.VarChar(255)
+  modelName            String?   @map("model_name") @db.VarChar(255)
+  sourceFingerprint    String    @map("source_fingerprint") @db.VarChar(64)
+  sourceControlNumbers Json      @map("source_control_numbers")
+  risksJson            Json      @map("risks_json")
+  createdAt            DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt            DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  @@unique([companyIdentifier, unitId, businessProcess])
+  @@index([companyIdentifier, unitId])
+  @@map("risk_analysis_concise_lists")
+}
+
 /// Latest design-gap AI insight per control (written by Node after Flask AI Summary API).
 model DesignGapInsight {
   id                  BigInt   @id @default(autoincrement())

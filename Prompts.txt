@@ -1,31 +1,13 @@
-Currently after rejection user has an option "Declare no submission", which will close the IFC testing cycle. 
+I want to completely chnage the Risk Analysis of the controls. I want the same ouput though, which is missing risks.
 
-Some changes are required in this process.
+First we will take all risk descriptions from a unit + BP, then send it to AI with control numbers. In return we will ask AI to make a concise verion of all risks and also remove duplicate risks and add control numbers in one comman risks. This concise version should be small enough to keep cost minimum and also comprehensive enough to carry the essence of all risks.
 
-I need to provide two options for this.
+The idea behind it is, we will sent this whole concise verion of risks in a prompt when running risk analysis for a particualr control. In that, we will ask AI to generate missing risks independantly withput any reference to sent risk list. AI will generate a missing risk based on business process and give control description. Then in same prompt we will ask AI to find, if that risk is already addressed in give risk list or not.
 
-First option : 
-At initial stage user will see option "No submission available". This option will be visible to user before rejection only. 
-Display a pop-up with details like "Use this option only if no tranactions available for that period" and put a checkbox for declaration.
+If addressed then return it as "addressed risk" with the control number(s) in which it is addressed.
 
-After this approver will be notified via email. Approver will decide which status will be applicable to this RACM.
+AI may generate more then one risks not addressed in that control. So if any of them is not addressed anywhere then send it as "Missing Risk". In response I need all risks whether they are addressed or not.
 
-Here approver will get four options "Effective, Not Effective, Accepted under deviation, Not Applicable". Not applicable is a new value in this backend. Just store that in conclusion column that's it.
+Then store the risks in JSON format as current system and show them in risk analysis page. In JSON format retrieve the addressed risk's control number too.
 
-Once approver set any of the four value, control cycle will be finished and no reminder emails will be sent.
-
-
-
-
-Second option :
-half of this is already developed. 
-After rejection user will se an option "Declare no submission". In this display some text and a checkbox for declaration.
-
-Approver will be notified via email and then same as first option, will set the status of control from any of the four options.
-
-Once approver set any of the four value, control cycle will be finished and no reminder emails will be sent.
-
-
-
-
-Make a plan for this. And point out any potential loopholes in this process. Or this process will disrupt any other functions of this website.
+Give me a plan for this.

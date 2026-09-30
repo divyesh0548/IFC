@@ -9,6 +9,8 @@ Model : "anthropic/claude-sonnet-4.6"
 
 0.03 dollar per control for generating design gap summary.
 
+0.04 dollar per control for generating design gap summary - New prompt.
+
 
 Model : "openai/gpt-5.6-terra"
 
@@ -29,3 +31,7 @@ Model : "anthropic/claude-sonnet-4.6"
 Model : "anthropic/claude-sonnet-4.6"
 
 0.01 dollar per control for generating risk analysis.
+
+0.02 dollar per control for generating risk analysis-new method.
+
+0.03 dollar for generating concise risk list - 40 controls.

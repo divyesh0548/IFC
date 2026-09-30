@@ -9,14 +9,12 @@
         "additionalProperties": false,
         "properties": {
           "risk": { "type": "string" },
-          "status": { "type": "string" },
-          "addressedBy": {
+          "controlNumbers": {
             "type": "array",
             "items": { "type": "string" }
-          },
-          "pointer": { "type": "string" }
+          }
         },
-        "required": ["risk", "status", "addressedBy", "pointer"]
+        "required": ["risk", "controlNumbers"]
       }
     }
   },

@@ -41,6 +41,28 @@ export function formatInsufficientCheckLine(result) {
   return title
 }
 
+const DESIGN_GAP_FIELD_LABELS = {
+  adequacy: 'Adequacy',
+  risk_design_gap: 'Risk design gap',
+  suggested_risk_wording: 'Suggested risk wording',
+  control_design_gap: 'Control design gap',
+  suggested_control_improvement: 'Suggested control improvement',
+  implementation_approach: 'Implementation approach',
+  benefit: 'Benefit',
+  priority: 'Priority',
+  rationale: 'Rationale',
+}
+
+/** Labeled output for Risk Design and Control Design. Empty for other checks. */
+export function designGapDetailLines(result) {
+  return Object.entries(DESIGN_GAP_FIELD_LABELS)
+    .map(([key, label]) => {
+      const value = String(result?.[key] || '').trim()
+      return value ? { label, value } : null
+    })
+    .filter(Boolean)
+}
+
 function controlsWithResultStatus(controls, status) {
   return controls.filter((control) =>
     (control.results || []).some((result) => result.status === status)
@@ -244,20 +266,29 @@ export function downloadDesignGapReportPdf(reportData) {
         y = addWrapped(doc, humanizeCheckLabel(r.check_id), margin + 3, y + 2, contentWidth - 3, 4)
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(9)
-        if (r.alignment) {
-          doc.setTextColor(...COLORS.text)
-          y = addWrapped(doc, `Alignment: ${r.alignment}`, margin + 3, y + 0.5, contentWidth - 3, 4)
-        }
-        const rationale = r.alignment_rationale || r.inconsistency
-        if (rationale) {
-          doc.setTextColor(...COLORS.text)
-          y = addWrapped(doc, rationale, margin + 3, y + 0.5, contentWidth - 3, 4)
-        }
-        const solution = r.proposed_solution || r.recommendation
-        if (solution) {
-          doc.setTextColor(...COLORS.muted)
-          y = addWrapped(doc, `Proposed solution: ${solution}`, margin + 3, y + 0.5, contentWidth - 3, 4)
-          doc.setTextColor(...COLORS.text)
+        const detailLines = designGapDetailLines(r)
+        if (detailLines.length > 0) {
+          for (const line of detailLines) {
+            y = ensureSpace(doc, y, 10)
+            doc.setTextColor(...COLORS.text)
+            y = addWrapped(doc, `${line.label}: ${line.value}`, margin + 3, y + 0.5, contentWidth - 3, 4)
+          }
+        } else {
+          if (r.alignment) {
+            doc.setTextColor(...COLORS.text)
+            y = addWrapped(doc, `Alignment: ${r.alignment}`, margin + 3, y + 0.5, contentWidth - 3, 4)
+          }
+          const rationale = r.alignment_rationale || r.inconsistency
+          if (rationale) {
+            doc.setTextColor(...COLORS.text)
+            y = addWrapped(doc, rationale, margin + 3, y + 0.5, contentWidth - 3, 4)
+          }
+          const solution = r.proposed_solution || r.recommendation
+          if (solution) {
+            doc.setTextColor(...COLORS.muted)
+            y = addWrapped(doc, `Proposed solution: ${solution}`, margin + 3, y + 0.5, contentWidth - 3, 4)
+            doc.setTextColor(...COLORS.text)
+          }
         }
       }
       y += 5

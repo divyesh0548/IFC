@@ -169,9 +169,15 @@ function RiskAnalysis() {
   const [reportOpen, setReportOpen] = useState(false)
   const [reportLoading, setReportLoading] = useState(false)
   const [reportData, setReportData] = useState(null)
+  const [conciseList, setConciseList] = useState(null)
+  const [conciseLoading, setConciseLoading] = useState(false)
+  const [conciseGenerating, setConciseGenerating] = useState(false)
+  const [conciseListOpen, setConciseListOpen] = useState(false)
+  const [conciseTick, setConciseTick] = useState(0)
+  const [controlConcise, setControlConcise] = useState({ loading: false, exists: false })
   const lastSelectedIndexRef = useRef(null)
   const rowMetaRef = useRef(new Map())
-  useSyncGlobalLoading(loading || batchGenerating || analysisGenerating)
+  useSyncGlobalLoading(loading || batchGenerating || analysisGenerating || conciseGenerating)
 
   const pageControlNumbers = useMemo(
     () =>
@@ -316,10 +322,28 @@ function RiskAnalysis() {
     const controlNumber = String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim()
     if (!controlNumber) return
 
+    const unitId = String(getFieldValue(row, 'unit_id', 'unitId') || '').trim()
+    const businessProcess = String(getFieldValue(row, 'business_process', 'businessProcess') || '').trim()
     setSelectedControl(row)
     setAnalysisDialogOpen(true)
     setAnalysisLoading(true)
     setAnalysisData(null)
+    setControlConcise({ loading: true, exists: false, unitId, businessProcess })
+
+    const conciseParams = new URLSearchParams({ unit_id: unitId, business_process: businessProcess })
+    fetch(apiUrl(`/api/company-co/risk-analysis/concise-list?${conciseParams}`), { credentials: 'include' })
+      .then((conciseResponse) => conciseResponse.json().then((conciseData) => ({ ok: conciseResponse.ok, conciseData })))
+      .then(({ ok, conciseData }) => {
+        setControlConcise({
+          loading: false,
+          exists: Boolean(ok && conciseData?.success && conciseData?.data?.exists),
+          unitId,
+          businessProcess,
+        })
+      })
+      .catch(() => {
+        setControlConcise({ loading: false, exists: false, unitId, businessProcess })
+      })
 
     try {
       const response = await fetch(apiUrl(`/api/company-co/risk-analysis/control/${encodeURIComponent(controlNumber)}`), {
@@ -343,6 +367,10 @@ function RiskAnalysis() {
   const handleGenerateAnalysis = async () => {
     const controlNumber = String(getFieldValue(selectedControl, 'control_number', 'controlNumber') || '').trim()
     if (!controlNumber) return
+    if (!controlConcise.exists) {
+      toast.error('Generate the concise risk list for this unit and business process first.')
+      return
+    }
 
     setAnalysisGenerating(true)
     try {
@@ -383,7 +411,7 @@ function RiskAnalysis() {
       setListTick((value) => value + 1)
     } catch (error) {
       console.error('Error generating risk analysis:', error)
-      toast.error(formatServerErrorToast(error?.serverCode))
+      toast.error(error?.serverCode ? formatServerErrorToast(error.serverCode) : (error.message || 'Failed to generate risk analysis'))
     } finally {
       setAnalysisGenerating(false)
     }
@@ -427,6 +455,84 @@ function RiskAnalysis() {
       toast.error(error.message || 'Failed to generate risk analysis')
     } finally {
       setBatchGenerating(false)
+    }
+  }
+
+  const conciseScopeReady = filterUnits.length === 1 && filterBusinessProcesses.length === 1
+
+  useEffect(() => {
+    if (!conciseScopeReady) {
+      setConciseList(null)
+      setConciseLoading(false)
+      return undefined
+    }
+    let cancelled = false
+    const loadConciseList = async () => {
+      setConciseLoading(true)
+      try {
+        const params = new URLSearchParams({
+          unit_id: filterUnits[0],
+          business_process: filterBusinessProcesses[0],
+        })
+        const response = await fetch(apiUrl(`/api/company-co/risk-analysis/concise-list?${params}`), {
+          credentials: 'include',
+        })
+        const data = await response.json()
+        if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to load concise risk list')
+        if (!cancelled) setConciseList(data.data)
+      } catch (error) {
+        if (!cancelled) {
+          setConciseList(null)
+          toast.error(error.message || 'Failed to load concise risk list')
+        }
+      } finally {
+        if (!cancelled) setConciseLoading(false)
+      }
+    }
+    loadConciseList()
+    return () => {
+      cancelled = true
+    }
+  }, [conciseScopeReady, filterUnits, filterBusinessProcesses, conciseTick])
+
+  const generateConciseList = async () => {
+    if (!conciseScopeReady) return
+    setConciseGenerating(true)
+    try {
+      const response = await fetch(apiUrl('/api/company-co/risk-analysis/concise-list'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit_id: filterUnits[0],
+          business_process: filterBusinessProcesses[0],
+        }),
+      })
+      const data = await response.json()
+      if (response.status === 409) {
+        toast('LLM Server is busy, Try again after some moments')
+        return
+      }
+      if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to generate concise risk list')
+      if (data.data?.dry_run) {
+        if (data.data.dry_run_txt) {
+          downloadDryRunPrompt(data.data.dry_run_txt, 'risk_analysis_concise_list_dry_run.txt')
+        }
+        toast.success(data.message || 'Dry-run prompt downloaded')
+        return
+      }
+      setConciseList(data.data)
+      setControlConcise((current) => (
+        current.unitId === filterUnits[0]
+        && String(current.businessProcess || '').trim().toLowerCase() === String(filterBusinessProcesses[0] || '').trim().toLowerCase()
+          ? { ...current, exists: true, loading: false }
+          : current
+      ))
+      toast.success(data.message || 'Concise risk list saved')
+    } catch (error) {
+      toast.error(error.message || 'Failed to generate concise risk list')
+    } finally {
+      setConciseGenerating(false)
     }
   }
 
@@ -580,6 +686,50 @@ function RiskAnalysis() {
       )
     }
     const missingRiskPointers = Array.isArray(response.missingRiskPointers) ? response.missingRiskPointers : []
+    if (Array.isArray(response.risks)) {
+      const addressedRisks = response.risks.filter((item) => item?.status === 'Addressed Risk')
+      const missingRisks = response.risks.filter((item) => item?.status !== 'Addressed Risk')
+      const riskCardSx = {
+        p: 2,
+        borderRadius: 2,
+        border: `1px solid ${theme.palette.divider}`,
+        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : theme.palette.common.white,
+      }
+      return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          <Box sx={riskCardSx}>
+            <Typography variant="body2" sx={INSIGHT_CARD_LABEL_SX}>Addressed risks</Typography>
+            {addressedRisks.length === 0 ? (
+              <Typography variant="body2" sx={DETAIL_FIELD_VALUE_SX}>None</Typography>
+            ) : addressedRisks.map((item, index) => (
+              <Box key={`addressed-${item.risk}-${index}`} sx={{ mb: 1.25 }}>
+                <Typography variant="body2" sx={{ color: theme.palette.text.primary, lineHeight: 1.6 }}>
+                  {`${index + 1}. ${item.risk || '—'}`}
+                </Typography>
+                <Typography variant="body2" sx={DETAIL_FIELD_VALUE_SX}>
+                  {`Control numbers: ${(Array.isArray(item.addressedBy) ? item.addressedBy : []).filter(Boolean).join(', ') || '—'}`}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+          <Box sx={riskCardSx}>
+            <Typography variant="body2" sx={INSIGHT_CARD_LABEL_SX}>Missing risks</Typography>
+            {missingRisks.length === 0 ? (
+              <Typography variant="body2" sx={DETAIL_FIELD_VALUE_SX}>None</Typography>
+            ) : missingRisks.map((item, index) => (
+              <Box key={`missing-${item.risk}-${index}`} sx={{ mb: 1.25 }}>
+                <Typography variant="body2" sx={{ color: theme.palette.text.primary, lineHeight: 1.6 }}>
+                  {`${index + 1}. ${item.pointer || item.risk || '—'}`}
+                </Typography>
+                {item.pointer && item.risk && item.pointer !== item.risk ? (
+                  <Typography variant="body2" sx={DETAIL_FIELD_VALUE_SX}>{item.risk}</Typography>
+                ) : null}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )
+    }
 
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -861,6 +1011,89 @@ function RiskAnalysis() {
           </Button>
         </Box>
       </Box>
+
+      <Paper
+        elevation={0}
+        sx={{
+          mb: 3,
+          p: 2,
+          borderRadius: 2,
+          border: `1px solid ${theme.palette.divider}`,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              Concise risk list
+            </Typography>
+            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.5 }}>
+              Adding new controls or removing controls invalidates this list. It has to be regenerated before risk analysis.
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {conciseScopeReady && conciseList?.exists ? (
+              <Button
+                variant="outlined"
+                onClick={() => setConciseListOpen(true)}
+                disabled={conciseLoading}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                View risks
+              </Button>
+            ) : null}
+            <Button
+              variant="contained"
+              onClick={generateConciseList}
+              disabled={!conciseScopeReady || conciseGenerating || conciseLoading}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              {conciseGenerating
+                ? 'Generating...'
+                : conciseList?.exists
+                  ? 'Regenerate concise list'
+                  : 'Generate concise list'}
+            </Button>
+          </Box>
+        </Box>
+        {!conciseScopeReady ? (
+          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
+            Select one unit and one business process to generate the concise risk list.
+          </Typography>
+        ) : conciseLoading ? (
+          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
+            Loading concise risk list...
+          </Typography>
+        ) : conciseList?.stale ? (
+          <Alert severity="warning" sx={{ mt: 1.5 }}>
+            Adding or removing controls invalidated this concise list. Regenerate it before running risk analysis.
+          </Alert>
+        ) : null}
+      </Paper>
+
+      <Dialog open={conciseListOpen} onClose={() => setConciseListOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle>Concise risk list</DialogTitle>
+        <DialogContent>
+          {Array.isArray(conciseList?.risks) && conciseList.risks.length > 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              {conciseList.risks.map((item, index) => (
+                <Box key={`${item.risk}-${index}`}>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {`${index + 1}. ${item.risk || '—'}`}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {(Array.isArray(item.controlNumbers) ? item.controlNumbers : []).filter(Boolean).join(', ') || 'No control number'}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">No concise risks are stored.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConciseListOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       {errorMessage ? (
         <Alert severity="info" sx={{ mb: 3 }}>
@@ -1171,13 +1404,18 @@ function RiskAnalysis() {
                     Model: {String(analysisData.analysis.model_name).trim()}
                   </Typography>
                 ) : null}
-                {analysisData?.analysis?.response_json ? (
+                {analysisData?.analysis?.response_json && !Array.isArray(analysisData.analysis.response_json.risks) ? (
                   <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
                     Confidence: {analysisData.analysis.response_json.matchConfidence || 'N/A'}
                   </Typography>
                 ) : null}
               </Box>
             </Box>
+            {!controlConcise.loading && !controlConcise.exists ? (
+              <Alert severity="warning">
+                Generate the concise risk list for this unit and business process before analysing this control.
+              </Alert>
+            ) : null}
             <Box
               sx={{
                 display: 'flex',
@@ -1201,7 +1439,7 @@ function RiskAnalysis() {
             variant="contained"
             color="secondary"
             onClick={handleGenerateAnalysis}
-            disabled={analysisLoading || analysisGenerating || !selectedControl || Boolean(comparingRisk)}
+            disabled={analysisLoading || analysisGenerating || !selectedControl || Boolean(comparingRisk) || controlConcise.loading || !controlConcise.exists}
           >
             {analysisGenerating ? 'Generating…' : 'Generate Risk Analysis'}
           </Button>
@@ -1237,7 +1475,10 @@ function RiskAnalysis() {
               <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 {(reportData?.controls || []).map((control) => {
                   const response = control.response_json || {}
+                  const storedRisks = Array.isArray(response.risks) ? response.risks : null
                   const pointers = Array.isArray(response.missingRiskPointers) ? response.missingRiskPointers : []
+                  const addressedRisks = storedRisks ? storedRisks.filter((item) => item?.status === 'Addressed Risk') : []
+                  const missingRisks = storedRisks ? storedRisks.filter((item) => item?.status !== 'Addressed Risk') : []
                   return (
                     <Box
                       key={control.form_id}
@@ -1265,6 +1506,27 @@ function RiskAnalysis() {
                           Open control
                         </Button>
                       </Box>
+                      {storedRisks ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          <Typography variant="body2" fontWeight={700}>Addressed risks</Typography>
+                          {addressedRisks.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">None</Typography>
+                          ) : addressedRisks.map((item, index) => (
+                            <Typography key={`addressed-${item.risk}-${index}`} variant="body2">
+                              {`${index + 1}. ${item.risk || '—'} — ${(Array.isArray(item.addressedBy) ? item.addressedBy : []).filter(Boolean).join(', ') || 'No control number'}`}
+                            </Typography>
+                          ))}
+                          <Typography variant="body2" fontWeight={700} sx={{ mt: 0.5 }}>Missing risks</Typography>
+                          {missingRisks.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">None</Typography>
+                          ) : missingRisks.map((item, index) => (
+                            <Typography key={`missing-${item.risk}-${index}`} variant="body2">
+                              {`${index + 1}. ${item.pointer || item.risk || '—'}`}
+                            </Typography>
+                          ))}
+                        </Box>
+                      ) : (
+                        <>
                       <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
                         Matched sub-process: {response.matchedSubProcess || control.matched_sub_process || 'N/A'}
                       </Typography>
@@ -1291,6 +1553,8 @@ function RiskAnalysis() {
                           </Box>
                         )
                       })}
+                        </>
+                      )}
                     </Box>
                   )
                 })}

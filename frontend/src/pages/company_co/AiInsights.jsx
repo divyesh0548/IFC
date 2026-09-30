@@ -35,6 +35,7 @@ import {
   downloadDesignGapReportPdf,
   formatInsufficientCheckLine,
   getDesignGapSummaryCounts,
+  designGapDetailLines,
   humanizeCheckLabel,
 } from '../../utils/designGapReportPdf'
 import {
@@ -1230,21 +1231,30 @@ function AiInsights() {
                           <Typography variant="body2" fontWeight={700}>
                             {humanizeCheckLabel(r.check_id)}
                           </Typography>
-                          {r.alignment && (
-                            <Typography variant="body2" sx={{ mt: 0.5 }}>
-                              <Box component="span" fontWeight={700}>Alignment: </Box>
-                              {r.alignment}
+                          {designGapDetailLines(r).length > 0 ? designGapDetailLines(r).map((line) => (
+                            <Typography key={line.label} variant="body2" sx={{ mt: 0.5 }}>
+                              <Box component="span" fontWeight={700}>{line.label}: </Box>
+                              {line.value}
                             </Typography>
-                          )}
-                          {(r.alignment_rationale || r.inconsistency) && (
-                            <Typography variant="body2" sx={{ mt: 0.5 }}>
-                              {r.alignment_rationale || r.inconsistency}
-                            </Typography>
-                          )}
-                          {(r.proposed_solution || r.recommendation) && (
-                            <Typography variant="body2" sx={{ mt: 0.5 }} color="text.secondary">
-                              Proposed solution: {r.proposed_solution || r.recommendation}
-                            </Typography>
+                          )) : (
+                            <>
+                              {r.alignment && (
+                                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                                  <Box component="span" fontWeight={700}>Alignment: </Box>
+                                  {r.alignment}
+                                </Typography>
+                              )}
+                              {(r.alignment_rationale || r.inconsistency) && (
+                                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                                  {r.alignment_rationale || r.inconsistency}
+                                </Typography>
+                              )}
+                              {(r.proposed_solution || r.recommendation) && (
+                                <Typography variant="body2" sx={{ mt: 0.5 }} color="text.secondary">
+                                  Proposed solution: {r.proposed_solution || r.recommendation}
+                                </Typography>
+                              )}
+                            </>
                           )}
                         </Box>
                       ))}
