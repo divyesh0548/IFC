@@ -11,6 +11,8 @@ Model : "anthropic/claude-sonnet-4.6"
 
 0.04 dollar per control for generating design gap summary - New prompt.
 
+0.06 dollar per control for generating design gap summary - New prompt and new ouput structure.
+
 
 Model : "openai/gpt-5.6-terra"
 

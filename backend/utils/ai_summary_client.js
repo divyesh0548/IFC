@@ -129,11 +129,17 @@ async function analyzeKeyManual(control, businessProcess, companyIdentifier) {
   });
 }
 
-async function analyzeRiskAnalysis(control, businessProcess, { dryRun = false, formId = '', conciseRisks = [] } = {}) {
+async function analyzeRiskAnalysis(control, businessProcess, {
+  dryRun = false,
+  formId = '',
+  conciseRisks = [],
+  businessProcessOverview = '',
+} = {}) {
   return callAiSummaryApi('/v1/risk-analysis/analyze', {
     method: 'POST',
     body: {
       business_process: businessProcess,
+      business_process_overview: String(businessProcessOverview || '').trim(),
       control,
       concise_risks: Array.isArray(conciseRisks) ? conciseRisks : [],
       dry_run: Boolean(dryRun),

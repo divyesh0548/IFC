@@ -7,8 +7,8 @@ SYSTEM_PROMPT = """You are an internal-controls design reviewer for IFC / RACM d
 You evaluate ONLY the design checks provided in the user payload.
 Do not invent fields that are not present. Quote evidence from the provided field values.
 Return STRICT JSON matching the schema described by the user. No markdown fences.
-Write comprehensive but concise prose: alignment_rationale and proposed_solution must each be at most 3 sentences.
-For risk_design and control_design, return the named adequacy fields from the check prompt. Do not collapse those fields into one paragraph.
+For every check, return adequacy, design_gap, suggested_improvement, implementation_approach, benefit, priority, and rationale.
+Do not collapse those fields into one paragraph.
 """
 
 GOOD_DESIGN_STATUS = "good_design"
@@ -21,25 +21,12 @@ ALIGNMENT_VALUES = frozenset(
     {"strong", "partial", "weak", "misaligned", "no_control", ""}
 )
 
-STRUCTURED_CHECK_FIELDS = {
-    "risk_design": (
-        "adequacy",
-        "risk_design_gap",
-        "suggested_risk_wording",
-        "implementation_approach",
-        "benefit",
-        "priority",
-        "rationale",
-    ),
-    "control_design": (
-        "adequacy",
-        "control_design_gap",
-        "suggested_control_improvement",
-        "implementation_approach",
-        "benefit",
-        "priority",
-        "rationale",
-    ),
+_ALIGNMENT_TO_ADEQUACY = {
+    "strong": "Adequate",
+    "partial": "Partially Adequate",
+    "weak": "Inadequate",
+    "misaligned": "Inadequate",
+    "no control": "Inadequate",
 }
 
 _ADEQUACY_LABELS = {
@@ -79,19 +66,49 @@ def _normalize_priority(raw: Any) -> str:
     return _PRIORITY_LABELS.get(str(raw or "").strip().lower(), "")
 
 
-def _structured_fields(check_id: str, item: dict[str, Any]) -> dict[str, str]:
-    fields = STRUCTURED_CHECK_FIELDS.get(check_id)
-    if not fields:
-        return {}
-    out: dict[str, str] = {}
-    for name in fields:
-        if name == "adequacy":
-            out[name] = _normalize_adequacy(item.get(name))
-        elif name == "priority":
-            out[name] = _normalize_priority(item.get(name))
-        else:
-            out[name] = _clip_sentences(item.get(name) or "")
-    return out
+def _first_text(*values: Any, max_sentences: int = 8) -> str:
+    for value in values:
+        text = _clip_sentences(value, max_sentences=max_sentences, max_chars=2000)
+        if text:
+            return text
+    return ""
+
+
+def _structured_fields(item: dict[str, Any], alignment: str) -> dict[str, str]:
+    adequacy = _normalize_adequacy(item.get("adequacy"))
+    if not adequacy:
+        adequacy = _ALIGNMENT_TO_ADEQUACY.get(alignment.strip().lower(), "")
+    design_gap = _first_text(
+        item.get("design_gap"),
+        item.get("risk_design_gap"),
+        item.get("control_design_gap"),
+    )
+    suggested_improvement = _first_text(
+        item.get("suggested_improvement"),
+        item.get("suggested_risk_wording"),
+        item.get("suggested_control_improvement"),
+        item.get("proposed_solution"),
+        item.get("recommendation"),
+    )
+    implementation_approach = _first_text(item.get("implementation_approach"))
+    benefit = _first_text(item.get("benefit"), max_sentences=3)
+    priority = _normalize_priority(item.get("priority"))
+    rationale = _first_text(
+        item.get("rationale"),
+        item.get("alignment_rationale"),
+        item.get("inconsistency"),
+        item.get("explanation"),
+        max_sentences=4,
+    )
+    return {
+        "adequacy": adequacy,
+        "design_gap": design_gap,
+        "suggested_improvement": suggested_improvement,
+        "implementation_approach": implementation_approach,
+        "benefit": benefit,
+        "priority": priority,
+        "rationale": rationale,
+    }
 
 
 def _alignment_implies_flagged(alignment: str) -> bool:
@@ -134,19 +151,14 @@ def build_user_prompt(payload: dict[str, Any]) -> str:
             {
                 "check_id": "string — must match an id from checks",
                 "status": "ok | flagged | insufficient_data",
-                "severity": "info | low | medium | high",
-                "alignment": "Strong | Partial | Weak | Misaligned | No Control. Omit for risk_design and control_design.",
-                "alignment_rationale": "up to 3 sentences. Omit for risk_design and control_design.",
-                "proposed_solution": "up to 3 sentences; empty string if ok / Strong. Omit for risk_design and control_design.",
-                "adequacy": "risk_design and control_design only: Adequate | Partially Adequate | Inadequate | Information Not Available",
-                "risk_design_gap": "risk_design only",
-                "suggested_risk_wording": "risk_design only",
-                "control_design_gap": "control_design only",
-                "suggested_control_improvement": "control_design only",
-                "implementation_approach": "risk_design and control_design only; empty when Adequate or Information Not Available",
-                "benefit": "risk_design and control_design only",
-                "priority": "risk_design and control_design only: High | Medium | Low",
-                "rationale": "risk_design and control_design only",
+                "severity": "info | low | medium | high — use the priority when one is set",
+                "adequacy": "every check: Adequate | Partially Adequate | Inadequate | Information Not Available",
+                "design_gap": "specific gap for this check; empty when Adequate or Information Not Available",
+                "suggested_improvement": "specific improved wording or control for this check; empty when Adequate or Information Not Available",
+                "implementation_approach": "practical steps; empty when Adequate or Information Not Available",
+                "benefit": "one or more of risk reduction, effectiveness, efficiency, compliance, auditability",
+                "priority": "High | Medium | Low; empty when Adequate or Information Not Available",
+                "rationale": "concise explanation of the adequacy verdict",
                 "evidence": ["short quotes or field references from provided fields"],
             }
         ],
@@ -157,14 +169,13 @@ def build_user_prompt(payload: dict[str, Any]) -> str:
         "- Evaluate ONLY the checks in payload.checks.\n"
         "- For each check, follow that check's `prompt` instructions carefully.\n"
         "- Use ONLY payload.fields as evidence.\n"
-        "- For checks other than risk_design and control_design:\n"
-        "  * status=flagged when alignment is Partial, Weak, Misaligned, or No Control.\n"
-        "  * status=ok when alignment is Strong.\n"
-        "- For risk_design and control_design:\n"
-        "  * status=ok when adequacy is Adequate.\n"
-        "  * status=flagged when adequacy is Partially Adequate or Inadequate.\n"
-        "  * status=insufficient_data when adequacy is Information Not Available.\n"
-        "  * Return the named fields. Do not put them only in alignment_rationale.\n"
+        "- For EVERY check return adequacy, design_gap, suggested_improvement, "
+        "implementation_approach, benefit, priority, and rationale. Do not return only a paragraph.\n"
+        "- status=ok when adequacy is Adequate.\n"
+        "  status=flagged when adequacy is Partially Adequate or Inadequate.\n"
+        "  status=insufficient_data when adequacy is Information Not Available.\n"
+        "- Where a check prompt still describes Strong, Partial, or Weak, report them as "
+        "Adequate, Partially Adequate, and Inadequate.\n"
         "- status=insufficient_data only if the provided fields are still too thin to judge "
         "(prefer ok/flagged when data exists). AI insufficient_data is NOT a design gap.\n"
         "- Overall control_design_status:\n"
@@ -173,7 +184,9 @@ def build_user_prompt(payload: dict[str, Any]) -> str:
         "  * insufficient_data — no flagged checks, but at least one check is "
         "insufficient_data.\n"
         "- You do NOT need to invent gaps. If the control looks sound, return good_design.\n"
-        "- alignment_rationale and proposed_solution: max 3 sentences each.\n"
+        "- design_gap, suggested_improvement, implementation_approach, and rationale must stay specific.\n"
+        "- Leave design_gap, suggested_improvement, implementation_approach, benefit, and priority "
+        "empty when adequacy is Adequate or Information Not Available.\n"
         "- evidence: 1–3 short items max per check.\n\n"
         f"Expected JSON shape:\n{json.dumps(schema_hint, indent=2)}\n\n"
         f"Payload:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
@@ -246,81 +259,39 @@ def normalize_ai_results(
         alignment = _normalize_alignment(
             item.get("alignment") or item.get("alignment_level")
         )
-        rationale = _clip_sentences(
-            item.get("alignment_rationale")
-            or item.get("inconsistency")
-            or item.get("explanation")
-            or ""
-        )
-        solution = _clip_sentences(
-            item.get("proposed_solution") or item.get("recommendation") or ""
-        )
-
-        structured = _structured_fields(check_id, item)
-        if structured:
-            adequacy = structured.get("adequacy") or ""
-            if adequacy == "Adequate":
-                status = "ok"
-            elif adequacy in {"Partially Adequate", "Inadequate"}:
-                status = "flagged"
-            elif adequacy == "Information Not Available":
-                status = "insufficient_data"
-            priority = structured.get("priority") or ""
-            if priority:
-                item_severity = priority.lower()
-            else:
-                item_severity = str(item.get("severity") or "info")
-            rationale = structured.get("rationale") or ""
-            suggestion = (
-                structured.get("suggested_risk_wording")
-                or structured.get("suggested_control_improvement")
-                or ""
-            )
-            raw_evidence = item.get("evidence") or []
-            if isinstance(raw_evidence, str):
-                raw_evidence = [raw_evidence]
-            if not isinstance(raw_evidence, list):
-                raw_evidence = []
-            found[check_id] = {
-                "check_id": check_id,
-                "statement": by_id[check_id].get("statement") or check_id,
-                "status": status,
-                "severity": item_severity,
-                "alignment": adequacy,
-                "alignment_rationale": rationale,
-                "proposed_solution": suggestion,
-                "inconsistency": structured.get("risk_design_gap") or structured.get("control_design_gap") or rationale,
-                "recommendation": suggestion,
-                "evidence": [str(entry) for entry in raw_evidence][:5],
-                "source": "openrouter",
-                **structured,
-            }
-            continue
-
-        if status == "ok" and _alignment_implies_flagged(alignment):
+        structured = _structured_fields(item, alignment)
+        adequacy = structured.get("adequacy") or ""
+        if adequacy == "Adequate":
+            status = "ok"
+        elif adequacy in {"Partially Adequate", "Inadequate"}:
             status = "flagged"
-        if status == "flagged" and not alignment:
-            alignment = "Weak"
-
-        evidence = item.get("evidence") or []
-        if isinstance(evidence, str):
-            evidence = [evidence]
-        if not isinstance(evidence, list):
-            evidence = []
-
+        elif adequacy == "Information Not Available":
+            status = "insufficient_data"
+        elif _alignment_implies_flagged(alignment):
+            status = "flagged"
+        priority = structured.get("priority") or ""
+        item_severity = priority.lower() if priority else str(item.get("severity") or "info")
+        raw_evidence = item.get("evidence") or []
+        if isinstance(raw_evidence, str):
+            raw_evidence = [raw_evidence]
+        if not isinstance(raw_evidence, list):
+            raw_evidence = []
+        suggestion = structured.get("suggested_improvement") or ""
+        design_gap = structured.get("design_gap") or ""
+        rationale = structured.get("rationale") or ""
         found[check_id] = {
             "check_id": check_id,
             "statement": by_id[check_id].get("statement") or check_id,
             "status": status,
-            "severity": str(item.get("severity") or "info"),
-            "alignment": alignment,
+            "severity": item_severity,
+            "alignment": adequacy,
             "alignment_rationale": rationale,
-            "proposed_solution": solution,
-            # Backward-compatible mirrors for older UI consumers
-            "inconsistency": rationale,
-            "recommendation": solution,
-            "evidence": [str(e) for e in evidence][:5],
+            "proposed_solution": suggestion,
+            "inconsistency": design_gap or rationale,
+            "recommendation": suggestion,
+            "evidence": [str(entry) for entry in raw_evidence][:5],
             "source": "openrouter",
+            **structured,
         }
 
     results: list[dict[str, Any]] = []

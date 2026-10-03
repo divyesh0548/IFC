@@ -322,10 +322,9 @@ export function downloadRiskAnalysisReportPdf(reportData) {
 
       if (storedRisks) {
         const groups = [
-          ['Addressed risks', storedRisks.filter((item) => item?.status === 'Addressed Risk'), true],
-          ['Missing risks', storedRisks.filter((item) => item?.status !== 'Addressed Risk'), false],
+          ['Missing / partially covered risks', storedRisks.filter((item) => item?.status !== 'Addressed Risk')],
         ]
-        groups.forEach(([title, items, withControls]) => {
+        groups.forEach(([title, items]) => {
           state.y = ensureSpace(doc, state.y, 12)
           doc.setFont('helvetica', 'bold')
           doc.setFontSize(9)
@@ -339,17 +338,37 @@ export function downloadRiskAnalysisReportPdf(reportData) {
             return
           }
           items.forEach((item, index) => {
-            const controlsLabel = withControls
-              ? ` — ${(Array.isArray(item.addressedBy) ? item.addressedBy : []).map((value) => safeText(value)).filter(Boolean).join(', ') || 'No control number'}`
-              : ''
-            const line = withControls
-              ? `${index + 1}. ${safeText(item.risk) || '—'}${controlsLabel}`
-              : `${index + 1}. ${safeText(item.pointer || item.risk) || '—'}`
-            state.y = ensureSpace(doc, state.y, 10)
-            doc.setFont('helvetica', 'normal')
+            const controlsLabel = (Array.isArray(item.addressedBy) ? item.addressedBy : []).map((value) => safeText(value)).filter(Boolean).join(', ')
+            const pointer = safeText(item.pointer)
+            const risk = safeText(item.risk)
+            state.y = ensureSpace(doc, state.y, 12)
+            doc.setFont('helvetica', 'bold')
             doc.setFontSize(9)
             doc.setTextColor(...COLORS.text)
-            state.y = addWrapped(doc, line, margin + 3, state.y + 0.5, contentWidth - 3, 4)
+            state.y = addWrapped(doc, `${index + 1}.`, margin + 3, state.y + 1.5, contentWidth - 3, 4)
+            doc.setFont('helvetica', 'normal')
+            state.y = addWrapped(doc, risk || pointer || '—', margin + 6, state.y + 0.5, contentWidth - 6, 4)
+            const detailRows = [
+              ['Partially covered by', controlsLabel],
+              ['Sub-process', item.subProcess || item.sub_process],
+              ['Proposed solution', item.proposedSolution || item.proposed_solution],
+              ['Potential impact', item.potentialImpact || item.potential_impact],
+            ]
+              .map(([label, value]) => [label, safeText(value)])
+              .filter(([, value]) => value)
+            detailRows.forEach(([label, value]) => {
+              doc.setFont('helvetica', 'normal')
+              doc.setTextColor(...COLORS.muted)
+              state.y = addWrapped(
+                doc,
+                `${label}: ${value}`,
+                margin + 6,
+                state.y + 0.5,
+                contentWidth - 6,
+                4,
+              )
+              doc.setTextColor(...COLORS.text)
+            })
           })
         })
         state.y += 5

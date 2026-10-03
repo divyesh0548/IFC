@@ -76,6 +76,15 @@ function renderFilterValue(label) {
   )
 }
 
+function designGapValueColor(theme, line) {
+  const value = String(line?.value || '').trim().toLowerCase()
+  if (line?.role !== 'status') return theme.palette.text.primary
+  if (value === 'adequate' || value === 'low' || value === 'strong') return theme.palette.success.main
+  if (value === 'partially adequate' || value === 'medium' || value === 'partial') return theme.palette.warning.main
+  if (value === 'inadequate' || value === 'high' || value === 'weak' || value === 'misaligned') return theme.palette.error.main
+  return theme.palette.text.primary
+}
+
 function statusChip(status) {
   const s = String(status || '').toLowerCase()
   if (s === 'good_design' || s === 'ok') {
@@ -1216,48 +1225,98 @@ function AiInsights() {
                     <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: 1.75 }}>
                       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                         {statusChip('has_gaps')}
-                        <Typography fontWeight={700}>{c.control_number}</Typography>
+                        <Typography sx={{ fontSize: '1.05rem', fontWeight: 700 }}>{c.control_number}</Typography>
                       </Box>
                     </AccordionSummary>
                     <AccordionDetails sx={{ px: 1.75, pt: 0, pb: 1.75 }}>
                       {c.summary && (
-                        <Typography variant="body2" sx={{ mb: 1.5 }}>
-                          <Box component="span" fontWeight={700}>Summary: </Box>
-                          {c.summary}
-                        </Typography>
+                        <Box sx={{ mb: 2 }}>
+                          <Typography sx={{ fontSize: '0.875rem', fontWeight: 800, color: 'text.primary', lineHeight: 1.35 }}>
+                            Summary
+                          </Typography>
+                          <Typography sx={{ mt: 0.35, fontSize: '0.9375rem', fontWeight: 500, lineHeight: 1.55 }}>
+                            {c.summary}
+                          </Typography>
+                        </Box>
                       )}
-                      {(c.results || []).filter((r) => r.status === 'flagged').map((r) => (
-                        <Box key={r.check_id} sx={{ mb: 1.5 }}>
-                          <Typography variant="body2" fontWeight={700}>
+                      {(c.results || []).filter((r) => r.status === 'flagged').map((r) => {
+                        const detailLines = designGapDetailLines(r)
+                        return (
+                        <Box
+                          key={r.check_id}
+                          sx={{
+                            mb: 2,
+                            pb: 1.5,
+                            borderBottom: `1px solid ${theme.palette.divider}`,
+                            '&:last-of-type': { borderBottom: 'none', mb: 0, pb: 0 },
+                          }}
+                        >
+                          <Typography
+                            sx={{
+                              fontSize: '1rem',
+                              fontWeight: 700,
+                              color: theme.palette.text.primary,
+                              lineHeight: 1.35,
+                            }}
+                          >
                             {humanizeCheckLabel(r.check_id)}
                           </Typography>
-                          {designGapDetailLines(r).length > 0 ? designGapDetailLines(r).map((line) => (
-                            <Typography key={line.label} variant="body2" sx={{ mt: 0.5 }}>
-                              <Box component="span" fontWeight={700}>{line.label}: </Box>
-                              {line.value}
-                            </Typography>
+                          {detailLines.length > 0 ? detailLines.map((line) => (
+                            <Box key={line.label} sx={{ mt: 1.25 }}>
+                              <Typography
+                                sx={{
+                                  fontSize: '0.875rem',
+                                  fontWeight: 800,
+                                  color: theme.palette.text.primary,
+                                  lineHeight: 1.35,
+                                }}
+                              >
+                                {line.label}
+                              </Typography>
+                              <Typography
+                                sx={{
+                                  mt: 0.35,
+                                  fontSize: line.role === 'note' ? '0.8125rem' : '0.9375rem',
+                                  fontWeight: 500,
+                                  lineHeight: 1.55,
+                                  color: designGapValueColor(theme, line),
+                                }}
+                              >
+                                {line.value}
+                              </Typography>
+                            </Box>
                           )) : (
                             <>
                               {r.alignment && (
-                                <Typography variant="body2" sx={{ mt: 0.5 }}>
-                                  <Box component="span" fontWeight={700}>Alignment: </Box>
-                                  {r.alignment}
-                                </Typography>
+                                <Box sx={{ mt: 1.25 }}>
+                                  <Typography sx={{ fontSize: '0.875rem', fontWeight: 800, color: 'text.primary', lineHeight: 1.35 }}>
+                                    Alignment
+                                  </Typography>
+                                  <Typography sx={{ mt: 0.35, fontSize: '0.9375rem', fontWeight: 500 }}>
+                                    {r.alignment}
+                                  </Typography>
+                                </Box>
                               )}
                               {(r.alignment_rationale || r.inconsistency) && (
-                                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                                <Typography sx={{ mt: 1, fontSize: '0.9375rem', fontWeight: 500, lineHeight: 1.55 }}>
                                   {r.alignment_rationale || r.inconsistency}
                                 </Typography>
                               )}
                               {(r.proposed_solution || r.recommendation) && (
-                                <Typography variant="body2" sx={{ mt: 0.5 }} color="text.secondary">
-                                  Proposed solution: {r.proposed_solution || r.recommendation}
-                                </Typography>
+                                <Box sx={{ mt: 1.25 }}>
+                                  <Typography sx={{ fontSize: '0.875rem', fontWeight: 800, color: 'text.primary', lineHeight: 1.35 }}>
+                                    Proposed solution
+                                  </Typography>
+                                  <Typography sx={{ mt: 0.35, fontSize: '0.9375rem', fontWeight: 500, lineHeight: 1.55 }}>
+                                    {r.proposed_solution || r.recommendation}
+                                  </Typography>
+                                </Box>
                               )}
                             </>
                           )}
                         </Box>
-                      ))}
+                        )
+                      })}
                       <DesignGapUsageLine control={c} />
                     </AccordionDetails>
                   </Accordion>

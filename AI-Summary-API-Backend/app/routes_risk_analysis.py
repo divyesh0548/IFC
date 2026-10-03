@@ -57,10 +57,13 @@ def analyze_one():
     body = request.get_json(silent=True) or {}
     control = body.get("control")
     business_process = str(body.get("business_process") or "").strip()
+    business_process_overview = str(body.get("business_process_overview") or "").strip()
     if not isinstance(control, dict) or not control:
         return jsonify({"error": "invalid_request", "message": "Body must include a non-empty object field 'control'."}), 400
     if not business_process:
         return jsonify({"error": "invalid_request", "message": "business_process is required"}), 400
+    if not business_process_overview:
+        return jsonify({"error": "invalid_request", "message": "business_process_overview is required"}), 400
     concise_risks = body.get("concise_risks")
     if concise_risks is None:
         concise_risks = []
@@ -71,6 +74,7 @@ def analyze_one():
             control,
             business_process,
             concise_risks=concise_risks,
+            business_process_overview=business_process_overview,
             dry_run=bool(body.get("dry_run", False)),
             form_id=str(body.get("form_id") or "").strip(),
         )

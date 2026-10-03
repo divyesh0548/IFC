@@ -8,6 +8,7 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
+import TextField from '@mui/material/TextField'
 import Alert from '@mui/material/Alert'
 import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
@@ -20,6 +21,7 @@ import TablePagination from '@mui/material/TablePagination'
 import Tooltip from '@mui/material/Tooltip'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
 import { useTheme } from '@mui/material/styles'
+import * as XLSX from 'xlsx'
 import { apiUrl } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
@@ -53,6 +55,51 @@ const INSIGHT_CARD_LABEL_SX = {
   fontWeight: 700,
   color: 'text.primary',
   mb: 0.75,
+}
+
+function RiskStatementFields({ item, index }) {
+  const risk = String(item?.risk || '').trim()
+  const pointer = String(item?.pointer || '').trim()
+  const body = (
+    <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+      {risk || pointer || '—'}
+    </Typography>
+  )
+  if (index == null) return body
+  return (
+    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+      <Typography variant="body2" sx={{ fontWeight: 800, minWidth: 22, lineHeight: 1.4 }}>
+        {`${index}.`}
+      </Typography>
+      <Box sx={{ flex: 1, minWidth: 0 }}>{body}</Box>
+    </Box>
+  )
+}
+
+function RiskOutputDetails({ item, indent = false }) {
+  const addressedBy = Array.isArray(item?.addressedBy) ? item.addressedBy.filter(Boolean) : []
+  const rows = [
+    ['Partially covered by', addressedBy.join(', ')],
+    ['Sub-process', item?.subProcess || item?.sub_process],
+    ['Proposed solution', item?.proposedSolution || item?.proposed_solution],
+    ['Potential impact', item?.potentialImpact || item?.potential_impact],
+  ]
+    .map(([label, value]) => [label, String(value || '').trim()])
+    .filter(([, value]) => value)
+
+  if (rows.length === 0) return null
+  return (
+    <Box sx={{ mt: 0.75, pl: indent ? '30px' : 0, display: 'flex', flexDirection: 'column', gap: 0.35 }}>
+      {rows.map(([label, value]) => (
+        <Typography key={label} variant="body2" sx={DETAIL_FIELD_VALUE_SX}>
+          <Typography component="span" variant="body2" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+            {`${label}: `}
+          </Typography>
+          {value}
+        </Typography>
+      ))}
+    </Box>
+  )
 }
 
 const TABLE_GRID_COLUMNS = '56px 220px 180px 220px 140px 240px minmax(340px, 1fr)'
@@ -107,6 +154,17 @@ function downloadDryRunPrompt(text, filename) {
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(url)
+}
+
+function fileStamp() {
+  return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+}
+
+function filePart(value, fallback) {
+  return String(value || fallback || 'export')
+    .replace(/[^\w.-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80) || fallback || 'export'
 }
 
 function normalizeRiskLabel(value) {
@@ -174,10 +232,15 @@ function RiskAnalysis() {
   const [conciseGenerating, setConciseGenerating] = useState(false)
   const [conciseListOpen, setConciseListOpen] = useState(false)
   const [conciseTick, setConciseTick] = useState(0)
+  const [businessProcessOverview, setBusinessProcessOverview] = useState(null)
+  const [businessProcessOverviewText, setBusinessProcessOverviewText] = useState('')
+  const [businessProcessOverviewLoading, setBusinessProcessOverviewLoading] = useState(false)
+  const [businessProcessOverviewSaving, setBusinessProcessOverviewSaving] = useState(false)
+  const [businessProcessOverviewError, setBusinessProcessOverviewError] = useState('')
   const [controlConcise, setControlConcise] = useState({ loading: false, exists: false })
   const lastSelectedIndexRef = useRef(null)
   const rowMetaRef = useRef(new Map())
-  useSyncGlobalLoading(loading || batchGenerating || analysisGenerating || conciseGenerating)
+  useSyncGlobalLoading(loading || batchGenerating || analysisGenerating || conciseGenerating || businessProcessOverviewSaving)
 
   const pageControlNumbers = useMemo(
     () =>
@@ -459,6 +522,9 @@ function RiskAnalysis() {
   }
 
   const conciseScopeReady = filterUnits.length === 1 && filterBusinessProcesses.length === 1
+  const businessProcessOverviewScopeReady = filterBusinessProcesses.length === 1
+  const businessProcessOverviewHasChanges = businessProcessOverviewScopeReady
+    && businessProcessOverviewText.trim() !== String(businessProcessOverview?.overview_text || '').trim()
 
   useEffect(() => {
     if (!conciseScopeReady) {
@@ -494,6 +560,82 @@ function RiskAnalysis() {
       cancelled = true
     }
   }, [conciseScopeReady, filterUnits, filterBusinessProcesses, conciseTick])
+
+  useEffect(() => {
+    if (!businessProcessOverviewScopeReady) {
+      setBusinessProcessOverview(null)
+      setBusinessProcessOverviewText('')
+      setBusinessProcessOverviewLoading(false)
+      setBusinessProcessOverviewError('')
+      return undefined
+    }
+
+    let cancelled = false
+    const loadBusinessProcessOverview = async () => {
+      setBusinessProcessOverviewLoading(true)
+      setBusinessProcessOverviewError('')
+      try {
+        const params = new URLSearchParams({
+          business_process: filterBusinessProcesses[0],
+        })
+        const response = await fetch(apiUrl(`/api/company-co/risk-analysis/business-process-overview?${params}`), {
+          credentials: 'include',
+        })
+        const data = await response.json()
+        if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to load business process overview')
+        if (!cancelled) {
+          setBusinessProcessOverview(data.data || null)
+          setBusinessProcessOverviewText(String(data.data?.overview_text || ''))
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBusinessProcessOverview(null)
+          setBusinessProcessOverviewText('')
+          setBusinessProcessOverviewError(error.message || 'Failed to load business process overview')
+        }
+      } finally {
+        if (!cancelled) setBusinessProcessOverviewLoading(false)
+      }
+    }
+
+    loadBusinessProcessOverview()
+    return () => {
+      cancelled = true
+    }
+  }, [businessProcessOverviewScopeReady, filterBusinessProcesses])
+
+  const saveBusinessProcessOverview = async () => {
+    if (!businessProcessOverviewScopeReady) return
+    const overviewText = businessProcessOverviewText.trim()
+    if (!overviewText) {
+      toast.error('Business process overview is required.')
+      return
+    }
+
+    setBusinessProcessOverviewSaving(true)
+    setBusinessProcessOverviewError('')
+    try {
+      const response = await fetch(apiUrl('/api/company-co/risk-analysis/business-process-overview'), {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_process: filterBusinessProcesses[0],
+          overview_text: overviewText,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to save business process overview')
+      setBusinessProcessOverview(data.data || null)
+      setBusinessProcessOverviewText(String(data.data?.overview_text || overviewText))
+      toast.success(data.message || 'Business process overview saved')
+    } catch (error) {
+      setBusinessProcessOverviewError(error.message || 'Failed to save business process overview')
+      toast.error(error.message || 'Failed to save business process overview')
+    } finally {
+      setBusinessProcessOverviewSaving(false)
+    }
+  }
 
   const generateConciseList = async () => {
     if (!conciseScopeReady) return
@@ -534,6 +676,62 @@ function RiskAnalysis() {
     } finally {
       setConciseGenerating(false)
     }
+  }
+
+  const exportConciseListExcel = () => {
+    const risks = Array.isArray(conciseList?.risks) ? conciseList.risks : []
+    if (!risks.length) {
+      toast.error('No concise risk list is available to export.')
+      return
+    }
+
+    const unitId = String(conciseList?.unit_id || filterUnits[0] || '').trim()
+    const unitName = String(
+      unitOptions.find((unit) => String(unit.unit_id) === unitId)?.unit_name || unitId || ''
+    ).trim()
+    const businessProcess = String(conciseList?.business_process || filterBusinessProcesses[0] || '').trim()
+    const updatedAt = formatRiskAnalysisTimestamp(conciseList?.updated_at)
+    const modelName = String(conciseList?.model_name || '').trim()
+
+    const rows = risks.map((item, index) => ({
+      'Sr No': index + 1,
+      'Unit ID': unitId,
+      'Unit Name': unitName,
+      'Business Process': businessProcess,
+      Risk: String(item?.risk || '').trim(),
+      'Control Numbers': (Array.isArray(item?.controlNumbers) ? item.controlNumbers : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .join(', '),
+      'Generated Model': modelName,
+      'Updated At': updatedAt,
+      'Source Control Count': Number(conciseList?.source_control_count || 0) || '',
+      'Current Control Count': Number(conciseList?.current_control_count || 0) || '',
+      Stale: conciseList?.stale ? 'Yes' : 'No',
+    }))
+
+    const worksheet = XLSX.utils.json_to_sheet(rows)
+    worksheet['!cols'] = [
+      { wch: 8 },
+      { wch: 16 },
+      { wch: 24 },
+      { wch: 28 },
+      { wch: 55 },
+      { wch: 28 },
+      { wch: 24 },
+      { wch: 24 },
+      { wch: 20 },
+      { wch: 20 },
+      { wch: 10 },
+    ]
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Concise Risk List')
+    XLSX.writeFile(
+      workbook,
+      `concise_risk_list_${filePart(unitName || unitId, 'unit')}_${filePart(businessProcess, 'bp')}_${fileStamp()}.xlsx`
+    )
+    toast.success('Concise risk list exported')
   }
 
   const openSelectedReports = async () => {
@@ -687,43 +885,28 @@ function RiskAnalysis() {
     }
     const missingRiskPointers = Array.isArray(response.missingRiskPointers) ? response.missingRiskPointers : []
     if (Array.isArray(response.risks)) {
-      const addressedRisks = response.risks.filter((item) => item?.status === 'Addressed Risk')
       const missingRisks = response.risks.filter((item) => item?.status !== 'Addressed Risk')
       const riskCardSx = {
         p: 2,
-        borderRadius: 2,
-        border: `1px solid ${theme.palette.divider}`,
         backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : theme.palette.common.white,
       }
       return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <Box sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          border: `1px solid ${theme.palette.divider}`,
+          borderRadius: 2,
+          overflow: 'hidden',
+        }}
+        >
           <Box sx={riskCardSx}>
-            <Typography variant="body2" sx={INSIGHT_CARD_LABEL_SX}>Addressed risks</Typography>
-            {addressedRisks.length === 0 ? (
-              <Typography variant="body2" sx={DETAIL_FIELD_VALUE_SX}>None</Typography>
-            ) : addressedRisks.map((item, index) => (
-              <Box key={`addressed-${item.risk}-${index}`} sx={{ mb: 1.25 }}>
-                <Typography variant="body2" sx={{ color: theme.palette.text.primary, lineHeight: 1.6 }}>
-                  {`${index + 1}. ${item.risk || '—'}`}
-                </Typography>
-                <Typography variant="body2" sx={DETAIL_FIELD_VALUE_SX}>
-                  {`Control numbers: ${(Array.isArray(item.addressedBy) ? item.addressedBy : []).filter(Boolean).join(', ') || '—'}`}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-          <Box sx={riskCardSx}>
-            <Typography variant="body2" sx={INSIGHT_CARD_LABEL_SX}>Missing risks</Typography>
+            <Typography variant="body2" sx={INSIGHT_CARD_LABEL_SX}>Missing / partially covered risks</Typography>
             {missingRisks.length === 0 ? (
               <Typography variant="body2" sx={DETAIL_FIELD_VALUE_SX}>None</Typography>
             ) : missingRisks.map((item, index) => (
-              <Box key={`missing-${item.risk}-${index}`} sx={{ mb: 1.25 }}>
-                <Typography variant="body2" sx={{ color: theme.palette.text.primary, lineHeight: 1.6 }}>
-                  {`${index + 1}. ${item.pointer || item.risk || '—'}`}
-                </Typography>
-                {item.pointer && item.risk && item.pointer !== item.risk ? (
-                  <Typography variant="body2" sx={DETAIL_FIELD_VALUE_SX}>{item.risk}</Typography>
-                ) : null}
+              <Box key={`missing-${item.risk}-${index}`} sx={{ mb: 1.5 }}>
+                <RiskStatementFields item={item} index={index + 1} />
+                <RiskOutputDetails item={item} indent />
               </Box>
             ))}
           </Box>
@@ -1024,22 +1207,103 @@ function RiskAnalysis() {
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              Business process overview
+            </Typography>
+            {businessProcessOverviewScopeReady ? (
+              <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.5 }}>
+                {filterBusinessProcesses[0]}
+              </Typography>
+            ) : null}
+          </Box>
+          <Button
+            variant="contained"
+            onClick={saveBusinessProcessOverview}
+            disabled={
+              !businessProcessOverviewScopeReady
+              || businessProcessOverviewLoading
+              || businessProcessOverviewSaving
+              || !businessProcessOverviewText.trim()
+              || !businessProcessOverviewHasChanges
+            }
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            {businessProcessOverviewSaving ? 'Saving...' : 'Save overview'}
+          </Button>
+        </Box>
+        {!businessProcessOverviewScopeReady ? (
+          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
+            Select one business process to add or update its overview.
+          </Typography>
+        ) : (
+          <>
+            {businessProcessOverviewLoading ? (
+              <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
+                Loading business process overview...
+              </Typography>
+            ) : null}
+            {businessProcessOverviewError ? (
+              <Alert severity="warning" sx={{ mt: 1.5 }}>
+                {businessProcessOverviewError}
+              </Alert>
+            ) : null}
+            <TextField
+              label="Overview"
+              value={businessProcessOverviewText}
+              onChange={(event) => setBusinessProcessOverviewText(event.target.value)}
+              fullWidth
+              multiline
+              minRows={4}
+              disabled={businessProcessOverviewLoading || businessProcessOverviewSaving}
+              inputProps={{ maxLength: 20000 }}
+              sx={{ mt: 1.5 }}
+            />
+            {businessProcessOverview?.updated_at ? (
+              <Typography variant="caption" sx={{ display: 'block', mt: 1, color: theme.palette.text.secondary }}>
+                {`Last saved: ${formatRiskAnalysisTimestamp(businessProcessOverview.updated_at)}`}
+              </Typography>
+            ) : null}
+          </>
+        )}
+      </Paper>
+
+      <Paper
+        elevation={0}
+        sx={{
+          mb: 3,
+          p: 2,
+          borderRadius: 2,
+          border: `1px solid ${theme.palette.divider}`,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               Concise risk list
             </Typography>
             <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.5 }}>
-              Adding new controls or removing controls invalidates this list. It has to be regenerated before risk analysis.
+              Adding, removing, or changing risk descriptions invalidates this list. It has to be regenerated before risk analysis.
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             {conciseScopeReady && conciseList?.exists ? (
-              <Button
-                variant="outlined"
-                onClick={() => setConciseListOpen(true)}
-                disabled={conciseLoading}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                View risks
-              </Button>
+              <>
+                <Button
+                  variant="outlined"
+                  onClick={() => setConciseListOpen(true)}
+                  disabled={conciseLoading}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  View risks
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={exportConciseListExcel}
+                  disabled={conciseLoading || !Array.isArray(conciseList?.risks) || conciseList.risks.length === 0}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Export Excel
+                </Button>
+              </>
             ) : null}
             <Button
               variant="contained"
@@ -1065,7 +1329,7 @@ function RiskAnalysis() {
           </Typography>
         ) : conciseList?.stale ? (
           <Alert severity="warning" sx={{ mt: 1.5 }}>
-            Adding or removing controls invalidated this concise list. Regenerate it before running risk analysis.
+            Adding, removing, or changing risk descriptions invalidated this concise list. Regenerate it before running risk analysis.
           </Alert>
         ) : null}
       </Paper>
@@ -1081,7 +1345,7 @@ function RiskAnalysis() {
                     {`${index + 1}. ${item.risk || '—'}`}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {(Array.isArray(item.controlNumbers) ? item.controlNumbers : []).filter(Boolean).join(', ') || 'No control number'}
+                    {`Control numbers: ${(Array.isArray(item.controlNumbers) ? item.controlNumbers : []).filter(Boolean).join(', ') || 'No control number'}`}
                   </Typography>
                 </Box>
               ))}
@@ -1091,6 +1355,12 @@ function RiskAnalysis() {
           )}
         </DialogContent>
         <DialogActions>
+          <Button
+            onClick={exportConciseListExcel}
+            disabled={!Array.isArray(conciseList?.risks) || conciseList.risks.length === 0}
+          >
+            Export Excel
+          </Button>
           <Button onClick={() => setConciseListOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
@@ -1477,7 +1747,6 @@ function RiskAnalysis() {
                   const response = control.response_json || {}
                   const storedRisks = Array.isArray(response.risks) ? response.risks : null
                   const pointers = Array.isArray(response.missingRiskPointers) ? response.missingRiskPointers : []
-                  const addressedRisks = storedRisks ? storedRisks.filter((item) => item?.status === 'Addressed Risk') : []
                   const missingRisks = storedRisks ? storedRisks.filter((item) => item?.status !== 'Addressed Risk') : []
                   return (
                     <Box
@@ -1507,23 +1776,25 @@ function RiskAnalysis() {
                         </Button>
                       </Box>
                       {storedRisks ? (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                          <Typography variant="body2" fontWeight={700}>Addressed risks</Typography>
-                          {addressedRisks.length === 0 ? (
-                            <Typography variant="body2" color="text.secondary">None</Typography>
-                          ) : addressedRisks.map((item, index) => (
-                            <Typography key={`addressed-${item.risk}-${index}`} variant="body2">
-                              {`${index + 1}. ${item.risk || '—'} — ${(Array.isArray(item.addressedBy) ? item.addressedBy : []).filter(Boolean).join(', ') || 'No control number'}`}
-                            </Typography>
-                          ))}
-                          <Typography variant="body2" fontWeight={700} sx={{ mt: 0.5 }}>Missing risks</Typography>
-                          {missingRisks.length === 0 ? (
-                            <Typography variant="body2" color="text.secondary">None</Typography>
-                          ) : missingRisks.map((item, index) => (
-                            <Typography key={`missing-${item.risk}-${index}`} variant="body2">
-                              {`${index + 1}. ${item.pointer || item.risk || '—'}`}
-                            </Typography>
-                          ))}
+                        <Box sx={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          border: `1px solid ${theme.palette.divider}`,
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                        }}
+                        >
+                          <Box sx={{ p: 1.5 }}>
+                            <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>Missing / partially covered risks</Typography>
+                            {missingRisks.length === 0 ? (
+                              <Typography variant="body2" color="text.secondary">None</Typography>
+                            ) : missingRisks.map((item, index) => (
+                              <Box key={`missing-${item.risk}-${index}`} sx={{ mb: 1.25 }}>
+                                <RiskStatementFields item={item} index={index + 1} />
+                                <RiskOutputDetails item={item} indent />
+                              </Box>
+                            ))}
+                          </Box>
                         </Box>
                       ) : (
                         <>

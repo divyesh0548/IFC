@@ -138,7 +138,13 @@ def _parse_object(content: str) -> dict[str, Any]:
         if lines and lines[-1].strip().startswith("```"):
             lines = lines[:-1]
         text = "\n".join(lines).strip()
-    parsed = json.loads(text)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Model returned invalid JSON at line {exc.lineno} column {exc.colno}. "
+            "The response may have been truncated; increase max tokens or regenerate."
+        ) from exc
     if not isinstance(parsed, dict):
         raise RuntimeError("Model response is not a JSON object.")
     return parsed

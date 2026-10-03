@@ -14,9 +14,20 @@
             "type": "array",
             "items": { "type": "string" }
           },
-          "pointer": { "type": "string" }
+          "pointer": { "type": "string" },
+          "subProcess": { "type": "string" },
+          "proposedSolution": { "type": "string" },
+          "potentialImpact": { "type": "string" }
         },
-        "required": ["risk", "status", "addressedBy", "pointer"]
+        "required": [
+          "risk",
+          "status",
+          "addressedBy",
+          "pointer",
+          "subProcess",
+          "proposedSolution",
+          "potentialImpact"
+        ]
       }
     }
   },

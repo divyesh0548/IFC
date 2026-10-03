@@ -41,24 +41,42 @@ export function formatInsufficientCheckLine(result) {
   return title
 }
 
-const DESIGN_GAP_FIELD_LABELS = {
-  adequacy: 'Adequacy',
-  risk_design_gap: 'Risk design gap',
-  suggested_risk_wording: 'Suggested risk wording',
-  control_design_gap: 'Control design gap',
-  suggested_control_improvement: 'Suggested control improvement',
-  implementation_approach: 'Implementation approach',
-  benefit: 'Benefit',
-  priority: 'Priority',
-  rationale: 'Rationale',
+function designGapFieldLabels(result) {
+  const id = String(result?.check_id || '')
+  if (id === 'risk_design') {
+    return { gap: 'Risk design gap', suggestion: 'Suggested risk wording' }
+  }
+  if (id === 'control_design') {
+    return { gap: 'Control design gap', suggestion: 'Suggested control improvement' }
+  }
+  const title = humanizeCheckLabel(id)
+  return {
+    gap: title && title !== '—' ? `${title} gap` : 'Gap',
+    suggestion: 'Suggested improvement',
+  }
 }
 
-/** Labeled output for Risk Design and Control Design. Empty for other checks. */
+/** Labeled output for every design-gap check. Empty for older paragraph results. */
 export function designGapDetailLines(result) {
-  return Object.entries(DESIGN_GAP_FIELD_LABELS)
-    .map(([key, label]) => {
-      const value = String(result?.[key] || '').trim()
-      return value ? { label, value } : null
+  if (!result) return []
+  const labels = designGapFieldLabels(result)
+  const pairs = [
+    ['Adequacy', result.adequacy, 'status'],
+    [labels.gap, result.design_gap || result.risk_design_gap || result.control_design_gap, 'body'],
+    [
+      labels.suggestion,
+      result.suggested_improvement || result.suggested_risk_wording || result.suggested_control_improvement,
+      'body',
+    ],
+    ['Implementation approach', result.implementation_approach, 'body'],
+    ['Benefit', result.benefit, 'body'],
+    ['Priority', result.priority, 'status'],
+    ['Rationale', result.rationale, 'note'],
+  ]
+  return pairs
+    .map(([label, value, role]) => {
+      const text = String(value || '').trim()
+      return text ? { label, value: text, role } : null
     })
     .filter(Boolean)
 }

@@ -15,6 +15,8 @@ router.get('/dashboard/racms', verifyCompanyCoordinator, controller.getDashboard
 router.get('/risk-analysis/availability', verifyCompanyCoordinator, controller.getRiskAnalysisAvailability);
 router.get('/risk-analysis/controls', verifyCompanyCoordinator, controller.listRiskAnalysisControls);
 router.get('/risk-analysis/report', verifyCompanyCoordinator, controller.getRiskAnalysisReport);
+router.get('/risk-analysis/business-process-overview', verifyCompanyCoordinator, controller.getRiskAnalysisBusinessProcessOverview);
+router.put('/risk-analysis/business-process-overview', verifyCompanyCoordinator, controller.upsertRiskAnalysisBusinessProcessOverview);
 router.get('/risk-analysis/concise-list', verifyCompanyCoordinator, controller.getRiskAnalysisConciseList);
 router.post('/risk-analysis/concise-list', verifyCompanyCoordinator, controller.generateRiskAnalysisConciseList);
 router.get('/risk-analysis/control/:control_number', verifyCompanyCoordinator, controller.getRiskAnalysisByControl);

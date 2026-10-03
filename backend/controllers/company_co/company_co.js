@@ -55,6 +55,7 @@ const {
 const RACM_SPECIFIC_APPROVER_ASSIGNMENT_ACTION = 'RACM Specific approver assignment';
 
 const KEY_MANUAL_AI_PROMPT_VERSION = 'v2';
+const BUSINESS_PROCESS_OVERVIEW_UNIT_SCOPE = '__PROCESS__';
 
 function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();
@@ -1296,8 +1297,18 @@ async function compareRiskAnalysis(req, res) {
   }
 }
 
-function riskListControlFingerprint(controlNumbers) {
-  const canonical = [...new Set(controlNumbers.map((value) => String(value || '').trim()).filter(Boolean))]
+function riskListControlFingerprint(controls) {
+  const canonical = (Array.isArray(controls) ? controls : [])
+    .map((item) => {
+      if (item && typeof item === 'object') {
+        return JSON.stringify({
+          controlNumber: String(item.control_number || item.controlNumber || '').trim(),
+          riskDescription: String(item.risk_description || item.riskDescription || '').trim(),
+        });
+      }
+      return JSON.stringify({ controlNumber: String(item || '').trim() });
+    })
+    .filter((value) => value !== JSON.stringify({ controlNumber: '' }))
     .sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' }))
     .join('\n');
   return crypto.createHash('sha256').update(canonical).digest('hex');
@@ -1314,6 +1325,329 @@ function conciseListUnavailableResponse(res) {
   });
 }
 
+function isMissingBusinessProcessOverviewTableError(error) {
+  return String(error?.code || '') === '42P01';
+}
+
+function businessProcessOverviewUnavailableResponse(res) {
+  return res.status(503).json({
+    success: false,
+    message: 'The business process overview table is not in the database yet. Apply the risk_analysis_business_process_overviews schema change before using this.',
+  });
+}
+
+async function businessProcessOverviewHasUnitIdColumn(clientOrPool = pool) {
+  const result = await clientOrPool.query(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'risk_analysis_business_process_overviews'
+          AND column_name = 'unit_id'
+      ) AS has_unit_id
+    `
+  );
+  return Boolean(result.rows[0]?.has_unit_id);
+}
+
+async function assertCoordinatorHasBusinessProcessAccess(companyIdentifier, coordinatorEmail, businessProcess) {
+  if (!companyIdentifier || !coordinatorEmail || !businessProcess) return false;
+  const result = await pool.query(
+    `
+      SELECT 1
+      FROM control_forms cf
+      INNER JOIN coordinator_unit_assignments cua
+        ON cua.company_identifier = cf.company_identifier
+       AND cua.unit_id = cf.unit_id
+      WHERE cf.company_identifier = $1
+        AND LOWER(TRIM(cua.coordinator_email_id)) = $2
+        AND LOWER(TRIM(COALESCE(cf.business_process, ''))) = LOWER(TRIM($3))
+        AND NULLIF(TRIM(cf.control_number), '') IS NOT NULL
+      LIMIT 1
+    `,
+    [companyIdentifier, coordinatorEmail, businessProcess]
+  );
+  return result.rows.length > 0;
+}
+
+async function readStoredBusinessProcessOverview(companyIdentifier, businessProcess) {
+  const hasUnitIdColumn = await businessProcessOverviewHasUnitIdColumn(pool);
+  const result = await pool.query(
+    hasUnitIdColumn
+      ? `
+        SELECT
+          id,
+          company_identifier,
+          business_process,
+          overview_text,
+          created_by_email,
+          updated_by_email,
+          ${createdAtUpdatedAtUtcSql()}
+        FROM risk_analysis_business_process_overviews
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
+        ORDER BY
+          CASE WHEN unit_id = $3 THEN 0 ELSE 1 END,
+          updated_at DESC NULLS LAST,
+          id DESC
+        LIMIT 1
+      `
+      : `
+        SELECT
+          id,
+          company_identifier,
+          business_process,
+          overview_text,
+          created_by_email,
+          updated_by_email,
+          ${createdAtUpdatedAtUtcSql()}
+        FROM risk_analysis_business_process_overviews
+        WHERE company_identifier = $1
+          AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
+        ORDER BY updated_at DESC NULLS LAST, id DESC
+        LIMIT 1
+      `,
+    hasUnitIdColumn
+      ? [companyIdentifier, businessProcess, BUSINESS_PROCESS_OVERVIEW_UNIT_SCOPE]
+      : [companyIdentifier, businessProcess]
+  );
+  return result.rows[0] || null;
+}
+
+async function getRiskAnalysisBusinessProcessOverview(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const businessProcess = String(req.query?.business_process || '').trim();
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(403).json({ success: false, message: 'Company coordinator context is required' });
+    }
+    if (!businessProcess) {
+      return res.status(400).json({ success: false, message: 'business_process is required' });
+    }
+
+    const hasAccess = await assertCoordinatorHasBusinessProcessAccess(companyIdentifier, coordinatorEmail, businessProcess);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, message: 'This business process is not available for your assigned units' });
+    }
+
+    const stored = await readStoredBusinessProcessOverview(companyIdentifier, businessProcess);
+    if (!stored) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          exists: false,
+          business_process: businessProcess,
+          overview_text: '',
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        exists: true,
+        business_process: stored.business_process,
+        overview_text: stored.overview_text,
+        created_by_email: stored.created_by_email,
+        updated_by_email: stored.updated_by_email,
+        created_at: stored.created_at,
+        updated_at: stored.updated_at,
+      },
+    });
+  } catch (error) {
+    if (isMissingBusinessProcessOverviewTableError(error)) return businessProcessOverviewUnavailableResponse(res);
+    console.error('Company coordinator get business process overview error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || 'Failed to load business process overview',
+    });
+  }
+}
+
+async function upsertRiskAnalysisBusinessProcessOverview(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const businessProcess = String(req.body?.business_process || '').trim();
+    const overviewText = String(req.body?.overview_text ?? req.body?.overviewText ?? '').trim();
+    if (!companyIdentifier || !coordinatorEmail) {
+      return res.status(403).json({ success: false, message: 'Company coordinator context is required' });
+    }
+    if (!businessProcess) {
+      return res.status(400).json({ success: false, message: 'business_process is required' });
+    }
+    if (!overviewText) {
+      return res.status(400).json({ success: false, message: 'Business process overview is required' });
+    }
+    if (overviewText.length > 20000) {
+      return res.status(400).json({ success: false, message: 'Business process overview must be 20,000 characters or less' });
+    }
+
+    const hasAccess = await assertCoordinatorHasBusinessProcessAccess(companyIdentifier, coordinatorEmail, businessProcess);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, message: 'This business process is not available for your assigned units' });
+    }
+
+    const client = await pool.connect();
+    let row;
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`risk_analysis_bp_overview:${companyIdentifier}:${businessProcess.toLowerCase()}`]
+      );
+      const hasUnitIdColumn = await businessProcessOverviewHasUnitIdColumn(client);
+
+      const existing = await client.query(
+        hasUnitIdColumn
+          ? `
+            SELECT id
+            FROM risk_analysis_business_process_overviews
+            WHERE company_identifier = $1
+              AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
+            ORDER BY
+              CASE WHEN unit_id = $3 THEN 0 ELSE 1 END,
+              updated_at DESC NULLS LAST,
+              id DESC
+            LIMIT 1
+          `
+          : `
+            SELECT id
+            FROM risk_analysis_business_process_overviews
+            WHERE company_identifier = $1
+              AND LOWER(TRIM(business_process)) = LOWER(TRIM($2))
+            ORDER BY updated_at DESC NULLS LAST, id DESC
+            LIMIT 1
+          `,
+        hasUnitIdColumn
+          ? [companyIdentifier, businessProcess, BUSINESS_PROCESS_OVERVIEW_UNIT_SCOPE]
+          : [companyIdentifier, businessProcess]
+      );
+
+      const saved = existing.rows[0]?.id
+        ? await client.query(
+          hasUnitIdColumn
+            ? `
+              UPDATE risk_analysis_business_process_overviews
+              SET
+                business_process = $2,
+                overview_text = $3,
+                updated_by_email = $4,
+                unit_id = $5,
+                updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)
+              WHERE id = $1
+              RETURNING
+                id,
+                company_identifier,
+                business_process,
+                overview_text,
+                created_by_email,
+                updated_by_email,
+                ${createdAtUpdatedAtUtcSql()}
+            `
+            : `
+              UPDATE risk_analysis_business_process_overviews
+              SET
+                business_process = $2,
+                overview_text = $3,
+                updated_by_email = $4,
+                updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)
+              WHERE id = $1
+              RETURNING
+                id,
+                company_identifier,
+                business_process,
+                overview_text,
+                created_by_email,
+                updated_by_email,
+                ${createdAtUpdatedAtUtcSql()}
+            `,
+          hasUnitIdColumn
+            ? [existing.rows[0].id, businessProcess, overviewText, coordinatorEmail, BUSINESS_PROCESS_OVERVIEW_UNIT_SCOPE]
+            : [existing.rows[0].id, businessProcess, overviewText, coordinatorEmail]
+        )
+        : await client.query(
+          hasUnitIdColumn
+            ? `
+              INSERT INTO risk_analysis_business_process_overviews (
+                company_identifier,
+                unit_id,
+                business_process,
+                overview_text,
+                created_by_email,
+                updated_by_email
+              )
+              VALUES ($1, $2, $3, $4, $5, $5)
+              RETURNING
+                id,
+                company_identifier,
+                business_process,
+                overview_text,
+                created_by_email,
+                updated_by_email,
+                ${createdAtUpdatedAtUtcSql()}
+            `
+            : `
+              INSERT INTO risk_analysis_business_process_overviews (
+                company_identifier,
+                business_process,
+                overview_text,
+                created_by_email,
+                updated_by_email
+              )
+              VALUES ($1, $2, $3, $4, $4)
+              RETURNING
+                id,
+                company_identifier,
+                business_process,
+                overview_text,
+                created_by_email,
+                updated_by_email,
+                ${createdAtUpdatedAtUtcSql()}
+            `,
+          hasUnitIdColumn
+            ? [companyIdentifier, BUSINESS_PROCESS_OVERVIEW_UNIT_SCOPE, businessProcess, overviewText, coordinatorEmail]
+            : [companyIdentifier, businessProcess, overviewText, coordinatorEmail]
+        );
+
+      row = saved.rows[0];
+      await client.query('COMMIT');
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Failed to rollback business process overview save:', rollbackError);
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Business process overview saved',
+      data: {
+        exists: true,
+        business_process: row.business_process,
+        overview_text: row.overview_text,
+        created_by_email: row.created_by_email,
+        updated_by_email: row.updated_by_email,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      },
+    });
+  } catch (error) {
+    if (isMissingBusinessProcessOverviewTableError(error)) return businessProcessOverviewUnavailableResponse(res);
+    console.error('Company coordinator save business process overview error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || 'Failed to save business process overview',
+    });
+  }
+}
+
 async function listUnitBusinessProcessControls(companyIdentifier, coordinatorEmail, unitId, businessProcess) {
   const mappedUnits = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
   const allowed = mappedUnits.some((row) => String(row?.unit_id || '').trim() === unitId);
@@ -1328,7 +1662,8 @@ async function listUnitBusinessProcessControls(companyIdentifier, coordinatorEma
       SELECT
         cf.form_id,
         cf.control_number,
-        cf.risk_description
+        cf.risk_description,
+        cf.standard_control_description
       FROM control_forms cf
       WHERE cf.company_identifier = $1
         AND cf.unit_id = $2
@@ -1379,7 +1714,7 @@ function conciseRisksForControl(risks, currentControlNumber) {
 async function requireFreshConciseList(companyIdentifier, coordinatorEmail, unitId, businessProcess) {
   const controls = await listUnitBusinessProcessControls(companyIdentifier, coordinatorEmail, unitId, businessProcess);
   const controlNumbers = controls.map((row) => String(row.control_number || '').trim()).filter(Boolean);
-  const fingerprint = riskListControlFingerprint(controlNumbers);
+  const fingerprint = riskListControlFingerprint(controls);
   let stored;
   try {
     stored = await readStoredConciseList(companyIdentifier, unitId, businessProcess);
@@ -1397,7 +1732,7 @@ async function requireFreshConciseList(companyIdentifier, coordinatorEmail, unit
     throw error;
   }
   if (String(stored.source_fingerprint || '') !== fingerprint) {
-    const error = new Error('Adding or removing controls invalidated this concise list. Regenerate it before running risk analysis.');
+    const error = new Error('Adding, removing, or changing risk descriptions invalidated this concise list. Regenerate it before running risk analysis.');
     error.statusCode = 400;
     throw error;
   }
@@ -1420,7 +1755,7 @@ async function getRiskAnalysisConciseList(req, res) {
 
     const controls = await listUnitBusinessProcessControls(companyIdentifier, coordinatorEmail, unitId, businessProcess);
     const controlNumbers = controls.map((row) => String(row.control_number || '').trim()).filter(Boolean);
-    const fingerprint = riskListControlFingerprint(controlNumbers);
+    const fingerprint = riskListControlFingerprint(controls);
     const stored = await readStoredConciseList(companyIdentifier, unitId, businessProcess);
     if (!stored) {
       return res.status(200).json({
@@ -1518,7 +1853,7 @@ async function generateRiskAnalysisConciseList(req, res) {
       });
     }
 
-    const fingerprint = riskListControlFingerprint(controlNumbers);
+    const fingerprint = riskListControlFingerprint(controls);
     const existing = await readStoredConciseList(companyIdentifier, unitId, businessProcess);
     const saved = existing
       ? await pool.query(
@@ -1617,6 +1952,13 @@ async function executeRiskAnalysisForControl(companyIdentifier, controlRow, coor
     unitId,
     businessProcess,
   );
+  const overview = await readStoredBusinessProcessOverview(companyIdentifier, businessProcess);
+  const businessProcessOverview = String(overview?.overview_text || '').trim();
+  if (!businessProcessOverview) {
+    const error = new Error('Add the business process overview before generating risk analysis.');
+    error.statusCode = 400;
+    throw error;
+  }
   const result = await analyzeRiskAnalysis(
     shapeControlForRiskAnalysis({
       control_number: controlRow.control_number,
@@ -1630,6 +1972,7 @@ async function executeRiskAnalysisForControl(companyIdentifier, controlRow, coor
     {
       formId: controlRow.form_id,
       conciseRisks: conciseRisksForControl(conciseRisks, controlRow.control_number),
+      businessProcessOverview,
     }
   );
   if (result?.dry_run) {
@@ -1759,6 +2102,7 @@ async function generateRiskAnalysisByControl(req, res) {
       },
     });
   } catch (error) {
+    if (isMissingBusinessProcessOverviewTableError(error)) return businessProcessOverviewUnavailableResponse(res);
     console.error('Company coordinator generate risk analysis error:', error);
     const errorCode = String(error?.code || 'INTERNAL_SERVER_ERROR').trim() || 'INTERNAL_SERVER_ERROR';
     return res.status(Number(error?.statusCode || 500)).json({
@@ -1893,6 +2237,7 @@ async function generateRiskAnalysesSelected(req, res) {
       },
     });
   } catch (error) {
+    if (isMissingBusinessProcessOverviewTableError(error)) return businessProcessOverviewUnavailableResponse(res);
     console.error('Company coordinator generate selected risk analysis error:', error);
     const errorCode = String(error?.code || 'INTERNAL_SERVER_ERROR').trim() || 'INTERNAL_SERVER_ERROR';
     return res.status(Number(error?.statusCode || 500)).json({
@@ -6833,6 +7178,8 @@ module.exports = {
   generateRiskAnalysisByControl,
   generateRiskAnalysesSelected,
   compareRiskAnalysis,
+  getRiskAnalysisBusinessProcessOverview,
+  upsertRiskAnalysisBusinessProcessOverview,
   getRiskAnalysisConciseList,
   generateRiskAnalysisConciseList,
   getRiskAnalysisReport,
