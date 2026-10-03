@@ -31,44 +31,24 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-def _known_controls(controls: list[dict]) -> dict[str, str]:
-    known: dict[str, str] = {}
-    for item in controls:
-        if not isinstance(item, dict):
-            continue
-        number = str(item.get("controlNumber") or item.get("control_number") or "").strip()
-        if number:
-            known[number.lower()] = number
-    return known
-
-
-def _clean_concise_risks(parsed: dict, controls: list[dict]) -> list[dict]:
-    known = _known_controls(controls)
+def _clean_concise_risks(parsed: dict, _controls: list[dict]) -> list[dict]:
     cleaned = []
     seen: dict[str, dict] = {}
     for item in parsed.get("risks") or []:
         if not isinstance(item, dict):
             continue
+        sub_process = " ".join(
+            str(item.get("subProcess") or item.get("sub_process") or "").split()
+        ).strip()
         risk = " ".join(str(item.get("risk") or "").split()).strip()
-        if not risk:
+        if not sub_process or not risk:
             continue
-        numbers = []
-        for raw in item.get("controlNumbers") or []:
-            canonical = known.get(str(raw or "").strip().lower())
-            if canonical and canonical not in numbers:
-                numbers.append(canonical)
-        if not numbers:
-            continue
-        key = risk.lower()
-        existing = seen.get(key)
-        if existing:
-            for number in numbers:
-                if number not in existing["controlNumbers"]:
-                    existing["controlNumbers"].append(number)
+        key = f"{sub_process.lower()}\u0001{risk.lower()}"
+        if seen.get(key):
             continue
         entry = {
+            "subProcess": sub_process,
             "risk": risk,
-            "controlNumbers": numbers,
         }
         seen[key] = entry
         cleaned.append(entry)
@@ -83,23 +63,17 @@ def _merge_concise_risks(groups: list[list[dict]]) -> list[dict]:
             if not isinstance(item, dict):
                 continue
             risk = " ".join(str(item.get("risk") or "").split()).strip()
-            if not risk:
+            sub_process = " ".join(
+                str(item.get("subProcess") or item.get("sub_process") or "").split()
+            ).strip()
+            if not sub_process or not risk:
                 continue
-            key = risk.lower()
-            existing = seen.get(key)
-            if existing:
-                for number in item.get("controlNumbers") or []:
-                    text = str(number or "").strip()
-                    if text and text not in existing["controlNumbers"]:
-                        existing["controlNumbers"].append(text)
+            key = f"{sub_process.lower()}\u0001{risk.lower()}"
+            if seen.get(key):
                 continue
             entry = {
+                "subProcess": sub_process,
                 "risk": risk,
-                "controlNumbers": [
-                    str(number or "").strip()
-                    for number in item.get("controlNumbers") or []
-                    if str(number or "").strip()
-                ],
             }
             seen[key] = entry
             merged.append(entry)
@@ -215,15 +189,17 @@ def condense_risks(
     for item in controls:
         if not isinstance(item, dict):
             continue
-        number = str(item.get("controlNumber") or item.get("control_number") or "").strip()
+        sub_process = " ".join(
+            str(item.get("subProcess") or item.get("sub_process") or "").split()
+        ).strip()
         risk = " ".join(str(item.get("riskDescription") or item.get("risk_description") or "").split()).strip()
-        if number and risk:
+        if sub_process and risk:
             pairs.append({
-                "controlNumber": number,
+                "subProcess": sub_process,
                 "riskDescription": risk,
             })
     if not pairs:
-        raise ValueError("No risk descriptions are available for this unit and business process")
+        raise ValueError("No sub-process and risk descriptions are available for this unit and business process")
 
     dry_run = is_risk_analysis_dry_run_enabled(dry_run)
     system_prompt, user_prompt = _build_concise_prompts(business_process, pairs)
@@ -287,6 +263,24 @@ def build_prompts(
     return system_prompt, user_prompt
 
 
+def build_overall_missing_prompts(
+    business_process: str,
+    concise_risks: list[dict],
+    business_process_overview: str,
+) -> tuple[str, str]:
+    user_prompt = (
+        load_text("overall_missing_user_prompt.txt")
+        .replace("{business_process}", business_process)
+        .replace("{concise_risks_json}", json.dumps(concise_risks, ensure_ascii=False))
+        .replace("{schema_json}", _schema_text("overall_missing_schema.json"))
+    )
+    system_prompt = load_text("overall_missing_system_prompt.txt").replace(
+        "{business_process_overview}",
+        business_process_overview,
+    )
+    return system_prompt, user_prompt
+
+
 def _clean_analysis(parsed: dict, concise_risks: list[dict]) -> dict:
     known: dict[str, str] = {}
     for item in concise_risks:
@@ -313,12 +307,6 @@ def _clean_analysis(parsed: dict, concise_risks: list[dict]) -> dict:
         sub_process = " ".join(
             str(item.get("subProcess") or item.get("sub_process") or "").split()
         ).strip()
-        proposed_solution = " ".join(
-            str(item.get("proposedSolution") or item.get("proposed_solution") or "").split()
-        ).strip()
-        potential_impact = " ".join(
-            str(item.get("potentialImpact") or item.get("potential_impact") or "").split()
-        ).strip()
         status = " ".join(str(item.get("status") or "").split()).strip().lower()
         addressed_by = []
         for raw in item.get("addressedBy") or []:
@@ -341,8 +329,6 @@ def _clean_analysis(parsed: dict, concise_risks: list[dict]) -> dict:
                 "addressedBy": addressed_by,
                 "pointer": pointer,
                 "subProcess": sub_process,
-                "proposedSolution": proposed_solution,
-                "potentialImpact": potential_impact,
             })
             comparisons[risk] = {
                 "addressedStatus": "Partially addressed",
@@ -354,8 +340,6 @@ def _clean_analysis(parsed: dict, concise_risks: list[dict]) -> dict:
                 "risk": risk,
                 "pointer": pointer or risk,
                 "subProcess": sub_process,
-                "proposedSolution": proposed_solution,
-                "potentialImpact": potential_impact,
                 "addressedBy": addressed_by,
             })
         else:
@@ -365,16 +349,12 @@ def _clean_analysis(parsed: dict, concise_risks: list[dict]) -> dict:
                 "addressedBy": [],
                 "pointer": pointer,
                 "subProcess": sub_process,
-                "proposedSolution": proposed_solution,
-                "potentialImpact": potential_impact,
             })
             missing_risks.append(risk)
             pointers.append({
                 "risk": risk,
                 "pointer": pointer or risk,
                 "subProcess": sub_process,
-                "proposedSolution": proposed_solution,
-                "potentialImpact": potential_impact,
             })
 
     return {
@@ -385,6 +365,50 @@ def _clean_analysis(parsed: dict, concise_risks: list[dict]) -> dict:
         "matchedSubProcess": None,
         "matchConfidence": None,
         "coverageStatus": "Missing or partially covered risks" if missing_risks else "No missing risks",
+    }
+
+
+def _clean_overall_missing_analysis(parsed: dict) -> dict:
+    risks = []
+    missing_risks = []
+    pointers = []
+    seen: set[str] = set()
+    for item in parsed.get("risks") or []:
+        if not isinstance(item, dict):
+            continue
+        risk = " ".join(str(item.get("risk") or "").split()).strip()
+        sub_process = " ".join(
+            str(item.get("subProcess") or item.get("sub_process") or "").split()
+        ).strip()
+        if not risk or not sub_process:
+            continue
+        key = f"{sub_process.lower()}\u0001{risk.lower()}"
+        if key in seen:
+            continue
+        seen.add(key)
+        pointer = risk
+        entry = {
+            "risk": risk,
+            "status": "Missing Risk",
+            "addressedBy": [],
+            "pointer": pointer,
+            "subProcess": sub_process,
+        }
+        risks.append(entry)
+        missing_risks.append(risk)
+        pointers.append({
+            "risk": risk,
+            "pointer": pointer,
+            "subProcess": sub_process,
+        })
+    return {
+        "risks": risks,
+        "missingRisks": missing_risks,
+        "missingRiskPointers": pointers,
+        "riskComparisons": {},
+        "matchedSubProcess": None,
+        "matchConfidence": None,
+        "coverageStatus": "Missing risks" if missing_risks else "No missing risks",
     }
 
 
@@ -440,4 +464,56 @@ def analyze_control(
         "model_name": model,
         "dry_run": False,
         "analysis": _clean_analysis(parsed, concise_risks),
+    }
+
+
+def analyze_business_process_missing_risks(
+    business_process: str,
+    *,
+    concise_risks: list[dict] | None = None,
+    business_process_overview: str = "",
+    dry_run: bool = False,
+) -> dict:
+    if not isinstance(concise_risks, list):
+        raise ValueError("concise_risks is required")
+    business_process_overview = str(business_process_overview or "").strip()
+    if not business_process_overview:
+        raise ValueError("business_process_overview is required")
+    dry_run = is_risk_analysis_dry_run_enabled(dry_run)
+    system_prompt, user_prompt = build_overall_missing_prompts(
+        business_process,
+        concise_risks,
+        business_process_overview,
+    )
+    provider = provider_name()
+    model = resolve_model()
+    if dry_run:
+        return {
+            "provider": provider,
+            "model_name": model,
+            "dry_run": True,
+            "analysis": None,
+            "dry_run_txt": format_dry_run_txt(
+                title="OVERALL MISSING RISK ANALYSIS DRY RUN — INPUT PROMPT",
+                control=None,
+                business_process=business_process,
+                form_id="",
+                provider=provider,
+                model=model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+            ),
+        }
+
+    parsed, model = complete_json(
+        system_prompt,
+        user_prompt,
+        schema_name="overall_missing_schema.json",
+        max_tokens=_env_int("RISK_ANALYSIS_OVERALL_MAX_TOKENS", 8000),
+    )
+    return {
+        "provider": provider,
+        "model_name": model,
+        "dry_run": False,
+        "analysis": _clean_overall_missing_analysis(parsed),
     }

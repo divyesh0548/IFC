@@ -26,6 +26,7 @@ function buildSingleControlPrompt({ companyIdentifier, businessProcess, control 
     `The business process cycle is "${businessProcess}".`,
     'Only use the RACM row provided below.',
     'Do not invent any controls or fields that are not present in the input.',
+    'Use a helpful, constructive, solution-oriented tone.',
     'Generate one concise Rationalisation Opportunity for this control.',
     'For each control, provide:',
     '1. A short, actionable summary of the rationalisation opportunity.',
@@ -190,7 +191,7 @@ async function requestControlSummary({ companyIdentifier, businessProcess, contr
     messages: [
       {
         role: 'system',
-        content: 'You are an internal controls specialist. Return only valid JSON matching the schema.',
+        content: 'You are an internal controls specialist. Use a helpful, constructive, solution-oriented tone. Return only valid JSON matching the schema.',
       },
       {
         role: 'user',

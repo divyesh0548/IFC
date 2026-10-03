@@ -27,7 +27,7 @@ import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
 import { DASHBOARD_PAGE_OUTER_SX, DASHBOARD_PAPER_SX, PAGE_SUBHEADER_TEXT_SX } from '../../uiConstants'
 import { getFieldValue } from './dashboardClassificationUtils'
 import { toast } from 'react-hot-toast'
-import { downloadRiskAnalysisReportPdf } from '../../utils/aiInsightReportPdf'
+import { downloadOverallMissingRisksReportPdf, downloadRiskAnalysisReportPdf } from '../../utils/aiInsightReportPdf'
 import {
   businessProcessesForUnits,
   financialYearsForScope,
@@ -81,8 +81,6 @@ function RiskOutputDetails({ item, indent = false }) {
   const rows = [
     ['Partially covered by', addressedBy.join(', ')],
     ['Sub-process', item?.subProcess || item?.sub_process],
-    ['Proposed solution', item?.proposedSolution || item?.proposed_solution],
-    ['Potential impact', item?.potentialImpact || item?.potential_impact],
   ]
     .map(([label, value]) => [label, String(value || '').trim()])
     .filter(([, value]) => value)
@@ -232,6 +230,11 @@ function RiskAnalysis() {
   const [conciseGenerating, setConciseGenerating] = useState(false)
   const [conciseListOpen, setConciseListOpen] = useState(false)
   const [conciseTick, setConciseTick] = useState(0)
+  const [overallMissingRisks, setOverallMissingRisks] = useState(null)
+  const [overallMissingLoading, setOverallMissingLoading] = useState(false)
+  const [overallMissingGenerating, setOverallMissingGenerating] = useState(false)
+  const [overallMissingOpen, setOverallMissingOpen] = useState(false)
+  const [overallMissingTick, setOverallMissingTick] = useState(0)
   const [businessProcessOverview, setBusinessProcessOverview] = useState(null)
   const [businessProcessOverviewText, setBusinessProcessOverviewText] = useState('')
   const [businessProcessOverviewLoading, setBusinessProcessOverviewLoading] = useState(false)
@@ -240,7 +243,14 @@ function RiskAnalysis() {
   const [controlConcise, setControlConcise] = useState({ loading: false, exists: false })
   const lastSelectedIndexRef = useRef(null)
   const rowMetaRef = useRef(new Map())
-  useSyncGlobalLoading(loading || batchGenerating || analysisGenerating || conciseGenerating || businessProcessOverviewSaving)
+  useSyncGlobalLoading(
+    loading
+    || batchGenerating
+    || analysisGenerating
+    || conciseGenerating
+    || overallMissingGenerating
+    || businessProcessOverviewSaving
+  )
 
   const pageControlNumbers = useMemo(
     () =>
@@ -562,6 +572,41 @@ function RiskAnalysis() {
   }, [conciseScopeReady, filterUnits, filterBusinessProcesses, conciseTick])
 
   useEffect(() => {
+    if (!conciseScopeReady) {
+      setOverallMissingRisks(null)
+      setOverallMissingLoading(false)
+      return undefined
+    }
+    let cancelled = false
+    const loadOverallMissingRisks = async () => {
+      setOverallMissingLoading(true)
+      try {
+        const params = new URLSearchParams({
+          unit_id: filterUnits[0],
+          business_process: filterBusinessProcesses[0],
+        })
+        const response = await fetch(apiUrl(`/api/company-co/risk-analysis/overall-missing-risks?${params}`), {
+          credentials: 'include',
+        })
+        const data = await response.json()
+        if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to load overall missing risks')
+        if (!cancelled) setOverallMissingRisks(data.data)
+      } catch (error) {
+        if (!cancelled) {
+          setOverallMissingRisks(null)
+          toast.error(error.message || 'Failed to load overall missing risks')
+        }
+      } finally {
+        if (!cancelled) setOverallMissingLoading(false)
+      }
+    }
+    loadOverallMissingRisks()
+    return () => {
+      cancelled = true
+    }
+  }, [conciseScopeReady, filterUnits, filterBusinessProcesses, conciseTick, overallMissingTick])
+
+  useEffect(() => {
     if (!businessProcessOverviewScopeReady) {
       setBusinessProcessOverview(null)
       setBusinessProcessOverviewText('')
@@ -670,11 +715,106 @@ function RiskAnalysis() {
           ? { ...current, exists: true, loading: false }
           : current
       ))
+      setOverallMissingTick((value) => value + 1)
       toast.success(data.message || 'Concise risk list saved')
     } catch (error) {
       toast.error(error.message || 'Failed to generate concise risk list')
     } finally {
       setConciseGenerating(false)
+    }
+  }
+
+  const generateOverallMissingRisks = async () => {
+    if (!conciseScopeReady) return
+    if (!conciseList?.exists || conciseList?.stale) {
+      toast.error('Generate the latest concise risk list first.')
+      return
+    }
+    if (!businessProcessOverviewText.trim()) {
+      toast.error('Add the business process overview before generating missing risks.')
+      return
+    }
+    if (businessProcessOverviewHasChanges) {
+      toast.error('Save the latest business process overview before generating missing risks.')
+      return
+    }
+
+    setOverallMissingGenerating(true)
+    try {
+      const response = await fetch(apiUrl('/api/company-co/risk-analysis/overall-missing-risks'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit_id: filterUnits[0],
+          business_process: filterBusinessProcesses[0],
+        }),
+      })
+      const data = await response.json()
+      if (response.status === 409) {
+        toast('LLM Server is busy, Try again after some moments')
+        return
+      }
+      if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to generate overall missing risks')
+      if (data.data?.dry_run) {
+        if (data.data.dry_run_txt) {
+          downloadDryRunPrompt(data.data.dry_run_txt, 'overall_missing_risks_dry_run.txt')
+        }
+        toast.success(data.message || 'Dry-run prompt downloaded')
+        return
+      }
+      setOverallMissingRisks(data.data)
+      setOverallMissingOpen(true)
+      toast.success(data.message || 'Overall missing risks saved')
+    } catch (error) {
+      toast.error(error.message || 'Failed to generate overall missing risks')
+    } finally {
+      setOverallMissingGenerating(false)
+    }
+  }
+
+  const exportOverallMissingRisksPdf = () => {
+    const risks = Array.isArray(overallMissingRisks?.risks)
+      ? overallMissingRisks.risks
+      : Array.isArray(overallMissingRisks?.response_json?.risks)
+        ? overallMissingRisks.response_json.risks
+        : []
+    const hasResult = Boolean(
+      overallMissingRisks?.exists
+      || overallMissingRisks?.id
+      || Array.isArray(overallMissingRisks?.risks)
+      || Array.isArray(overallMissingRisks?.response_json?.risks)
+    )
+    if (!hasResult) {
+      toast.error('No overall missing risks report is available to export.')
+      return
+    }
+
+    const unitId = String(overallMissingRisks?.unit_id || filterUnits[0] || '').trim()
+    const unitName = String(
+      unitOptions.find((unit) => String(unit.unit_id) === unitId)?.unit_name || unitId || ''
+    ).trim()
+    const businessProcess = String(overallMissingRisks?.business_process || filterBusinessProcesses[0] || '').trim()
+    const financialYear = filterFinancialYears.length === 1 ? filterFinancialYears[0] : filterFinancialYears.join(', ')
+    try {
+      downloadOverallMissingRisksReportPdf({
+        meta: {
+          company_name: '',
+          unit_id: unitId,
+          unit_name: unitName,
+          business_process: businessProcess,
+          financial_year: financialYear,
+          risks_reviewed: Number(overallMissingRisks?.source_risk_count || overallMissingRisks?.current_risk_count || 0),
+          model_name: String(overallMissingRisks?.model_name || '').trim(),
+        },
+        risks,
+        response_json: overallMissingRisks?.response_json || { risks },
+        model_name: overallMissingRisks?.model_name,
+        source_risk_count: overallMissingRisks?.source_risk_count,
+      })
+      toast.success('PDF downloaded')
+    } catch (error) {
+      toast.error(error.message || 'Failed to export PDF')
     }
   }
 
@@ -698,15 +838,12 @@ function RiskAnalysis() {
       'Unit ID': unitId,
       'Unit Name': unitName,
       'Business Process': businessProcess,
+      'Sub-Process': String(item?.subProcess || item?.sub_process || '').trim(),
       Risk: String(item?.risk || '').trim(),
-      'Control Numbers': (Array.isArray(item?.controlNumbers) ? item.controlNumbers : [])
-        .map((value) => String(value || '').trim())
-        .filter(Boolean)
-        .join(', '),
       'Generated Model': modelName,
       'Updated At': updatedAt,
-      'Source Control Count': Number(conciseList?.source_control_count || 0) || '',
-      'Current Control Count': Number(conciseList?.current_control_count || 0) || '',
+      'Source RACM Row Count': Number(conciseList?.source_control_count || 0) || '',
+      'Current RACM Row Count': Number(conciseList?.current_control_count || 0) || '',
       Stale: conciseList?.stale ? 'Yes' : 'No',
     }))
 
@@ -716,8 +853,8 @@ function RiskAnalysis() {
       { wch: 16 },
       { wch: 24 },
       { wch: 28 },
-      { wch: 55 },
       { wch: 28 },
+      { wch: 55 },
       { wch: 24 },
       { wch: 24 },
       { wch: 20 },
@@ -1022,6 +1159,18 @@ function RiskAnalysis() {
   const analysisGeneratedAt = formatRiskAnalysisTimestamp(
     analysisData?.analysis?.updated_at || analysisData?.analysis?.created_at
   )
+  const overallMissingRiskItems = Array.isArray(overallMissingRisks?.risks)
+    ? overallMissingRisks.risks
+    : Array.isArray(overallMissingRisks?.response_json?.risks)
+      ? overallMissingRisks.response_json.risks
+      : []
+  const hasOverallMissingResult = Boolean(
+    overallMissingRisks?.exists
+    || overallMissingRisks?.id
+    || Array.isArray(overallMissingRisks?.risks)
+    || Array.isArray(overallMissingRisks?.response_json?.risks)
+  )
+  const overallMissingUpdatedAt = formatRiskAnalysisTimestamp(overallMissingRisks?.updated_at)
 
   return (
     <Box sx={DASHBOARD_PAGE_OUTER_SX}>
@@ -1329,8 +1478,109 @@ function RiskAnalysis() {
           </Typography>
         ) : conciseList?.stale ? (
           <Alert severity="warning" sx={{ mt: 1.5 }}>
-            Adding, removing, or changing risk descriptions invalidated this concise list. Regenerate it before running risk analysis.
+            Adding, removing, or changing sub-process/risk descriptions invalidated this concise list. Regenerate it before running risk analysis.
           </Alert>
+        ) : null}
+      </Paper>
+
+      <Paper
+        elevation={0}
+        sx={{
+          mb: 3,
+          p: 2,
+          borderRadius: 2,
+          border: `1px solid ${theme.palette.divider}`,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              Overall missing risks
+            </Typography>
+            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.5 }}>
+              Generates one stored missing-risk JSON for the selected unit and business process using the overview and concise sub-process/risk list.
+            </Typography>
+            {hasOverallMissingResult && overallMissingUpdatedAt ? (
+              <Typography variant="caption" sx={{ display: 'block', mt: 1, color: theme.palette.text.secondary }}>
+                {`Last saved: ${overallMissingUpdatedAt}`}
+              </Typography>
+            ) : null}
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {conciseScopeReady && hasOverallMissingResult ? (
+              <>
+                <Button
+                  variant="outlined"
+                  onClick={() => setOverallMissingOpen(true)}
+                  disabled={overallMissingLoading}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  View missing risks
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={exportOverallMissingRisksPdf}
+                  disabled={overallMissingLoading}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Export PDF
+                </Button>
+              </>
+            ) : null}
+            <Button
+              variant="contained"
+              color="secondary"
+              onClick={generateOverallMissingRisks}
+              disabled={
+                !conciseScopeReady
+                || overallMissingGenerating
+                || overallMissingLoading
+                || conciseLoading
+                || !conciseList?.exists
+                || conciseList?.stale
+                || businessProcessOverviewLoading
+                || businessProcessOverviewSaving
+                || !businessProcessOverviewText.trim()
+                || businessProcessOverviewHasChanges
+              }
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              {overallMissingGenerating
+                ? 'Generating...'
+                : hasOverallMissingResult
+                  ? 'Regenerate missing risks'
+                  : 'Generate missing risks'}
+            </Button>
+          </Box>
+        </Box>
+        {!conciseScopeReady ? (
+          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
+            Select one unit and one business process to generate overall missing risks.
+          </Typography>
+        ) : overallMissingLoading ? (
+          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
+            Loading overall missing risks...
+          </Typography>
+        ) : !conciseList?.exists ? (
+          <Alert severity="info" sx={{ mt: 1.5 }}>
+            Generate the concise risk list first.
+          </Alert>
+        ) : conciseList?.stale ? (
+          <Alert severity="warning" sx={{ mt: 1.5 }}>
+            Regenerate the concise risk list before generating overall missing risks.
+          </Alert>
+        ) : businessProcessOverviewHasChanges ? (
+          <Alert severity="info" sx={{ mt: 1.5 }}>
+            Save the latest business process overview before generating overall missing risks.
+          </Alert>
+        ) : overallMissingRisks?.stale ? (
+          <Alert severity="warning" sx={{ mt: 1.5 }}>
+            The stored overall missing-risk result is stale. Regenerate it.
+          </Alert>
+        ) : hasOverallMissingResult ? (
+          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
+            {`${overallMissingRiskItems.length} missing risk${overallMissingRiskItems.length === 1 ? '' : 's'} stored.`}
+          </Typography>
         ) : null}
       </Paper>
 
@@ -1345,7 +1595,7 @@ function RiskAnalysis() {
                     {`${index + 1}. ${item.risk || '—'}`}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {`Control numbers: ${(Array.isArray(item.controlNumbers) ? item.controlNumbers : []).filter(Boolean).join(', ') || 'No control number'}`}
+                    {`Sub-process: ${String(item.subProcess || item.sub_process || '').trim() || 'Unassigned'}`}
                   </Typography>
                 </Box>
               ))}
@@ -1362,6 +1612,33 @@ function RiskAnalysis() {
             Export Excel
           </Button>
           <Button onClick={() => setConciseListOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={overallMissingOpen} onClose={() => setOverallMissingOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle>Overall missing risks</DialogTitle>
+        <DialogContent>
+          {overallMissingRiskItems.length > 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {overallMissingRiskItems.map((item, index) => (
+                <Box key={`${item.risk}-${index}`}>
+                  <RiskStatementFields item={item} index={index + 1} />
+                  <RiskOutputDetails item={item} indent />
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">No missing risks are stored.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={exportOverallMissingRisksPdf}
+            disabled={!hasOverallMissingResult}
+          >
+            Export PDF
+          </Button>
+          <Button onClick={() => setOverallMissingOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
 

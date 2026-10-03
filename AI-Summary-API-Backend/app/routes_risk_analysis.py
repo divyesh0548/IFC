@@ -6,7 +6,12 @@ from app.auth import require_api_key
 from services.risk_analysis.catalog import list_business_processes
 from services.risk_analysis.llm import provider_name, resolve_model
 from services.risk_analysis.compare import compare_risk
-from services.risk_analysis.service import analyze_control, condense_risks, is_risk_analysis_dry_run_enabled
+from services.risk_analysis.service import (
+    analyze_business_process_missing_risks,
+    analyze_control,
+    condense_risks,
+    is_risk_analysis_dry_run_enabled,
+)
 
 risk_analysis_bp = Blueprint("risk_analysis", __name__, url_prefix="/v1/risk-analysis")
 
@@ -82,6 +87,33 @@ def analyze_one():
         return jsonify({"error": "invalid_request", "message": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": "analyze_failed", "message": str(exc)}), 500
+    return jsonify(result)
+
+
+@risk_analysis_bp.post("/overall-missing")
+@require_api_key
+def analyze_overall_missing():
+    body = request.get_json(silent=True) or {}
+    business_process = str(body.get("business_process") or "").strip()
+    business_process_overview = str(body.get("business_process_overview") or "").strip()
+    concise_risks = body.get("concise_risks")
+    if not business_process:
+        return jsonify({"error": "invalid_request", "message": "business_process is required"}), 400
+    if not business_process_overview:
+        return jsonify({"error": "invalid_request", "message": "business_process_overview is required"}), 400
+    if not isinstance(concise_risks, list):
+        return jsonify({"error": "invalid_request", "message": "concise_risks must be an array"}), 400
+    try:
+        result = analyze_business_process_missing_risks(
+            business_process,
+            concise_risks=concise_risks,
+            business_process_overview=business_process_overview,
+            dry_run=bool(body.get("dry_run", False)),
+        )
+    except ValueError as exc:
+        return jsonify({"error": "invalid_request", "message": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": "overall_missing_failed", "message": str(exc)}), 500
     return jsonify(result)
 
 

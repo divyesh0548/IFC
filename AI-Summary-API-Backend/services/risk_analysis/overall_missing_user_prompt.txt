@@ -1,0 +1,20 @@
+Business process: {business_process}
+
+Existing RACM risk coverage for this business process. Each item contains only the sub-process and the concise risk already recorded in the RACM:
+{concise_risks_json}
+
+Do all of the following in this order.
+1. Build an independent risk universe for the full business process using the business-process overview.
+2. Compare that universe against the existing sub-process and risk list above.
+3. Return only missing risks for the business process. Do not return risks that are already fully addressed by the existing list.
+
+Field rules:
+- status must be "Missing Risk".
+- risk must be a complete concise risk statement, in one sentence.
+- pointer must exactly repeat risk because the application uses it as the display pointer.
+- subProcess must contain the relevant sub-process or control area.
+- Do not invent control numbers.
+- Keep each missing risk distinct. Do not return duplicates or minor wording variants.
+
+Return JSON matching this schema:
+{schema_json}

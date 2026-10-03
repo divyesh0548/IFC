@@ -4,7 +4,7 @@ Business process: {business_process}
 Control:
 {control_json}
 
-Existing risks covered in the client's RACM for other controls in the same unit and business process. Each item is a risk already recorded there, with the control numbers that carry it:
+Existing risks covered in the client's RACM for the same unit and business process. Each item contains the sub-process and concise risk already recorded there:
 {concise_risks_json}
 
 Do all of the following in this order.
@@ -14,13 +14,11 @@ Do all of the following in this order.
 
 Field rules:
 - status must be "Missing Risk" when the risk is not addressed by the existing RACM risk list. addressedBy must be an empty array.
-- status must be "Partially Covered Risk" when one or more existing RACM risks cover part of the risk but an important risk factor, assertion, compliance area, fraud scenario, sub-process, or control condition remains uncovered. addressedBy must contain the control numbers copied from those partially covering items.
+- status must be "Partially Covered Risk" when one or more existing RACM risks cover part of the risk but an important risk factor, assertion, compliance area, fraud scenario, sub-process, or control condition remains uncovered. addressedBy must be an empty array because the concise list no longer carries control numbers.
 - Do not return "Addressed Risk" or any fully addressed risk.
 - risk must be the complete concise risk statement to display to the user, in one sentence.
 - pointer must exactly repeat risk because the application uses it as the display pointer.
 - subProcess must contain the relevant sub-process or control area.
-- proposedSolution must be a practical risk mitigation plan or proposed process/control amendment.
-- potentialImpact must state the likely financial statement assertion, compliance, financial, or operational impact.
 - Do not invent control numbers.
 
 Return JSON matching this schema:

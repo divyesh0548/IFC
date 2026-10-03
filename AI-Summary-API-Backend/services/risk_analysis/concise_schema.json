@@ -8,13 +8,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "risk": { "type": "string" },
-          "controlNumbers": {
-            "type": "array",
-            "items": { "type": "string" }
-          }
+          "subProcess": { "type": "string" },
+          "risk": { "type": "string" }
         },
-        "required": ["risk", "controlNumbers"]
+        "required": ["subProcess", "risk"]
       }
     }
   },

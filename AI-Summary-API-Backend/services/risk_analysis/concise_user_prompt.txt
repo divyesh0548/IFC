@@ -1,10 +1,16 @@
 Business process: {business_process}
 
-These are the risk descriptions already recorded on controls in this unit and business process. Each item has a control number.
+These are the sub-process and risk-description pairs already recorded on controls in this unit and business process.
 
 {controls_json}
 
-Merge risks that mean the same thing into one concise statement. Keep risks that mean something different as separate statements. For each statement, controlNumbers must be copied from the input controls that share that risk. Do not invent control numbers. Do not drop a distinct risk only to make the list shorter.
+Create a concise list of existing RACM risk coverage using only subProcess and risk.
+- Keep the subProcess specific enough to preserve where the risk belongs in the process.
+- Merge risks that mean the same thing within the same or clearly equivalent sub-process.
+- Keep risks that mean something different as separate items.
+- Do not invent new risks, controls, or control numbers.
+- Do not drop a distinct risk only to make the list shorter.
+- Preserve important factors such as assertion, compliance, fraud, authorization, completeness, accuracy, cut-off, valuation, and system/manual context when those factors are present.
 
 Return JSON matching this schema:
 {schema_json}

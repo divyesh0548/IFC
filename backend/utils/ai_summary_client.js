@@ -148,6 +148,22 @@ async function analyzeRiskAnalysis(control, businessProcess, {
   });
 }
 
+async function analyzeOverallMissingRisks(businessProcess, {
+  dryRun = false,
+  conciseRisks = [],
+  businessProcessOverview = '',
+} = {}) {
+  return callAiSummaryApi('/v1/risk-analysis/overall-missing', {
+    method: 'POST',
+    body: {
+      business_process: businessProcess,
+      business_process_overview: String(businessProcessOverview || '').trim(),
+      concise_risks: Array.isArray(conciseRisks) ? conciseRisks : [],
+      dry_run: Boolean(dryRun),
+    },
+  });
+}
+
 async function condenseRiskList(businessProcess, controls) {
   return callAiSummaryApi('/v1/risk-analysis/concise', {
     method: 'POST',
@@ -206,6 +222,7 @@ module.exports = {
   analyzeDesignGapControl,
   analyzeKeyManual,
   analyzeRiskAnalysis,
+  analyzeOverallMissingRisks,
   condenseRiskList,
   compareRiskCoverage,
   checkAiSummaryHealth,

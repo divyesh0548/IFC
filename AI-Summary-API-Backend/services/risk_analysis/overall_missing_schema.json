@@ -10,17 +10,12 @@
         "properties": {
           "risk": { "type": "string" },
           "status": { "type": "string" },
-          "addressedBy": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
           "pointer": { "type": "string" },
           "subProcess": { "type": "string" }
         },
         "required": [
           "risk",
           "status",
-          "addressedBy",
           "pointer",
           "subProcess"
         ]

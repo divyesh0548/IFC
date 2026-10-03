@@ -19,6 +19,8 @@ router.get('/risk-analysis/business-process-overview', verifyCompanyCoordinator,
 router.put('/risk-analysis/business-process-overview', verifyCompanyCoordinator, controller.upsertRiskAnalysisBusinessProcessOverview);
 router.get('/risk-analysis/concise-list', verifyCompanyCoordinator, controller.getRiskAnalysisConciseList);
 router.post('/risk-analysis/concise-list', verifyCompanyCoordinator, controller.generateRiskAnalysisConciseList);
+router.get('/risk-analysis/overall-missing-risks', verifyCompanyCoordinator, controller.getRiskAnalysisOverallMissingRisks);
+router.post('/risk-analysis/overall-missing-risks', verifyCompanyCoordinator, controller.generateRiskAnalysisOverallMissingRisks);
 router.get('/risk-analysis/control/:control_number', verifyCompanyCoordinator, controller.getRiskAnalysisByControl);
 router.post('/risk-analysis/control/:control_number/generate', verifyCompanyCoordinator, controller.generateRiskAnalysisByControl);
 router.post('/risk-analysis/control/:control_number/compare', verifyCompanyCoordinator, controller.compareRiskAnalysis);

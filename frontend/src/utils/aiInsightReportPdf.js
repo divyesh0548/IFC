@@ -88,7 +88,15 @@ function createReportDocument() {
   }
 }
 
-function drawReportHeader(state, { title, companyName, unitName, businessProcess, financialYear, controlsReviewed }) {
+function drawReportHeader(state, {
+  title,
+  companyName,
+  unitName,
+  businessProcess,
+  financialYear,
+  controlsReviewed,
+  controlsLabel = 'Controls reviewed',
+}) {
   const { doc, margin, contentWidth, pageWidth } = state
   let { y } = state
 
@@ -111,7 +119,7 @@ function drawReportHeader(state, { title, companyName, unitName, businessProcess
   doc.setTextColor(...COLORS.muted)
   y = addWrapped(
     doc,
-    `Financial year: ${financialYear}   ·   Controls reviewed: ${controlsReviewed}`,
+    `Financial year: ${financialYear}   ·   ${controlsLabel}: ${controlsReviewed}`,
     margin,
     y + 1,
     contentWidth,
@@ -351,8 +359,6 @@ export function downloadRiskAnalysisReportPdf(reportData) {
             const detailRows = [
               ['Partially covered by', controlsLabel],
               ['Sub-process', item.subProcess || item.sub_process],
-              ['Proposed solution', item.proposedSolution || item.proposed_solution],
-              ['Potential impact', item.potentialImpact || item.potential_impact],
             ]
               .map(([label, value]) => [label, safeText(value)])
               .filter(([, value]) => value)
@@ -421,4 +427,57 @@ export function downloadRiskAnalysisReportPdf(reportData) {
 
   drawFooter(state, 'Risk Analysis Report')
   doc.save(`risk_analysis_report_${header.unitPart}_${header.bpPart}_${fileStamp()}.pdf`)
+}
+
+export function downloadOverallMissingRisksReportPdf(reportData) {
+  const state = createReportDocument()
+  const { doc, margin, contentWidth } = state
+  const header = headerFromReport(reportData)
+  const risks = Array.isArray(reportData?.risks)
+    ? reportData.risks
+    : Array.isArray(reportData?.response_json?.risks)
+      ? reportData.response_json.risks
+      : []
+  const riskCount = risks.length
+  const reviewedCount = Number(reportData?.meta?.risks_reviewed ?? reportData?.source_risk_count ?? 0)
+
+  drawReportHeader(state, {
+    title: 'Overall Missing Risks Report',
+    companyName: header.companyName,
+    unitName: header.unitName,
+    businessProcess: header.businessProcess,
+    financialYear: header.financialYear,
+    controlsReviewed: reviewedCount || riskCount,
+    controlsLabel: 'RACM risks reviewed',
+  })
+  drawSummaryRow(state, [
+    { label: 'Missing risks', value: riskCount, tone: riskCount > 0 ? 'bad' : 'good' },
+    { label: 'Generated model', value: safeText(reportData?.meta?.model_name || reportData?.model_name) || '—', tone: 'neutral' },
+  ])
+
+  drawSectionTitle(state, 'Overall missing risks')
+  if (riskCount === 0) {
+    drawEmpty(state)
+  } else {
+    risks.forEach((item, index) => {
+      const risk = safeText(item?.risk || item?.pointer)
+      const subProcess = safeText(item?.subProcess || item?.sub_process)
+      state.y = ensureSpace(doc, state.y, 16)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(...COLORS.text)
+      state.y = addWrapped(doc, `${index + 1}.`, margin + 3, state.y + 1.5, contentWidth - 3, 4)
+      doc.setFont('helvetica', 'normal')
+      state.y = addWrapped(doc, risk || '—', margin + 6, state.y + 0.5, contentWidth - 6, 4)
+      if (subProcess) {
+        doc.setTextColor(...COLORS.muted)
+        state.y = addWrapped(doc, `Sub-process: ${subProcess}`, margin + 6, state.y + 0.5, contentWidth - 6, 4)
+        doc.setTextColor(...COLORS.text)
+      }
+      state.y += 2
+    })
+  }
+
+  drawFooter(state, 'Overall Missing Risks Report')
+  doc.save(`overall_missing_risks_${header.unitPart}_${header.bpPart}_${fileStamp()}.pdf`)
 }
