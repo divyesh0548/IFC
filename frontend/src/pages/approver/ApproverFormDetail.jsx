@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
-import Card from '@mui/material/Card';
+import Alert from '@mui/material/Alert'
+import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
@@ -80,7 +81,9 @@ function ApproverFormDetail() {
   const [deficiencyReviewDecision, setDeficiencyReviewDecision] = useState('')
   const [deficiencyReviewComment, setDeficiencyReviewComment] = useState('')
   const [deficiencyReviewing, setDeficiencyReviewing] = useState(false)
-  const [expandedDeficiencyVersions, setExpandedDeficiencyVersions] = useState({})
+  const [declarationDialogOpen, setDeclarationDialogOpen] = useState(false)
+  const [showDeclarationNotice, setShowDeclarationNotice] = useState(false)
+  const declarationNoticeFormIdRef = useRef('')
 
   useSyncGlobalLoading(
     loading ||
@@ -174,6 +177,16 @@ function ApproverFormDetail() {
     }
   }, [form_id])
 
+  useEffect(() => {
+    const loadedFormId = String(formData?.form_id || '').trim()
+    const declared = Boolean(formData?.process_owner_declaration?.no_furthure_submission)
+    if (!loadedFormId || !declared) return
+    if (declarationNoticeFormIdRef.current === loadedFormId) return
+    declarationNoticeFormIdRef.current = loadedFormId
+    setShowDeclarationNotice(true)
+    setDeclarationDialogOpen(false)
+  }, [formData?.form_id, formData?.process_owner_declaration?.no_furthure_submission])
+
   const designImplementationExtraFields = useMemo(
     () => getDesignImplementationExtraFields(formData?.field_definitions),
     [formData?.field_definitions]
@@ -243,9 +256,15 @@ function ApproverFormDetail() {
     const designProcedures = String(editableFields.control_design_procs || '').trim()
     const designConclusion = String(editableFields.control_design_conclusion || '').trim()
     const deficiencyDescription = String(editableFields.design_deficiency_desc || '').trim()
+    const isDeclarationReview = Boolean(formData?.process_owner_declaration?.no_furthure_submission)
+      && formData?.status === 'sent for approval'
 
     if (!nextStatus) {
       return 'Please select a decision.'
+    }
+
+    if (isDeclarationReview && nextStatus === 'Rejected') {
+      return 'A no-submission declaration is closed by a conclusion. Reject is not available.'
     }
 
     if (nextStatus === 'Approved') {
@@ -254,7 +273,11 @@ function ApproverFormDetail() {
       }
     }
 
-    if (designConclusion === 'Not Effective' && !deficiencyDescription) {
+    if (designConclusion === 'Not Applicable' && !isDeclarationReview) {
+      return 'Not Applicable can only be used for a no-submission declaration.'
+    }
+
+    if (designConclusion === 'Not Effective' && !deficiencyDescription && !isDeclarationReview) {
       return 'Description of Deficiency in Control Design is required when conclusion is Not Effective.'
     }
 
@@ -264,20 +287,23 @@ function ApproverFormDetail() {
   const handleSubmitDecision = async () => {
     if (!formData) return
 
-    const validationMessage = getApprovalFieldValidationMessage(approvalDecision)
+    const declarationReview = Boolean(formData?.process_owner_declaration?.no_furthure_submission)
+      && formData?.status === 'sent for approval'
+    const nextStatus = declarationReview ? 'Approved' : approvalDecision
+    const validationMessage = getApprovalFieldValidationMessage(nextStatus)
     if (validationMessage) {
       toast.error(validationMessage)
       return
     }
 
-    const isApproveAction = approvalDecision === 'Approved'
+    const isApproveAction = nextStatus === 'Approved'
     const designExtraFields = getDesignImplementationExtraFields(formData?.field_definitions)
     const dynamicValuesPayload = {}
     designExtraFields.forEach((field) => {
       dynamicValuesPayload[field.field_key] = editableDynamicValues[field.field_key] ?? ''
     })
     const payload = {
-      status: approvalDecision,
+      status: nextStatus,
       reason_by_approver: reasonByApprover || '',
       control_design_procs: editableFields.control_design_procs,
       control_design_conclusion: isApproveAction ? editableFields.control_design_conclusion : '',
@@ -299,7 +325,11 @@ function ApproverFormDetail() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        toastId.current = toast.success(isApproveAction ? 'Form approved successfully' : 'Form rejected successfully')
+        toastId.current = toast.success(
+          declarationReview
+            ? 'Conclusion submitted successfully'
+            : (isApproveAction ? 'Form approved successfully' : 'Form rejected successfully')
+        )
         setApprovalDecision('')
         setReasonByApprover('')
         setEditableFields({
@@ -703,8 +733,14 @@ function ApproverFormDetail() {
   const selectedDesignConclusion = isPending
     ? String(editableFields.control_design_conclusion || '').trim()
     : String(formData?.control_design_conclusion || '').trim()
-  const showDesignDeficiencyField = selectedDesignConclusion === 'Not Effective' || (!isPending && String(formData?.design_deficiency_desc || '').trim() !== '')
-  const showApproveFlowFields = isPending && approvalDecision === 'Approved'
+  const processOwnerDeclaration = formData?.process_owner_declaration || null
+  const hasProcessOwnerDeclaration = Boolean(processOwnerDeclaration?.no_furthure_submission)
+  const isDeclarationReview = hasProcessOwnerDeclaration && formData?.status === 'sent for approval'
+  const showDeclarationFields = isDeclarationReview && isPending && !isApproved && !isRejected
+  const showDesignDeficiencyField = (
+    !isDeclarationReview && selectedDesignConclusion === 'Not Effective'
+  ) || (!isPending && String(formData?.design_deficiency_desc || '').trim() !== '')
+  const showApproveFlowFields = isPending && (approvalDecision === 'Approved' || showDeclarationFields)
   const showRejectFlowFields = isPending && approvalDecision === 'Rejected'
   const deficiencyResponse = formData?.deficiency_response || null
   const deficiencyCurrentSubmission = deficiencyResponse?.current_submission || null
@@ -725,8 +761,6 @@ function ApproverFormDetail() {
     && String(deficiencyResponse.status || '').trim() === 'submitted'
     && String(formData?.deficiency_response_status || '').trim().toLowerCase() === 'submitted_for_review'
   )
-  const processOwnerDeclaration = formData?.process_owner_declaration || null
-  const hasProcessOwnerDeclaration = Boolean(processOwnerDeclaration?.no_furthure_submission)
   const showActiveDeficiencyResponseSection = Boolean(
     deficiencyResponse && String(deficiencyResponse.status || '').trim().toLowerCase() === 'submitted'
   )
@@ -758,7 +792,28 @@ function ApproverFormDetail() {
           <ProcessOwnerDeclarationBadge
             declaration={processOwnerDeclaration}
             formattedTimestamp={formatDateTime(processOwnerDeclaration?.timestamp)}
+            dialogOpen={declarationDialogOpen}
+            onDialogOpenChange={setDeclarationDialogOpen}
           />
+          {showDeclarationNotice && hasProcessOwnerDeclaration ? (
+            <Alert
+              severity="info"
+              onClose={() => setShowDeclarationNotice(false)}
+              sx={{ width: '100%' }}
+            >
+              {String(processOwnerDeclaration?.declaration_type || '').trim() === 'no_submission_available'
+                ? 'Process owner marked this as No Submission Available. '
+                : 'Process owner marked this as No Submission declaration. '}
+              <Button
+                variant="text"
+                onClick={() => setDeclarationDialogOpen(true)}
+                sx={{ p: 0, minWidth: 0, verticalAlign: 'baseline', textTransform: 'none', fontWeight: 700 }}
+              >
+                Click here
+              </Button>
+              {' for more info.'}
+            </Alert>
+          ) : null}
           {/* Top summary card (matches coordinator design) */}
           <Box sx={{ width: '100%' }}>
             <Card
@@ -1376,7 +1431,7 @@ function ApproverFormDetail() {
                       // Check if this is an editable field for approver (only when pending)
                       const editableFieldKeys = ['control_design_procs', 'control_design_conclusion', 'design_deficiency_desc']
                       const isEditableField = editableFieldKeys.includes(key)
-                      const isEditable = isPending && isEditableField
+                      const isEditable = isPending && isEditableField && !isDeclarationReview
 
                       return (
                         <Box
@@ -1444,6 +1499,10 @@ function ApproverFormDetail() {
                                 >
                                   <MenuItem value="Effective">Effective</MenuItem>
                                   <MenuItem value="Not Effective">Not Effective</MenuItem>
+                                  <MenuItem value="Accepted under deviation">Accepted under deviation</MenuItem>
+                                  {isDeclarationReview ? (
+                                    <MenuItem value="Not Applicable">Not Applicable</MenuItem>
+                                  ) : null}
                                 </Select>
                               </FormControl>
                             ) : (
@@ -2026,6 +2085,7 @@ function ApproverFormDetail() {
                 >
                   {isPending && !isApproved && !isRejected && (
                     <>
+                      {showDeclarationFields ? null : (
                       <FormControl fullWidth sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}>
                         <InputLabel id="approval-decision-label">Decision</InputLabel>
                         <Select
@@ -2038,13 +2098,21 @@ function ApproverFormDetail() {
                           <MenuItem value="Rejected">Reject</MenuItem>
                         </Select>
                       </FormControl>
+                      )}
 
                       {showApproveFlowFields ? (
                         <>
-                          {groupedApproverFields
+                          {(showDeclarationFields
+                            ? ['control_design_conclusion', 'control_design_procs']
+                            : groupedApproverFields
+                          )
                             .filter((key) => key !== 'design_deficiency_desc' || showDesignDeficiencyField)
                             .map((key) => {
-                              const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+                              const label = showDeclarationFields
+                                ? (key === 'control_design_procs'
+                                  ? 'Procedures to evaluate the design'
+                                  : 'Conclusion on design of control')
+                                : (fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()))
                               const value = formData[key]
                               const isEmpty = value === null || value === undefined || value === '' || String(value).trim() === ''
                               const isTextArea = ['control_design_procs', 'design_deficiency_desc'].includes(key)
@@ -2066,6 +2134,9 @@ function ApproverFormDetail() {
                                         <MenuItem value="Effective">Effective</MenuItem>
                                         <MenuItem value="Not Effective">Not Effective</MenuItem>
                                         <MenuItem value="Accepted under deviation">Accepted under deviation</MenuItem>
+                                        {isDeclarationReview ? (
+                                          <MenuItem value="Not Applicable">Not Applicable</MenuItem>
+                                        ) : null}
                                       </Select>
                                     </FormControl>
                                   ) : (
@@ -2100,7 +2171,7 @@ function ApproverFormDetail() {
                               )
                             })}
 
-                          {designImplementationExtraFields.map((field) => (
+                          {!showDeclarationFields ? designImplementationExtraFields.map((field) => (
                             <TextField
                               key={field.field_key}
                               label={field.label}
@@ -2113,7 +2184,7 @@ function ApproverFormDetail() {
                               helperText="Optional"
                               sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}
                             />
-                          ))}
+                          )) : null}
                         </>
                       ) : null}
 
@@ -2146,7 +2217,7 @@ function ApproverFormDetail() {
                         </>
                       ) : null}
 
-                      {(showApproveFlowFields || showRejectFlowFields) ? (
+                      {(showApproveFlowFields || showRejectFlowFields) && !showDeclarationFields ? (
                         <TextField
                           label="Reason by Approver"
                           placeholder={
@@ -2214,9 +2285,11 @@ function ApproverFormDetail() {
                         >
                           {approving
                             ? 'Processing...'
-                            : approvalDecision === 'Rejected'
-                              ? 'Reject'
-                              : 'Approve'}
+                            : showDeclarationFields
+                              ? 'Submit'
+                              : approvalDecision === 'Rejected'
+                                ? 'Reject'
+                                : 'Approve'}
                         </Button>
                       </Box>
                       ) : null}

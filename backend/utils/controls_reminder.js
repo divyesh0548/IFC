@@ -17,6 +17,7 @@ const DEFAULT_INEFFECTIVE_DUE_DAYS = 2;
 const DEFAULT_INEFFECTIVE_REMINDER_INTERVAL_DAYS = 2;
 const DEFAULT_DEFICIENCY_REVIEW_DUE_DAYS = 2;
 const DEFAULT_DEFICIENCY_REVIEW_REMINDER_INTERVAL_DAYS = 2;
+const DEFAULT_REMINDER_FINAL_AFTER = 3;
 
 /** UTC wall-clock "now" for reminder timestamp storage and comparisons. */
 const UTC_NOW_SQL = `(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`;
@@ -70,6 +71,14 @@ function getDeficiencyReviewReminderIntervalDays() {
   return parsePositiveIntEnv(
     process.env.DEFICIENCY_REVIEW_REMINDER_INTERVAL_DAYS,
     DEFAULT_DEFICIENCY_REVIEW_REMINDER_INTERVAL_DAYS
+  );
+}
+
+/** Normal process-owner reminders before the one final reminder. */
+function getReminderFinalAfter() {
+  return parsePositiveIntEnv(
+    process.env.REMINDER_FINAL_AFTER,
+    DEFAULT_REMINDER_FINAL_AFTER
   );
 }
 
@@ -135,6 +144,17 @@ function isNotEffectiveConclusion(value) {
   return normalizeDesignConclusion(value) === 'not effective';
 }
 
+function isNotApplicableConclusion(value) {
+  return normalizeDesignConclusion(value) === 'not applicable';
+}
+
+function isClosedDesignConclusion(value) {
+  const normalized = normalizeDesignConclusion(value);
+  return normalized === 'effective'
+    || normalized === 'accepted under deviation'
+    || normalized === 'not applicable';
+}
+
 function getIntervalLiteral(reminderFrequency) {
   const str = String(reminderFrequency || '').trim();
   switch (str) {
@@ -174,7 +194,8 @@ function formatDueDateForEmail(dueDateRaw) {
 }
 
 /**
- * Reset reminder_datetime for one or more forms (scheduler restarts from due date).
+ * Reset the process-owner reminder cycle so emails start again from the due date.
+ * Clears the next trigger, the sent count, and the final-reminder close.
  */
 async function resetReminderDatetimeForForms(formIds, clientOrPool = pool) {
   const ids = [...new Set((formIds || []).map((id) => String(id || '').trim()).filter(Boolean))];
@@ -182,13 +203,56 @@ async function resetReminderDatetimeForForms(formIds, clientOrPool = pool) {
 
   await clientOrPool.query(
     `
-      INSERT INTO controls_reminder (form_id, reminder_datetime)
-      SELECT unnest($1::varchar[]), NULL
+      INSERT INTO controls_reminder (form_id, reminder_datetime, reminder_sent_count, final_reminder_sent_at)
+      SELECT unnest($1::varchar[]), NULL, 0, NULL
       ON CONFLICT (form_id) DO UPDATE
-      SET reminder_datetime = NULL
+      SET reminder_datetime = NULL,
+          reminder_sent_count = 0,
+          final_reminder_sent_at = NULL
     `,
     [ids]
   );
+}
+
+/**
+ * Record one normal process-owner reminder and schedule the next trigger.
+ */
+async function recordNormalProcessOwnerReminder(client, formId, reminderFrequency) {
+  const intervalLiteral = getIntervalLiteral(reminderFrequency);
+  const result = await client.query(
+    `
+      INSERT INTO controls_reminder (form_id, reminder_datetime, reminder_sent_count)
+      VALUES (
+        $1,
+        ${UTC_NOW_SQL} + ($2::interval),
+        1
+      )
+      ON CONFLICT (form_id) DO UPDATE
+      SET reminder_datetime = EXCLUDED.reminder_datetime,
+          reminder_sent_count = controls_reminder.reminder_sent_count + 1
+      RETURNING ${controlsReminderUtcReturningSql('reminder_datetime')}, reminder_sent_count;
+    `,
+    [formId, intervalLiteral]
+  );
+  return result.rows?.[0] || null;
+}
+
+/**
+ * Close the process-owner reminder cycle after the final email.
+ * Does not schedule another reminder_datetime.
+ */
+async function recordFinalProcessOwnerReminder(client, formId) {
+  const result = await client.query(
+    `
+      INSERT INTO controls_reminder (form_id, final_reminder_sent_at)
+      VALUES ($1, ${UTC_NOW_SQL})
+      ON CONFLICT (form_id) DO UPDATE
+      SET final_reminder_sent_at = EXCLUDED.final_reminder_sent_at
+      RETURNING ${controlsReminderUtcReturningSql('final_reminder_sent_at')};
+    `,
+    [formId]
+  );
+  return result.rows?.[0]?.final_reminder_sent_at || null;
 }
 
 /**
@@ -447,6 +511,8 @@ function mapControlsReminderToApi(reminder) {
   if (!reminder) {
     return {
       reminder_datetime: null,
+      reminder_sent_count: 0,
+      final_reminder_sent_at: null,
       reminder_to_approver_datetime: null,
       ineffective_reminder_datetime: null,
       deficiency_review_reminder_datetime: null,
@@ -455,6 +521,8 @@ function mapControlsReminderToApi(reminder) {
 
   return {
     reminder_datetime: reminder.reminderDatetime ?? reminder.reminder_datetime ?? null,
+    reminder_sent_count: reminder.reminderSentCount ?? reminder.reminder_sent_count ?? 0,
+    final_reminder_sent_at: reminder.finalReminderSentAt ?? reminder.final_reminder_sent_at ?? null,
     reminder_to_approver_datetime:
       reminder.reminderToApproverDatetime ?? reminder.reminder_to_approver_datetime ?? null,
     ineffective_reminder_datetime:
@@ -484,6 +552,8 @@ module.exports = {
   NOT_EFFECTIVE_CONCLUSION_WHERE_SQL,
   normalizeDesignConclusion,
   isNotEffectiveConclusion,
+  isNotApplicableConclusion,
+  isClosedDesignConclusion,
   parsePositiveIntEnv,
   getApproverDueDays,
   getApproverReminderIntervalDays,
@@ -491,6 +561,7 @@ module.exports = {
   getIneffectiveReminderIntervalDays,
   getDeficiencyReviewDueDays,
   getDeficiencyReviewReminderIntervalDays,
+  getReminderFinalAfter,
   buildReminderToApproverDatetimeDueSql,
   buildIneffectiveReminderDatetimeDueSql,
   buildDeficiencyReviewReminderDatetimeDueSql,
@@ -498,6 +569,8 @@ module.exports = {
   formatDueDateForEmail,
   getIntervalLiteral,
   resetReminderDatetimeForForms,
+  recordNormalProcessOwnerReminder,
+  recordFinalProcessOwnerReminder,
   resetReminderToApproverDatetimeForForms,
   updateReminderDatetime,
   updateReminderToApproverDatetime,

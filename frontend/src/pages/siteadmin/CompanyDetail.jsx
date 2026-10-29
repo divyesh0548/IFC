@@ -5,8 +5,10 @@ import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
 import DialogTitle from '@mui/material/DialogTitle'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded'
 import { toast } from 'react-hot-toast'
@@ -31,11 +33,38 @@ function CompanyDetail() {
   const [error, setError] = useState('')
   const [createAdminOpen, setCreateAdminOpen] = useState(false)
   const [createAdminSaving, setCreateAdminSaving] = useState(false)
+  const [companyDeleteEnabled, setCompanyDeleteEnabled] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deletePreview, setDeletePreview] = useState(null)
+  const [deletePreviewLoading, setDeletePreviewLoading] = useState(false)
+  const [deletingCompany, setDeletingCompany] = useState(false)
   const [adminForm, setAdminForm] = useState(defaultAdminForm)
   const [adminFormErrors, setAdminFormErrors] = useState({})
   const { getEmailWarning, getEmailWarningHelperTextSx } = useOrganizationEmailWarning()
 
-  useSyncGlobalLoading(loading || createAdminSaving)
+  useSyncGlobalLoading(loading || createAdminSaving || deletingCompany)
+
+  useEffect(() => {
+    let cancelled = false
+    const loadDeleteAvailability = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/siteadmin/companies/delete-enabled'), {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+        if (!cancelled && response.ok && data.success) {
+          setCompanyDeleteEnabled(Boolean(data.enabled))
+        }
+      } catch (loadError) {
+        console.error('Error checking company delete availability:', loadError)
+      }
+    }
+    loadDeleteAvailability()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const loadCompany = useCallback(async () => {
     setLoading(true)
@@ -70,6 +99,66 @@ function CompanyDetail() {
     setAdminForm(defaultAdminForm)
     setAdminFormErrors({})
     setCreateAdminOpen(true)
+  }
+
+  const deletePreviewRows = [
+    ['Controls', deletePreview?.controls],
+    ['Users', deletePreview?.users],
+    ['Company admins', deletePreview?.company_admins],
+    ['Coordinators', deletePreview?.coordinators],
+    ['Approvers', deletePreview?.approvers],
+    ['Process owners', deletePreview?.process_owners],
+    ['Units', deletePreview?.units],
+    ['Coordinator assignments', deletePreview?.coordinator_assignments],
+    ['Approver assignments', deletePreview?.approver_assignments],
+    ['Stored files', deletePreview?.files],
+  ]
+
+  const handleOpenDeleteDialog = async () => {
+    setDeleteDialogOpen(true)
+    setDeletePreview(null)
+    setDeletePreviewLoading(true)
+    try {
+      const response = await fetch(
+        apiUrl(`/api/siteadmin/companies/${encodeURIComponent(company_identifier)}/delete-preview`),
+        { method: 'GET', credentials: 'include' }
+      )
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        toast.error(data.message || 'Failed to load delete details')
+        setDeleteDialogOpen(false)
+        return
+      }
+      setDeletePreview(data.data)
+    } catch (previewError) {
+      console.error('Error loading company delete preview:', previewError)
+      toast.error('Failed to load delete details')
+      setDeleteDialogOpen(false)
+    } finally {
+      setDeletePreviewLoading(false)
+    }
+  }
+
+  const handleDeleteCompany = async () => {
+    setDeletingCompany(true)
+    try {
+      const response = await fetch(apiUrl(`/api/siteadmin/companies/${encodeURIComponent(company_identifier)}`), {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        toast.error(data.message || 'Failed to delete company')
+        setDeletingCompany(false)
+        return
+      }
+      toast.success('Company deleted')
+      navigate('/siteadmin/company-management')
+    } catch (deleteError) {
+      console.error('Error deleting company:', deleteError)
+      toast.error('Failed to delete company')
+      setDeletingCompany(false)
+    }
   }
 
   const handleCloseCreateAdmin = () => {
@@ -199,12 +288,29 @@ function CompanyDetail() {
         >
           Back to Company Management
         </Button>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', justifyContent: { xs: 'stretch', sm: 'flex-end' } }}>
+        {companyDeleteEnabled ? (
+          <Button
+            onClick={handleOpenDeleteDialog}
+            variant="outlined"
+            color="error"
+            disabled={loading || Boolean(error) || deletingCompany}
+            sx={{
+              alignSelf: { xs: 'stretch', sm: 'center' },
+              textTransform: 'none',
+              fontWeight: 700,
+              px: 2.25,
+            }}
+          >
+            Delete Company
+          </Button>
+        ) : null}
         <Button
           onClick={handleOpenCreateAdmin}
           startIcon={<PersonAddAlt1RoundedIcon />}
           variant="contained"
           color="secondary"
-          disabled={loading || Boolean(error)}
+          disabled={loading || Boolean(error) || deletingCompany}
           sx={{
             alignSelf: { xs: 'stretch', sm: 'center' },
             textTransform: 'none',
@@ -214,6 +320,7 @@ function CompanyDetail() {
         >
           Create Company Admin
         </Button>
+        </Box>
       </Box>
       <CompanyDetailsView
         companyName={company?.company_name}
@@ -226,6 +333,46 @@ function CompanyDetail() {
         loading={loading}
         error={error}
       />
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => {
+          if (!deletingCompany) setDeleteDialogOpen(false)
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Delete company</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            {`This permanently deletes ${company?.company_name || 'this company'} and the records below, including stored files, coordinator assignments, and approver assignments.`}
+          </DialogContentText>
+          {deletePreviewLoading ? (
+            <DialogContentText>Loading counts...</DialogContentText>
+          ) : (
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', columnGap: 3, rowGap: 0.75 }}>
+              {deletePreviewRows.map(([label, value]) => (
+                <Box key={label} sx={{ display: 'contents' }}>
+                  <Typography variant="body2" color="text.secondary">{label}</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, textAlign: 'right' }}>{Number(value || 0)}</Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)} disabled={deletingCompany}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDeleteCompany}
+            color="error"
+            variant="contained"
+            disabled={deletingCompany || deletePreviewLoading || !deletePreview}
+          >
+            {deletingCompany ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Dialog
         open={createAdminOpen}
         onClose={handleCloseCreateAdmin}

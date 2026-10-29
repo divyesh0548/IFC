@@ -78,7 +78,8 @@ const {
 const {
   getActiveRacmDeleteError,
   getInactiveRacmApproverAccessError,
-  deleteApproverAssignmentsForRacms,
+  isRacmDeleteEnabled,
+  deleteAllFormScopedRows,
 } = require('../../utils/racm_delete');
 const {
   getMissingRacmRequiredFields,
@@ -91,6 +92,8 @@ const {
   seedReminderToApproverDatetime,
   seedDeficiencyReviewReminderDatetime,
   resetIneffectiveReminderDatetime,
+  resetDeficiencyReviewReminderDatetime,
+  getApproverDueDays,
   mapControlsReminderToApi,
 } = require('../../utils/controls_reminder');
 const {
@@ -762,6 +765,13 @@ const {
 
 const MAX_BULK_IMPORT_ROWS = 5000;
 
+async function getRacmDeleteEnabled(req, res) {
+  return res.status(200).json({
+    success: true,
+    enabled: isRacmDeleteEnabled(),
+  });
+}
+
 async function getColumnMappingConfig(req, res) {
   try {
     return res.status(200).json({
@@ -1215,6 +1225,7 @@ async function getAuthorizedControlFormForNoFurtherSubmission(clientOrPool, form
         coordinator_assigned_by,
         status,
         control_design_conclusion,
+        control_number,
         business_process,
         financial_year,
         standard_control_description,
@@ -2872,32 +2883,118 @@ async function submitDeficiencyResponse(req, res) {
 }
 
 
+async function getAuthorizedControlFormForNoSubmissionAvailable(clientOrPool, formId, user) {
+  const result = await clientOrPool.query(
+    `
+      SELECT
+        form_id,
+        company_identifier,
+        unit_id,
+        control_owner,
+        assigned_to_coordinator,
+        coordinator_assigned_by,
+        status,
+        active,
+        pending_changes,
+        control_design_conclusion,
+        control_number,
+        business_process,
+        financial_year,
+        standard_control_description,
+        sub_process,
+        due_date
+      FROM control_forms
+      WHERE form_id = $1
+      LIMIT 1
+    `,
+    [formId]
+  );
+
+  if (result.rows.length === 0) {
+    return { error: { status: 404, message: 'RACM not found' } };
+  }
+
+  const form = result.rows[0];
+  const userRole = String(user?.role || '').trim().toLowerCase();
+  const userEmail = String(user?.email_id || '').trim().toLowerCase();
+  const formOwnerEmail = String(form.control_owner || '').trim().toLowerCase();
+  const status = String(form.status || '').trim().toLowerCase();
+
+  if (status && status !== 'null') {
+    return { error: { status: 400, message: 'No submission available can only be declared before this RACM is submitted.' } };
+  }
+
+  if (form.active === false) {
+    return { error: { status: 400, message: 'Inactive RACMs cannot be declared.' } };
+  }
+
+  if (form.pending_changes) {
+    return { error: { status: 400, message: 'This RACM has a pending change request and cannot be sent for approval until it is resolved.' } };
+  }
+
+  if (await hasProcessOwnerDeclaration(clientOrPool, formId)) {
+    return { error: { status: 409, message: 'A no-submission declaration already exists for this RACM.' } };
+  }
+
+  if (userRole === 'user') {
+    if (formOwnerEmail !== userEmail) {
+      return { error: { status: 403, message: 'Access denied. You are not authorized to declare no submission available for this RACM.' } };
+    }
+    return { form };
+  }
+
+  if (userRole === 'company_co') {
+    if (!isCoordinatorAssignedRacm(form)) {
+      return { error: { status: 403, message: 'Only the process owner can declare no submission available for this RACM.' } };
+    }
+    const coordinatorAccess = await assertCoordinatorAssignedRacmAccess(form, user);
+    if (!coordinatorAccess.ok) {
+      return { error: { status: coordinatorAccess.status, message: coordinatorAccess.message } };
+    }
+    return { form };
+  }
+
+  return { error: { status: 403, message: 'Only the process owner can declare no submission available for this RACM.' } };
+}
+
 async function declareNoFurtherSubmission(req, res) {
   const normalizedFormId = String(req.params.form_id || '').trim();
-  const noFurthureSubmission = req.body?.no_furthure_submission === true;
+  const declarationType = String(req.body?.declaration_type || 'no_further_submission').trim();
+  const declarationConfirmed = req.body?.declaration_confirmed === true;
   const ownerComment = req.body?.owner_comment != null ? String(req.body.owner_comment).trim() : '';
   const processOwnerEmail = String(req.user?.email_id || '').trim();
+  const isNoEvent = declarationType === 'no_submission_available';
 
   if (!normalizedFormId) {
     return res.status(400).json({ success: false, message: 'Form id is required' });
   }
 
-  if (!noFurthureSubmission) {
-    return res.status(400).json({ success: false, message: 'no_furthure_submission must be true' });
+  if (!['no_submission_available', 'no_further_submission'].includes(declarationType)) {
+    return res.status(400).json({ success: false, message: 'declaration_type is invalid' });
   }
 
-  if (!ownerComment) {
-    return res.status(400).json({ success: false, message: 'Comment is required' });
+  if (!declarationConfirmed) {
+    return res.status(400).json({ success: false, message: 'The declaration must be confirmed' });
   }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    const authorized = await getAuthorizedControlFormForNoFurtherSubmission(client, normalizedFormId, req.user);
+    const authorized = isNoEvent
+      ? await getAuthorizedControlFormForNoSubmissionAvailable(client, normalizedFormId, req.user)
+      : await getAuthorizedControlFormForNoFurtherSubmission(client, normalizedFormId, req.user);
     if (authorized.error) {
       await client.query('ROLLBACK');
       return res.status(authorized.error.status).json({ success: false, message: authorized.error.message });
+    }
+
+    const approverBlockMessage = getApproverSubmissionBlockMessage(
+      await getControlFormApproverDetails(client, normalizedFormId)
+    );
+    if (approverBlockMessage) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: approverBlockMessage });
     }
 
     const form = authorized.form;
@@ -2906,35 +3003,56 @@ async function declareNoFurtherSubmission(req, res) {
         INSERT INTO process_owner_declaration (
           form_id,
           no_furthure_submission,
+          declaration_type,
+          declaration_confirmed,
           owner_comment,
           process_owner_email,
           "timestamp"
         )
-        VALUES ($1, TRUE, $2, $3, (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))
-        RETURNING
-          form_id,
-          no_furthure_submission,
-          owner_comment,
-          process_owner_email,
-          "timestamp" AT TIME ZONE 'UTC' AS "timestamp"
+        VALUES ($1, TRUE, $2, TRUE, $3, $4, (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))
       `,
-      [normalizedFormId, ownerComment || null, processOwnerEmail || null]
+      [normalizedFormId, declarationType, ownerComment || null, processOwnerEmail || null]
     );
 
     await client.query(
       `
         UPDATE control_forms
-        SET deficiency_action_status = FALSE
+        SET status = 'sent for approval',
+            sent_for_approval_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+            deficiency_action_status = FALSE,
+            deficiency_response_status = NULL,
+            approver_due_date = (
+              ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date)
+              + make_interval(days => $2::int)
+            )::date,
+            updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
         WHERE form_id = $1
+      `,
+      [normalizedFormId, getApproverDueDays()]
+    );
+
+    await client.query(
+      `
+        INSERT INTO controls_reminder (form_id, reminder_to_approver_datetime)
+        VALUES ($1, NULL)
+        ON CONFLICT (form_id) DO UPDATE
+        SET reminder_to_approver_datetime = NULL
       `,
       [normalizedFormId]
     );
+    await resetIneffectiveReminderDatetime(client, normalizedFormId);
+    await resetDeficiencyReviewReminderDatetime(client, normalizedFormId);
 
     await client.query('COMMIT');
 
     const declarationPayload = await getProcessOwnerDeclarationByFormId(pool, normalizedFormId);
 
-    await logAuditEvent('No Further Submission Declared', processOwnerEmail, normalizedFormId, null);
+    await logAuditEvent(
+      isNoEvent ? 'No Submission Available Declared' : 'No Further Submission Declared',
+      processOwnerEmail,
+      normalizedFormId,
+      null
+    );
 
     try {
       const resolvedApprover = await resolveApproverForRacm(pool, {
@@ -2973,6 +3091,7 @@ async function declareNoFurtherSubmission(req, res) {
           declaredByEmail: declarerUser?.emailId || processOwnerEmail,
           companyName: company?.companyName,
           ownerComment,
+          declarationType,
         });
 
         const ccEmails = Array.from(
@@ -2998,6 +3117,7 @@ async function declareNoFurtherSubmission(req, res) {
       data: {
         process_owner_declaration: declarationPayload,
         deficiency_action_status: false,
+        status: 'sent for approval',
       },
     });
   } catch (error) {
@@ -4769,6 +4889,13 @@ async function deleteControlForm(req, res) {
       });
     }
 
+    if (!isRacmDeleteEnabled()) {
+      return res.status(403).json({
+        success: false,
+        message: 'RACM deletion is available only when the server is running in development.',
+      });
+    }
+
     // Check if form exists.
     const form = await prisma.controlForm.findFirst({
       where: { formId: form_id },
@@ -4829,25 +4956,8 @@ async function deleteControlForm(req, res) {
       });
     }
 
-    const deleteResult = await prisma.$transaction(async (tx) => {
-      const deletedApproverAssignments = await deleteApproverAssignmentsForRacms(tx, {
-        formIds: form_id,
-        companyIdentifier: coordinatorCompany,
-      });
-      const deletedUserDocsResult = await tx.racmDoc.deleteMany({
-        where: { formId: form_id },
-      });
-      const deletedSampleDocsResult = await tx.sampleDoc.deleteMany({
-        where: { formId: form_id },
-      });
-      await tx.controlForm.deleteMany({
-        where: { formId: form_id },
-      });
-      return {
-        user_uploaded_rows: deletedUserDocsResult.count,
-        sample_doc_rows: deletedSampleDocsResult.count,
-        approver_assignment_rows: deletedApproverAssignments,
-      };
+    await prisma.$transaction(async (tx) => {
+      await deleteAllFormScopedRows(tx, form_id);
     });
 
     if (form.templateId && (await isRacmTemplateSchemaReady(pool))) {
@@ -4864,8 +4974,6 @@ async function deleteControlForm(req, res) {
       message: 'RACM deleted successfully',
       deleted_documents: {
         s3_objects: docUrlsToDelete.length,
-        user_uploaded_rows: deleteResult.user_uploaded_rows,
-        sample_doc_rows: deleteResult.sample_doc_rows,
       }
     });
 
@@ -5721,6 +5829,7 @@ async function uploadSamplingExcel(req, res) {
 module.exports = {
   testRoute,
   getControlNumberPreview,
+  getRacmDeleteEnabled,
   getColumnMappingConfig,
   getControlFrequencyOptions,
   bulkImportRows,

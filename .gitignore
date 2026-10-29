@@ -94,3 +94,7 @@ logs/
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+
+# Keep this folder even when its file extensions are ignored above
+!Important_files/
+!Important_files/**

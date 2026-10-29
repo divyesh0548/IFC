@@ -7,6 +7,7 @@ const router = express.Router();
 router.get('/test-route', controller.testRoute);
 router.get('/control-number-preview', controller.verifyAuth, controller.getControlNumberPreview);
 router.get('/column-mapping-config', controller.verifyAuth, controller.getColumnMappingConfig);
+router.get('/delete-enabled', controller.verifyAuth, controller.getRacmDeleteEnabled);
 router.get('/control-frequency-options', controller.verifyAuth, controller.getControlFrequencyOptions);
 router.post('/bulk-import-rows', controller.verifyAuth, controller.bulkImportRows);
 router.get('/', controller.verifyAuth, controller.listControlForms);

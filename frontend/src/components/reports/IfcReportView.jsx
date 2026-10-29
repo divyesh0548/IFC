@@ -21,6 +21,7 @@ const EMPTY_REPORT = {
     effective: 0,
     not_effective: 0,
     accepted_under_deviation: 0,
+    not_applicable: 0,
   },
   approval_statuses: {
     pending: 0,
@@ -131,6 +132,11 @@ function IfcReportView({
       label: 'Not Effective',
       value: Number(report.conclusions?.not_effective ?? 0),
       color: theme.palette.error.main,
+    },
+    {
+      label: 'Not Applicable',
+      value: Number(report.conclusions?.not_applicable ?? 0),
+      color: theme.palette.info.main,
     },
   ]
   const approvalItems = [

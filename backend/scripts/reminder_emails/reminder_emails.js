@@ -4,10 +4,14 @@
  *
  * Send conditions:
  * - active = TRUE, status != 'Approved', current date >= due_date
+ * - Cycle is still open (final_reminder_sent_at is empty)
  * - First time: reminder_datetime is empty → send as soon as current date is ahead of due_date
  * - Next times: send when current datetime reaches reminder_datetime
  * reminder_datetime is treated as the "next trigger at" timestamp.
- * After sending, reminder_datetime is updated to current UTC time + interval.
+ * After a normal send, reminder_sent_count increases and reminder_datetime moves forward.
+ * Once reminder_sent_count reaches REMINDER_FINAL_AFTER, the next email is the final
+ * reminder. That send sets final_reminder_sent_at and no further emails are sent
+ * until the due date reset clears the cycle.
  */
 
 const { pool } = require('../../utils/db');
@@ -15,6 +19,9 @@ const { sendEmail } = require('../../utils/send_email');
 const { getCcEmailsForRacm } = require('../../utils/racm_cc_recipients');
 const {
   updateReminderDatetime,
+  recordNormalProcessOwnerReminder,
+  recordFinalProcessOwnerReminder,
+  getReminderFinalAfter,
   REMINDER_DATETIME_DUE_SQL,
   formatReminderTimestampForLog,
   formatDueDateForEmail,
@@ -79,6 +86,7 @@ async function fetchFormsDueForReminder(client) {
       cf.business_process,
       cf.due_date,
       cf.reminder_frequency,
+      COALESCE(cr.reminder_sent_count, 0) AS reminder_sent_count,
       ${utcTs('cr.reminder_datetime')},
       c.company_name
     FROM control_forms cf
@@ -99,6 +107,7 @@ async function fetchFormsDueForReminder(client) {
       AND COALESCE(pod.no_furthure_submission, FALSE) = FALSE
       AND due_date IS NOT NULL
       AND ${IST_CURRENT_DATE_SQL} >= due_date
+      AND cr.final_reminder_sent_at IS NULL
       AND (
         cr.reminder_datetime IS NULL
         OR (
@@ -114,7 +123,7 @@ async function fetchFormsDueForReminder(client) {
 /**
  * Build reminder email body.
  */
-function buildReminderEmailBody(form) {
+function buildReminderEmailBody(form, { finalReminder = false } = {}) {
   const dueStr = formatDueDateForEmail(form.due_date);
   const companyName = String(form.company_name || '').trim();
   const controlNumberText = String(form.control_number || '').trim() || String(form.form_id || '').trim() || 'N/A';
@@ -125,15 +134,21 @@ function buildReminderEmailBody(form) {
   const formUrl = isCoordinatorAssigned
     ? buildCoordinatorFormDetailUrl(form.form_id)
     : buildUserFormDetailUrl(form.form_id);
+  const opening = finalReminder
+    ? `This is the final reminder that uploading documents for ${controlNumberText} control is still pending. The reminder cycle for this control is now closed, and no further reminder emails will be sent.`
+    : `This is a reminder that uploading documents for ${controlNumberText} control is pending.`;
+  const closing = finalReminder
+    ? 'Upload the documents and submit without further delay.'
+    : 'Please upload the documents and submit at your earliest convenience.';
   return `Dear ${ownerSalutation},
 
-This is a reminder that uploading documents for ${controlNumberText} control is pending.
+${opening}
 
 ${buildRacmDetailsSection(form, [
   ['Due Date', dueStr],
 ])}
 
-Please upload the documents and submit at your earliest convenience.
+${closing}
 ${formUrl ? `\nRACM: ${formUrl}` : ''}
 
 Regards,
@@ -156,7 +171,12 @@ async function runReminderEmails() {
         ? String(form.coordinator_assigned_by || '').trim()
         : String(form.control_owner || '').trim();
 
-      // Validate email before attempting to send. If invalid/missing, skip send but still update reminder_datetime.
+      const sentCount = Number(form.reminder_sent_count) || 0;
+      const isFinalReminder = sentCount >= getReminderFinalAfter();
+      const controlNumberText = String(form.control_number || '').trim() || String(form.form_id || '').trim() || 'N/A';
+      const businessProcessText = String(form.business_process || '').trim() || 'Business Process';
+
+      // Invalid address: move the next trigger forward, but do not count it or close the cycle.
       if (!isValidEmail(to)) {
         const updatedAt = await updateReminderDatetime(client, form.form_id, form.reminder_frequency);
         console.warn(
@@ -167,10 +187,10 @@ async function runReminderEmails() {
         continue;
       }
 
-      const controlNumberText = String(form.control_number || '').trim() || String(form.form_id || '').trim() || 'N/A';
-      const businessProcessText = String(form.business_process || '').trim() || 'Business Process';
-      const subject = `Reminder - Control ${controlNumberText} - ${businessProcessText} submission pending`;
-      const text = buildReminderEmailBody(form);
+      const subject = isFinalReminder
+        ? `Final reminder - Control ${controlNumberText} - ${businessProcessText} submission pending`
+        : `Reminder - Control ${controlNumberText} - ${businessProcessText} submission pending`;
+      const text = buildReminderEmailBody(form, { finalReminder: isFinalReminder });
 
       const ccEmails = await getCcEmailsForRacm({
         companyIdentifier: form.company_identifier,
@@ -181,14 +201,24 @@ async function runReminderEmails() {
       });
 
       const sent = await sendEmail(to, subject, text, ccEmails.length ? { cc: ccEmails } : undefined);
-      if (sent) {
-        const updatedAt = await updateReminderDatetime(client, form.form_id, form.reminder_frequency);
+      if (!sent) continue;
+
+      if (isFinalReminder) {
+        const closedAt = await recordFinalProcessOwnerReminder(client, form.form_id);
         console.log(
-          `[reminder_emails] Sent reminder to ${to} for form_id=${form.form_id}, updated reminder_datetime to ${
-            formatReminderTimestampForLog(updatedAt) || 'null'
+          `[reminder_emails] Sent final reminder to ${to} for form_id=${form.form_id}, closed cycle at ${
+            formatReminderTimestampForLog(closedAt) || 'null'
           }`
         );
+        continue;
       }
+
+      const updated = await recordNormalProcessOwnerReminder(client, form.form_id, form.reminder_frequency);
+      console.log(
+        `[reminder_emails] Sent reminder to ${to} for form_id=${form.form_id}, sent_count=${
+          updated?.reminder_sent_count ?? 'unknown'
+        }, updated reminder_datetime to ${formatReminderTimestampForLog(updated?.reminder_datetime) || 'null'}`
+      );
     }
   } catch (err) {
     console.error('[reminder_emails] Error:', err);

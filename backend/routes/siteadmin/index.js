@@ -7,6 +7,9 @@ const { verifySiteadminAuth } = require('../../modules/auth/auth.middleware');
 const router = express.Router();
 
 router.get('/companies', verifySiteadminAuth, controller.getCompanies);
+router.get('/companies/delete-enabled', verifySiteadminAuth, controller.getCompanyDeleteEnabled);
+router.get('/companies/:company_identifier/delete-preview', verifySiteadminAuth, controller.getCompanyDeletePreview);
+router.delete('/companies/:company_identifier', verifySiteadminAuth, controller.deleteCompany);
 router.post('/business-processes', verifySiteadminAuth, controller.createBusinessProcessManagementEntry);
 router.get('/auditors', verifySiteadminAuth, controller.getAuditors);
 router.post('/auditors', verifySiteadminAuth, controller.createAuditor);

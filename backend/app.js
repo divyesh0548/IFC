@@ -6,6 +6,9 @@ const cookieParser = require('cookie-parser');
 // Load environment variables first
 dotenv.config();
 
+const { assertAllowedNodeEnv } = require('./utils/node_env');
+assertAllowedNodeEnv();
+
 const { runReminderEmails } = require('./scripts/reminder_emails/reminder_emails');
 const { runApproverReminderEmails } = require('./scripts/reminder_emails/approver_reminder_emails');
 const { runIneffectiveReminderEmails } = require('./scripts/reminder_emails/ineffective_reminder_emails');

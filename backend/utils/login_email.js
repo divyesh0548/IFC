@@ -49,7 +49,7 @@ Email ID: ${emailId}
 Password: ${tempPassword}
 Portal: ${portalUrl}
 
-If you need any assistance during setup, please reach out to the implementation team.
+If you need any assistance during setup, please reach out to the siteadmin.
 
 Thanks & Regards,
 ${resolvedCoordinatorName}`,

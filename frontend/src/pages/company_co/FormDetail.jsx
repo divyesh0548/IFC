@@ -138,6 +138,7 @@ function FormDetail() {
   const [setActiveConfirmDialogOpen, setSetActiveConfirmDialogOpen] = useState(false)
   const [setInactiveConfirmDialogOpen, setSetInactiveConfirmDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [racmDeleteEnabled, setRacmDeleteEnabled] = useState(false)
   const [moreActionsDialogOpen, setMoreActionsDialogOpen] = useState(false)
   const [selfAssignConfirmDialogOpen, setSelfAssignConfirmDialogOpen] = useState(false)
   const [selfAssigning, setSelfAssigning] = useState(false)
@@ -218,6 +219,28 @@ function FormDetail() {
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadDeleteAvailability = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/control-forms/delete-enabled`, {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+        if (!cancelled && response.ok && data.success) {
+          setRacmDeleteEnabled(Boolean(data.enabled))
+        }
+      } catch (error) {
+        console.error('Error checking RACM delete availability:', error)
+      }
+    }
+    loadDeleteAvailability()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -1537,6 +1560,9 @@ function FormDetail() {
   }
 
   const handleDeleteClick = () => {
+    if (!racmDeleteEnabled) {
+      return
+    }
     if (Boolean(formData?.active)) {
       toast.error('Active RACM cannot be deleted. Please set the RACM Inactive first.')
       return
@@ -2191,6 +2217,13 @@ function FormDetail() {
       : (isSentForApproval || isApprovedRacm))
   const canCoordinatorSubmit = isCoordinatorAssigned && isActive && !isSentForApproval && !isApprovedRacm && !hasProcessOwnerDeclaration
   const canDeclareNoFurtherSubmission = !hasProcessOwnerDeclaration && ((isCoordinatorAssigned && isRejectedRacm) || isApprovedNotEffective)
+  const canDeclareNoSubmissionAvailable = isCoordinatorAssigned
+    && isActive
+    && !hasProcessOwnerDeclaration
+    && !formData?.pending_changes
+    && !isSentForApproval
+    && !isApprovedRacm
+    && !isRejectedRacm
   const showRemarksByUser = canCoordinatorSubmit || (formData?.remarks_by_user || '').trim() !== ''
   const showReasonByApprover = hasRacmFieldValue(formData?.reason_by_approver)
   const assignmentDisplayValue = isCoordinatorAssigned
@@ -2316,11 +2349,41 @@ function FormDetail() {
               </>
             ) : null}
             <ProcessOwnerDeclarationAction
-              canDeclare={canDeclareNoFurtherSubmission}
+              canDeclare={canDeclareNoSubmissionAvailable}
               formId={form_id}
-              onDeclared={({ processOwnerDeclaration, deficiencyActionStatus }) => {
+              declarationType="no_submission_available"
+              buttonLabel="No Submission Available"
+              dialogTitle="No Submission Available"
+              dialogText="Use this when no transaction or event happened during the audit period. The approver will record a conclusion, and that conclusion closes the control cycle."
+              tickLabel="I declare that no transaction or event happened during the audit period, so no submission is available."
+              onDeclared={({ processOwnerDeclaration, deficiencyActionStatus, status }) => {
                 setFormData((current) => current ? ({
                   ...current,
+                  status: status || 'sent for approval',
+                  process_owner_declaration: processOwnerDeclaration,
+                  deficiency_action_status: deficiencyActionStatus === undefined ? false : Boolean(deficiencyActionStatus),
+                }) : current)
+              }}
+              buttonSx={{
+                py: 1,
+                fontWeight: 600,
+                textTransform: 'none',
+                fontSize: '0.9375rem',
+                borderRadius: 2,
+              }}
+            />
+            <ProcessOwnerDeclarationAction
+              canDeclare={canDeclareNoFurtherSubmission}
+              formId={form_id}
+              declarationType="no_further_submission"
+              buttonLabel="Declare No Submission"
+              dialogTitle="Declare No Further Submission"
+              dialogText="Use this when further submission is not possible. The approver will record a conclusion, and that conclusion closes the control cycle."
+              tickLabel="I declare that further submission is not possible for this control."
+              onDeclared={({ processOwnerDeclaration, deficiencyActionStatus, status }) => {
+                setFormData((current) => current ? ({
+                  ...current,
+                  status: status || 'sent for approval',
                   process_owner_declaration: processOwnerDeclaration,
                   deficiency_action_status: deficiencyActionStatus === undefined ? false : Boolean(deficiencyActionStatus),
                 }) : current)
@@ -5055,6 +5118,7 @@ function FormDetail() {
             Choose an action for this RACM.
           </DialogContentText>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {racmDeleteEnabled ? (
             <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
                 Delete
@@ -5063,6 +5127,7 @@ function FormDetail() {
                 This RACM will be removed permanently, including all sample documents, user-uploaded documents, Mitigation/Compensatory Plans attachments, and related database rows.
               </Typography>
             </Box>
+            ) : null}
             <Box sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
                 Replicate
@@ -5100,9 +5165,11 @@ function FormDetail() {
           <Button onClick={handleChooseApproverAssignmentFromMore} variant="outlined" color="primary" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
             Approver Assignment
           </Button>
+          {racmDeleteEnabled ? (
           <Button onClick={handleChooseDeleteFromMore} variant="outlined" color="error" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
             Delete
           </Button>
+          ) : null}
           <Button onClick={handleChooseReplicateFromMore} variant="contained" color="secondary" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
             Replicate
           </Button>
@@ -5172,7 +5239,7 @@ function FormDetail() {
         >
           Replicate RACM
         </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+        <DialogContent sx={{ px: 3, pb: 3 }}>
           <DialogContentText
             id="replicate-dialog-description"
             sx={{ color: theme.palette.text.secondary, fontSize: '0.9375rem', lineHeight: 1.5, my:2 }}
@@ -5244,7 +5311,7 @@ function FormDetail() {
         >
           Open the replicated RACM now?
         </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+        <DialogContent sx={{ px: 3, pb: 3 }}>
           <DialogContentText
             id="replicate-success-dialog-description"
             sx={{
@@ -5337,7 +5404,7 @@ function FormDetail() {
         >
           Control Activation
         </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+        <DialogContent sx={{ px: 3, pb: 3 }}>
           <DialogContentText
             id="set-active-dialog-description"
             sx={{
@@ -5396,7 +5463,7 @@ function FormDetail() {
         >
           Control Deactivation
         </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+        <DialogContent sx={{ px: 3, pb: 3 }}>
           <DialogContentText
             id="set-inactive-dialog-description"
             sx={{
@@ -5456,7 +5523,7 @@ function FormDetail() {
         >
           Delete RACM
         </DialogTitle>
-        <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+        <DialogContent sx={{ px: 3, pb: 3 }}>
           <DialogContentText
             id="delete-dialog-description"
             sx={{

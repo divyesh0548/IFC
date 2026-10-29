@@ -45,6 +45,71 @@ async function deleteApproverAssignmentsForRacms(tx, { formIds, companyIdentifie
   return result.count;
 }
 
+const { isDevelopment } = require('./node_env');
+
+function isRacmDeleteEnabled() {
+  return isDevelopment();
+}
+
+/**
+ * Remove every row stored for one control. Cascade would only clear some tables;
+ * history, audit rows, AI results, and RACM-specific CC rows are deleted here too.
+ */
+async function deleteAllFormScopedRows(tx, formId) {
+  const id = String(formId || '').trim();
+  if (!id) return;
+
+  await tx.$executeRaw`
+    DELETE FROM deficiency_response_attachment
+    WHERE submission_id IN (
+      SELECT s.id
+      FROM deficiency_response_submission s
+      INNER JOIN deficiency_response r ON r.id = s.deficiency_response_id
+      WHERE r.form_id = ${id}
+    )
+  `;
+  await tx.$executeRaw`
+    DELETE FROM deficiency_response_submission
+    WHERE deficiency_response_id IN (
+      SELECT id FROM deficiency_response WHERE form_id = ${id}
+    )
+  `;
+  await tx.$executeRaw`DELETE FROM deficiency_response WHERE form_id = ${id}`;
+  await tx.$executeRaw`
+    DELETE FROM change_request_item
+    WHERE change_request_id IN (
+      SELECT id FROM change_request WHERE form_id = ${id}
+    )
+  `;
+  await tx.$executeRaw`DELETE FROM change_request WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM process_owner_declaration WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM controls_reminder WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM design_gap_insights WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM racm_field_values WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM sample_docs WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM racm_docs WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM control_form_history WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM audit_logs_racm WHERE form_id = ${id}`;
+  await tx.$executeRaw`
+    DELETE FROM key_manual_ai_insights_run_table rt
+    WHERE EXISTS (
+      SELECT 1
+      FROM key_manual_ai_insights_row_data r
+      WHERE r.run_id = rt.id AND r.form_id = ${id}
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM key_manual_ai_insights_row_data r
+      WHERE r.run_id = rt.id AND r.form_id IS DISTINCT FROM ${id}
+    )
+  `;
+  await tx.$executeRaw`DELETE FROM key_manual_ai_insights_row_data WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM risk_analysis WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM approver_assignments WHERE form_id = ${id}`;
+  await tx.$executeRaw`DELETE FROM racm_cc_users WHERE racm_identifier = ${id}`;
+  await tx.$executeRaw`DELETE FROM control_forms WHERE form_id = ${id}`;
+}
+
 module.exports = {
   ACTIVE_RACM_DELETE_MESSAGE,
   INACTIVE_RACM_APPROVER_MESSAGE,
@@ -52,4 +117,6 @@ module.exports = {
   getActiveRacmDeleteError,
   getInactiveRacmApproverAccessError,
   deleteApproverAssignmentsForRacms,
+  isRacmDeleteEnabled,
+  deleteAllFormScopedRows,
 };

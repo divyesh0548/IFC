@@ -274,13 +274,25 @@ function DashboardLayout() {
                   },
                 },
                 list: {
+                  disablePadding: true,
                   sx: {
-                    py: 0.5,
+                    py: 0,
                     '& .MuiMenuItem-root': {
-                      py: 0.75,
-                      px: 1.5,
-                      minHeight: 36,
+                      m: 0,
+                      py: 0,
+                      px: 2,
+                      minHeight: 48,
+                      height: 48,
+                      borderRadius: 0,
+                      alignItems: 'center',
                       lineHeight: 1.2,
+                    },
+                    '& .MuiMenuItem-root + .MuiDivider-root': {
+                      my: 0,
+                    },
+                    '& .MuiListItemIcon-root': {
+                      minWidth: 36,
+                      color: 'inherit',
                     },
                     '& .MuiDivider-root': {
                       my: 0,
@@ -392,9 +404,15 @@ function DashboardLayout() {
               display: 'grid',
               placeItems: 'center',
               mb: 2.25,
-              color: theme.palette.mode === 'dark' ? '#ffffff' : theme.palette.secondary.main,
-              backgroundColor: alpha(theme.palette.secondary.main, theme.palette.mode === 'dark' ? 0.18 : 0.12),
-              border: `1px solid ${alpha(theme.palette.secondary.main, theme.palette.mode === 'dark' ? 0.28 : 0.18)}`,
+              color: theme.palette.mode === 'dark' ? '#ffffff' : theme.palette.primary.main,
+              backgroundColor: alpha(
+                theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.primary.main,
+                theme.palette.mode === 'dark' ? 0.12 : 0.1,
+              ),
+              border: `1px solid ${alpha(
+                theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.primary.main,
+                0.22,
+              )}`,
             }}
           >
             <LogoutIcon sx={{ fontSize: 32 }} />

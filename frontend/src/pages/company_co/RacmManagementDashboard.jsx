@@ -118,6 +118,7 @@ function RacmManagementDashboard() {
   const [selectedForms, setSelectedForms] = useState(new Set())
   const [deleteConfirmDialogOpen, setDeleteConfirmDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [racmDeleteEnabled, setRacmDeleteEnabled] = useState(false)
   const [setActiveConfirmDialogOpen, setSetActiveConfirmDialogOpen] = useState(false)
   const [setActiveWithoutSample, setSetActiveWithoutSample] = useState(null)
   const [replicateDialogOpen, setReplicateDialogOpen] = useState(false)
@@ -163,6 +164,28 @@ function RacmManagementDashboard() {
   useSyncGlobalLoading(deleting)
   useSyncGlobalLoading(replicating)
   useSyncGlobalLoading(setActiveClassifying)
+
+  useEffect(() => {
+    let cancelled = false
+    const loadDeleteAvailability = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/control-forms/delete-enabled`, {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await response.json()
+        if (!cancelled && response.ok && data.success) {
+          setRacmDeleteEnabled(Boolean(data.enabled))
+        }
+      } catch (error) {
+        console.error('Error checking RACM delete availability:', error)
+      }
+    }
+    loadDeleteAvailability()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (companyIdentifier) {
@@ -2178,6 +2201,7 @@ function RacmManagementDashboard() {
                 </ListItemIcon>
                 <ListItemText primary={replicateMenuLabel} />
               </MenuItem>
+              {racmDeleteEnabled ? (
               <MenuItem
                 disabled={
                   loading ||
@@ -2205,6 +2229,7 @@ function RacmManagementDashboard() {
                 </ListItemIcon>
                 <ListItemText primary={deleteMenuLabel} />
               </MenuItem>
+              ) : null}
             </Menu>
           </Box>
         </Box>
@@ -2862,7 +2887,7 @@ function RacmManagementDashboard() {
           >
             Confirm Set Active
           </DialogTitle>
-          <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContent sx={{ px: 3, pb: 3 }}>
             <DialogContentText 
               id="set-active-dialog-description"
               sx={{
@@ -2995,7 +3020,7 @@ function RacmManagementDashboard() {
           >
             Replicate RACM(s)
           </DialogTitle>
-          <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContent sx={{ px: 3, pb: 3 }}>
             <DialogContentText
               id="replicate-dialog-description"
               sx={{
@@ -3153,7 +3178,7 @@ function RacmManagementDashboard() {
           >
             Process Owner Role Check
           </DialogTitle>
-          <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContent sx={{ px: 3, pb: 3 }}>
             <DialogContentText
               id="non-user-role-dialog-description"
               sx={{
@@ -3285,7 +3310,7 @@ function RacmManagementDashboard() {
           >
             Set Active – Selection Notice
           </DialogTitle>
-          <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContent sx={{ px: 3, pb: 3 }}>
             <DialogContentText
               id="set-active-selection-info-description"
               sx={{
@@ -3809,7 +3834,7 @@ function RacmManagementDashboard() {
           >
             Confirm Delete
           </DialogTitle>
-          <DialogContent sx={{ px: 3, pt: 3, pb: 3 }}>
+          <DialogContent sx={{ px: 3, pb: 3 }}>
             <DialogContentText 
               id="delete-dialog-description"
               sx={{

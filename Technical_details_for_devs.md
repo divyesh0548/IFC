@@ -63,8 +63,22 @@ A pure UTC date can shift the calendar day near midnight relative to India (~5:3
 
 
 
+# Environment Variables
 
+### 1. NODE_ENV
 
+Accepted values are `development` and `production`. Any other value stops the backend from starting.
+
+- **`development`:** Coordinator control delete and siteadmin company delete are enabled. Auth cookies are not `secure`.
+- **`production`:** Both delete APIs return 403 and the buttons stay hidden. Auth cookies are `secure` (sent only over HTTPS).
+
+# Siteadmin company delete
+
+Development only. Deletes the company, its users, its controls, and every row related to those controls or to that `company_identifier`. Control files in storage are removed first. Controls library, global business processes, and auditors stay.
+
+# Coordinator control delete
+
+Development only, and only for an inactive control in the coordinator’s company and units. S3 objects for that control are removed first, then all database rows related to that `form_id`. Rows not keyed by `form_id` (concise risk list, overall missing risks, business-process overview, unit/process approver and CC assignments) are left as-is.
 
 # Control dispersion dashboard
 

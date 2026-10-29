@@ -55,6 +55,8 @@ async function fetchFormsDueForApproverReminder(client) {
       approver_map.approver_email_id AS approver_email_id,
       NULLIF(TRIM(approver.emp_name), '') AS approver_name,
       c.company_name,
+      pod.declaration_type,
+      COALESCE(pod.no_furthure_submission, FALSE) AS no_furthure_submission,
       CASE
         WHEN COALESCE(cf.assigned_to_coordinator, FALSE) = TRUE THEN
           COALESCE(NULLIF(TRIM(coord_u.emp_name), ''), NULLIF(TRIM(cf.coordinator_assigned_by), ''))
@@ -99,7 +101,6 @@ async function fetchFormsDueForApproverReminder(client) {
       ON pod.form_id = cf.form_id
     WHERE cf.active = TRUE
       AND LOWER(TRIM(COALESCE(cf.status, ''))) = 'sent for approval'
-      AND COALESCE(pod.no_furthure_submission, FALSE) = FALSE
       AND cf.approver_due_date IS NOT NULL
       AND ${IST_CURRENT_DATE_SQL} >= cf.approver_due_date
       AND ${reminderDueSql}
@@ -119,13 +120,21 @@ function buildApproverReminderEmailBody(form) {
     submittedBy,
   });
 
+  const isDeclaration = Boolean(form.no_furthure_submission);
+  const requestLine = isDeclaration
+    ? 'This is a reminder that a no-submission declaration is pending your conclusion.'
+    : 'This is a reminder that a RACM is pending your approval.';
+  const actionLine = isDeclaration
+    ? 'Please record one conclusion: Effective, Not Effective, Accepted under deviation, or Not Applicable. That conclusion closes the control cycle.'
+    : 'Please review the uploaded documents and Approve/Reject based on your judgement.';
+
   return `Dear ${approverSalutation},
 
-This is a reminder that a RACM is pending your approval.
+${requestLine}
 
 ${detailsBlock}
 
-Please review the uploaded documents and Approve/Reject based on your judgement.
+${actionLine}
 ${racmUrl ? `\nRACM: ${racmUrl}` : ''}
 
 Regards,

@@ -12,6 +12,12 @@ const {
   utcTs,
   createdAtUtcSql,
 } = require('../../utils/sqlUtcTimestamps');
+const { deleteFileFromS3 } = require('../../utils/s3Upload');
+const { collectRacmS3DocumentKeys } = require('../../utils/racm_documents');
+const {
+  isCompanyDeleteEnabled,
+  deleteCompanyAndRelatedRows,
+} = require('../../utils/company_delete');
 
 // Helper function to generate company identifier
 function generateCompanyIdentifier(companyName) {
@@ -723,6 +729,160 @@ async function createBusinessProcessManagementEntry(req, res) {
   }
 }
 
+async function getCompanyDeleteEnabled(req, res) {
+  return res.status(200).json({
+    success: true,
+    enabled: isCompanyDeleteEnabled(),
+  });
+}
+
+async function getCompanyDeletePreview(req, res) {
+  const companyIdentifier = String(req.params.company_identifier || '').trim();
+
+  if (!isCompanyDeleteEnabled()) {
+    return res.status(403).json({
+      success: false,
+      message: 'Company deletion is available only when the server is running in development.',
+    });
+  }
+
+  if (!companyIdentifier) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company identifier is required',
+    });
+  }
+
+  try {
+    const company = await prisma.company.findFirst({
+      where: { companyIdentifier },
+      select: { id: true, companyName: true },
+    });
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: 'Company not found',
+      });
+    }
+
+    const countsResult = await pool.query(
+      `
+        SELECT
+          (SELECT COUNT(*)::int FROM control_forms WHERE company_identifier = $1) AS controls,
+          (SELECT COUNT(*)::int FROM ifc_users WHERE company_identifier = $1 AND LOWER(TRIM(COALESCE(role, ''))) <> 'siteadmin') AS users,
+          (SELECT COUNT(*)::int FROM ifc_users WHERE company_identifier = $1 AND LOWER(TRIM(COALESCE(role, ''))) = 'company_admin') AS company_admins,
+          (SELECT COUNT(*)::int FROM ifc_users WHERE company_identifier = $1 AND LOWER(TRIM(COALESCE(role, ''))) = 'company_co') AS coordinators,
+          (SELECT COUNT(*)::int FROM ifc_users WHERE company_identifier = $1 AND LOWER(TRIM(COALESCE(role, ''))) = 'approver') AS approvers,
+          (SELECT COUNT(*)::int FROM ifc_users WHERE company_identifier = $1 AND LOWER(TRIM(COALESCE(role, ''))) = 'user') AS process_owners,
+          (SELECT COUNT(*)::int FROM company_unit_master WHERE company_identifier = $1) AS units,
+          (SELECT COUNT(*)::int FROM coordinator_unit_assignments WHERE company_identifier = $1) AS coordinator_assignments,
+          (SELECT COUNT(*)::int FROM approver_assignments WHERE company_identifier = $1) AS approver_assignments
+      `,
+      [companyIdentifier]
+    );
+
+    const forms = await prisma.controlForm.findMany({
+      where: { companyIdentifier },
+      select: { formId: true },
+    });
+    const formIds = forms.map((form) => form.formId).filter(Boolean);
+    const files = (await collectRacmS3DocumentKeys(prisma, formIds)).length;
+    const counts = countsResult.rows[0] || {};
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        company_name: company.companyName || '',
+        controls: counts.controls || 0,
+        users: counts.users || 0,
+        company_admins: counts.company_admins || 0,
+        coordinators: counts.coordinators || 0,
+        approvers: counts.approvers || 0,
+        process_owners: counts.process_owners || 0,
+        units: counts.units || 0,
+        coordinator_assignments: counts.coordinator_assignments || 0,
+        approver_assignments: counts.approver_assignments || 0,
+        files,
+      },
+    });
+  } catch (error) {
+    console.error('Error loading company delete preview:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load company delete details',
+    });
+  }
+}
+
+async function deleteCompany(req, res) {
+  const companyIdentifier = String(req.params.company_identifier || '').trim();
+
+  if (!isCompanyDeleteEnabled()) {
+    return res.status(403).json({
+      success: false,
+      message: 'Company deletion is available only when the server is running in development.',
+    });
+  }
+
+  if (!companyIdentifier) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company identifier is required',
+    });
+  }
+
+  try {
+    const company = await prisma.company.findFirst({
+      where: { companyIdentifier },
+      select: { id: true },
+    });
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: 'Company not found',
+      });
+    }
+
+    const forms = await prisma.controlForm.findMany({
+      where: { companyIdentifier },
+      select: { formId: true },
+    });
+    const formIds = forms.map((form) => form.formId).filter(Boolean);
+    const docUrlsToDelete = await collectRacmS3DocumentKeys(prisma, formIds);
+
+    try {
+      for (const s3Key of docUrlsToDelete) {
+        await deleteFileFromS3(s3Key);
+      }
+    } catch (s3Error) {
+      console.error('Error deleting company documents from S3:', s3Error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error deleting associated documents from storage',
+        error: s3Error.message,
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await deleteCompanyAndRelatedRows(tx, companyIdentifier);
+    }, { timeout: 180000 });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Company deleted successfully',
+    });
+  } catch (error) {
+    console.error('Error deleting company:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error deleting company',
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   getCompanies,
   getCompanyByIdentifier,
@@ -731,4 +891,7 @@ module.exports = {
   getAuditors,
   createAuditor,
   createBusinessProcessManagementEntry,
+  getCompanyDeleteEnabled,
+  getCompanyDeletePreview,
+  deleteCompany,
 };

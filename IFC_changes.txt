@@ -1,5 +1,3 @@
-Mayank sir suggested to implement dynamic User controls. Curently each user role is fixed and can't be changed. But it should be dynamic and adjusted by siteadmin or coordinator.
-
 
 Should I remove max limit of smaple size for each control frequency?
 
@@ -36,3 +34,15 @@ Indispensable chnages:
 Add a standard password policy.
 
 
+
+Fixes required:
+Check the sample required generation. In "AX72O2ZG3TJWDEE" this control sample size was 3 but the sample reuqired has 5 sample intervals.
+
+Save the user selected dropdowns in localstorage for their session only. Keep the filter to particular page only, like RACM dashboard.
+
+In dark mode the borders which seperate header and other components of the website need to be bright. Curently they are barely visible.
+
+ (This is a temporary password, please change it after logging in.) = Remove this line from all emails, because users have no option.
+
+
+In user management provide similar buttons design in company admin page as present in coordintor's page. Also there is no option to see linked unit to a process owner in admin's page, which is present in the coordinator's page.

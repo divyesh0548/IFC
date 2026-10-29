@@ -115,6 +115,9 @@ function buildRacmApprovedAuditAction(designConclusion) {
   if (normalized === 'accepted under deviation') {
     return 'RACM Approved - Accepted Under Deviation';
   }
+  if (normalized === 'not applicable') {
+    return 'RACM Approved - Not Applicable';
+  }
   const label = String(designConclusion || '').trim();
   return label ? `RACM Approved - ${label}` : 'RACM Approved';
 }
@@ -137,7 +140,7 @@ function resolveRacmDecisionRecipientEmail(processOwnerEmail, updatedForm) {
   ).trim();
 }
 
-async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status, reason_by_approver, updatedForm) {
+async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status, reason_by_approver, updatedForm, declarationClosesCycle = false) {
   const ownerTrim = resolveRacmDecisionRecipientEmail(processOwnerEmail, updatedForm);
   if (!ownerTrim) {
     console.warn(`⚠️  No process owner or coordinator recipient found for form ${form_id}, email not sent`);
@@ -209,7 +212,12 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
       emailBody += 'No further action is required for this RACM.\n\n';
     } else if (normalizedConclusion === 'not effective') {
       emailBody += 'Your RACM has been deemed ineffective by the approver.\n\n';
-      emailBody += 'Action required: Process Owner or Company Coordinator must submit a Mitigation Plan or Compensatory RACM.\n\n';
+      emailBody += declarationClosesCycle
+        ? 'No further action is required for this RACM. The control cycle is closed.\n\n'
+        : 'Action required: Process Owner or Company Coordinator must submit a Mitigation Plan or Compensatory RACM.\n\n';
+    } else if (normalizedConclusion === 'not applicable') {
+      emailBody += 'Your RACM has been marked Not Applicable by the approver.\n\n';
+      emailBody += 'No further action is required for this RACM. The control cycle is closed.\n\n';
     }
   }
 
@@ -463,6 +471,40 @@ async function approveForm(req, res) {
       });
     }
 
+    const declaration = await getProcessOwnerDeclarationByFormId(pool, form_id);
+    const isDeclarationReview = Boolean(declaration?.no_furthure_submission);
+    const declarationConclusion = {
+      effective: 'Effective',
+      'not effective': 'Not Effective',
+      'accepted under deviation': 'Accepted under deviation',
+      'not applicable': 'Not Applicable',
+    }[normalizeConclusion(designConclusion)] || '';
+
+    if (isDeclarationReview && status === 'Rejected') {
+      return res.status(400).json({
+        success: false,
+        message: 'A no-submission declaration is closed by a conclusion. Reject is not available.',
+      });
+    }
+
+    if (isDeclarationReview && status === 'Approved' && !declarationConclusion) {
+      return res.status(400).json({
+        success: false,
+        message: 'Conclusion must be Effective, Not Effective, Accepted under deviation, or Not Applicable.',
+      });
+    }
+
+    if (!isDeclarationReview && normalizeConclusion(designConclusion) === 'not applicable') {
+      return res.status(400).json({
+        success: false,
+        message: 'Not Applicable can only be recorded for a no-submission declaration.',
+      });
+    }
+
+    const storedConclusion = isDeclarationReview && status === 'Approved'
+      ? declarationConclusion
+      : designConclusion;
+
     if (status === 'Approved' && !designProcedures) {
       return res.status(400).json({
         success: false,
@@ -470,14 +512,14 @@ async function approveForm(req, res) {
       });
     }
 
-    if (status === 'Approved' && !designConclusion) {
+    if (status === 'Approved' && !storedConclusion) {
       return res.status(400).json({
         success: false,
         message: 'Conclusion on Design of Control is required for approval.',
       });
     }
 
-    if (status === 'Approved' && isNotEffectiveConclusion(designConclusion) && !deficiencyDescription) {
+    if (status === 'Approved' && isNotEffectiveConclusion(storedConclusion) && !isDeclarationReview && !deficiencyDescription) {
       return res.status(400).json({
         success: false,
         message: 'Description of Deficiency in Control Design is required when conclusion is Not Effective.',
@@ -508,14 +550,14 @@ async function approveForm(req, res) {
       paramIndex++;
 
       updateFields.push(`control_design_conclusion = $${paramIndex}`);
-      updateValues.push(control_design_conclusion !== undefined ? designConclusion || null : null);
+      updateValues.push(control_design_conclusion !== undefined ? storedConclusion || null : null);
       paramIndex++;
 
       updateFields.push(`design_deficiency_desc = $${paramIndex}`);
       updateValues.push(design_deficiency_desc !== undefined ? deficiencyDescription || null : null);
       paramIndex++;
 
-      if (status === 'Approved' && isNotEffectiveConclusion(designConclusion)) {
+      if (status === 'Approved' && isNotEffectiveConclusion(storedConclusion) && !isDeclarationReview) {
         updateFields.push(`deficiency_action_status = $${paramIndex}`);
         updateValues.push(true);
         paramIndex++;
@@ -540,7 +582,7 @@ async function approveForm(req, res) {
         updateFields.push('last_rejected_at = (CURRENT_TIMESTAMP AT TIME ZONE \'UTC\')');
       }
 
-      if (status === 'Approved' && isNotEffectiveConclusion(designConclusion)) {
+      if (status === 'Approved' && isNotEffectiveConclusion(storedConclusion) && !isDeclarationReview) {
         await seedIneffectiveReminderDatetime(client, form_id);
       } else {
         await resetIneffectiveReminderDatetime(client, form_id);
@@ -666,7 +708,8 @@ async function approveForm(req, res) {
       form_id,
       status,
       approverReason,
-      updatedForm
+      updatedForm,
+      isDeclarationReview
     );
 
     const action = status === 'Approved'
@@ -718,6 +761,14 @@ async function changeApprovalDecision(req, res) {
     const row = currentResult.rows[0];
     if (denyApproverIfRacmInactive(res, row.active)) {
       return;
+    }
+
+    const existingDeclaration = await getProcessOwnerDeclarationByFormId(pool, form_id);
+    if (existingDeclaration?.no_furthure_submission) {
+      return res.status(400).json({
+        success: false,
+        message: 'This control cycle is closed by a no-submission declaration and the decision cannot be changed.',
+      });
     }
 
     const curStatus = row.status;

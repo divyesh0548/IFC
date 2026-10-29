@@ -27,6 +27,7 @@ const CONTROL_FORM_TIMESTAMP_COLUMNS = [
 
 const CONTROLS_REMINDER_TIMESTAMP_COLUMNS = [
   'reminder_datetime',
+  'final_reminder_sent_at',
   'reminder_to_approver_datetime',
   'ineffective_reminder_datetime',
   'deficiency_review_reminder_datetime',

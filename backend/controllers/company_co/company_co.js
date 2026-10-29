@@ -3088,8 +3088,8 @@ async function assignRacmApprover(req, res) {
         .trim()
         .toLowerCase()
         .replace(/[\s_-]+/g, ' ');
-      if (normalizedConclusion === 'effective' || normalizedConclusion === 'accepted under deviation') {
-        return 'approved (Effective / Accepted Under Deviation)';
+      if (normalizedConclusion === 'effective' || normalizedConclusion === 'accepted under deviation' || normalizedConclusion === 'not applicable') {
+        return 'approved (Effective / Accepted Under Deviation / Not Applicable)';
       }
       const normalizedDeficiencyResponseStatus = String(row?.deficiency_response_status || '')
         .trim()
@@ -3111,7 +3111,7 @@ async function assignRacmApprover(req, res) {
       return res.status(409).json({
         success: false,
         code: 'RACM_APPROVER_ASSIGNMENT_LOCKED',
-        message: 'Approver assignment cannot be changed for RACMs that are sent for approval, approved (Effective / Accepted Under Deviation), have a deficiency response submitted for review, or have a no further submission declaration',
+        message: 'Approver assignment cannot be changed for RACMs that are sent for approval, approved (Effective / Accepted Under Deviation / Not Applicable), have a deficiency response submitted for review, or have a no further submission declaration',
         lockedForms: approvalLockedForms.map(({ row, reason }) => ({
           form_id: row.form_id,
           control_number: row.control_number,

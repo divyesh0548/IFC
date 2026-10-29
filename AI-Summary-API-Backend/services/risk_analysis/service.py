@@ -104,7 +104,7 @@ def _complete_concise_batch(
     batch: list[dict],
     *,
     max_tokens: int,
-) -> tuple[list[dict], str]:
+    ) -> tuple[list[dict], str]:
     system_prompt, user_prompt = _build_concise_prompts(business_process, batch)
     try:
         parsed, model = complete_json(
@@ -157,7 +157,7 @@ def format_dry_run_txt(
     model: str,
     system_prompt: str,
     user_prompt: str,
-) -> str:
+    ) -> str:
     control_number = ""
     if isinstance(control, dict):
         control_number = str(control.get("controlNumber") or control.get("control_number") or "").strip()
@@ -184,7 +184,7 @@ def condense_risks(
     business_process: str,
     *,
     dry_run: bool = False,
-) -> dict:
+    ) -> dict:
     pairs = []
     for item in controls:
         if not isinstance(item, dict):
@@ -248,7 +248,7 @@ def build_prompts(
     business_process: str,
     concise_risks: list[dict],
     business_process_overview: str,
-) -> tuple[str, str]:
+    ) -> tuple[str, str]:
     user_prompt = (
         load_text("user_prompt.txt")
         .replace("{business_process}", business_process)
@@ -267,7 +267,7 @@ def build_overall_missing_prompts(
     business_process: str,
     concise_risks: list[dict],
     business_process_overview: str,
-) -> tuple[str, str]:
+    ) -> tuple[str, str]:
     user_prompt = (
         load_text("overall_missing_user_prompt.txt")
         .replace("{business_process}", business_process)
@@ -420,7 +420,7 @@ def analyze_control(
     business_process_overview: str = "",
     dry_run: bool = False,
     form_id: str = "",
-) -> dict:
+    ) -> dict:
     if not isinstance(concise_risks, list):
         raise ValueError("concise_risks is required")
     business_process_overview = str(business_process_overview or "").strip()
@@ -473,7 +473,7 @@ def analyze_business_process_missing_risks(
     concise_risks: list[dict] | None = None,
     business_process_overview: str = "",
     dry_run: bool = False,
-) -> dict:
+    ) -> dict:
     if not isinstance(concise_risks, list):
         raise ValueError("concise_risks is required")
     business_process_overview = str(business_process_overview or "").strip()

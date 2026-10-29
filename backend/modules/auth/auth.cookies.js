@@ -1,3 +1,5 @@
+const { isProduction } = require('../../utils/node_env');
+
 const AUTH_COOKIE_NAMES = Object.freeze([
   'authToken',
   'userAuthToken',
@@ -21,7 +23,7 @@ function getAuthSessionMaxAgeMs() {
 function getAuthCookieOptions() {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isProduction(),
     sameSite: 'lax',
     path: '/',
   };

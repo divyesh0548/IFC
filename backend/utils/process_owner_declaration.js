@@ -11,6 +11,8 @@ async function getProcessOwnerDeclarationByFormId(clientOrPool, formId) {
       SELECT
         pod.form_id,
         pod.no_furthure_submission,
+        pod.declaration_type,
+        pod.declaration_confirmed,
         pod.owner_comment,
         pod.process_owner_email,
         COALESCE(NULLIF(TRIM(u.emp_name), ''), NULLIF(TRIM(pod.process_owner_email), '')) AS declared_by,
@@ -38,24 +40,32 @@ function buildNoFurtherSubmissionEmail({
   declaredByEmail,
   companyName,
   ownerComment,
+  declarationType,
 }) {
   const approverUrl = buildApproverFormDetailUrl(form?.form_id);
   const declarerLabel = String(declaredByName || declaredByEmail || 'Process Owner').trim();
-  const effectiveCompanyName = String(companyName || '').trim() || 'IFC';
+  const effectiveCompanyName = String(companyName || '').trim();
   const trimmedComment = String(ownerComment || '').trim();
-  const subject = `Internal Financial Controls - No Further Submission Declared`;
+  const isNoEvent = declarationType === 'no_submission_available';
+  const businessProcess = String(form?.business_process || '').trim() || 'Business Process';
+  const controlNumber = String(form?.control_number || '').trim() || String(form?.form_id || '').trim() || 'Control';
+  const subject = isNoEvent
+    ? `${businessProcess} - ${controlNumber} - No Submission Available declaration`
+    : `${businessProcess} - ${controlNumber} - No Further Submission Declared`;
+  const declarationSentence = isNoEvent
+    ? `${declarerLabel} has declared that no submission is available because no transaction or event happened during the audit period.`
+    : `${declarerLabel} has declared that further submission is not possible for this RACM.`;
 
   let text = `Dear Approver,\n\n`;
-  text += `${declarerLabel} has declared that there will be no further submission for this RACM.\n\n`;
-  text += buildRacmDetailsSection(form, [
-    ['Comment', trimmedComment || 'Not provided'],
-  ], 'RACM Details:');
+  text += `${declarationSentence}\n\n`;
+  const detailRows = trimmedComment ? [['Comment', trimmedComment]] : [];
+  text += buildRacmDetailsSection(form, detailRows, 'RACM Details:');
   text += '\n\n';
-  text += 'This declaration closes the process owner submission cycle for this RACM and reminder emails have been stopped.\n';
+  text += 'Please record one conclusion: Effective, Not Effective, Accepted under deviation, or Not Applicable. That conclusion closes the control cycle.\n';
   if (approverUrl) {
     text += `\nRACM: ${approverUrl}\n`;
   }
-  text += `\nRegards,\n${effectiveCompanyName}`;
+  text += effectiveCompanyName ? `\nRegards,\n${effectiveCompanyName}` : '\nRegards,';
 
   return { subject, text };
 }

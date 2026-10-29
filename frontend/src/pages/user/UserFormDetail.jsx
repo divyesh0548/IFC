@@ -1212,6 +1212,10 @@ function UserFormDetail() {
   const showDeficiencyActionNotice = needsDeficiencyResponse
   const canSubmitDeficiencyResponse = needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review' && !hasProcessOwnerDeclaration
   const canDeclareNoFurtherSubmission = !hasProcessOwnerDeclaration && (isRejected || isApprovedNotEffective)
+  const canDeclareNoSubmissionAvailable = !hasProcessOwnerDeclaration
+    && !hasPendingChanges
+    && Boolean(formData?.active)
+    && (!formData?.status || String(formData.status).trim() === '')
   const showActiveDeficiencyResponseSection = Boolean(
     deficiencyResponse && String(deficiencyResponse.status || '').trim().toLowerCase() === 'submitted'
   )
@@ -1409,11 +1413,35 @@ function UserFormDetail() {
                   </Button>
                 )}
                 <ProcessOwnerDeclarationAction
-                  canDeclare={canDeclareNoFurtherSubmission}
+                  canDeclare={canDeclareNoSubmissionAvailable}
                   formId={form_id}
-                  onDeclared={({ processOwnerDeclaration, deficiencyActionStatus }) => {
+                  declarationType="no_submission_available"
+                  buttonLabel="No Submission Available"
+                  dialogTitle="No Submission Available"
+                  dialogText="Use this when no transaction or event happened during the audit period. The approver will record a conclusion, and that conclusion closes the control cycle."
+                  tickLabel="I declare that no transaction or event happened during the audit period, so no submission is available."
+                  onDeclared={({ processOwnerDeclaration, deficiencyActionStatus, status }) => {
                     setFormData((current) => current ? ({
                       ...current,
+                      status: status || 'sent for approval',
+                      process_owner_declaration: processOwnerDeclaration,
+                      deficiency_action_status: deficiencyActionStatus === undefined ? false : Boolean(deficiencyActionStatus),
+                    }) : current)
+                  }}
+                  buttonSx={{}}
+                />
+                <ProcessOwnerDeclarationAction
+                  canDeclare={canDeclareNoFurtherSubmission}
+                  formId={form_id}
+                  declarationType="no_further_submission"
+                  buttonLabel="Declare No Submission"
+                  dialogTitle="Declare No Further Submission"
+                  dialogText="Use this when further submission is not possible. The approver will record a conclusion, and that conclusion closes the control cycle."
+                  tickLabel="I declare that further submission is not possible for this control."
+                  onDeclared={({ processOwnerDeclaration, deficiencyActionStatus, status }) => {
+                    setFormData((current) => current ? ({
+                      ...current,
+                      status: status || 'sent for approval',
                       process_owner_declaration: processOwnerDeclaration,
                       deficiency_action_status: deficiencyActionStatus === undefined ? false : Boolean(deficiencyActionStatus),
                     }) : current)
