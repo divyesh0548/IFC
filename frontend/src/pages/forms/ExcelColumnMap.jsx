@@ -15,13 +15,8 @@ import FormControl from '@mui/material/FormControl'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import InputLabel from '@mui/material/InputLabel'
-import TextField from '@mui/material/TextField'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContentText from '@mui/material/DialogContentText'
 import { toast } from 'react-hot-toast'
+import SaveColumnMappingDialog from '../../components/racm/SaveColumnMappingDialog'
 import {
   RACM_BULK_IMPORT_MAPPABLE_FIELDS,
   RACM_FIELD_LABELS,
@@ -659,7 +654,9 @@ function ExcelColumnMap() {
             ? data.message
             : `Created ${inserted} RACM(s)${extra}.`
         )
-        openSaveMappingDialog()
+        window.setTimeout(() => {
+          openSaveMappingDialog()
+        }, 0)
       } else {
         if (String(data?.message || '').includes(DUPLICATE_CONTROL_NUMBER_MESSAGE)) {
           setDuplicateControlNumberNotice(DUPLICATE_CONTROL_NUMBER_NOTICE)
@@ -1158,67 +1155,25 @@ function ExcelColumnMap() {
         onConfirm={handleAssertionYesNoMappingConfirm}
       />
 
-      <Dialog
+      <SaveColumnMappingDialog
         open={saveMappingDialog.open}
-        onClose={() => {
+        name={saveMappingDialog.name}
+        error={saveMappingDialog.error}
+        submitting={saveMappingDialog.submitting}
+        overwrite={saveMappingDialog.overwrite}
+        onNameChange={(value) =>
+          setSaveMappingDialog((prev) => ({
+            ...prev,
+            name: value,
+            error: '',
+            overwrite: false,
+          }))
+        }
+        onSave={handleSaveMappingConfirm}
+        onDismiss={() => {
           if (!saveMappingDialog.submitting) closeSaveMappingDialog({ navigateAway: true })
         }}
-        fullWidth
-        maxWidth="xs"
-      >
-        <DialogTitle>Save column mapping?</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1.5 }}>
-          <DialogContentText>
-            Save this mapping (including assertion and control-frequency value maps) for reuse on the next import for this template.
-          </DialogContentText>
-          <TextField
-            autoFocus
-            fullWidth
-            label="Mapping name"
-            value={saveMappingDialog.name}
-            onChange={(event) =>
-              setSaveMappingDialog((prev) => ({
-                ...prev,
-                name: event.target.value,
-                error: '',
-                overwrite: false,
-              }))
-            }
-            disabled={saveMappingDialog.submitting}
-            error={Boolean(saveMappingDialog.error)}
-            helperText={saveMappingDialog.error || 'Use a clear name, e.g. P2P vendor export'}
-          />
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
-          <Button
-            onClick={() => closeSaveMappingDialog({ navigateAway: true })}
-            disabled={saveMappingDialog.submitting}
-            sx={{ textTransform: 'none' }}
-          >
-            Skip
-          </Button>
-          {saveMappingDialog.overwrite ? (
-            <Button
-              variant="contained"
-              color="warning"
-              disabled={saveMappingDialog.submitting}
-              onClick={() => handleSaveMappingConfirm({ overwrite: true })}
-              sx={{ textTransform: 'none' }}
-            >
-              {saveMappingDialog.submitting ? 'Saving…' : 'Overwrite'}
-            </Button>
-          ) : (
-            <Button
-              variant="contained"
-              disabled={saveMappingDialog.submitting}
-              onClick={() => handleSaveMappingConfirm({ overwrite: false })}
-              sx={{ textTransform: 'none' }}
-            >
-              {saveMappingDialog.submitting ? 'Saving…' : 'Save'}
-            </Button>
-          )}
-        </DialogActions>
-      </Dialog>
+      />
     </Box>
   )
 }

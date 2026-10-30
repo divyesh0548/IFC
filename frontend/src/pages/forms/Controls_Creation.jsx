@@ -47,7 +47,8 @@ import ControlFrequencyValueMapDialog from '../../components/racm/ControlFrequen
 import AssertionYesNoMapDialog from '../../components/racm/AssertionYesNoMapDialog'
 import { SampleSizeSettingsButton } from '../../components/company_co/UnitSampleSizeSettingsDialog'
 import ActiveRacmTemplateNotice from '../../components/company_co/ActiveRacmTemplateNotice'
-import { buildAutomaticColumnMappingForRows } from '../../utils/racmBulkImportColumnMapping'
+import { buildAutomaticColumnMappingForRows, collectBulkImportHeaders } from '../../utils/racmBulkImportColumnMapping'
+import SaveColumnMappingDialog from '../../components/racm/SaveColumnMappingDialog'
 import {
   applyAssertionYesNoMapping,
   getAssertionYesNoMappingPrompt,
@@ -93,6 +94,19 @@ function Controls_Creation() {
   const [pendingImport, setPendingImport] = useState(null)
   const [longImportDialogOpen, setLongImportDialogOpen] = useState(false)
   const [duplicateControlNumberNotice, setDuplicateControlNumberNotice] = useState('')
+  const [saveMappingDialog, setSaveMappingDialog] = useState({
+    open: false,
+    name: '',
+    overwrite: false,
+    submitting: false,
+    error: '',
+    unitId: '',
+    templateId: null,
+    columnMapping: null,
+    assertionMapping: null,
+    frequencyMapping: null,
+    headers: [],
+  })
   const { businessProcessOptions, loading: businessProcessesLoading } = useBusinessProcesses()
   const { controlFrequencyOptions, loading: controlFrequencyOptionsLoading } = useControlFrequencyOptions()
   const [controlFrequencyMappingDialogState, setControlFrequencyMappingDialogState] = useState({
@@ -364,6 +378,8 @@ function Controls_Creation() {
     const {
       column_mapping: columnMapping,
       control_frequency_value_mapping: controlFrequencyValueMapping,
+      assertion_yes_no_mapping: assertionYesNoMapping,
+      templateId,
       formEvent,
     } = options
     const {
@@ -427,6 +443,32 @@ function Controls_Creation() {
             : `Created ${inserted} RACM(s)${extra}.`
         )
         clearFormAfterSuccess(formEvent)
+        const mappingToSave =
+          columnMapping && typeof columnMapping === 'object' ? columnMapping : null
+        if (mappingToSave && Object.keys(mappingToSave).length > 0) {
+          const nextSaveDialog = {
+            open: true,
+            name: '',
+            overwrite: false,
+            submitting: false,
+            error: '',
+            unitId: selectedUnitId,
+            templateId: Number(templateId) || null,
+            columnMapping: mappingToSave,
+            assertionMapping:
+              assertionYesNoMapping && typeof assertionYesNoMapping === 'object'
+                ? assertionYesNoMapping
+                : null,
+            frequencyMapping:
+              controlFrequencyValueMapping && typeof controlFrequencyValueMapping === 'object'
+                ? controlFrequencyValueMapping
+                : null,
+            headers: collectBulkImportHeaders(rows),
+          }
+          window.setTimeout(() => {
+            setSaveMappingDialog(nextSaveDialog)
+          }, 0)
+        }
       } else {
         if (String(data?.message || '').includes(DUPLICATE_CONTROL_NUMBER_MESSAGE)) {
           setDuplicateControlNumberNotice(DUPLICATE_CONTROL_NUMBER_NOTICE)
@@ -552,10 +594,16 @@ function Controls_Creation() {
         columnPatterns: mappingData.data.columnPatterns,
       },
       templateExtraFields,
+      templateId: Number(templateData.data?.template?.id) || null,
     }
   }
 
-  const continueImportAfterColumnMapping = async (importCtx, columnMapping, templateExtraFields = []) => {
+  const continueImportAfterColumnMapping = async (
+    importCtx,
+    columnMapping,
+    templateExtraFields = [],
+    templateId = null
+  ) => {
     const assertionPrompt = getAssertionYesNoMappingPrompt(
       importCtx.rows,
       columnMapping,
@@ -572,6 +620,7 @@ function Controls_Creation() {
         ctx: {
           importCtx,
           column_mapping: columnMapping,
+          templateId,
         },
         selections: Object.fromEntries(
           assertionPrompt.distinctValues.map((value) => [value, ''])
@@ -580,10 +629,15 @@ function Controls_Creation() {
       return
     }
 
-    await continueImportAfterAssertionMapping(importCtx, columnMapping)
+    await continueImportAfterAssertionMapping(importCtx, columnMapping, null, templateId)
   }
 
-  const continueImportAfterAssertionMapping = async (importCtx, columnMapping) => {
+  const continueImportAfterAssertionMapping = async (
+    importCtx,
+    columnMapping,
+    assertionMapping = null,
+    templateId = null
+  ) => {
     const detectedControlFrequencyHeader = findDetectedControlFrequencyHeader(importCtx.rows)
     if (!detectedControlFrequencyHeader) {
       toast.error(
@@ -606,6 +660,8 @@ function Controls_Creation() {
           ctx: {
             importCtx,
             column_mapping: columnMapping,
+            assertion_yes_no_mapping: assertionMapping,
+            templateId,
           },
           selections: Object.fromEntries(
             controlFrequencyValidation.invalidValues.map((value) => [value, ''])
@@ -619,7 +675,11 @@ function Controls_Creation() {
 
     setMappingDialogOpen(false)
     setPendingImport(null)
-    await runBulkImport(importCtx, { column_mapping: columnMapping })
+    await runBulkImport(importCtx, {
+      column_mapping: columnMapping,
+      assertion_yes_no_mapping: assertionMapping,
+      templateId,
+    })
   }
 
   const handleAutomaticColumnMapping = async () => {
@@ -630,9 +690,11 @@ function Controls_Creation() {
 
     let columnMapping = {}
     let templateExtraFields = []
+    let templateId = null
     try {
       const mappingContext = await loadBulkImportMappingContext(pendingImport.unitId)
       templateExtraFields = mappingContext.templateExtraFields
+      templateId = mappingContext.templateId
       columnMapping = buildAutomaticColumnMappingForRows(
         pendingImport.rows,
         mappingContext.mappingConfig,
@@ -644,7 +706,12 @@ function Controls_Creation() {
       return
     }
 
-    await continueImportAfterColumnMapping(pendingImport, columnMapping, templateExtraFields)
+    await continueImportAfterColumnMapping(
+      pendingImport,
+      columnMapping,
+      templateExtraFields,
+      templateId
+    )
   }
 
   const handleCustomColumnMapping = () => {
@@ -694,6 +761,8 @@ function Controls_Creation() {
     await runBulkImport(ctx.importCtx, {
       column_mapping: ctx.column_mapping,
       control_frequency_value_mapping: mapping,
+      assertion_yes_no_mapping: ctx.assertion_yes_no_mapping,
+      templateId: ctx.templateId,
     })
   }
 
@@ -712,7 +781,12 @@ function Controls_Creation() {
     const ctx = assertionYesNoMappingDialogState.ctx
     handleAssertionYesNoMappingCancel()
     if (!ctx?.importCtx) return
-    await continueImportAfterAssertionMapping(ctx.importCtx, ctx.column_mapping)
+    await continueImportAfterAssertionMapping(
+      ctx.importCtx,
+      ctx.column_mapping,
+      null,
+      ctx.templateId
+    )
   }
 
   const handleAssertionYesNoMappingConfirm = async (mapping) => {
@@ -731,8 +805,87 @@ function Controls_Creation() {
         ...ctx.importCtx,
         rows: mappedRows,
       },
-      ctx.column_mapping
+      ctx.column_mapping,
+      mapping,
+      ctx.templateId
     )
+  }
+
+  const closeSaveMappingDialog = () => {
+    setSaveMappingDialog({
+      open: false,
+      name: '',
+      overwrite: false,
+      submitting: false,
+      error: '',
+      unitId: '',
+      templateId: null,
+      columnMapping: null,
+      assertionMapping: null,
+      frequencyMapping: null,
+      headers: [],
+    })
+  }
+
+  const handleSaveMappingConfirm = async ({ overwrite = false } = {}) => {
+    const name = String(saveMappingDialog.name || '').trim()
+    if (!name) {
+      setSaveMappingDialog((prev) => ({ ...prev, error: 'Enter a mapping name.' }))
+      return
+    }
+    const templateId = Number(saveMappingDialog.templateId)
+    if (!Number.isInteger(templateId) || templateId <= 0) {
+      setSaveMappingDialog((prev) => ({
+        ...prev,
+        error: 'Active template is missing. Mapping cannot be saved.',
+      }))
+      return
+    }
+
+    setSaveMappingDialog((prev) => ({ ...prev, submitting: true, error: '', overwrite }))
+    try {
+      const assertionMapping = saveMappingDialog.assertionMapping
+      const frequencyMapping = saveMappingDialog.frequencyMapping
+      const response = await fetch(apiUrl('/api/company-co/excel-column-mappings'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit_id: saveMappingDialog.unitId,
+          name,
+          template_id: templateId,
+          column_mapping: saveMappingDialog.columnMapping,
+          assertion_yes_no_mapping:
+            assertionMapping && Object.keys(assertionMapping).length > 0 ? assertionMapping : null,
+          control_frequency_value_mapping:
+            frequencyMapping && Object.keys(frequencyMapping).length > 0 ? frequencyMapping : null,
+          excel_headers: saveMappingDialog.headers,
+          overwrite: Boolean(overwrite),
+        }),
+      })
+      const data = await response.json()
+      if (response.status === 409 || data?.code === 'NAME_EXISTS') {
+        setSaveMappingDialog((prev) => ({
+          ...prev,
+          submitting: false,
+          overwrite: true,
+          error: 'A mapping with this name already exists. Click Overwrite to replace it.',
+        }))
+        return
+      }
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Failed to save mapping')
+      }
+      toast.success(data.message || (data.overwritten ? 'Mapping overwritten.' : 'Mapping saved.'))
+      closeSaveMappingDialog()
+    } catch (error) {
+      console.error(error)
+      setSaveMappingDialog((prev) => ({
+        ...prev,
+        submitting: false,
+        error: error.message || 'Failed to save mapping',
+      }))
+    }
   }
 
   return (
@@ -1617,6 +1770,25 @@ function Controls_Creation() {
           }))
         }
         onConfirm={handleAssertionYesNoMappingConfirm}
+      />
+      <SaveColumnMappingDialog
+        open={saveMappingDialog.open}
+        name={saveMappingDialog.name}
+        error={saveMappingDialog.error}
+        submitting={saveMappingDialog.submitting}
+        overwrite={saveMappingDialog.overwrite}
+        onNameChange={(value) =>
+          setSaveMappingDialog((prev) => ({
+            ...prev,
+            name: value,
+            error: '',
+            overwrite: false,
+          }))
+        }
+        onSave={handleSaveMappingConfirm}
+        onDismiss={() => {
+          if (!saveMappingDialog.submitting) closeSaveMappingDialog()
+        }}
       />
       </Box>
   )

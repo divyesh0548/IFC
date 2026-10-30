@@ -46,3 +46,7 @@ In dark mode the borders which seperate header and other components of the websi
 
 
 In user management provide similar buttons design in company admin page as present in coordintor's page. Also there is no option to see linked unit to a process owner in admin's page, which is present in the coordinator's page.
+
+Check that manual control creation and bulk upload, both must create the control in same manner. If it has valid assignment then set automatically active, otherwise inactive. Also verify for "controls creation based on library".
+
+Set due date button becomes smaller compared to other buttons and dropdown in RACM management.
