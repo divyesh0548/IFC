@@ -1,0 +1,13 @@
+*.private.json
+ifc-recording/node_modules/
+ifc-recording/capture/
+ifc-recording/inspection/
+ifc-recording/verification/
+ifc-recording/final-frames/
+
+# Temporary captures and machine-specific recording metadata
+*.webm
+*.timeline.json
+*.encode-progress.txt
+ifc-recording/narration-cache.json
+ifc-recording/verification-summary.json

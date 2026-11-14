@@ -203,6 +203,9 @@ function CompanyCreation() {
         navigate('/siteadmin/dashboard')
       } else {
         setError(data.message || 'Failed to register company')
+        if (response.status === 409 && data.message?.includes('Unique Identification Number')) {
+          setErrors((previous) => ({ ...previous, unique_identification_number: data.message }))
+        }
       }
     } catch (err) {
       console.error('Company creation error:', err)

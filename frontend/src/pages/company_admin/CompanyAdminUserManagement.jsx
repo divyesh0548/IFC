@@ -59,6 +59,7 @@ function CompanyAdminUserManagement() {
   const { email } = useAuth()
   const currentUserEmail = String(email || '').trim().toLowerCase()
   const [users, setUsers] = useState([])
+  const [bulkResults, setBulkResults] = useState(null)
   const [unitOptions, setUnitOptions] = useState([])
   const [unitsLoading, setUnitsLoading] = useState(false)
   const [loadingUsers, setLoadingUsers] = useState(true)
@@ -270,6 +271,7 @@ function CompanyAdminUserManagement() {
       if (!response.ok || !result?.success) {
         throw new Error(result?.message || 'Failed to upload users')
       }
+      setBulkResults(result)
       toast.success(result.message || 'Bulk upload completed')
       setBulkDialog({ open: false, unitIds: [], fileName: '', rows: [], nonOrgCount: 0, confirmNonOrg: false, submitting: false, error: '' })
       await fetchUsers()
@@ -335,6 +337,16 @@ function CompanyAdminUserManagement() {
 
   return (
     <Box sx={DASHBOARD_PAGE_OUTER_SX}>
+      {bulkResults && (
+        <Alert severity={bulkResults.duplicate_count || bulkResults.skipped_count ? 'warning' : 'success'} sx={{ mb: 2 }} onClose={() => setBulkResults(null)}>
+          <Typography sx={{ fontWeight: 700 }}>Latest bulk upload results</Typography>
+          {bulkResults.created_count ?? 0} created · {bulkResults.duplicate_count ?? 0} duplicates · {bulkResults.skipped_count ?? 0} skipped
+          {[...(bulkResults.duplicate_rows || []).map((row) => ({ ...row, reason: 'Already exists' })), ...(bulkResults.skipped_rows || [])].map((row, index) => (
+            <Typography key={index} variant="body2">Row {row.rowNumber}: {row.email_id || 'No email'} — {row.reason || row.message || 'Skipped'}</Typography>
+          ))}
+        </Alert>
+      )}
+
       <Paper elevation={0} sx={{ ...DASHBOARD_PAPER_SX, overflow: 'visible', backgroundColor: 'transparent', boxShadow: 'none', borderRadius: 0 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', alignItems: { xs: 'stretch', md: 'flex-start' }, py: 2.25, flexDirection: { xs: 'column', md: 'row' }, borderBottom: '1px solid', borderColor: 'divider', mb: 2 }}>
           <Box>

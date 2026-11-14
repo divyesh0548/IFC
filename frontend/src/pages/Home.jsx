@@ -1,4 +1,5 @@
 import React from 'react'
+import BrandLogo from '../components/BrandLogo'
 import { Link, useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import {
@@ -27,7 +28,7 @@ import { apiUrl } from '../config/api'
 
 const portalContent = {
   hero: {
-    eyebrow: 'Internal Financial Controls Portal',
+    eyebrow: 'Strata',
     title: 'A clearer control workflow for teams, coordinators, and approvers.',
     body: [
       'Modern organizations deal with complex control environments, multiple stakeholders, and increasing regulatory scrutiny. Managing Internal Financial Controls manually leads to inefficiencies, weak visibility, and avoidable audit risk.',
@@ -329,9 +330,9 @@ function Home() {
             sx={{ alignItems: { xs: 'flex-start', md: 'center' }, justifyContent: 'space-between' }}
           >
             <Box>
-              <Typography sx={{ fontWeight: 800, letterSpacing: '-0.03em', fontSize: { xs: '1rem', md: '1.05rem' } }}>
-                Internal Financial Controls
-              </Typography>
+              <Box component={Link} to="/" sx={{ display: 'flex', width: 'fit-content' }}>
+                <BrandLogo />
+              </Box>
               <Typography sx={{ color: 'text.secondary', fontSize: '0.86rem', mt: 0.25 }}>
                 Structured governance, evidence tracking, and approval workflow
               </Typography>

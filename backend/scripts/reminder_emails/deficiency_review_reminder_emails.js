@@ -137,7 +137,7 @@ Please review the plan and mark RACM as Effective if requirements are satisfied.
 ${racmUrl ? `\nRACM: ${racmUrl}` : ''}
 
 Best regards,
-IFC System
+Strata
 `;
 }
 

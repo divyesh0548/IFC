@@ -15,8 +15,6 @@ const {
   ensureActiveTemplateForUnit,
   getTemplateWithFieldsById,
   validateDynamicValuesAgainstTemplate,
-  saveDynamicFieldValues,
-  incrementTemplateLinkedRacmCount,
   isRacmTemplateSchemaReady,
   RACM_TEMPLATE_SECTIONS,
 } = require('./racm_templates');
@@ -28,42 +26,6 @@ function parseExtraFieldMappingValue(value) {
   if (!raw.startsWith(EXTRA_FIELD_MAPPING_PREFIX)) return null;
   const fieldKey = raw.slice(EXTRA_FIELD_MAPPING_PREFIX.length).trim();
   return fieldKey || null;
-}
-
-function generateFormId() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < 15; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-async function generateUniqueFormId(client) {
-  let formId;
-  let isUnique = false;
-  let attempts = 0;
-  const maxAttempts = 100;
-
-  while (!isUnique && attempts < maxAttempts) {
-    formId = generateFormId();
-    const checkQuery = 'SELECT id FROM control_forms WHERE form_id = $1';
-    const result = await client.query(checkQuery, [formId]);
-    if (result.rows.length === 0) {
-      isUnique = true;
-    } else {
-      attempts++;
-    }
-  }
-
-  if (!isUnique) {
-    formId = crypto.randomBytes(8).toString('hex').toUpperCase().substring(0, 15);
-    while (formId.length < 15) {
-      formId += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.charAt(Math.floor(Math.random() * 36));
-    }
-  }
-
-  return formId;
 }
 
 function countEmptyValues(row) {
@@ -332,6 +294,20 @@ function transformExcelDataWithColumnMapping(excelRows, columnMapping, allowedEx
   const hasExplicitMapping =
     columnMapping && typeof columnMapping === 'object' && !Array.isArray(columnMapping);
 
+  if (hasExplicitMapping) {
+    const usedTargets = new Map();
+    for (const [header, rawTarget] of Object.entries(columnMapping)) {
+      if (rawTarget == null || rawTarget === '' || rawTarget === '__skip__') continue;
+      const target = String(rawTarget).trim();
+      if (usedTargets.has(target)) {
+        const error = new Error(`RACM field "${target}" cannot map to more than one Excel column ("${usedTargets.get(target)}", "${header}").`);
+        error.statusCode = 400;
+        throw error;
+      }
+      usedTargets.set(target, header);
+    }
+  }
+
   return excelRows.map((row) => {
     const dbRow = {};
     Object.keys(row).forEach((excelColumn) => {
@@ -360,6 +336,8 @@ function transformExcelDataWithColumnMapping(excelRows, columnMapping, allowedEx
           return;
         }
         dbColumn = mapped;
+      } else if (hasExplicitMapping) {
+        return; // Explicit maps never infer targets for omitted columns.
       } else {
         dbColumn = normalizeColumnName(excelColumn);
       }
@@ -504,12 +482,7 @@ async function insertRacmRowsFromTransformedData(client, options) {
   } = options;
 
   const columnList = INSERT_COLUMNS.join(', ');
-  const placeholders = INSERT_COLUMNS.map((_, index) => `$${index + 1}`).join(', ');
-  const insertQuery = `
-    INSERT INTO control_forms (${columnList})
-    VALUES (${placeholders})
-    RETURNING id;
-  `;
+
 
   let insertedCount = 0;
   let skippedCount = 0;
@@ -540,101 +513,95 @@ async function insertRacmRowsFromTransformedData(client, options) {
     }
   }
 
+  // Validate every row before writing controls, then use bounded multi-row inserts.
+  const candidates = [];
   for (let i = 0; i < transformedData.length; i++) {
     const row = transformedData[i];
-    const emptyCount = countEmptyValues(row);
-    if (emptyCount > 15) {
+    if (countEmptyValues(row) > 15) {
       skippedCount++;
       continue;
     }
-
-    try {
-      const formId = await generateUniqueFormId(client);
-      const currentTimestamp = new Date();
-      const controlFrequencyRaw = row.control_frequency || null;
-      const controlFrequency = controlFrequencyRaw ? String(controlFrequencyRaw).trim() : null;
-      const defaultSampleSize = resolveUnitDefaultSampleSize(controlFrequency, unitSampleSizeMap);
-      const builtSample = buildSampleSizeForFrequency(controlFrequency, currentTimestamp, defaultSampleSize);
-      if (!builtSample.ok) {
-        errorCount++;
-        console.error(`  ✗ Row ${i + 1}: ${builtSample.message}`);
-        continue;
+    const controlFrequency = row.control_frequency ? String(row.control_frequency).trim() : null;
+    const builtSample = buildSampleSizeForFrequency(
+      controlFrequency, new Date(), resolveUnitDefaultSampleSize(controlFrequency, unitSampleSizeMap)
+    );
+    const dynamicValues = {};
+    for (const field of extraFields) {
+      if (Object.prototype.hasOwnProperty.call(row.dynamic_values || {}, field.field_key)) {
+        dynamicValues[field.field_key] = row.dynamic_values[field.field_key];
       }
-      const sampleSize = builtSample.sampleSize;
-      const sampleRequired = builtSample.sampleRequired;
-
-      const values = INSERT_COLUMNS.map((col) => {
-        if (col === 'company_identifier') return companyIdentifier;
-        if (col === 'form_id') return formId;
-        if (col === 'unit_id') return unitId || null;
-        if (col === 'business_process') return businessProcess;
-        if (col === 'financial_year') {
-          return financialYear || null;
-        }
-        if (col === 'due_date') return fileDueDate || null;
-        if (col === 'reminder_frequency') return fileReminderFrequency || null;
-        if (col === 'sample_required') return sampleRequired;
-        if (col === 'sample_size') return sampleSize !== null ? String(sampleSize) : null;
-        if (col === 'active') return false;
-        if (col === 'template_id') return activeTemplateId;
-        return row[col] || null;
-      });
-
-      await client.query(insertQuery, values);
-
-      const dynamicValues =
-        row.dynamic_values && typeof row.dynamic_values === 'object' ? row.dynamic_values : {};
-      const filteredDynamicValues = {};
-      for (const field of extraFields) {
-        if (Object.prototype.hasOwnProperty.call(dynamicValues, field.field_key)) {
-          filteredDynamicValues[field.field_key] = dynamicValues[field.field_key];
-        }
-      }
-
-      if (activeTemplateId && Object.keys(filteredDynamicValues).length > 0) {
-        const dynamicValidation = validateDynamicValuesAgainstTemplate(
-          extraFields,
-          filteredDynamicValues
-        );
-        if (!dynamicValidation.ok) {
-          throw new Error(dynamicValidation.message);
-        }
-        const saveDynamicResult = await saveDynamicFieldValues(
-          client,
-          formId,
-          activeTemplateId,
-          dynamicValidation.dynamicValues
-        );
-        if (!saveDynamicResult.ok) {
-          throw new Error(saveDynamicResult.message);
-        }
-      }
-
-      if (activeTemplateId) {
-        await incrementTemplateLinkedRacmCount(client, activeTemplateId);
-      }
-
-      insertedCount++;
-
-      if (coordinatorEmailId) {
-        // Log after COMMIT (caller), otherwise FK on audit_logs_racm.form_id may not see uncommitted row.
-        createdAuditEvents.push({ action: 'RACM created', userEmailId: coordinatorEmailId, formId });
-      }
-    } catch (rowError) {
-      if (rowError?.code === '23505') {
-        const controlNumber = row.control_number != null ? String(row.control_number).trim() : '';
-        const error = new Error(
-          controlNumber
-            ? `Duplicate Control Number already exists for this company: ${controlNumber}`
-            : 'Duplicate Control Number already exists for this company'
-        );
-        error.statusCode = 409;
-        error.duplicateControlNumbers = controlNumber ? [controlNumber] : [];
-        throw error;
-      }
-      errorCount++;
-      console.error(`  ✗ Error inserting bulk-import row ${i + 1}: ${rowError.message}`);
     }
+    const validation = validateDynamicValuesAgainstTemplate(extraFields, dynamicValues);
+    if (!builtSample.ok || !validation.ok) {
+      const error = new Error(`Row ${i + 1}: ${!builtSample.ok ? builtSample.message : validation.message}. No RACMs were imported.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    candidates.push({ row, builtSample, dynamicValues: validation.dynamicValues || {} });
+  }
+
+  const generatedIds = new Set();
+  for (const candidate of candidates) {
+    let formId;
+    do { formId = crypto.randomBytes(8).toString('hex').toUpperCase().slice(0, 15); }
+    while (generatedIds.has(formId));
+    generatedIds.add(formId);
+    candidate.formId = formId;
+  }
+  // Collision detection is one query for the whole upload, rather than one per row.
+  if (candidates.length) {
+    const existing = await client.query('SELECT form_id FROM control_forms WHERE form_id = ANY($1::text[])', [[...generatedIds]]);
+    if (existing.rows.length) throw new Error('An identifier collision occurred. Please retry the import.');
+  }
+  const batchSize = Math.min(250, Math.floor(60000 / INSERT_COLUMNS.length));
+  for (let offset = 0; offset < candidates.length; offset += batchSize) {
+    const batch = candidates.slice(offset, offset + batchSize);
+    const values = [];
+    const groups = batch.map(({ row, formId, builtSample }) => {
+      const serverValues = {
+        company_identifier: companyIdentifier, form_id: formId, unit_id: unitId || null,
+        business_process: businessProcess, financial_year: financialYear || null,
+        due_date: fileDueDate || null, reminder_frequency: fileReminderFrequency || null,
+        sample_required: builtSample.sampleRequired,
+        sample_size: builtSample.sampleSize !== null ? String(builtSample.sampleSize) : null,
+        active: false, template_id: activeTemplateId,
+      };
+      return '(' + INSERT_COLUMNS.map((col) => {
+        values.push(Object.prototype.hasOwnProperty.call(serverValues, col) ? serverValues[col] : row[col] || null);
+        return `$${values.length}`;
+      }).join(', ') + ')';
+    });
+    try {
+      await client.query(`INSERT INTO control_forms (${columnList}) VALUES ${groups.join(', ')}`, values);
+    } catch (error) {
+      if (error.code === '23505') {
+        error.statusCode = 409;
+        error.message = 'Duplicate Control Number already exists for this company. No RACMs were imported.';
+      }
+      throw error;
+    }
+    for (const candidate of batch) {
+      if (coordinatorEmailId) {
+        createdAuditEvents.push({ action: 'RACM created', userEmailId: coordinatorEmailId, formId: candidate.formId });
+      }
+    }
+    insertedCount += batch.length;
+  }
+  if (activeTemplateId) {
+    const fieldsByKey = new Map(extraFields.map((field) => [field.field_key, field.id]));
+    const dynamicRecords = candidates.flatMap((candidate) => Object.entries(candidate.dynamicValues).map(([key, value]) => ({
+      form_id: candidate.formId, template_field_id: fieldsByKey.get(key), value_text: value,
+    })));
+    if (dynamicRecords.length) {
+      await client.query(`
+        INSERT INTO racm_field_values (form_id, template_field_id, value_text)
+        SELECT form_id, template_field_id, value_text
+        FROM jsonb_to_recordset($1::jsonb) AS field(form_id text, template_field_id int, value_text text)
+      `, [JSON.stringify(dynamicRecords)]);
+    }
+  }
+  if (activeTemplateId && insertedCount) {
+    await client.query('UPDATE racm_templates SET linked_racm_count = linked_racm_count + $2 WHERE id = $1', [activeTemplateId, insertedCount]);
   }
 
   return {

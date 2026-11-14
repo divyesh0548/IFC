@@ -81,6 +81,7 @@ function ApproverFormDetail() {
   const [deficiencyReviewDecision, setDeficiencyReviewDecision] = useState('')
   const [deficiencyReviewComment, setDeficiencyReviewComment] = useState('')
   const [deficiencyReviewing, setDeficiencyReviewing] = useState(false)
+  const [expandedDeficiencyVersions, setExpandedDeficiencyVersions] = useState({})
   const [declarationDialogOpen, setDeclarationDialogOpen] = useState(false)
   const [showDeclarationNotice, setShowDeclarationNotice] = useState(false)
   const declarationNoticeFormIdRef = useRef('')

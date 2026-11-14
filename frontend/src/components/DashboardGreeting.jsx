@@ -65,7 +65,7 @@ function DashboardGreeting({ primarySx, displayName = '' }) {
           transition: `opacity ${FADE_DURATION_MS}ms ease`,
         }}
       >
-        Explore your IFC dashboard
+        Explore your dashboard
       </Typography>
     </Box>
   )

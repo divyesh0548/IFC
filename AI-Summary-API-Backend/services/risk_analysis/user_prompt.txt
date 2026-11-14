@@ -1,4 +1,4 @@
-Review this RACM control against the stored business-process overview and the existing RACM risks.
+Review this RACM control using its details, business process and the existing RACM risks.
 Business process: {business_process}
 
 Control:

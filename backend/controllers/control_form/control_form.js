@@ -1,3 +1,4 @@
+const { enqueueRiskAnalysis } = require('../../utils/risk_analysis_jobs');
 const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -1456,8 +1457,7 @@ async function bulkImportRows(req, res) {
     const transformedDataBase =
       columnMapping &&
       typeof columnMapping === 'object' &&
-      !Array.isArray(columnMapping) &&
-      Object.keys(columnMapping).length > 0
+      !Array.isArray(columnMapping)
         ? transformExcelDataWithColumnMapping(rows, columnMapping, allowedExtraFieldKeys)
         : transformExcelData(rows);
     const controlFrequencyValueMapping =
@@ -1576,13 +1576,33 @@ async function bulkImportRows(req, res) {
         });
       }
 
-      await client.query('COMMIT');
-
-      for (const event of createdAuditEvents || []) {
-        await logAuditEvent(event.action, event.userEmailId, event.formId);
+      // Persist audit records in the same transaction, using a single batch.
+      if (createdAuditEvents.length) {
+        await client.query(`
+          INSERT INTO audit_logs_racm (action, user_email_id, form_id)
+          SELECT event.action, event.email, event.form_id
+          FROM jsonb_to_recordset($1::jsonb) AS event(action text, email text, form_id text)
+        `, [JSON.stringify(createdAuditEvents.map((event) => ({ action: event.action, email: event.userEmailId, form_id: event.formId })))]);
       }
-
-      await logAuditEvent(EXCEL_BULK_RACM_UPLOAD_ACTION, coordinatorEmailId, null, null);
+      await client.query('INSERT INTO audit_logs (action, user_email_id) VALUES ($1, $2)', [EXCEL_BULK_RACM_UPLOAD_ACTION, coordinatorEmailId]);
+      let riskAnalysisJob = null;
+      let riskAnalysisWarning = null;
+      if (req.body.auto_generate_missing_risks === true) {
+        // A queue/schema failure must not undo an otherwise successful import.
+        await client.query('SAVEPOINT risk_analysis_enqueue');
+        try {
+          riskAnalysisJob = await enqueueRiskAnalysis(client, {
+            companyIdentifier, unitId, businessProcess, coordinatorEmail: coordinatorEmailId,
+          });
+          await client.query('RELEASE SAVEPOINT risk_analysis_enqueue');
+        } catch (error) {
+          await client.query('ROLLBACK TO SAVEPOINT risk_analysis_enqueue');
+          await client.query('RELEASE SAVEPOINT risk_analysis_enqueue');
+          console.error('Could not queue automatic risk analysis:', error.message);
+          riskAnalysisWarning = 'Controls were imported, but automatic risk analysis could not be queued. Generate it from Risk Analysis.';
+        }
+      }
+      await client.query('COMMIT');
 
       return res.status(200).json({
         success: true,
@@ -1596,6 +1616,8 @@ async function bulkImportRows(req, res) {
           skippedCount,
           duplicateCount,
           errorCount,
+          riskAnalysisJob,
+          riskAnalysisWarning,
           duplicateControlNumberSamples,
         },
       });
@@ -1949,14 +1971,16 @@ async function updateControlForm(req, res) {
   } = req.body;
 
   const normalizedFormId = String(form_id || '').trim();
+  const isCoordinatorInactiveOnlyUpdate = req.user?.role === 'company_co'
+    && Object.keys(req.body).length === 1
+    && ['false', '0'].includes(String(req.body.active).trim().toLowerCase());
   const currentForm = await prisma.controlForm.findUnique({
     where: { formId: normalizedFormId },
+    ...(isCoordinatorInactiveOnlyUpdate ? { select: { companyIdentifier: true, unitId: true } } : {}),
   });
   if (!currentForm) {
     return res.status(404).json({ success: false, message: 'RACM not found' });
   }
-
-  const hasNoFurtherSubmissionDeclaration = await hasProcessOwnerDeclaration(pool, normalizedFormId);
 
   const coordinatorAccessError = await getCoordinatorUnitAccessError(pool, currentForm, req.user);
   if (coordinatorAccessError) {
@@ -1964,6 +1988,43 @@ async function updateControlForm(req, res) {
       success: false,
       message: coordinatorAccessError.message,
     });
+  }
+
+  // Status-only deactivation does not need the full editable RACM response.
+  if (isCoordinatorInactiveOnlyUpdate) {
+    await pool.query(`
+      WITH changed AS (
+        UPDATE control_forms cf
+        SET active = FALSE,
+            updated_at = CURRENT_TIMESTAMP,
+            user_mail_sent = FALSE,
+            inactive_mail_pending = COALESCE(inactive_mail_pending, FALSE) OR (
+              active IS TRUE AND NULLIF(TRIM(control_owner), '') IS NOT NULL
+              AND NOT COALESCE(assigned_to_coordinator, FALSE)
+            )
+        WHERE form_id = $1 AND company_identifier = $2
+          AND active IS DISTINCT FROM FALSE
+          AND EXISTS (
+            SELECT 1 FROM coordinator_unit_assignments cua
+            WHERE cua.company_identifier = cf.company_identifier AND cua.unit_id = cf.unit_id
+              AND LOWER(TRIM(cua.coordinator_email_id)) = LOWER(TRIM($3))
+          )
+        RETURNING form_id
+      )
+      INSERT INTO audit_logs_racm (action, user_email_id, form_id)
+      SELECT 'Set RACM Inactive', $3, form_id FROM changed
+    `, [normalizedFormId, req.user.company_identifier, req.user.email_id]);
+    return res.status(200).json({ success: true, message: 'RACM set to Inactive successfully', data: { form_id: normalizedFormId, active: false } });
+  }
+
+  const hasNoFurtherSubmissionDeclaration = await hasProcessOwnerDeclaration(pool, normalizedFormId);
+
+  if (req.user?.role === 'company_co' && normalizeActiveInput(active) === true
+      && !hasCoordinatorScheduleConfigured({
+        due_date: due_date !== undefined ? due_date : currentForm.dueDate,
+        reminder_frequency: reminder_frequency !== undefined ? reminder_frequency : currentForm.reminderFrequency,
+      })) {
+    return res.status(400).json({ success: false, message: 'Configure due date and reminder frequency before activating this RACM.' });
   }
 
   const isCoordinatorAssigned = Boolean(currentForm.assignedToCoordinator);
@@ -4958,6 +5019,11 @@ async function deleteControlForm(req, res) {
 
     await prisma.$transaction(async (tx) => {
       await deleteAllFormScopedRows(tx, form_id);
+    }, {
+      // Cleanup spans ~20 related tables. Remote DB round trips can exceed
+      // Prisma's five-second default even when deleting a single control.
+      maxWait: 10000,
+      timeout: 60000,
     });
 
     if (form.templateId && (await isRacmTemplateSchemaReady(pool))) {
@@ -5061,12 +5127,7 @@ async function selfAssignRacm(req, res) {
       const hasValidOwner = await hasValidProcessOwnerAssignment(pool, form_id);
       const previousProcessOwner = String(form.control_owner || '').trim().toLowerCase() || null;
 
-      if (!hasCoordinatorScheduleConfigured(form)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Due date and reminder frequency must be configured before self-assignment.',
-        });
-      }
+      const activateAfterSelfAssign = hasCoordinatorScheduleConfigured(form);
 
       const status = String(form.status || '').trim().toLowerCase();
       if (hasValidOwner) {
@@ -5130,7 +5191,7 @@ async function selfAssignRacm(req, res) {
           coordinatorAssignedBy: req.user.email_id,
           coordinatorAssignedAt: new Date(),
           controlOwner: null,
-          active: true,
+          active: activateAfterSelfAssign,
           inactiveMailPending: false,
         },
       });
@@ -5145,15 +5206,17 @@ async function selfAssignRacm(req, res) {
       } else {
       await logAuditEvent('Coordinator Self-Assignment', req.user.email_id, form_id);
       }
-      if (!wasActiveBeforeSelfAssign) {
+      if (!wasActiveBeforeSelfAssign && activateAfterSelfAssign) {
         await logAuditEvent('Set RACM Active', req.user.email_id, form_id);
+      } else if (wasActiveBeforeSelfAssign && !activateAfterSelfAssign) {
+        await logAuditEvent('Set RACM Inactive', req.user.email_id, form_id);
       }
 
       return res.status(200).json({
         success: true,
         message: hasValidOwner
           ? 'Process owner RACM transferred to coordinator successfully'
-          : 'RACM self-assigned successfully',
+          : (activateAfterSelfAssign ? 'RACM self-assigned successfully' : 'RACM self-assigned and kept Inactive. Configure due date and reminder frequency before activation.'),
         data: {
           form_id: updated.formId,
           assigned_to_coordinator: updated.assignedToCoordinator,

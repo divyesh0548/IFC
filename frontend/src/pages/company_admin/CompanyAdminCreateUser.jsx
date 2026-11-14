@@ -506,7 +506,7 @@ function CompanyAdminCreateUser() {
                     helperText={
                       mobileRequiredError
                       || mobileFormatWarning
-                      || 'Enter a valid 10-digit mobile number.'
+                      || (mobile.trim() ? '' : 'Enter a valid 10-digit mobile number.')
                     }
                     FormHelperTextProps={{
                       sx: mobileRequiredError

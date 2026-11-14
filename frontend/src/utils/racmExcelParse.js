@@ -174,6 +174,17 @@ function extractHeaders(worksheet, headerLocation) {
     headers.push({ colIndex: col, name: headerValue })
   }
 
+  const columnsByName = new Map()
+  headers.forEach((header) => {
+    if (!columnsByName.has(header.name)) columnsByName.set(header.name, [])
+    columnsByName.get(header.name).push(XLSX.utils.encode_col(header.colIndex))
+  })
+  const duplicates = [...columnsByName.entries()].filter(([, columns]) => columns.length > 1)
+  if (duplicates.length) {
+    const details = duplicates.map(([name, columns]) => `"${name}" (columns ${columns.join(', ')})`).join('; ')
+    throw new Error(`Duplicate column headers in Excel row ${headerRow + 1}: ${details}. Rename or remove the duplicate columns and upload the file again. Spaces at the start or end of a header do not make it unique.`)
+  }
+
   return headers
 }
 

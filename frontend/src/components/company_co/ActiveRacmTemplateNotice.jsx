@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Collapse } from '@mui/material'
+import { Alert, Collapse, Link } from '@mui/material'
+import { Link as RouterLink } from 'react-router-dom'
 import { apiUrl } from '../../config/api'
 import { LIGHT_MODE_ALERT_SX } from '../../uiConstants'
 
@@ -16,7 +17,7 @@ function buildNoticeMessage(variant, summary) {
     }`
   }
 
-  return `Bulk import uses the active RACM template for the selected unit${templateLabel}. It is recommended to adjust column mapping to match the template columns. ${
+  return `Bulk import uses the active RACM template for the selected unit${templateLabel}.${
     summary?.extraFieldCount === 0
       ? ' This template has no extra columns yet — only fixed fields will be imported unless you add columns in RACM Templates.'
       : ''
@@ -61,24 +62,20 @@ export default function ActiveRacmTemplateNotice({
     }
 
     let cancelled = false
+    const controller = new AbortController()
+    setFetchedSummary(null)
     setLoading(true)
     onLoadingChange?.(true)
     ;(async () => {
       try {
         const response = await fetch(
-          apiUrl(`/api/company-co/racm-templates?unit_id=${encodeURIComponent(normalizedUnitId)}`),
-          { credentials: 'include' }
+          apiUrl(`/api/company-co/racm-templates/summary?unit_id=${encodeURIComponent(normalizedUnitId)}`),
+          { credentials: 'include', signal: controller.signal }
         )
         const data = await response.json()
         if (cancelled) return
         if (response.ok && data.success) {
-          const template = data.data?.template || {}
-          const extraFields = Array.isArray(data.data?.extra_fields) ? data.data.extra_fields : []
-          setFetchedSummary({
-            templateName: template.template_name || 'Default',
-            version: template.version,
-            extraFieldCount: extraFields.length,
-          })
+          setFetchedSummary(data.data || null)
         } else {
           setFetchedSummary(null)
         }
@@ -97,6 +94,7 @@ export default function ActiveRacmTemplateNotice({
 
     return () => {
       cancelled = true
+      controller.abort()
     }
   }, [normalizedUnitId, useParentSummary, onLoadingChange])
 
@@ -132,6 +130,9 @@ export default function ActiveRacmTemplateNotice({
             ? 'Loading active RACM template for the selected unit…'
             : 'Loading active RACM template for the selected unit…')
           : buildNoticeMessage(variant, summary)}
+        {variant === 'bulk' && !(loading && !summary) ? (
+          <>{' '}<Link component={RouterLink} to={`/company-co/racm-templates?unit_id=${encodeURIComponent(normalizedUnitId)}`} color="inherit" sx={{ fontWeight: 600 }}>Open RACM Templates</Link></>
+        ) : null}
       </Alert>
     </Collapse>
   )

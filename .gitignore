@@ -98,3 +98,11 @@ logs/
 # Keep this folder even when its file extensions are ignored above
 !Important_files/
 !Important_files/**
+
+# Video deliverables (all folders, including Important_files)
+*.[mM][pP]4
+
+# Downloaded tools and environments; keep manifests/lockfiles for reinstalling
+/.agents/skills/flow-video-recorder/
+.venv/
+venv/

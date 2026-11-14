@@ -193,13 +193,13 @@ function ProfilePage() {
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: { xs: 2, sm: 3 }, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
             {!isEditing ? (
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <Button
+                {profile.role !== 'siteadmin' && <Button
                   variant="text"
                   size="small"
                   onClick={() => navigate('/update-password')}
                 >
                   Update Password
-                </Button>
+                </Button>}
                 <Button variant="outlined" size="small" onClick={() => { setIsEditing(true) }}>
                   Update Details
                 </Button>

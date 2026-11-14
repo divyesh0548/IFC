@@ -150,14 +150,14 @@ export function getEffectiveMappedField(
   mappableSet
 ) {
   const v = selections[excelHeader]
+  if (v == null && Object.prototype.hasOwnProperty.call(selections, excelHeader)) return null
   if (v === BULK_IMPORT_SKIP) return null
   if (v && v !== BULK_IMPORT_AUTO) {
     return isMappableFieldValue(v, mappableSet) ? v : null
   }
   const detected = autoDetectedByHeader[excelHeader]
   if (detected && isMappableFieldValue(detected, mappableSet)) return detected
-  const fallback = detectDbColumnFromHeader(excelHeader, mappingConfig)
-  return fallback && mappableSet.has(fallback) ? fallback : null
+  return null
 }
 
 export function buildColumnMapping(
@@ -185,9 +185,7 @@ export function buildColumnMapping(
       mappingConfig,
       mappableSet
     )
-    if (resolved) {
-      out[header] = resolved
-    }
+    out[header] = resolved || null
   }
   return out
 }

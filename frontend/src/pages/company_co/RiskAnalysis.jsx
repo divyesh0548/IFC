@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import AiSummaryAvailabilityWarning from '../../components/company_co/AiSummaryAvailabilityWarning'
+import RiskAnalysisJobs from '../../components/company_co/RiskAnalysisJobs'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -235,11 +237,10 @@ function RiskAnalysis() {
   const [overallMissingGenerating, setOverallMissingGenerating] = useState(false)
   const [overallMissingOpen, setOverallMissingOpen] = useState(false)
   const [overallMissingTick, setOverallMissingTick] = useState(0)
-  const [businessProcessOverview, setBusinessProcessOverview] = useState(null)
-  const [businessProcessOverviewText, setBusinessProcessOverviewText] = useState('')
-  const [businessProcessOverviewLoading, setBusinessProcessOverviewLoading] = useState(false)
-  const [businessProcessOverviewSaving, setBusinessProcessOverviewSaving] = useState(false)
-  const [businessProcessOverviewError, setBusinessProcessOverviewError] = useState('')
+  const refreshAutomaticResults = useCallback(() => {
+    setConciseTick((value) => value + 1)
+    setOverallMissingTick((value) => value + 1)
+  }, [])
   const [controlConcise, setControlConcise] = useState({ loading: false, exists: false })
   const lastSelectedIndexRef = useRef(null)
   const rowMetaRef = useRef(new Map())
@@ -249,7 +250,6 @@ function RiskAnalysis() {
     || analysisGenerating
     || conciseGenerating
     || overallMissingGenerating
-    || businessProcessOverviewSaving
   )
 
   const pageControlNumbers = useMemo(
@@ -288,8 +288,8 @@ function RiskAnalysis() {
         }
 
         if (!cancelled) {
-          setRows(Array.isArray(data.data) ? data.data : [])
-          setTotalCount(Number(data.count || 0))
+          setRows(filterUnits.length === 1 && filterBusinessProcesses.length === 1 && Array.isArray(data.data) ? data.data : [])
+          setTotalCount(filterUnits.length === 1 && filterBusinessProcesses.length === 1 ? Number(data.count || 0) : 0)
           setUnitOptions(Array.isArray(data.filters?.units) ? data.filters.units : [])
           setScopeRows(normalizeScopeRows(data.filters?.scope_rows))
         }
@@ -532,9 +532,6 @@ function RiskAnalysis() {
   }
 
   const conciseScopeReady = filterUnits.length === 1 && filterBusinessProcesses.length === 1
-  const businessProcessOverviewScopeReady = filterBusinessProcesses.length === 1
-  const businessProcessOverviewHasChanges = businessProcessOverviewScopeReady
-    && businessProcessOverviewText.trim() !== String(businessProcessOverview?.overview_text || '').trim()
 
   useEffect(() => {
     if (!conciseScopeReady) {
@@ -606,82 +603,6 @@ function RiskAnalysis() {
     }
   }, [conciseScopeReady, filterUnits, filterBusinessProcesses, conciseTick, overallMissingTick])
 
-  useEffect(() => {
-    if (!businessProcessOverviewScopeReady) {
-      setBusinessProcessOverview(null)
-      setBusinessProcessOverviewText('')
-      setBusinessProcessOverviewLoading(false)
-      setBusinessProcessOverviewError('')
-      return undefined
-    }
-
-    let cancelled = false
-    const loadBusinessProcessOverview = async () => {
-      setBusinessProcessOverviewLoading(true)
-      setBusinessProcessOverviewError('')
-      try {
-        const params = new URLSearchParams({
-          business_process: filterBusinessProcesses[0],
-        })
-        const response = await fetch(apiUrl(`/api/company-co/risk-analysis/business-process-overview?${params}`), {
-          credentials: 'include',
-        })
-        const data = await response.json()
-        if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to load business process overview')
-        if (!cancelled) {
-          setBusinessProcessOverview(data.data || null)
-          setBusinessProcessOverviewText(String(data.data?.overview_text || ''))
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setBusinessProcessOverview(null)
-          setBusinessProcessOverviewText('')
-          setBusinessProcessOverviewError(error.message || 'Failed to load business process overview')
-        }
-      } finally {
-        if (!cancelled) setBusinessProcessOverviewLoading(false)
-      }
-    }
-
-    loadBusinessProcessOverview()
-    return () => {
-      cancelled = true
-    }
-  }, [businessProcessOverviewScopeReady, filterBusinessProcesses])
-
-  const saveBusinessProcessOverview = async () => {
-    if (!businessProcessOverviewScopeReady) return
-    const overviewText = businessProcessOverviewText.trim()
-    if (!overviewText) {
-      toast.error('Business process overview is required.')
-      return
-    }
-
-    setBusinessProcessOverviewSaving(true)
-    setBusinessProcessOverviewError('')
-    try {
-      const response = await fetch(apiUrl('/api/company-co/risk-analysis/business-process-overview'), {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_process: filterBusinessProcesses[0],
-          overview_text: overviewText,
-        }),
-      })
-      const data = await response.json()
-      if (!response.ok || !data?.success) throw new Error(data?.message || 'Failed to save business process overview')
-      setBusinessProcessOverview(data.data || null)
-      setBusinessProcessOverviewText(String(data.data?.overview_text || overviewText))
-      toast.success(data.message || 'Business process overview saved')
-    } catch (error) {
-      setBusinessProcessOverviewError(error.message || 'Failed to save business process overview')
-      toast.error(error.message || 'Failed to save business process overview')
-    } finally {
-      setBusinessProcessOverviewSaving(false)
-    }
-  }
-
   const generateConciseList = async () => {
     if (!conciseScopeReady) return
     setConciseGenerating(true)
@@ -730,15 +651,6 @@ function RiskAnalysis() {
       toast.error('Generate the latest concise risk list first.')
       return
     }
-    if (!businessProcessOverviewText.trim()) {
-      toast.error('Add the business process overview before generating missing risks.')
-      return
-    }
-    if (businessProcessOverviewHasChanges) {
-      toast.error('Save the latest business process overview before generating missing risks.')
-      return
-    }
-
     setOverallMissingGenerating(true)
     try {
       const response = await fetch(apiUrl('/api/company-co/risk-analysis/overall-missing-risks'), {
@@ -1198,6 +1110,7 @@ function RiskAnalysis() {
           Back To Dashboard
         </Button>
       </Box>
+      <AiSummaryAvailabilityWarning endpoint="/api/company-co/risk-analysis/availability" />
 
       <Box
         sx={{
@@ -1220,15 +1133,12 @@ function RiskAnalysis() {
             <InputLabel id="risk-analysis-unit-label" shrink>Unit</InputLabel>
             <Select
               labelId="risk-analysis-unit-label"
-              multiple
-              value={filterUnits}
+              value={filterUnits[0] || ''}
               label="Unit"
               displayEmpty
               notched
               onChange={(event) => {
-                const nextUnits = typeof event.target.value === 'string'
-                  ? event.target.value.split(',').filter(Boolean)
-                  : event.target.value
+                const nextUnits = event.target.value ? [event.target.value] : []
                 const nextBps = keepAllowed(filterBusinessProcesses, businessProcessesForUnits(scopeRows, nextUnits))
                 setFilterUnits(nextUnits)
                 setFilterBusinessProcesses(nextBps)
@@ -1239,7 +1149,7 @@ function RiskAnalysis() {
               }}
               renderValue={(selected) => renderFilterValue(
                 getSelectedFilterLabel(
-                  selected,
+                  selected ? [selected] : [],
                   unitOptions,
                   (unitId) => unitOptions.find((unit) => String(unit.unit_id) === String(unitId))?.unit_name || unitId
                 )
@@ -1247,7 +1157,6 @@ function RiskAnalysis() {
             >
               {unitOptions.map((unit) => (
                 <MenuItem key={unit.unit_id} value={unit.unit_id}>
-                  <Checkbox checked={filterUnits.includes(unit.unit_id)} size="small" />
                   <ListItemText primary={unit.unit_name || unit.unit_id} />
                 </MenuItem>
               ))}
@@ -1258,27 +1167,23 @@ function RiskAnalysis() {
             <InputLabel id="risk-analysis-business-process-label" shrink>Business Process</InputLabel>
             <Select
               labelId="risk-analysis-business-process-label"
-              multiple
-              value={filterBusinessProcesses}
+              value={filterBusinessProcesses[0] || ''}
               label="Business Process"
               displayEmpty
               notched
               disabled={filterUnits.length === 0}
               onChange={(event) => {
-                const nextBps = typeof event.target.value === 'string'
-                  ? event.target.value.split(',').filter(Boolean)
-                  : event.target.value
+                const nextBps = event.target.value ? [event.target.value] : []
                 setFilterBusinessProcesses(nextBps)
                 setFilterFinancialYears(keepAllowed(filterFinancialYears, financialYearsForScope(scopeRows, filterUnits, nextBps)))
                 setPage(0)
                 setSelectedControlNumbers(new Set())
                 lastSelectedIndexRef.current = null
               }}
-              renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected, businessProcessOptions))}
+              renderValue={(selected) => renderFilterValue(getSelectedFilterLabel(selected ? [selected] : [], businessProcessOptions))}
             >
               {businessProcessOptions.map((option) => (
                 <MenuItem key={option} value={option}>
-                  <Checkbox checked={filterBusinessProcesses.includes(option)} size="small" />
                   <ListItemText primary={option} />
                 </MenuItem>
               ))}
@@ -1344,245 +1249,157 @@ function RiskAnalysis() {
         </Box>
       </Box>
 
-      <Paper
-        elevation={0}
-        sx={{
-          mb: 3,
-          p: 2,
-          borderRadius: 2,
-          border: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              Business process overview
-            </Typography>
-            {businessProcessOverviewScopeReady ? (
-              <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.5 }}>
-                {filterBusinessProcesses[0]}
-              </Typography>
-            ) : null}
-          </Box>
-          <Button
-            variant="contained"
-            onClick={saveBusinessProcessOverview}
-            disabled={
-              !businessProcessOverviewScopeReady
-              || businessProcessOverviewLoading
-              || businessProcessOverviewSaving
-              || !businessProcessOverviewText.trim()
-              || !businessProcessOverviewHasChanges
-            }
-            sx={{ whiteSpace: 'nowrap' }}
+      <RiskAnalysisJobs onCompleted={refreshAutomaticResults} />
+      {conciseScopeReady ? (
+        <>
+          <Paper
+            elevation={0}
+            sx={{
+              mb: 3,
+              p: 2,
+              borderRadius: 2,
+              border: `1px solid ${theme.palette.divider}`,
+            }}
           >
-            {businessProcessOverviewSaving ? 'Saving...' : 'Save overview'}
-          </Button>
-        </Box>
-        {!businessProcessOverviewScopeReady ? (
-          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
-            Select one business process to add or update its overview.
-          </Typography>
-        ) : (
-          <>
-            {businessProcessOverviewLoading ? (
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  Concise risk list
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {conciseScopeReady && conciseList?.exists ? (
+                  <>
+                    <Button
+                      variant="outlined"
+                      onClick={() => setConciseListOpen(true)}
+                      disabled={conciseLoading}
+                      sx={{ whiteSpace: 'nowrap' }}
+                    >
+                      View risks
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={exportConciseListExcel}
+                      disabled={conciseLoading || !Array.isArray(conciseList?.risks) || conciseList.risks.length === 0}
+                      sx={{ whiteSpace: 'nowrap' }}
+                    >
+                      Export Excel
+                    </Button>
+                  </>
+                ) : null}
+                <Button
+                  variant="contained"
+                  onClick={generateConciseList}
+                  disabled={!conciseScopeReady || conciseGenerating || conciseLoading}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  {conciseGenerating
+                    ? 'Generating...'
+                    : conciseList?.exists
+                      ? 'Regenerate concise list'
+                      : 'Generate concise list'}
+                </Button>
+              </Box>
+            </Box>
+            {conciseLoading ? (
               <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
-                Loading business process overview...
+                Loading concise risk list...
               </Typography>
-            ) : null}
-            {businessProcessOverviewError ? (
+            ) : conciseList?.stale ? (
               <Alert severity="warning" sx={{ mt: 1.5 }}>
-                {businessProcessOverviewError}
+                Adding, removing, or changing sub-process/risk descriptions invalidated this concise list. Regenerate it before running risk analysis.
               </Alert>
             ) : null}
-            <TextField
-              label="Overview"
-              value={businessProcessOverviewText}
-              onChange={(event) => setBusinessProcessOverviewText(event.target.value)}
-              fullWidth
-              multiline
-              minRows={4}
-              disabled={businessProcessOverviewLoading || businessProcessOverviewSaving}
-              inputProps={{ maxLength: 20000 }}
-              sx={{ mt: 1.5 }}
-            />
-            {businessProcessOverview?.updated_at ? (
-              <Typography variant="caption" sx={{ display: 'block', mt: 1, color: theme.palette.text.secondary }}>
-                {`Last saved: ${formatRiskAnalysisTimestamp(businessProcessOverview.updated_at)}`}
+          </Paper>
+
+          <Paper
+            elevation={0}
+            sx={{
+              mb: 3,
+              p: 2,
+              borderRadius: 2,
+              border: `1px solid ${theme.palette.divider}`,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  Overall missing risks
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {conciseScopeReady && hasOverallMissingResult ? (
+                  <>
+                    <Button
+                      variant="outlined"
+                      onClick={() => setOverallMissingOpen(true)}
+                      disabled={overallMissingLoading}
+                      sx={{ whiteSpace: 'nowrap' }}
+                    >
+                      View missing risks
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={exportOverallMissingRisksPdf}
+                      disabled={overallMissingLoading}
+                      sx={{ whiteSpace: 'nowrap' }}
+                    >
+                      Export PDF
+                    </Button>
+                  </>
+                ) : null}
+                <Button
+                  variant="contained"
+                  color="secondary"
+                  onClick={generateOverallMissingRisks}
+                  disabled={
+                    !conciseScopeReady
+                    || overallMissingGenerating
+                    || overallMissingLoading
+                    || conciseLoading
+                    || !conciseList?.exists
+                    || conciseList?.stale
+                  }
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  {overallMissingGenerating
+                    ? 'Generating...'
+                    : hasOverallMissingResult
+                      ? 'Regenerate missing risks'
+                      : 'Generate missing risks'}
+                </Button>
+              </Box>
+            </Box>
+            {overallMissingLoading ? (
+              <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
+                Loading overall missing risks...
+              </Typography>
+            ) : !conciseList?.exists ? (
+              <Alert severity="info" sx={{ mt: 1.5 }}>
+                Generate the concise risk list first.
+              </Alert>
+            ) : conciseList?.stale ? (
+              <Alert severity="warning" sx={{ mt: 1.5 }}>
+                Regenerate the concise risk list before generating overall missing risks.
+              </Alert>
+            ) : overallMissingRisks?.stale ? (
+              <Alert severity="warning" sx={{ mt: 1.5 }}>
+                The stored overall missing-risk result is stale. Regenerate it.
+              </Alert>
+            ) : hasOverallMissingResult ? (
+              <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
+                {`${overallMissingRiskItems.length} missing risk${overallMissingRiskItems.length === 1 ? '' : 's'} stored.`}
+                {overallMissingUpdatedAt ? (
+                  <Typography component="span" variant="caption" sx={{ ml: 1.5 }}>
+                    {`Last saved: ${overallMissingUpdatedAt}`}
+                  </Typography>
+                ) : null}
               </Typography>
             ) : null}
-          </>
-        )}
-      </Paper>
-
-      <Paper
-        elevation={0}
-        sx={{
-          mb: 3,
-          p: 2,
-          borderRadius: 2,
-          border: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              Concise risk list
-            </Typography>
-            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.5 }}>
-              Adding, removing, or changing risk descriptions invalidates this list. It has to be regenerated before risk analysis.
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            {conciseScopeReady && conciseList?.exists ? (
-              <>
-                <Button
-                  variant="outlined"
-                  onClick={() => setConciseListOpen(true)}
-                  disabled={conciseLoading}
-                  sx={{ whiteSpace: 'nowrap' }}
-                >
-                  View risks
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={exportConciseListExcel}
-                  disabled={conciseLoading || !Array.isArray(conciseList?.risks) || conciseList.risks.length === 0}
-                  sx={{ whiteSpace: 'nowrap' }}
-                >
-                  Export Excel
-                </Button>
-              </>
-            ) : null}
-            <Button
-              variant="contained"
-              onClick={generateConciseList}
-              disabled={!conciseScopeReady || conciseGenerating || conciseLoading}
-              sx={{ whiteSpace: 'nowrap' }}
-            >
-              {conciseGenerating
-                ? 'Generating...'
-                : conciseList?.exists
-                  ? 'Regenerate concise list'
-                  : 'Generate concise list'}
-            </Button>
-          </Box>
-        </Box>
-        {!conciseScopeReady ? (
-          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
-            Select one unit and one business process to generate the concise risk list.
-          </Typography>
-        ) : conciseLoading ? (
-          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
-            Loading concise risk list...
-          </Typography>
-        ) : conciseList?.stale ? (
-          <Alert severity="warning" sx={{ mt: 1.5 }}>
-            Adding, removing, or changing sub-process/risk descriptions invalidated this concise list. Regenerate it before running risk analysis.
-          </Alert>
-        ) : null}
-      </Paper>
-
-      <Paper
-        elevation={0}
-        sx={{
-          mb: 3,
-          p: 2,
-          borderRadius: 2,
-          border: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              Overall missing risks
-            </Typography>
-            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mt: 0.5 }}>
-              Generates one stored missing-risk JSON for the selected unit and business process using the overview and concise sub-process/risk list.
-            </Typography>
-            {hasOverallMissingResult && overallMissingUpdatedAt ? (
-              <Typography variant="caption" sx={{ display: 'block', mt: 1, color: theme.palette.text.secondary }}>
-                {`Last saved: ${overallMissingUpdatedAt}`}
-              </Typography>
-            ) : null}
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            {conciseScopeReady && hasOverallMissingResult ? (
-              <>
-                <Button
-                  variant="outlined"
-                  onClick={() => setOverallMissingOpen(true)}
-                  disabled={overallMissingLoading}
-                  sx={{ whiteSpace: 'nowrap' }}
-                >
-                  View missing risks
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={exportOverallMissingRisksPdf}
-                  disabled={overallMissingLoading}
-                  sx={{ whiteSpace: 'nowrap' }}
-                >
-                  Export PDF
-                </Button>
-              </>
-            ) : null}
-            <Button
-              variant="contained"
-              color="secondary"
-              onClick={generateOverallMissingRisks}
-              disabled={
-                !conciseScopeReady
-                || overallMissingGenerating
-                || overallMissingLoading
-                || conciseLoading
-                || !conciseList?.exists
-                || conciseList?.stale
-                || businessProcessOverviewLoading
-                || businessProcessOverviewSaving
-                || !businessProcessOverviewText.trim()
-                || businessProcessOverviewHasChanges
-              }
-              sx={{ whiteSpace: 'nowrap' }}
-            >
-              {overallMissingGenerating
-                ? 'Generating...'
-                : hasOverallMissingResult
-                  ? 'Regenerate missing risks'
-                  : 'Generate missing risks'}
-            </Button>
-          </Box>
-        </Box>
-        {!conciseScopeReady ? (
-          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
-            Select one unit and one business process to generate overall missing risks.
-          </Typography>
-        ) : overallMissingLoading ? (
-          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
-            Loading overall missing risks...
-          </Typography>
-        ) : !conciseList?.exists ? (
-          <Alert severity="info" sx={{ mt: 1.5 }}>
-            Generate the concise risk list first.
-          </Alert>
-        ) : conciseList?.stale ? (
-          <Alert severity="warning" sx={{ mt: 1.5 }}>
-            Regenerate the concise risk list before generating overall missing risks.
-          </Alert>
-        ) : businessProcessOverviewHasChanges ? (
-          <Alert severity="info" sx={{ mt: 1.5 }}>
-            Save the latest business process overview before generating overall missing risks.
-          </Alert>
-        ) : overallMissingRisks?.stale ? (
-          <Alert severity="warning" sx={{ mt: 1.5 }}>
-            The stored overall missing-risk result is stale. Regenerate it.
-          </Alert>
-        ) : hasOverallMissingResult ? (
-          <Typography variant="body2" sx={{ mt: 1.5, color: theme.palette.text.secondary }}>
-            {`${overallMissingRiskItems.length} missing risk${overallMissingRiskItems.length === 1 ? '' : 's'} stored.`}
-          </Typography>
-        ) : null}
-      </Paper>
+          </Paper>
+        </>
+      ) : null}
 
       <Dialog open={conciseListOpen} onClose={() => setConciseListOpen(false)} fullWidth maxWidth="md">
         <DialogTitle>Concise risk list</DialogTitle>
@@ -1715,7 +1532,9 @@ function RiskAnalysis() {
               ))}
             </Box>
 
-            {loading ? (
+            {!conciseScopeReady ? (
+              <Alert severity="info" sx={{ m: 2 }}>Select one unit and one business process to view RACMs.</Alert>
+            ) : loading ? (
               <Box sx={{ px: 3, py: 4 }}>
                 <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
                   Loading risk analysis controls...

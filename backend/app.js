@@ -119,6 +119,10 @@ app.get('/health', (req, res) => {
 
 
 function startScheduledJobs() {
+  const { runNextRiskAnalysisJob } = require('./utils/risk_analysis_jobs');
+  setInterval(() => { void runNextRiskAnalysisJob(); }, 5000).unref();
+  void runNextRiskAnalysisJob();
+
   console.log('Starting reminder emails scheduler (runs every 1 minute)...');
   setInterval(async () => {
     try {

@@ -14,7 +14,7 @@ model Company {
   companyName                String?                      @map("company_name") @db.VarChar(255)
   registeredEmail            String?                      @map("registered_email") @db.VarChar(255)
   registeredAddress          String?                      @map("registered_address")
-  uniqueIdentificationNumber String?                      @map("unique_identification_number") @db.VarChar(255)
+  uniqueIdentificationNumber String? @unique                      @map("unique_identification_number") @db.VarChar(255)
   gst                        String?                      @unique @map("gst") @db.VarChar(255)
   pan                        String?                      @unique @map("pan") @db.VarChar(255)
   numberOfCorporateOffices   String?                      @map("number_of_corporate_offices") @db.VarChar(255)
@@ -315,6 +315,25 @@ model RiskAnalysisOverallMissingRisk {
   @@unique([companyIdentifier, unitId, businessProcess], map: "risk_analysis_overall_missing_company_unit_business_key")
   @@index([companyIdentifier, unitId], map: "risk_analysis_overall_missing_company_unit_idx")
   @@map("risk_analysis_overall_missing_risks")
+}
+
+/// Durable background queue for opt-in risk analysis after an Excel import.
+model RiskAnalysisJob {
+  id                String   @id @db.Uuid
+  companyIdentifier String   @map("company_identifier") @db.VarChar(255)
+  unitId            String   @map("unit_id") @db.VarChar(255)
+  businessProcess   String   @map("business_process") @db.VarChar(255)
+  requestedByEmail  String   @map("requested_by_email") @db.VarChar(255)
+  status            String   @default("queued") @db.VarChar(32)
+  attempts          Int      @default(0)
+  errorMessage      String?  @map("error_message")
+  availableAt       DateTime @default(now()) @map("available_at") @db.Timestamptz(6)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, createdAt], map: "risk_analysis_jobs_pending_idx")
+  @@index([companyIdentifier, unitId, createdAt], map: "risk_analysis_jobs_scope_idx")
+  @@map("risk_analysis_jobs")
 }
 
 /// User-provided business process overview used as shared context for risk analysis prompts.

@@ -756,6 +756,7 @@ function FormDetail() {
   }
 
   const handleOpenAssignmentDialog = () => {
+    if (!String(formData?.due_date || '').trim()) toast.error('Configure a due date before assigning a process owner. Self-assignment is available and will keep the RACM Inactive.')
     setSelectedUser(null)
     setAssignmentDialogOpen(true)
   }
@@ -768,6 +769,10 @@ function FormDetail() {
   }
 
   const handleUpdateAssignment = async ({ allowWithoutSample = false } = {}) => {
+    if (!hasReminderSettings) {
+      toast.error('Configure due date and reminder frequency before assigning a process owner')
+      return
+    }
     const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
     if (reassignmentBlockMessage) {
       toast.error(reassignmentBlockMessage)
@@ -1733,10 +1738,6 @@ function FormDetail() {
       toast.error('This RACM is already coordinator-assigned')
       return
     }
-    if (!hasReminderSettings) {
-      toast.error('Configure due date and reminder frequency before self-assignment')
-      return
-    }
     if (validProcessOwnerAssigned) {
       if (reassignmentBlockMessage) {
         toast.error(reassignmentBlockMessage)
@@ -2211,7 +2212,6 @@ function FormDetail() {
   const isApprovedNotEffective = isApprovedRacm && String(formData?.control_design_conclusion || '').trim().toLowerCase() === 'not effective'
   const hasReminderSettings = Boolean(String(formData?.due_date || '').trim()) && Boolean(String(formData?.reminder_frequency || '').trim())
   const canSelfAssignFromDialog = !isCoordinatorAssigned
-    && hasReminderSettings
     && !(validProcessOwnerAssigned
       ? Boolean(reassignmentBlockMessage)
       : (isSentForApproval || isApprovedRacm))
@@ -4728,6 +4728,10 @@ function FormDetail() {
             : 'RACM Assignment'}
         </DialogTitle>
         <DialogContent dividers sx={{ px: 3, pt: 2.5, pb: 3 }}>
+          {!hasReminderSettings && <Alert severity="warning" sx={{ mb: 2 }}>
+            {formData?.due_date ? 'Configure reminder frequency before assigning a process owner.' : 'Configure a due date before assigning a process owner.'} You can self-assign now; the RACM will remain Inactive until reminder settings are complete.
+          </Alert>}
+
           {formData && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
               <Box sx={popupRowSx}>
@@ -4761,12 +4765,6 @@ function FormDetail() {
                 </Alert>
               )}
 
-              {!isProcessOwnerAssignmentLocked && !Boolean(formData?.assigned_to_coordinator) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(formData?.control_owner || '').trim()) && (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                  The current process owner will be replaced and will no longer be able to access this RACM.
-                </Alert>
-              )}
-
               <UnitUserSearchAutocomplete
                 unitId={formData?.unit_id}
                 value={selectedUser}
@@ -4781,6 +4779,11 @@ function FormDetail() {
                   `Users from ${(formData?.unit_name || formData?.unit_id || 'this unit').toString().trim() || 'this unit'} only`
                 }
               />
+              {!isProcessOwnerAssignmentLocked && !Boolean(formData?.assigned_to_coordinator) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(formData?.control_owner || '').trim()) && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  The current process owner will be replaced and will no longer be able to access this RACM.
+                </Alert>
+              )}
               {!isActive && !isProcessOwnerAssignmentLocked && (
                 <Typography
                   variant="caption"
@@ -5197,9 +5200,9 @@ function FormDetail() {
         <DialogContent sx={{ px: 3, pt: 1, pb: 3 }}>
           <DialogContentText id="self-assign-dialog-description" sx={{ color: 'text.secondary', fontSize: '0.9375rem', lineHeight: 1.5, mt: 2 }}>
             {validProcessOwnerAssigned
-              ? `Self-assign this RACM (currently assigned to ${String(formData?.control_owner || '').trim()}) to yourself? The RACM will remain Active.`
+              ? `Self-assign this RACM (currently assigned to ${String(formData?.control_owner || '').trim()}) to yourself?`
               : 'Assign this RACM to yourself for document upload and submission.'}
-            {!hasSampleDocs() ? ' This RACM does not have a sample document. Self-assign it without a sample document?' : ''}
+            {hasReminderSettings ? ' The RACM will be Active.' : ' The RACM will stay Inactive until due date and reminder frequency are configured.'}
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3, gap: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
@@ -5207,7 +5210,7 @@ function FormDetail() {
             Cancel
           </Button>
           <Button onClick={handleSelfAssignConfirm} disabled={selfAssigning} variant="contained" color="primary">
-            {selfAssigning ? 'Assigning...' : (hasSampleDocs() ? 'Self Assign' : 'Self-assign without sample document')}
+            {selfAssigning ? 'Assigning...' : 'Self Assign'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -5415,7 +5418,7 @@ function FormDetail() {
             }}
           >
             Are you sure you want to set this RACM Active?
-            {!hasSampleDocs() ? ' It does not have a sample document. Set it Active without a sample document?' : ''}
+            {!isCoordinatorAssigned && !hasSampleDocs() ? ' It does not have a sample document. Set it Active without a sample document?' : ''}
           </DialogContentText>
         </DialogContent>
         <DialogActions
@@ -5431,7 +5434,7 @@ function FormDetail() {
             Cancel
           </Button>
           <Button onClick={handleSetActiveConfirm} disabled={updating} variant="contained" color="secondary" sx={{ textTransform: 'none', px: 3, py: 1, fontWeight: 600 }}>
-            {updating ? 'Setting...' : (hasSampleDocs() ? 'Set Active' : 'Set Active without sample document')}
+            {updating ? 'Setting...' : (isCoordinatorAssigned || hasSampleDocs() ? 'Set Active' : 'Set Active without sample document')}
           </Button>
         </DialogActions>
       </Dialog>

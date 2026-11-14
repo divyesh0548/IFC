@@ -11,10 +11,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   FormControl,
   InputLabel,
-  List,
   ListItemButton,
   ListItemText,
   MenuItem,
@@ -24,6 +22,9 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
+import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -1642,44 +1643,48 @@ function RacmTemplates() {
               No templates are available to import from other units.
             </Typography>
           ) : (
-            <List disablePadding>
-              {importableCatalogUnits.map((unit, unitIndex) => (
-                <Box key={unit.unit_id}>
-                  {unitIndex > 0 ? <Divider sx={{ my: 1 }} /> : null}
-                  <Typography
-                    variant="subtitle2"
-                    sx={{
-                      px: 1,
-                      py: 1,
-                      fontWeight: 800,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em',
-                      color: 'text.secondary',
-                    }}
-                  >
-                    {unit.unit_name || unit.unit_id}
-                  </Typography>
-                  {unit.templates.map((template) => (
-                    <ListItemButton
-                      key={template.id}
-                      onClick={() => handleOpenImportPreview(unit, template)}
-                      disabled={loading}
-                      sx={{ borderRadius: 1.5, mb: 0.5 }}
-                    >
-                      <ListItemText
-                        primary={`${template.template_name} (v${template.version})`}
-                        secondary={[
-                          template.status,
-                          template.linked_racm_count ? `${template.linked_racm_count} RACM(s)` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      />
-                    </ListItemButton>
-                  ))}
+            <Stack spacing={2} sx={{ mt: 2, mb: 1 }}>
+              {importableCatalogUnits.map((unit) => (
+                <Box key={unit.unit_id} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.5, bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <BusinessRoundedIcon sx={{ fontSize: 20, color: 'text.secondary', flexShrink: 0 }} />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
+                      {unit.unit_name || unit.unit_id}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                      {unit.templates.length} template{unit.templates.length === 1 ? '' : 's'}
+                    </Typography>
+                  </Box>
+                  <Stack spacing={1} sx={{ p: 1 }}>
+                    {unit.templates.map((template) => (
+                      <ListItemButton
+                        key={template.id}
+                        onClick={() => handleOpenImportPreview(unit, template)}
+                        disabled={loading}
+                        sx={{
+                          px: 1, py: 1.25, gap: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 1.5,
+                          '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' },
+                          '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
+                        }}
+                      >
+                        <DescriptionOutlinedIcon sx={{ fontSize: 20, color: 'primary.main', flexShrink: 0 }} />
+                        <ListItemText
+                          sx={{ m: 0, minWidth: 0 }}
+                          primary={`${template.template_name} (v${template.version})`}
+                          primaryTypographyProps={{ variant: 'body2', fontWeight: 600, sx: { overflowWrap: 'anywhere' } }}
+                          secondaryTypographyProps={{ variant: 'caption', sx: { mt: 0.5, textTransform: 'capitalize' } }}
+                          secondary={[
+                            template.status,
+                            template.linked_racm_count ? `${template.linked_racm_count} RACM(s)` : null,
+                          ].filter(Boolean).join(' · ')}
+                        />
+                        <ChevronRightRoundedIcon sx={{ color: 'text.secondary', flexShrink: 0 }} />
+                      </ListItemButton>
+                    ))}
+                  </Stack>
                 </Box>
               ))}
-            </List>
+            </Stack>
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pt: 1, pb: 2.5 }}>

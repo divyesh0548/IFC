@@ -224,7 +224,7 @@ async function notifyProcessOwnerRacmDecision(processOwnerEmail, form_id, status
   if (racmUrl) {
     emailBody += `RACM Link: ${racmUrl}\n\n`;
   }
-  emailBody += 'Thank you for using the IFC system.\n\n';
+  emailBody += 'Thank you for using Strata.\n\n';
   emailBody += `Best regards,\n${companyName}`;
 
   try {

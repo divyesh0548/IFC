@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
+import Alert from '@mui/material/Alert'
 import Typography from '@mui/material/Typography'
 import Paper from '@mui/material/Paper'
 import DomainRoundedIcon from '@mui/icons-material/DomainRounded'
@@ -93,6 +94,7 @@ function ApproverHome() {
         gap: 3,
       }}
     >
+      {!loading && stats.total_active_racms === 0 && <Alert severity="info">No RACMs are currently available in your approval queue. Assigned active RACMs will appear here.</Alert>}
       <Box
         sx={{
           position: 'relative',

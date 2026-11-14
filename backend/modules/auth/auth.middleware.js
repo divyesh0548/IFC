@@ -49,25 +49,15 @@ async function ensurePrivilegedUserHasAssignment(user) {
   const companyIdentifier = user?.company_identifier || null;
   const emailId = String(user?.email_id || '').trim().toLowerCase();
 
-  if (!companyIdentifier || !emailId || !['company_co', 'approver'].includes(normalizedRole)) {
+  if (!companyIdentifier || !emailId || normalizedRole !== 'company_co') {
     return true;
   }
 
-  const assignmentQuery = normalizedRole === 'company_co'
-    ? `
-      SELECT 1
-      FROM coordinator_unit_assignments
-      WHERE company_identifier = $1
-        AND LOWER(TRIM(coordinator_email_id)) = $2
-      LIMIT 1
-    `
-    : `
-      SELECT 1
-      FROM approver_assignments
-      WHERE company_identifier = $1
-        AND LOWER(TRIM(approver_email_id)) = $2
-      LIMIT 1
-    `;
+  const assignmentQuery = `
+    SELECT 1 FROM coordinator_unit_assignments
+    WHERE company_identifier = $1 AND LOWER(TRIM(coordinator_email_id)) = $2
+    LIMIT 1
+  `;
   const result = await pool.query(assignmentQuery, [companyIdentifier, emailId]);
 
   return result.rows.length > 0;

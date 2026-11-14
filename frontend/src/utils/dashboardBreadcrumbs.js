@@ -81,7 +81,6 @@ const BREADCRUMB_RULES = [
     test: (p) => p === '/company-co/ai-insights',
     build: (home) => [
       homeItem(home),
-      { label: 'Control Dispersion', to: '/company-co/control-dispersion-dashboard' },
       { label: 'Design Gap Analysis' },
     ],
   },

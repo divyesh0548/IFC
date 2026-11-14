@@ -27,7 +27,6 @@ import {
 } from '../../uiConstants'
 import { apiUrl, API_BASE_URL } from '../../config/api'
 import { useSyncGlobalLoading } from '../../contexts/GlobalLoadingContext'
-import { useBusinessProcesses } from '../../hooks/useBusinessProcesses'
 import { getRacmProcessOwnerDisplayValue } from '../../racmFormDetailFields'
 import RacmUserDocumentsDialog from '../../components/racm/RacmUserDocumentsDialog'
 import ControlNumberSearchRow from '../../components/ControlNumberSearchRow'
@@ -87,7 +86,6 @@ function AuditorRacmDashboard() {
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
   const [documentForm, setDocumentForm] = useState(null)
-  const { businessProcessOptions } = useBusinessProcesses()
   const isCompanyAdminView = location.pathname.startsWith('/company_admin')
   const racmEndpoint = isCompanyAdminView ? '/api/company-admin/racm-dashboard/racms' : '/api/auditor/racms'
   const detailPathPrefix = isCompanyAdminView ? '/company_admin/form/' : '/auditor/form/'
@@ -160,7 +158,6 @@ function AuditorRacmDashboard() {
       .filter(Boolean),
   )]
   const businessProcessFilterOptions = [...new Set([
-    ...businessProcessOptions.map(normalizeBusinessProcess),
     ...forms.map((form) => normalizeBusinessProcess(form.business_process)),
   ].filter(Boolean))].sort((a, b) => a.localeCompare(b))
 

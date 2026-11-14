@@ -1,8 +1,8 @@
 import { BULK_IMPORT_AUTO, BULK_IMPORT_SKIP } from './racmBulkImportColumnMapping'
 
 /**
- * Soft-apply a saved column mapping onto current Excel headers + current mappable fields.
- * Unknown / removed targets are ignored (auto-detect / skip remains).
+ * Apply a saved mapping as an explicit choice for every current header.
+ * Missing, skipped, or removed targets stay skipped; no keyword fallback.
  *
  * @returns {{
  *   overrides: Record<string, string>,
@@ -25,14 +25,18 @@ export function softApplySavedColumnMapping({
   let appliedCount = 0
   let skippedTargetCount = 0
   let unmatchedHeaderCount = 0
+  const targetHeaders = new Map()
+  const duplicateTargets = []
 
   for (const header of headerList) {
+    overrides[header] = BULK_IMPORT_SKIP
     if (!Object.prototype.hasOwnProperty.call(mapping, header)) {
       unmatchedHeaderCount += 1
       continue
     }
     const target = mapping[header]
     if (target == null || target === '' || target === BULK_IMPORT_AUTO) {
+      appliedCount += 1
       continue
     }
     if (target === BULK_IMPORT_SKIP) {
@@ -41,6 +45,11 @@ export function softApplySavedColumnMapping({
       continue
     }
     if (mappableSet && mappableSet.has(target)) {
+      if (targetHeaders.has(target)) {
+        duplicateTargets.push({ target, headers: [targetHeaders.get(target), header] })
+      } else {
+        targetHeaders.set(target, header)
+      }
       overrides[header] = target
       appliedCount += 1
       continue
@@ -50,6 +59,7 @@ export function softApplySavedColumnMapping({
 
   return {
     overrides,
+    duplicateTargets,
     appliedCount,
     skippedTargetCount,
     unmatchedHeaderCount,

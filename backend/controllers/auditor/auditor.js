@@ -1,6 +1,5 @@
 const { pool } = require('../../utils/db');
 const { attachControlFormDocuments } = require('../../utils/racm_documents');
-const { UNIT_RESPONSIBILITY_TYPES } = require('../../utils/unit_responsibilities');
 const {
   controlFormsUtcOverridesSql,
   createdAtUtcSql,
@@ -47,9 +46,9 @@ async function getCompanies(req, res) {
     const [companiesResult, unitsResult, statsResult] = await Promise.all([
       pool.query(
         `
-          SELECT *, ${createdAtUtcSql('created_at')}
-          FROM companies
-          ORDER BY created_at DESC NULLS LAST, id DESC
+          SELECT c.*, ${createdAtUtcSql('c.created_at')}
+          FROM companies c
+          ORDER BY c.created_at DESC NULLS LAST, c.id DESC
         `
       ),
       pool.query(
@@ -65,20 +64,30 @@ async function getCompanies(req, res) {
             approver_map.user_email_id AS approver_email_id,
             COALESCE(NULLIF(TRIM(approver.emp_name), ''), NULLIF(TRIM(approver_map.user_email_id), '')) AS approver_display_name
           FROM company_unit_master cum
-          LEFT JOIN company_unit_responsibilities coordinator_map
-            ON coordinator_map.company_identifier = cum.company_identifier
-           AND coordinator_map.unit_id = cum.unit_id
-           AND coordinator_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.COORDINATOR}'
-          LEFT JOIN company_unit_responsibilities approver_map
-            ON approver_map.company_identifier = cum.company_identifier
-           AND approver_map.unit_id = cum.unit_id
-           AND approver_map.responsibility_type = '${UNIT_RESPONSIBILITY_TYPES.APPROVER}'
-          LEFT JOIN ifc_users coordinator
-            ON LOWER(TRIM(coordinator.email_id)) = LOWER(TRIM(COALESCE(coordinator_map.user_email_id, '')))
-           AND coordinator.company_identifier = cum.company_identifier
-          LEFT JOIN ifc_users approver
-            ON LOWER(TRIM(approver.email_id)) = LOWER(TRIM(COALESCE(approver_map.user_email_id, '')))
-           AND approver.company_identifier = cum.company_identifier
+          LEFT JOIN LATERAL (
+            SELECT STRING_AGG(DISTINCT a.coordinator_email_id, ', ' ORDER BY a.coordinator_email_id) AS user_email_id
+            FROM coordinator_unit_assignments a
+            WHERE a.company_identifier = cum.company_identifier AND a.unit_id = cum.unit_id
+          ) coordinator_map ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT STRING_AGG(DISTINCT COALESCE(NULLIF(TRIM(u.emp_name), ''), a.coordinator_email_id), ', ') AS emp_name
+            FROM coordinator_unit_assignments a
+            LEFT JOIN ifc_users u ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(a.coordinator_email_id))
+            WHERE a.company_identifier = cum.company_identifier AND a.unit_id = cum.unit_id
+          ) coordinator ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT STRING_AGG(DISTINCT a.approver_email_id, ', ' ORDER BY a.approver_email_id) AS user_email_id
+            FROM approver_assignments a
+            WHERE a.company_identifier = cum.company_identifier
+              AND a.unit_id = cum.unit_id
+          ) approver_map ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT STRING_AGG(DISTINCT COALESCE(NULLIF(TRIM(u.emp_name), ''), a.approver_email_id), ', ') AS emp_name
+            FROM approver_assignments a
+            LEFT JOIN ifc_users u ON LOWER(TRIM(u.email_id)) = LOWER(TRIM(a.approver_email_id))
+            WHERE a.company_identifier = cum.company_identifier
+              AND a.unit_id = cum.unit_id
+          ) approver ON TRUE
           ORDER BY cum.company_identifier ASC, cum.id ASC
         `
       ),
@@ -160,15 +169,21 @@ async function getUsers(req, res) {
           u.designation,
           u.department,
           u.mobile,
-          u.unit_id,
+          memberships.unit_id,
           c.company_name,
-          NULLIF(TRIM(cum.unit_name), '') AS unit_name
+          memberships.unit_name
         FROM ifc_users u
         LEFT JOIN companies c
           ON c.company_identifier = u.company_identifier
-        LEFT JOIN company_unit_master cum
-          ON cum.company_identifier = u.company_identifier
-         AND cum.unit_id = u.unit_id
+        LEFT JOIN LATERAL (
+          SELECT STRING_AGG(DISTINCT m.unit_id, ', ') AS unit_id,
+                 STRING_AGG(DISTINCT NULLIF(TRIM(cum.unit_name), ''), ', ') AS unit_name
+          FROM user_unit_memberships m
+          LEFT JOIN company_unit_master cum
+            ON cum.company_identifier = m.company_identifier AND cum.unit_id = m.unit_id
+          WHERE m.company_identifier = u.company_identifier
+            AND LOWER(TRIM(m.user_email_id)) = LOWER(TRIM(u.email_id))
+        ) memberships ON TRUE
         WHERE u.role <> 'siteadmin'
         ORDER BY u.created_at DESC NULLS LAST, u.id DESC
       `

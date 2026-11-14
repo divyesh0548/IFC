@@ -68,7 +68,7 @@ const bulkUploadDialogDefaults = {
 }
 
 const bulkUploadRequiredHeaders = ['Name', 'Email ID', 'Department', 'Designation', 'Mobile']
-const BULK_UPLOAD_BLOCKED_TOAST = 'Upload excel again with corrections, See Logs !'
+const BULK_UPLOAD_BLOCKED_TOAST = 'Check the upload results and correct the highlighted rows.'
 
 function validateBulkUploadRows(rows, validateEmailFn) {
   const errors = []
@@ -148,6 +148,13 @@ function UserManagement() {
   const [bulkUploadLogs, setBulkUploadLogs] = useState([])
   const [bulkLogsDialogOpen, setBulkLogsDialogOpen] = useState(false)
   const [showBulkLogsButton, setShowBulkLogsButton] = useState(false)
+  useEffect(() => {
+    if (bulkUploadLogs.length) {
+      setShowBulkLogsButton(true)
+      setBulkLogsDialogOpen(true)
+    }
+  }, [bulkUploadLogs])
+
   const [bulkWarningDialogOpen, setBulkWarningDialogOpen] = useState(false)
   const [actionsMenuAnchorEl, setActionsMenuAnchorEl] = useState(null)
   const [approverDetailsDialog, setApproverDetailsDialog] = useState({
@@ -740,6 +747,7 @@ function UserManagement() {
     const logs = buildBulkValidationLogEntries(validationErrors)
     setBulkUploadLogs(logs)
     setShowBulkLogsButton(true)
+    setBulkLogsDialogOpen(true)
     toast.error(BULK_UPLOAD_BLOCKED_TOAST)
     console.error('Bulk user upload validation failed:', validationErrors)
   }
@@ -973,6 +981,7 @@ function UserManagement() {
       ].filter(Boolean)
       setBulkUploadLogs(logs)
       setShowBulkLogsButton(true)
+      setBulkLogsDialogOpen(true)
 
       if (skippedCount > 0) {
         toast.error(`User(s) already exists, Skipped ${skippedCount}`)
@@ -1581,13 +1590,21 @@ function UserManagement() {
                     <ListItemIcon>
                       <ArticleOutlinedIcon fontSize="small" />
                     </ListItemIcon>
-                    <ListItemText primary="Logs !" />
+                    <ListItemText primary="Upload results" />
                   </MenuItem>
                 ) : null}
               </Menu>
             </Box>
           </Box>
         </Box>
+
+        {showBulkLogsButton && (
+          <Alert severity="info" sx={{ my: 2 }} action={
+            <Button color="inherit" onClick={() => setBulkLogsDialogOpen(true)}>View results</Button>
+          }>
+            Latest bulk upload: {bulkUploadLogs.length} result entries. Review created users and row errors.
+          </Alert>
+        )}
 
         {usersError && (
           <Alert severity="error" sx={{ borderRadius: 0, m: 0 }}>

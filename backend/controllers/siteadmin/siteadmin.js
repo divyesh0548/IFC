@@ -433,11 +433,24 @@ async function createCompany(req, res) {
   }
 
   try {
+    const identificationNumber = String(unique_identification_number).trim();
+    if (!/^\d+$/.test(identificationNumber)) {
+      return res.status(400).json({ success: false, message: 'Unique Identification Number must contain only digits' });
+    }
     getPasswordPepper();
 
     // Generate company identifier
     const company_identifier = generateCompanyIdentifier(company_name);
     const { company, companyAdmins } = await prisma.$transaction(async (tx) => {
+      // Serialize creation requests for the same number, including before migration deployment.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${identificationNumber}))::text`;
+      const existingCompany = await tx.company.findFirst({
+        where: { uniqueIdentificationNumber: identificationNumber },
+        select: { id: true },
+      });
+      if (existingCompany) {
+        return Promise.reject(Object.assign(new Error('Unique Identification Number already exists'), { code: 'P2002' }));
+      }
       const existingAdmins = await tx.ifcUser.findMany({
         where: {
           emailId: {
@@ -460,7 +473,7 @@ async function createCompany(req, res) {
           companyName: company_name,
           registeredEmail: registered_email,
           registeredAddress: registered_address,
-          uniqueIdentificationNumber: unique_identification_number,
+          uniqueIdentificationNumber: identificationNumber,
           gst,
           pan,
           numberOfCorporateOffices: number_of_corporate_offices,

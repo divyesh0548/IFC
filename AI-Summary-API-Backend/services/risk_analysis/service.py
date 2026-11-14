@@ -247,7 +247,6 @@ def build_prompts(
     control: dict,
     business_process: str,
     concise_risks: list[dict],
-    business_process_overview: str,
     ) -> tuple[str, str]:
     user_prompt = (
         load_text("user_prompt.txt")
@@ -256,17 +255,13 @@ def build_prompts(
         .replace("{concise_risks_json}", json.dumps(concise_risks, ensure_ascii=False))
         .replace("{schema_json}", _schema_text("schema.json"))
     )
-    system_prompt = load_text("system_prompt.txt").replace(
-        "{business_process_overview}",
-        business_process_overview,
-    )
+    system_prompt = load_text("system_prompt.txt")
     return system_prompt, user_prompt
 
 
 def build_overall_missing_prompts(
     business_process: str,
     concise_risks: list[dict],
-    business_process_overview: str,
     ) -> tuple[str, str]:
     user_prompt = (
         load_text("overall_missing_user_prompt.txt")
@@ -274,10 +269,7 @@ def build_overall_missing_prompts(
         .replace("{concise_risks_json}", json.dumps(concise_risks, ensure_ascii=False))
         .replace("{schema_json}", _schema_text("overall_missing_schema.json"))
     )
-    system_prompt = load_text("overall_missing_system_prompt.txt").replace(
-        "{business_process_overview}",
-        business_process_overview,
-    )
+    system_prompt = load_text("overall_missing_system_prompt.txt")
     return system_prompt, user_prompt
 
 
@@ -417,21 +409,16 @@ def analyze_control(
     business_process: str,
     *,
     concise_risks: list[dict] | None = None,
-    business_process_overview: str = "",
     dry_run: bool = False,
     form_id: str = "",
     ) -> dict:
     if not isinstance(concise_risks, list):
         raise ValueError("concise_risks is required")
-    business_process_overview = str(business_process_overview or "").strip()
-    if not business_process_overview:
-        raise ValueError("business_process_overview is required")
     dry_run = is_risk_analysis_dry_run_enabled(dry_run)
     system_prompt, user_prompt = build_prompts(
         control,
         business_process,
         concise_risks,
-        business_process_overview,
     )
     provider = provider_name()
     model = resolve_model()
@@ -471,19 +458,14 @@ def analyze_business_process_missing_risks(
     business_process: str,
     *,
     concise_risks: list[dict] | None = None,
-    business_process_overview: str = "",
     dry_run: bool = False,
     ) -> dict:
     if not isinstance(concise_risks, list):
         raise ValueError("concise_risks is required")
-    business_process_overview = str(business_process_overview or "").strip()
-    if not business_process_overview:
-        raise ValueError("business_process_overview is required")
     dry_run = is_risk_analysis_dry_run_enabled(dry_run)
     system_prompt, user_prompt = build_overall_missing_prompts(
         business_process,
         concise_risks,
-        business_process_overview,
     )
     provider = provider_name()
     model = resolve_model()

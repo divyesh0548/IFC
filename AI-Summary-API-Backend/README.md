@@ -24,6 +24,27 @@ python run.py
 
 Default: `http://127.0.0.1:5001`
 
+## Docker
+
+The image excludes `.env`. Supply configuration at container startup; rebuilding
+or restarting a container alone does not add missing environment variables.
+Keep `AI_SUMMARY_API_KEY` equal to the key configured in the Node backend.
+
+From the repository root:
+
+```powershell
+docker compose -f AI-Summary-API-Backend/compose.yaml up -d --build
+```
+
+This loads `AI-Summary-API-Backend/.env` at runtime and publishes port 5001.
+If a manually launched container already owns the name `ifc-ai-95` or port 5001,
+stop and rename that container before starting this Compose service.
+After editing `.env`, recreate the service to load the updated configuration:
+
+```powershell
+docker compose -f AI-Summary-API-Backend/compose.yaml up -d --force-recreate
+```
+
 ## Auth (shared API key)
 
 Env: `AI_SUMMARY_API_KEY` (used for all summary endpoints, not design-gap only).

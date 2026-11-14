@@ -1,0 +1,1 @@
+docker compose -f AI-Summary-API-Backend/compose.yaml up -d --build

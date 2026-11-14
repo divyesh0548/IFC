@@ -172,7 +172,7 @@ async function notifyDeficiencyResponseSubmitted({
   if (racmUrl) {
     emailBody += `RACM Link : ${racmUrl}\n\n`;
   }
-  emailBody += 'Best regards,\nIFC System';
+  emailBody += 'Best regards,\nStrata';
 
   const communicationMatrixCcEmails = await getCommunicationMatrixCcEmails(form, [approverEmail]);
   const ccEmails = buildCcEmailList(
@@ -242,7 +242,7 @@ async function notifyDeficiencyResponseReviewed({
   emailBody += `${responseDetailsBlock}\n\n`;
 
   if (isRejected) {
-    emailBody += 'Please review the approver feedback and resubmit the Mitigation/Compensatory Plan on the IFC portal. Otherwise this RACM will remain ineffective.\n\n';
+    emailBody += 'Please review the approver feedback and resubmit the Mitigation/Compensatory Plan on Strata. Otherwise this RACM will remain ineffective.\n\n';
   } else {
     emailBody += 'No further action is required on this.\n\n';
   }
@@ -250,7 +250,7 @@ async function notifyDeficiencyResponseReviewed({
   if (racmUrl) {
     emailBody += `RACM: ${racmUrl}\n\n`;
   }
-  emailBody += 'Best regards,\nIFC System';
+  emailBody += 'Best regards,\nStrata';
 
   const communicationMatrixCcEmails = await getCommunicationMatrixCcEmails(form, [submittedByEmail]);
   const ccEmails = buildCcEmailList(

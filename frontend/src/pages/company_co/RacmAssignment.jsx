@@ -59,7 +59,6 @@ function hasReminderSettingsConfigured(form) {
 function canCoordinatorSelfAssignRacm(form) {
   if (!form) return false
   if (isCoordinatorAssignedRacm(form)) return false
-  if (!hasReminderSettingsConfigured(form)) return false
   if (hasValidProcessOwnerAssignment(form)) {
     return !getRacmReassignmentBlockMessage(form)
   }
@@ -73,12 +72,9 @@ function getCoordinatorSelfAssignBlockMessage(form) {
   if (isCoordinatorAssignedRacm(form)) {
     return 'This RACM is already coordinator-assigned.'
   }
-  if (!hasReminderSettingsConfigured(form)) {
-    return 'Configure due date and reminder frequency before self-assignment.'
-  }
   if (hasValidProcessOwnerAssignment(form)) {
     return getRacmReassignmentBlockMessage(form)
-      || 'This RACM cannot be transferred from the process owner right now.'
+      || ''
   }
   const status = String(form?.status || '').trim().toLowerCase()
   if (status === 'sent for approval' || status === 'approved') {
@@ -813,16 +809,14 @@ function RacmAssignment() {
 
     const isTransferFromProcessOwner = hasValidProcessOwnerAssignment(selectedForm)
     const currentOwner = String(selectedForm?.control_owner || '').trim()
-    const missingSampleNote = racmHasSampleDocument(selectedForm)
-      ? ''
-      : ' This RACM does not have a sample document. Self-assign it without a sample document?'
+    const scheduleNote = hasReminderSettingsConfigured(selectedForm) ? ' The RACM will be Active.' : ' The RACM will remain Inactive until due date and reminder frequency are configured.'
     openConfirmDialog({
       kind: 'self_assign_single',
       title: 'Self Assign RACM',
       description: (isTransferFromProcessOwner
-        ? `Self-assign this RACM (currently assigned to ${currentOwner}) to yourself? The RACM will remain Active.`
-        : 'Assign this RACM to yourself for document upload and submission.') + missingSampleNote,
-      confirmLabel: missingSampleNote ? 'Self-assign without sample document' : 'Self Assign',
+        ? `Self-assign this RACM (currently assigned to ${currentOwner}) to yourself?`
+        : 'Assign this RACM to yourself for document upload and submission.') + scheduleNote,
+      confirmLabel: 'Self Assign',
     })
   }
 
@@ -897,17 +891,13 @@ function RacmAssignment() {
     const transferNote = transferFromOwnerCount > 0
       ? ` ${transferFromOwnerCount} currently assigned to a process owner will be self-assigned to you.`
       : ''
-    const missingSampleCount = eligible.filter((form) => !racmHasSampleDocument(form)).length
-    const missingSampleNote = missingSampleCount > 0
-      ? ` ${missingSampleCount} of these RACM(s) do not have a sample document. Self-assign them without a sample document?`
-      : ''
     openConfirmDialog({
       kind: 'self_assign_bulk',
       title: 'Self Assign Selected RACMs',
       description: (skipped > 0
-        ? `Self-assign ${eligible.length} of ${selectedRows.length} selected RACM(s)? ${skipped} will be skipped (already coordinator-assigned, locked, or missing reminder settings).${transferNote} Eligible RACMs will be set Active.`
-        : `Self-assign ${eligible.length} selected RACM(s) to yourself?${transferNote} They will be set to Active.`) + missingSampleNote,
-      confirmLabel: missingSampleNote ? 'Self-assign without sample document' : 'Self Assign',
+        ? `Self-assign ${eligible.length} of ${selectedRows.length} selected RACM(s)? ${skipped} will be skipped (already coordinator-assigned or locked).${transferNote} RACMs with complete reminder settings will be Active; others will remain Inactive.`
+        : `Self-assign ${eligible.length} selected RACM(s) to yourself?${transferNote} RACMs with complete reminder settings will be Active; others will remain Inactive.`),
+      confirmLabel: 'Self Assign',
     })
   }
 
@@ -2038,15 +2028,7 @@ function RacmAssignment() {
                     This RACM is currently self-assigned to a coordinator. Assigning a process owner will transfer ownership.
                   </Alert>
                 )}
-                {!isApproverMode && !isProcessOwnerAssignmentLocked(selectedForm) && !isCoordinatorAssignedRacm(selectedForm) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(selectedForm?.control_owner || '').trim()) && !dismissedAssignmentAlerts.processOwnerReplace && (
-                  <Alert
-                    severity="warning"
-                    onClose={() => dismissAssignmentAlert('processOwnerReplace')}
-                    sx={assignmentDialogAlertSx}
-                  >
-                    The current process owner will be replaced and will no longer be able to access this RACM.
-                  </Alert>
-                )}
+
                 {isApproverMode && singleRacmHasSpecificApprover && !dismissedAssignmentAlerts.approverReplace && (
                   <Alert
                     severity="warning"
@@ -2105,6 +2087,15 @@ function RacmAssignment() {
                       selectedUser?.email_id || `Users from ${getFormUnitName(selectedForm)} only`
                     }
                   />
+                )}
+                {!isApproverMode && !isProcessOwnerAssignmentLocked(selectedForm) && !isCoordinatorAssignedRacm(selectedForm) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(selectedForm?.control_owner || '').trim()) && !dismissedAssignmentAlerts.processOwnerReplace && (
+                  <Alert
+                    severity="warning"
+                    onClose={() => dismissAssignmentAlert('processOwnerReplace')}
+                    sx={assignmentDialogAlertSx}
+                  >
+                    The current process owner will be replaced and will no longer be able to access this RACM.
+                  </Alert>
                 )}
               </Box>
             )}

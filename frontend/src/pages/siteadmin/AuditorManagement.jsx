@@ -297,7 +297,14 @@ function AuditorManagement() {
             label="Phone Number"
             type="tel"
             value={form.mobile}
-            onChange={(event) => setForm((current) => ({ ...current, mobile: event.target.value }))}
+            onChange={(event) => {
+              const mobile = normalizeMobileDigits(event.target.value)
+              setForm((current) => ({ ...current, mobile }))
+              setFormErrors((current) => ({
+                ...current,
+                mobile: current.mobile ? (mobile ? getMobileValidationError(mobile) : 'Mobile number is required') : '',
+              }))
+            }}
             required
             disabled={creating}
             inputProps={{ maxLength: 10 }}

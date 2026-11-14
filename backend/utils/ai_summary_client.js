@@ -133,13 +133,11 @@ async function analyzeRiskAnalysis(control, businessProcess, {
   dryRun = false,
   formId = '',
   conciseRisks = [],
-  businessProcessOverview = '',
 } = {}) {
   return callAiSummaryApi('/v1/risk-analysis/analyze', {
     method: 'POST',
     body: {
       business_process: businessProcess,
-      business_process_overview: String(businessProcessOverview || '').trim(),
       control,
       concise_risks: Array.isArray(conciseRisks) ? conciseRisks : [],
       dry_run: Boolean(dryRun),
@@ -151,13 +149,11 @@ async function analyzeRiskAnalysis(control, businessProcess, {
 async function analyzeOverallMissingRisks(businessProcess, {
   dryRun = false,
   conciseRisks = [],
-  businessProcessOverview = '',
 } = {}) {
   return callAiSummaryApi('/v1/risk-analysis/overall-missing', {
     method: 'POST',
     body: {
       business_process: businessProcess,
-      business_process_overview: String(businessProcessOverview || '').trim(),
       concise_risks: Array.isArray(conciseRisks) ? conciseRisks : [],
       dry_run: Boolean(dryRun),
     },

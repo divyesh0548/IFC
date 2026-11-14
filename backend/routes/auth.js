@@ -44,25 +44,15 @@ async function hasAssignmentForPrivilegedUser(user) {
   const companyIdentifier = user?.company_identifier || null;
   const emailId = normalizeEmail(user?.email_id);
 
-  if (!companyIdentifier || !emailId || !['company_co', 'approver'].includes(normalizedRole)) {
+  if (!companyIdentifier || !emailId || normalizedRole !== 'company_co') {
     return true;
   }
 
-  const assignmentQuery = normalizedRole === 'company_co'
-    ? `
-      SELECT 1
-      FROM coordinator_unit_assignments
-      WHERE company_identifier = $1
-        AND LOWER(TRIM(coordinator_email_id)) = $2
-      LIMIT 1
-    `
-    : `
-      SELECT 1
-      FROM approver_assignments
-      WHERE company_identifier = $1
-        AND LOWER(TRIM(approver_email_id)) = $2
-      LIMIT 1
-    `;
+  const assignmentQuery = `
+    SELECT 1 FROM coordinator_unit_assignments
+    WHERE company_identifier = $1 AND LOWER(TRIM(coordinator_email_id)) = $2
+    LIMIT 1
+  `;
   const result = await pool.query(assignmentQuery, [companyIdentifier, emailId]);
 
   return result.rows.length > 0;
@@ -177,7 +167,7 @@ router.post('/login', async (req, res) => {
         company_identifier: user.company_identifier,
         emp_name: user.emp_name
       },
-      requiresPasswordUpdate: Boolean(user.temp_login)
+      requiresPasswordUpdate: user.role !== 'siteadmin' && Boolean(user.temp_login)
     });
 
   } catch (error) {
@@ -238,7 +228,7 @@ router.get('/verify', async (req, res) => {
         company_identifier: user.company_identifier,
         emp_name: user.emp_name
       },
-      requiresPasswordUpdate: Boolean(user.temp_login)
+      requiresPasswordUpdate: user.role !== 'siteadmin' && Boolean(user.temp_login)
     });
 
   } catch (error) {
@@ -672,7 +662,7 @@ router.post('/forgot-password', async (req, res) => {
     const userQuery = `SELECT *, ${createdAtUtcSql('created_at')} FROM ifc_users WHERE email_id = $1`;
     const userResult = await pool.query(userQuery, [email_id]);
 
-    if (userResult.rows.length === 0) {
+    if (userResult.rows.length === 0 || userResult.rows[0].role === 'siteadmin') {
       // Don't reveal if email exists for security
       return res.status(200).json({
         success: true,
@@ -749,6 +739,9 @@ router.post('/update-password', async (req, res) => {
     }
 
     const user = verifyResult.rows[0];
+    if (user.role === 'siteadmin') {
+      return res.status(403).json({ success: false, message: 'Siteadmin password changes are not allowed' });
+    }
     const passwordMatches = await verifyPassword(currentPassword, user.password);
 
     if (!passwordMatches) {

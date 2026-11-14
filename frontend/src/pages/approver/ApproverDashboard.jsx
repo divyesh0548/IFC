@@ -604,7 +604,7 @@ function ApproverDashboard() {
             {formsToDisplay.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4 }}>
                 <Typography color="text.secondary">
-                  {controlNumberFilter ? 'No forms match the control number search.' : 'No forms found.'}
+                  {forms.length === 0 ? 'No RACMs are assigned to you yet. Assigned RACMs will appear here.' : (controlNumberFilter ? 'No forms match the control number search.' : 'No forms match the selected filters.')}
                 </Typography>
               </Box>
             ) : (

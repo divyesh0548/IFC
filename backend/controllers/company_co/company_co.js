@@ -1813,6 +1813,128 @@ async function getRiskAnalysisConciseList(req, res) {
   }
 }
 
+async function getRiskAnalysisJobs(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const units = await getCoordinatorMappedUnits(companyIdentifier, normalizeEmail(req.user?.email_id));
+    const unitIds = units.map((unit) => String(unit.unit_id));
+    if (!unitIds.length) return res.json({ success: true, data: [] });
+    const result = await pool.query(`
+      SELECT id, unit_id, business_process, status, attempts, error_message, created_at, updated_at
+      FROM risk_analysis_jobs WHERE company_identifier = $1 AND unit_id = ANY($2::varchar[])
+      ORDER BY CASE WHEN status IN ('queued', 'generating_concise', 'generating_missing') THEN 0 ELSE 1 END,
+        created_at DESC, id DESC LIMIT 50
+    `, [companyIdentifier, unitIds]);
+    return res.json({ success: true, data: result.rows.map((job) => ({
+      ...job, unit_name: units.find((unit) => String(unit.unit_id) === job.unit_id)?.unit_name,
+    })) });
+  } catch (error) {
+    if (error.code === '42P01') return res.json({ success: true, data: [] });
+    console.error('Get risk analysis jobs failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load automatic risk analysis status' });
+  }
+}
+
+async function executeConciseRiskList(companyIdentifier, coordinatorEmail, unitId, businessProcess) {
+  const controls = await listUnitBusinessProcessControls(companyIdentifier, coordinatorEmail, unitId, businessProcess);
+  const controlNumbers = controls
+    .map((row) => String(row.control_number || row.form_id || '').trim())
+    .filter(Boolean);
+  if (controls.length === 0) {
+    throw Object.assign(new Error('No controls were found for this unit and business process'), { statusCode: 400 });
+  }
+
+  const result = await condenseRiskList(
+    businessProcess,
+    controls.map((row) => ({
+      subProcess: String(row.sub_process || '').trim(),
+      riskDescription: String(row.risk_description || '').trim(),
+    }))
+  );
+  if (result?.dry_run) {
+    return {
+      success: true,
+      message: 'Dry-run complete. Prompt downloaded. Concise list was not saved.',
+      data: {
+        dry_run: true,
+        dry_run_txt: String(result.dry_run_txt || ''),
+        model_name: result.model_name || null,
+      },
+    };
+  }
+
+  const risks = Array.isArray(result?.risks) ? result.risks : [];
+  if (risks.length === 0) {
+    throw Object.assign(new Error('Concise risk list did not return any risks'), { statusCode: 502 });
+  }
+
+  const fingerprint = riskListControlFingerprint(controls);
+  const existing = await readStoredConciseList(companyIdentifier, unitId, businessProcess);
+  const saved = existing
+    ? await pool.query(
+      `
+        UPDATE risk_analysis_concise_lists
+        SET
+          business_process = $2,
+          model_name = $3,
+          source_fingerprint = $4,
+          source_control_numbers = $5::jsonb,
+          risks_json = $6::jsonb,
+          updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)
+        WHERE id = $1
+        RETURNING ${createdAtUpdatedAtUtcSql()}
+      `,
+      [
+        existing.id,
+        businessProcess,
+        result?.model_name || null,
+        fingerprint,
+        JSON.stringify(controlNumbers),
+        JSON.stringify(risks),
+      ]
+    )
+    : await pool.query(
+      `
+        INSERT INTO risk_analysis_concise_lists (
+          company_identifier,
+          unit_id,
+          business_process,
+          model_name,
+          source_fingerprint,
+          source_control_numbers,
+          risks_json
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+        RETURNING ${createdAtUpdatedAtUtcSql()}
+      `,
+      [
+        companyIdentifier,
+        unitId,
+        businessProcess,
+        result?.model_name || null,
+        fingerprint,
+        JSON.stringify(controlNumbers),
+        JSON.stringify(risks),
+      ]
+    );
+
+  return {
+    success: true,
+    message: 'Concise risk list saved',
+    data: {
+      exists: true,
+      stale: false,
+      unit_id: unitId,
+      business_process: businessProcess,
+      model_name: result?.model_name || null,
+      updated_at: saved.rows[0]?.updated_at || null,
+      source_control_count: controlNumbers.length || controls.length,
+      current_control_count: controls.length,
+      risks,
+    },
+  };
+}
+
 async function generateRiskAnalysisConciseList(req, res) {
   const lockClient = await pool.connect();
   try {
@@ -1835,109 +1957,8 @@ async function generateRiskAnalysisConciseList(req, res) {
       return res.status(400).json({ success: false, message: 'unit_id and business_process are required' });
     }
 
-    const controls = await listUnitBusinessProcessControls(companyIdentifier, coordinatorEmail, unitId, businessProcess);
-    const controlNumbers = controls
-      .map((row) => String(row.control_number || row.form_id || '').trim())
-      .filter(Boolean);
-    if (controls.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No controls were found for this unit and business process',
-      });
-    }
-
-    const result = await condenseRiskList(
-      businessProcess,
-      controls.map((row) => ({
-        subProcess: String(row.sub_process || '').trim(),
-        riskDescription: String(row.risk_description || '').trim(),
-      }))
-    );
-    if (result?.dry_run) {
-      return res.status(200).json({
-        success: true,
-        message: 'Dry-run complete. Prompt downloaded. Concise list was not saved.',
-        data: {
-          dry_run: true,
-          dry_run_txt: String(result.dry_run_txt || ''),
-          model_name: result.model_name || null,
-        },
-      });
-    }
-
-    const risks = Array.isArray(result?.risks) ? result.risks : [];
-    if (risks.length === 0) {
-      return res.status(502).json({
-        success: false,
-        message: 'Concise risk list did not return any risks',
-      });
-    }
-
-    const fingerprint = riskListControlFingerprint(controls);
-    const existing = await readStoredConciseList(companyIdentifier, unitId, businessProcess);
-    const saved = existing
-      ? await pool.query(
-        `
-          UPDATE risk_analysis_concise_lists
-          SET
-            business_process = $2,
-            model_name = $3,
-            source_fingerprint = $4,
-            source_control_numbers = $5::jsonb,
-            risks_json = $6::jsonb,
-            updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)
-          WHERE id = $1
-          RETURNING ${createdAtUpdatedAtUtcSql()}
-        `,
-        [
-          existing.id,
-          businessProcess,
-          result?.model_name || null,
-          fingerprint,
-          JSON.stringify(controlNumbers),
-          JSON.stringify(risks),
-        ]
-      )
-      : await pool.query(
-        `
-          INSERT INTO risk_analysis_concise_lists (
-            company_identifier,
-            unit_id,
-            business_process,
-            model_name,
-            source_fingerprint,
-            source_control_numbers,
-            risks_json
-          )
-          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
-          RETURNING ${createdAtUpdatedAtUtcSql()}
-        `,
-        [
-          companyIdentifier,
-          unitId,
-          businessProcess,
-          result?.model_name || null,
-          fingerprint,
-          JSON.stringify(controlNumbers),
-          JSON.stringify(risks),
-        ]
-      );
-
-    return res.status(200).json({
-      success: true,
-      message: 'Concise risk list saved',
-      data: {
-        exists: true,
-        stale: false,
-        unit_id: unitId,
-        business_process: businessProcess,
-        model_name: result?.model_name || null,
-        updated_at: saved.rows[0]?.updated_at || null,
-        source_control_count: controlNumbers.length || controls.length,
-        current_control_count: controls.length,
-        risks,
-      },
-    });
+    const result = await executeConciseRiskList(companyIdentifier, coordinatorEmail, unitId, businessProcess);
+    return res.status(200).json(result);
   } catch (error) {
     if (isMissingConciseTableError(error)) return conciseListUnavailableResponse(res);
     console.error('Company coordinator generate concise risk list error:', error);
@@ -2063,6 +2084,103 @@ async function getRiskAnalysisOverallMissingRisks(req, res) {
   }
 }
 
+async function executeOverallMissingRisks(companyIdentifier, coordinatorEmail, unitId, businessProcess) {
+  const { stored: conciseStored, risks: conciseRisks } = await requireFreshConciseList(
+    companyIdentifier,
+    coordinatorEmail,
+    unitId,
+    businessProcess,
+  );
+  if (!Array.isArray(conciseRisks) || conciseRisks.length === 0) {
+    throw Object.assign(new Error('Generate the concise risk list before generating overall missing risks.'), { statusCode: 400 });
+  }
+
+  const result = await analyzeOverallMissingRisks(
+    businessProcess,
+    {
+      conciseRisks,
+    }
+  );
+  if (result?.dry_run) {
+    return {
+      success: true,
+      message: 'Dry-run complete. Prompt downloaded. Overall missing risks were not saved.',
+      data: {
+        dry_run: true,
+        dry_run_txt: String(result.dry_run_txt || ''),
+        model_name: result.model_name || null,
+      },
+    };
+  }
+
+  const analysis = result?.analysis || {};
+  if (!Array.isArray(analysis.risks)) {
+    throw Object.assign(new Error('Overall missing risk analysis did not return any risks array'), { statusCode: 502 });
+  }
+
+  const currentControls = await listUnitBusinessProcessControls(companyIdentifier, coordinatorEmail, unitId, businessProcess);
+  if (riskListControlFingerprint(currentControls) !== conciseStored.source_fingerprint) {
+    throw Object.assign(new Error('Controls changed during analysis. Regenerate the concise list and missing risks.'), { statusCode: 409 });
+  }
+
+  const saved = await pool.query(
+    `
+      INSERT INTO risk_analysis_overall_missing_risks (
+        company_identifier,
+        unit_id,
+        business_process,
+        model_name,
+        source_fingerprint,
+        source_risks_json,
+        response_json,
+        created_by_email,
+        updated_by_email
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $8)
+      ON CONFLICT (company_identifier, unit_id, business_process)
+      DO UPDATE SET
+        business_process = EXCLUDED.business_process,
+        model_name = EXCLUDED.model_name,
+        source_fingerprint = EXCLUDED.source_fingerprint,
+        source_risks_json = EXCLUDED.source_risks_json,
+        response_json = EXCLUDED.response_json,
+        updated_by_email = EXCLUDED.updated_by_email,
+        updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)
+      RETURNING
+        id,
+        company_identifier,
+        unit_id,
+        business_process,
+        model_name,
+        source_fingerprint,
+        source_risks_json,
+        response_json,
+        created_by_email,
+        updated_by_email,
+        ${createdAtUpdatedAtUtcSql()}
+    `,
+    [
+      companyIdentifier,
+      unitId,
+      businessProcess,
+      result?.model_name || null,
+      conciseStored.source_fingerprint,
+      JSON.stringify(conciseRisks),
+      JSON.stringify(analysis),
+      coordinatorEmail,
+    ]
+  );
+
+  return {
+    success: true,
+    message: 'Overall missing risks saved',
+    data: serializeOverallMissingRiskAnalysis(saved.rows[0], {
+      currentFingerprint: conciseStored.source_fingerprint,
+      currentRiskCount: conciseRisks.length,
+    }),
+  };
+}
+
 async function generateRiskAnalysisOverallMissingRisks(req, res) {
   const lockClient = await pool.connect();
   try {
@@ -2085,111 +2203,8 @@ async function generateRiskAnalysisOverallMissingRisks(req, res) {
       return res.status(400).json({ success: false, message: 'unit_id and business_process are required' });
     }
 
-    const { stored: conciseStored, risks: conciseRisks } = await requireFreshConciseList(
-      companyIdentifier,
-      coordinatorEmail,
-      unitId,
-      businessProcess,
-    );
-    if (!Array.isArray(conciseRisks) || conciseRisks.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Generate the concise risk list before generating overall missing risks.',
-      });
-    }
-
-    const overview = await readStoredBusinessProcessOverview(companyIdentifier, businessProcess);
-    const businessProcessOverview = String(overview?.overview_text || '').trim();
-    if (!businessProcessOverview) {
-      return res.status(400).json({
-        success: false,
-        message: 'Add the business process overview before generating overall missing risks.',
-      });
-    }
-
-    const result = await analyzeOverallMissingRisks(
-      businessProcess,
-      {
-        conciseRisks,
-        businessProcessOverview,
-      }
-    );
-    if (result?.dry_run) {
-      return res.status(200).json({
-        success: true,
-        message: 'Dry-run complete. Prompt downloaded. Overall missing risks were not saved.',
-        data: {
-          dry_run: true,
-          dry_run_txt: String(result.dry_run_txt || ''),
-          model_name: result.model_name || null,
-        },
-      });
-    }
-
-    const analysis = result?.analysis || {};
-    if (!Array.isArray(analysis.risks)) {
-      return res.status(502).json({
-        success: false,
-        message: 'Overall missing risk analysis did not return any risks array',
-      });
-    }
-
-    const saved = await pool.query(
-      `
-        INSERT INTO risk_analysis_overall_missing_risks (
-          company_identifier,
-          unit_id,
-          business_process,
-          model_name,
-          source_fingerprint,
-          source_risks_json,
-          response_json,
-          created_by_email,
-          updated_by_email
-        )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $8)
-        ON CONFLICT (company_identifier, unit_id, business_process)
-        DO UPDATE SET
-          business_process = EXCLUDED.business_process,
-          model_name = EXCLUDED.model_name,
-          source_fingerprint = EXCLUDED.source_fingerprint,
-          source_risks_json = EXCLUDED.source_risks_json,
-          response_json = EXCLUDED.response_json,
-          updated_by_email = EXCLUDED.updated_by_email,
-          updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)
-        RETURNING
-          id,
-          company_identifier,
-          unit_id,
-          business_process,
-          model_name,
-          source_fingerprint,
-          source_risks_json,
-          response_json,
-          created_by_email,
-          updated_by_email,
-          ${createdAtUpdatedAtUtcSql()}
-      `,
-      [
-        companyIdentifier,
-        unitId,
-        businessProcess,
-        result?.model_name || null,
-        conciseStored.source_fingerprint,
-        JSON.stringify(conciseRisks),
-        JSON.stringify(analysis),
-        coordinatorEmail,
-      ]
-    );
-
-    return res.status(200).json({
-      success: true,
-      message: 'Overall missing risks saved',
-      data: serializeOverallMissingRiskAnalysis(saved.rows[0], {
-        currentFingerprint: conciseStored.source_fingerprint,
-        currentRiskCount: conciseRisks.length,
-      }),
-    });
+    const result = await executeOverallMissingRisks(companyIdentifier, coordinatorEmail, unitId, businessProcess);
+    return res.status(200).json(result);
   } catch (error) {
     if (isMissingConciseTableError(error)) return conciseListUnavailableResponse(res);
     if (isMissingBusinessProcessOverviewTableError(error)) return businessProcessOverviewUnavailableResponse(res);
@@ -2226,13 +2241,6 @@ async function executeRiskAnalysisForControl(companyIdentifier, controlRow, coor
     unitId,
     businessProcess,
   );
-  const overview = await readStoredBusinessProcessOverview(companyIdentifier, businessProcess);
-  const businessProcessOverview = String(overview?.overview_text || '').trim();
-  if (!businessProcessOverview) {
-    const error = new Error('Add the business process overview before generating risk analysis.');
-    error.statusCode = 400;
-    throw error;
-  }
   const result = await analyzeRiskAnalysis(
     shapeControlForRiskAnalysis({
       control_number: controlRow.control_number,
@@ -2246,7 +2254,6 @@ async function executeRiskAnalysisForControl(companyIdentifier, controlRow, coor
     {
       formId: controlRow.form_id,
       conciseRisks: conciseRisksForControl(conciseRisks),
-      businessProcessOverview,
     }
   );
   if (result?.dry_run) {
@@ -7434,6 +7441,9 @@ async function getIfcReport(req, res) {
 }
 
 module.exports = {
+  getRiskAnalysisJobs,
+  executeConciseRiskList,
+  executeOverallMissingRisks,
   getUsers,
   getAssignedUnits,
   getApproverAssignments,

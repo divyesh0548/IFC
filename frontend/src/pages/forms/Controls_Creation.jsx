@@ -1,3 +1,5 @@
+import AutomaticRiskAnalysisOption from '../../components/company_co/AutomaticRiskAnalysisOption'
+import RiskAnalysisJobs from '../../components/company_co/RiskAnalysisJobs'
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { alpha, useTheme } from '@mui/material/styles'
 import { useNavigate } from 'react-router-dom'
@@ -19,6 +21,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
 import CircularProgress from '@mui/material/CircularProgress'
+import FormHelperText from '@mui/material/FormHelperText'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
@@ -74,6 +77,11 @@ function Controls_Creation() {
   const navigate = useNavigate()
   const fileInputRef = useRef(null)
   const [file, setFile] = useState(null)
+  const [excelHeaderWarning, setExcelHeaderWarning] = useState('')
+  const [autoGenerateMissingRisks, setAutoGenerateMissingRisks] = useState(false)
+  const [riskJobsTick, setRiskJobsTick] = useState(0)
+  const [riskAnalysisWarning, setRiskAnalysisWarning] = useState('')
+  const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState(null)
   const [sheetNames, setSheetNames] = useState([])
@@ -84,7 +92,6 @@ function Controls_Creation() {
   const [unitId, setUnitId] = useState('')
   const [unitOptions, setUnitOptions] = useState([])
   const [unitsLoading, setUnitsLoading] = useState(true)
-  const [templateLoading, setTemplateLoading] = useState(true)
   const [financialYear, setFinancialYear] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [reminderFrequency, setReminderFrequency] = useState('')
@@ -141,25 +148,13 @@ function Controls_Creation() {
     String(headerRowNumber || '').trim() !== '' ||
     !!pendingImport
   const hasReminderValues = String(dueDate || '').trim() !== '' || String(reminderFrequency || '').trim() !== ''
-  const formLocked = unitsLoading || templateLoading
+  const formLocked = unitsLoading
 
   const clearSheetSelection = useCallback(() => {
     setSheetNames([])
     setSelectedSheet('')
     setSheetNamesLoading(false)
   }, [])
-
-  const handleTemplateLoadingChange = useCallback((isLoading) => {
-    setTemplateLoading(Boolean(isLoading))
-  }, [])
-
-  useEffect(() => {
-    if (String(unitId || '').trim()) {
-      setTemplateLoading(true)
-    } else if (!unitsLoading) {
-      setTemplateLoading(false)
-    }
-  }, [unitId, unitsLoading])
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
@@ -201,18 +196,13 @@ function Controls_Creation() {
           const units = Array.isArray(result.units) ? result.units : []
           setUnitOptions(units)
           setUnitId((current) => current || units[0]?.unit_id || '')
-          if (units.length === 0) {
-            setTemplateLoading(false)
-          }
         } else if (!cancelled) {
           setUnitOptions([])
-          setTemplateLoading(false)
         }
       } catch (error) {
         console.error('Failed to fetch units for RACM upload:', error)
         if (!cancelled) {
           setUnitOptions([])
-          setTemplateLoading(false)
         }
       } finally {
         if (!cancelled) {
@@ -285,6 +275,7 @@ function Controls_Creation() {
       return false
     }
 
+    setExcelHeaderWarning('')
     setFile(selectedFile)
     setPreview({
       name: selectedFile.name
@@ -358,6 +349,7 @@ function Controls_Creation() {
 
   const clearFormAfterSuccess = (formEvent) => {
     setDuplicateControlNumberNotice('')
+    setSubmitted(false)
     setFile(null)
     setPreview(null)
     clearSheetSelection()
@@ -399,6 +391,7 @@ function Controls_Creation() {
     }, 10000)
     try {
       const payload = {
+        auto_generate_missing_risks: ctx.autoGenerateMissingRisks === true,
         businessProcess: bp,
         financialYear: fy,
         unit_id: selectedUnitId,
@@ -442,6 +435,9 @@ function Controls_Creation() {
             ? data.message
             : `Created ${inserted} RACM(s)${extra}.`
         )
+        setRiskAnalysisWarning(data.data?.riskAnalysisWarning || '')
+        if (data.data?.riskAnalysisWarning) toast.error(data.data.riskAnalysisWarning, { duration: 8000 })
+        setRiskJobsTick((value) => value + 1)
         clearFormAfterSuccess(formEvent)
         const mappingToSave =
           columnMapping && typeof columnMapping === 'object' ? columnMapping : null
@@ -487,6 +483,12 @@ function Controls_Creation() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setSubmitted(true)
+
+    if (formLocked || businessProcessesLoading) {
+      toast.error('Unit settings are loading. Please try again in a moment.')
+      return
+    }
 
     if (!file) {
       toast.error('Please select a file to upload')
@@ -535,6 +537,7 @@ function Controls_Creation() {
       }
     }
 
+    setExcelHeaderWarning('')
     let rows
     try {
       const buffer = await file.arrayBuffer()
@@ -543,6 +546,7 @@ function Controls_Creation() {
         headerRowNumber: manualHeaderRowNumber,
       })
     } catch (parseErr) {
+      setExcelHeaderWarning(parseErr.message || 'Could not read the Excel file.')
       toast.error(parseErr.message || 'Could not read the Excel file.')
       return
     }
@@ -553,6 +557,7 @@ function Controls_Creation() {
     }
 
     setPendingImport({
+      autoGenerateMissingRisks,
       rows,
       businessProcess,
       unitId,
@@ -722,6 +727,7 @@ function Controls_Creation() {
     const p = pendingImport
     try {
       const sessionPayload = {
+        autoGenerateMissingRisks: p.autoGenerateMissingRisks === true,
         rows: p.rows,
         businessProcess: p.businessProcess,
         unitId: p.unitId,
@@ -964,7 +970,6 @@ function Controls_Creation() {
       <ActiveRacmTemplateNotice
         unitId={unitId}
         variant="bulk"
-        onLoadingChange={handleTemplateLoadingChange}
       />
 
       <Box
@@ -1110,7 +1115,11 @@ function Controls_Creation() {
           </Typography>
         </Box>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
+          {loading && <Alert severity="info" role="status" sx={{ mb: 2 }} icon={<CircularProgress size={20} />}>
+            {longImportDialogOpen ? 'Import is still running. Please keep this page open; completion will appear here.' : 'Checking and importing RACMs… Please keep this page open.'}
+          </Alert>}
+          {submitted && !file && <Alert severity="error" sx={{ mb: 2 }}>Select an Excel file to import.</Alert>}
               {duplicateControlNumberNotice ? (
                 <Alert severity="warning" sx={{ mb: 2.5, ...LIGHT_MODE_ALERT_SX.warning }}>
                   {duplicateControlNumberNotice}
@@ -1253,7 +1262,7 @@ function Controls_Creation() {
                     <FormControl
                       fullWidth
                       required
-                      disabled={loading || formLocked || sheetNames.length === 0}
+                      error={submitted && !selectedSheet} disabled={loading || formLocked || sheetNames.length === 0}
                       variant="outlined"
                       sx={{ mt: 2 }}
                     >
@@ -1262,7 +1271,7 @@ function Controls_Creation() {
                         labelId="worksheet-select-label"
                         value={selectedSheet}
                         label="Worksheet"
-                        onChange={(e) => setSelectedSheet(e.target.value)}
+                        onChange={(e) => { setSelectedSheet(e.target.value); setExcelHeaderWarning('') }}
                       >
                         {sheetNames.map((name) => (
                           <MenuItem key={name} value={name}>
@@ -1286,7 +1295,7 @@ function Controls_Creation() {
                   mb: 2.5,
                 }}
               >
-                <FormControl fullWidth required disabled={loading || formLocked || businessProcessesLoading} variant="outlined">
+                <FormControl fullWidth required error={submitted && !businessProcess} sx={{ minWidth: 0 }} disabled={loading || formLocked || businessProcessesLoading} variant="outlined">
                   <InputLabel id="business-process-label">Business Process</InputLabel>
                   <Select
                     labelId="business-process-label"
@@ -1301,9 +1310,10 @@ function Controls_Creation() {
                       </MenuItem>
                     ))}
                   </Select>
+                  {submitted && !businessProcess && <FormHelperText>Select a business process.</FormHelperText>}
                 </FormControl>
 
-                <FormControl fullWidth required disabled={loading || formLocked || unitOptions.length === 0} variant="outlined">
+                <FormControl fullWidth required error={submitted && !unitId} sx={{ minWidth: 0 }} disabled={loading || formLocked || unitOptions.length === 0} variant="outlined">
                   <InputLabel id="unit-label">Unit</InputLabel>
                   <Select
                     labelId="unit-label"
@@ -1322,9 +1332,10 @@ function Controls_Creation() {
                       </MenuItem>
                     ))}
                   </Select>
+                  {submitted && !unitId && <FormHelperText>Select a unit.</FormHelperText>}
                 </FormControl>
 
-                <FormControl fullWidth required disabled={loading || formLocked} variant="outlined">
+                <FormControl fullWidth required error={submitted && !financialYear} sx={{ minWidth: 0 }} disabled={loading || formLocked} variant="outlined">
                   <InputLabel id="financial-year-label">Financial Year</InputLabel>
                   <Select
                     labelId="financial-year-label"
@@ -1339,23 +1350,23 @@ function Controls_Creation() {
                       </MenuItem>
                     ))}
                   </Select>
+                  {submitted && !financialYear && <FormHelperText>Select a financial year.</FormHelperText>}
                 </FormControl>
               </Box>
 
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 2.5, width: '100%', mb: 2.5 }}>
               <Paper
                 elevation={0}
                 sx={{
                   p: { xs: 2, sm: 2.2 },
-                  mb: 2.5,
+                  minWidth: 0,
                   borderRadius: 2,
                   border: '1px solid',
                   borderColor:
                     theme.palette.mode === 'dark'
                       ? alpha(theme.palette.common.white, 0.07)
                       : alpha(theme.palette.divider, 0.95),
-                  backgroundColor: theme.palette.mode === 'dark'
-                    ? alpha(theme.palette.common.white, 0.025)
-                    : alpha('#f8fafc', 0.85),
+                  backgroundColor: theme.palette.background.paper,
                 }}
               >
                 <Box
@@ -1395,7 +1406,7 @@ function Controls_Creation() {
                 <Box
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
                     gap: 2,
                   }}
                 >
@@ -1415,12 +1426,14 @@ function Controls_Creation() {
                       slotProps={{
                         textField: {
                           fullWidth: true,
+                          error: submitted && !!reminderFrequency && !dueDate,
+                          helperText: submitted && !!reminderFrequency && !dueDate ? 'Select a due date.' : '',
                         },
                       }}
                     />
                   </LocalizationProvider>
 
-                  <FormControl fullWidth disabled={loading || formLocked} variant="outlined">
+                  <FormControl fullWidth error={submitted && !!dueDate && !reminderFrequency} disabled={loading || formLocked} variant="outlined">
                     <InputLabel id="reminder-frequency-label">Reminder Frequency</InputLabel>
                     <Select
                       labelId="reminder-frequency-label"
@@ -1440,22 +1453,23 @@ function Controls_Creation() {
                 elevation={0}
                 sx={{
                   p: { xs: 2, sm: 2.2 },
-                  mb: 2.5,
+                  minWidth: 0,
                   borderRadius: 2,
                   border: '1px solid',
                   borderColor:
                     theme.palette.mode === 'dark'
                       ? alpha(theme.palette.common.white, 0.07)
                       : alpha(theme.palette.divider, 0.95),
-                  backgroundColor: theme.palette.mode === 'dark'
-                    ? alpha(theme.palette.common.white, 0.025)
-                    : alpha('#f8fafc', 0.85),
+                  backgroundColor: theme.palette.background.paper,
                 }}
               >
+                <Typography sx={{ fontSize: '1rem', fontWeight: 800, color: 'text.primary', mb: 1.8, minHeight: 32, display: 'flex', alignItems: 'center' }}>
+                  Header detection
+                </Typography>
                 <Box
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(160px, 0.5fr)' },
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
                     gap: 2,
                     alignItems: 'start',
                   }}
@@ -1482,6 +1496,7 @@ function Controls_Creation() {
                     onChange={(e) => setHeaderRowNumber(e.target.value)}
                     disabled={loading || formLocked || headerMode === 'auto'}
                     required={headerMode === 'manual'}
+                    error={submitted && headerMode === 'manual' && (!headerRowNumber || Number(headerRowNumber) < 1)}
                     inputProps={{ min: 1, step: 1 }}
                     helperText="Use Excel row numbering, starting from 1."
                     fullWidth
@@ -1489,6 +1504,12 @@ function Controls_Creation() {
                 </Box>
               </Paper>
 
+              </Box>
+
+              {excelHeaderWarning ? <Alert severity="warning" sx={{ mb: 2 }}>{excelHeaderWarning}</Alert> : null}
+              <AutomaticRiskAnalysisOption value={autoGenerateMissingRisks} onChange={setAutoGenerateMissingRisks} disabled={loading || formLocked} />
+              {riskAnalysisWarning ? <Alert severity="warning">{riskAnalysisWarning}</Alert> : null}
+              <RiskAnalysisJobs refreshKey={riskJobsTick} hideFailed />
               <Box
                 sx={{
                   display: 'flex',
@@ -1498,18 +1519,7 @@ function Controls_Creation() {
               >
                 <Button
                   type="submit"
-                  disabled={
-                    loading ||
-                    formLocked ||
-                    businessProcessesLoading ||
-                    sheetNamesLoading ||
-                    mappingDialogOpen ||
-                    !file ||
-                    !selectedSheet ||
-                    !businessProcess ||
-                    !unitId ||
-                    !financialYear
-                  }
+                  disabled={loading || mappingDialogOpen}
                   variant="contained"
                   color="secondary"
                   sx={{
@@ -1555,12 +1565,12 @@ function Controls_Creation() {
         onClose={handleMappingDialogCancel}
         aria-labelledby="racm-mapping-dialog-title"
         aria-describedby="racm-mapping-dialog-description"
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
         PaperProps={{
           sx: {
             borderRadius: 2,
-            minWidth: { xs: '90%', sm: '440px' },
+            maxWidth: 720,
             boxShadow:
               theme.palette.mode === 'dark'
                 ? '0 8px 32px rgba(0, 0, 0, 0.4)'
@@ -1593,153 +1603,27 @@ function Controls_Creation() {
               mt: 1.5,
             }}
           >
-            Do you want to review and map Excel column headers to RACM fields? Use this when your sheet
-            uses names that do not match the active template (for example, map &quot;Query Name&quot; to
-            Application Name). Automatic import uses the active template for the selected unit, including
-            custom and assertion columns where headers match template keywords.
+            Column mapping matches your Excel headers to the RACM fields in the selected unit’s template.
           </DialogContentText>
           <Box sx={{ display: 'grid', gap: 1.5 }}>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 1.5,
-                border: '1px solid',
-                borderColor: alpha(theme.palette.divider, 0.9),
-                backgroundColor:
-                  theme.palette.mode === 'dark'
-                    ? alpha(theme.palette.common.white, 0.02)
-                    : alpha('#f8fafc', 0.9),
-              }}
-            >
-              <Typography sx={{ fontSize: '0.98rem', fontWeight: 800, color: theme.palette.text.primary, mb: 0.6 }}>
-                Use automatic mapping
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                Adjust mapping
+                <Box component="span" sx={{ ml: 1, px: 1, py: 0.25, borderRadius: 1, bgcolor: accentSoft, color: accentColor, fontSize: '0.75rem' }}>Recommended</Box>
               </Typography>
-              <Typography sx={{ fontSize: '0.9rem', lineHeight: 1.6, color: theme.palette.text.secondary }}>
-                Continue immediately when your Excel headers already match the active unit template.
-              </Typography>
+              <Typography variant="body2" color="text.secondary">Review and correct which Excel column goes into each RACM field before importing.</Typography>
             </Box>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 1.5,
-                border: '1px solid',
-                borderColor: accentBorder,
-                backgroundColor: accentSoft,
-              }}
-            >
-              <Typography sx={{ fontSize: '0.98rem', fontWeight: 800, color: theme.palette.text.primary, mb: 0.6 }}>
-                Adjust column mapping
-              </Typography>
-              <Typography sx={{ fontSize: '0.9rem', lineHeight: 1.6, color: theme.palette.text.secondary }}>
-                Review detected headers one by one and map them manually before importing.
-              </Typography>
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>Automatic mapping</Typography>
+              <Typography variant="body2" color="text.secondary">Continue with matches detected from your Excel headers and template keywords.</Typography>
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions
-          sx={{
-            px: 3,
-            pb: 3,
-            pt: 2.5,
-            gap: 1.5,
-            flexWrap: 'wrap',
-            borderTop: '1px solid',
-            borderColor: 'divider',
-          }}
-        >
-          <Button
-            onClick={handleMappingDialogCancel}
-            variant="outlined"
-            sx={{
-              textTransform: 'none',
-              px: 3,
-              py: 1,
-              minWidth: '100px',
-              borderColor:
-                theme.palette.mode === 'dark'
-                  ? 'rgba(255, 255, 255, 0.23)'
-                  : 'rgba(0, 0, 0, 0.23)',
-              color: theme.palette.text.primary,
-              '&:hover': {
-                borderColor:
-                  theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.3)'
-                    : 'rgba(0, 0, 0, 0.3)',
-                backgroundColor:
-                  theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.05)'
-                    : 'rgba(0, 0, 0, 0.04)',
-              },
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleAutomaticColumnMapping}
-            variant="outlined"
-            disabled={loading || formLocked}
-            sx={{
-              textTransform: 'none',
-              px: 3,
-              py: 1,
-              minWidth: '164px',
-              borderColor: alpha(accentColor, 0.35),
-              color: accentColor,
-              '&:hover': {
-                borderColor: alpha(accentColor, 0.55),
-                backgroundColor: alpha(accentColor, 0.06),
-              },
-            }}
-          >
-            Use automatic mapping
-          </Button>
-          <Button
-            onClick={handleCustomColumnMapping}
-            variant="contained"
-            color="secondary"
-            disabled={loading || formLocked}
-            autoFocus
-            sx={{
-              textTransform: 'none',
-              px: 3,
-              py: 1,
-              minWidth: '164px',
-              fontWeight: 600,
-            }}
-          >
-            Adjust column mapping
-          </Button>
+        <DialogActions sx={{ px: 3, py: 2.5, gap: 1.5, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'auto auto auto' }, justifyContent: { sm: 'end' }, borderTop: '1px solid', borderColor: 'divider', '& > :not(style) ~ :not(style)': { ml: 0 } }}>
+          <Button onClick={handleMappingDialogCancel} variant="text" sx={{ textTransform: 'none', whiteSpace: 'nowrap', px: 2, py: 1, color: 'text.secondary' }}>Cancel</Button>
+          <Button onClick={handleAutomaticColumnMapping} variant="outlined" disabled={loading || formLocked} sx={{ textTransform: 'none', whiteSpace: 'nowrap', px: 2, py: 1 }}>Automatic mapping</Button>
+          <Button onClick={handleCustomColumnMapping} variant="contained" color="secondary" disabled={loading || formLocked} autoFocus sx={{ textTransform: 'none', whiteSpace: 'nowrap', px: 2.5, py: 1, fontWeight: 600 }}>Adjust mapping</Button>
         </DialogActions>
-      </Dialog>
-      <Dialog
-        open={longImportDialogOpen}
-        aria-labelledby="bulk-import-progress-dialog-title"
-        maxWidth="xs"
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 2,
-            p: 0.5,
-          },
-        }}
-      >
-        <DialogContent
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            px: 3,
-            py: 2.5,
-          }}
-        >
-          <CircularProgress size={28} thickness={4} />
-          <Typography
-            id="bulk-import-progress-dialog-title"
-            sx={{ fontSize: '1rem', fontWeight: 800, color: theme.palette.text.primary }}
-          >
-            Hold on controls are being inserted
-          </Typography>
-        </DialogContent>
       </Dialog>
       <ControlFrequencyValueMapDialog
         open={controlFrequencyMappingDialogState.open}

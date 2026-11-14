@@ -11,6 +11,7 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
+import PolicyRoundedIcon from '@mui/icons-material/PolicyRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import TableViewRoundedIcon from '@mui/icons-material/TableViewRounded'
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded'
@@ -119,6 +120,14 @@ function Company_co_home() {
       description: 'Generate design-gap analysis for controls, track progress, and export scoped reports.',
       path: '/company-co/ai-insights',
       icon: <AutoAwesomeRoundedIcon sx={{ fontSize: 38 }} />,
+      accent: sharedTileAccent,
+    },
+    {
+      eyebrow: 'AI',
+      title: 'Risk Analysis',
+      description: 'Review control risks by business process and financial year, generate insights, and view reports.',
+      path: '/company-co/risk-analysis',
+      icon: <PolicyRoundedIcon sx={{ fontSize: 38 }} />,
       accent: sharedTileAccent,
     },
   ]

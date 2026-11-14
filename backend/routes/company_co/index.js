@@ -17,6 +17,7 @@ router.get('/risk-analysis/controls', verifyCompanyCoordinator, controller.listR
 router.get('/risk-analysis/report', verifyCompanyCoordinator, controller.getRiskAnalysisReport);
 router.get('/risk-analysis/business-process-overview', verifyCompanyCoordinator, controller.getRiskAnalysisBusinessProcessOverview);
 router.put('/risk-analysis/business-process-overview', verifyCompanyCoordinator, controller.upsertRiskAnalysisBusinessProcessOverview);
+router.get('/risk-analysis/jobs', verifyCompanyCoordinator, controller.getRiskAnalysisJobs);
 router.get('/risk-analysis/concise-list', verifyCompanyCoordinator, controller.getRiskAnalysisConciseList);
 router.post('/risk-analysis/concise-list', verifyCompanyCoordinator, controller.generateRiskAnalysisConciseList);
 router.get('/risk-analysis/overall-missing-risks', verifyCompanyCoordinator, controller.getRiskAnalysisOverallMissingRisks);
@@ -83,6 +84,7 @@ router.get('/racm-templates/import-catalog/:template_id', verifyCompanyCoordinat
 router.post('/racm-templates/import', verifyCompanyCoordinator, racmTemplateController.importRacmTemplate);
 router.get('/racm-templates', verifyCompanyCoordinator, racmTemplateController.getActiveRacmTemplate);
 router.get('/racm-templates/versions', verifyCompanyCoordinator, racmTemplateController.listRacmTemplateVersions);
+router.get('/racm-templates/summary', verifyCompanyCoordinator, racmTemplateController.getActiveRacmTemplateSummary);
 router.get('/racm-templates/:template_id', verifyCompanyCoordinator, racmTemplateController.getRacmTemplateById);
 router.post('/racm-templates/create-fresh', verifyCompanyCoordinator, racmTemplateController.createFreshRacmTemplate);
 router.post('/racm-templates/structural-save', verifyCompanyCoordinator, racmTemplateController.saveRacmTemplateStructure);

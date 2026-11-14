@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import BrandLogo from '../components/BrandLogo'
 import { useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
@@ -257,20 +258,11 @@ function Login() {
             backdropFilter: 'blur(10px)',
           }}
         >
-          <Typography
-            variant="h4"
-            component="h1"
-            sx={{
-              fontWeight: 800,
-              letterSpacing: '-0.03em',
-              color: 'text.primary',
-              mb: 1,
-            }}
-          >
-            Internal Financial Controls
-          </Typography>
+          <Box component="h1" sx={{ m: 0, mb: 2, width: 'fit-content' }}>
+            <BrandLogo />
+          </Box>
           <Typography sx={{ color: 'text.secondary', lineHeight: 1.8, maxWidth: 52 * 10 }}>
-            Secure sign-in to access your IFC workflow. Manage RACMs, approvals, and audits in one place.
+            Secure sign-in to access your Strata workflow. Manage RACMs, approvals, and audits in one place.
           </Typography>
           <Box
             sx={{
@@ -334,7 +326,7 @@ function Login() {
             Welcome Back
           </Typography>
           <Typography sx={{ mb: 3, textAlign: 'center', color: 'text.secondary', lineHeight: 1.7 }}>
-            Sign in to continue to your IFC dashboard.
+            Sign in to continue to your Strata dashboard.
           </Typography>
           
           {error && (

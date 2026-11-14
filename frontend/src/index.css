@@ -65,3 +65,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
   width: 0px;
 }
+/* Use the application visibility toggle instead of the browser reveal button. */
+input::-ms-reveal, input::-ms-clear {
+  display: none;
+}

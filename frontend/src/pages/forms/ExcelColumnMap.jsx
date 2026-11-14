@@ -1,3 +1,4 @@
+import RiskAnalysisJobs from '../../components/company_co/RiskAnalysisJobs'
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
@@ -95,6 +96,8 @@ function findDuplicateFieldMappings(
 function ExcelColumnMap() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
+  const [riskJobsTick, setRiskJobsTick] = useState(0)
+  const [riskAnalysisWarning, setRiskAnalysisWarning] = useState('')
   const [initializing, setInitializing] = useState(true)
   const [payload, setPayload] = useState(null)
   const [mappingConfig, setMappingConfig] = useState(null)
@@ -130,7 +133,7 @@ function ExcelColumnMap() {
     submitContext: null,
     selections: {},
   })
-  useSyncGlobalLoading(initializing || loading)
+  useSyncGlobalLoading(initializing)
   const headers = useMemo(() => (payload ? collectBulkImportHeaders(payload.rows) : []), [payload])
 
   const mappableSet = useMemo(
@@ -307,6 +310,10 @@ function ExcelColumnMap() {
       headers,
       mappableSet,
     })
+    if (soft.duplicateTargets.length) {
+      toast.error('This saved mapping assigns a RACM field to multiple Excel columns. Correct the mapping before applying it.')
+      return
+    }
     setUserOverrides(soft.overrides)
     setAppliedPresetId(preset.id)
     setSessionAssertionYesNoMapping(mergeValueMappings(preset.assertion_yes_no_mapping))
@@ -615,6 +622,7 @@ function ExcelColumnMap() {
     }
 
     const body = {
+      auto_generate_missing_risks: payload.autoGenerateMissingRisks === true,
       businessProcess: payload.businessProcess,
       financialYear: payload.financialYear,
       unit_id: payload.unitId,
@@ -654,6 +662,9 @@ function ExcelColumnMap() {
             ? data.message
             : `Created ${inserted} RACM(s)${extra}.`
         )
+        setRiskAnalysisWarning(data.data?.riskAnalysisWarning || '')
+        if (data.data?.riskAnalysisWarning) toast.error(data.data.riskAnalysisWarning, { duration: 8000 })
+        setRiskJobsTick((value) => value + 1)
         window.setTimeout(() => {
           openSaveMappingDialog()
         }, 0)
@@ -754,6 +765,8 @@ function ExcelColumnMap() {
 
   return (
     <Box sx={{ width: '100%', px: 0, py: 2 }}>
+      {riskAnalysisWarning ? <Alert severity="warning">{riskAnalysisWarning}</Alert> : null}
+      <RiskAnalysisJobs refreshKey={riskJobsTick} hideFailed />
       <Paper
         elevation={0}
         sx={{
@@ -1116,6 +1129,7 @@ function ExcelColumnMap() {
         </Table>
       </TableContainer>
 
+      {loading && <Alert severity="info" role="status">Checking and importing RACMs… Keep this page open until completion.</Alert>}
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
         <Button variant="contained" color="secondary" disabled={loading} onClick={handleSubmit}>
           {loading ? 'Importing…' : 'Submit import'}

@@ -34,6 +34,29 @@ function buildUserCreationEmail({
   const portalUrl = getPortalUrl();
   const normalizedRole = String(role || '').trim().toLowerCase();
 
+  if (normalizedRole === 'auditor') {
+    return {
+      subject: 'Welcome to Strata - Your Auditor Account',
+      text: `Hi ${String(userName || '').trim() || 'Auditor'},
+
+Your Strata auditor account is ready.
+
+You have read-only access to review company and user records, RACMs, and supporting evidence across the audit workspace. Use the dashboard filters to find the records you need for your review.
+
+Sign in using these temporary credentials:
+Email ID: ${emailId}
+Temporary password: ${tempPassword}
+Portal: ${portalUrl}
+
+You will be asked to set a new password when you first sign in. Keep your credentials private.
+
+For access assistance, contact the site administrator. For website issues or suggestions, use Help on your home page.
+
+Regards,
+Strata`,
+    };
+  }
+
   if (normalizedRole === 'company_admin') {
     return {
       subject: `Welcome to ${resolvedCompanyName} - Your Company Admin Account`,

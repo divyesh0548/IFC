@@ -4,7 +4,7 @@ Existing RACM risk coverage for this business process. Each item contains only t
 {concise_risks_json}
 
 Do all of the following in this order.
-1. Build an independent risk universe for the full business process using the business-process overview.
+1. Build an independent risk universe for the full business process using the business process name, existing sub-process context and general knowledge of how this process typically operates.
 2. Compare that universe against the existing sub-process and risk list above.
 3. Return only missing risks for the business process. Do not return risks that are already fully addressed by the existing list.
 

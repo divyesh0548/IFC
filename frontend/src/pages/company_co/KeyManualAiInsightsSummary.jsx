@@ -1,3 +1,4 @@
+import AiSummaryAvailabilityWarning from '../../components/company_co/AiSummaryAvailabilityWarning'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Box from '@mui/material/Box'
@@ -392,6 +393,7 @@ function KeyManualAiInsightsSummary() {
           Key and manual controls only. Select controls from one unit and generate a summary. Generating again replaces the saved summary for that control.
         </Typography>
 
+        <AiSummaryAvailabilityWarning endpoint="/api/company-co/ai-insights/key-manual-summary/availability" />
         {errorMessage && (
           <Alert severity="error" sx={{ mt: 2 }}>{errorMessage}</Alert>
         )}

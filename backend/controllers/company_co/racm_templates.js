@@ -32,6 +32,45 @@ async function verifyCoordinatorUnitAccess(client, companyIdentifier, unitId, co
   return result.rows.length > 0;
 }
 
+// Read-only notice data: no field seeding, template hydration or RACM counts.
+async function getActiveRacmTemplateSummary(req, res) {
+  const companyIdentifier = req.user.company_identifier;
+  const unitId = String(req.query.unit_id || '').trim();
+  if (!companyIdentifier || !unitId) {
+    return res.status(400).json({ success: false, message: 'Company identifier and unit_id are required' });
+  }
+  try {
+    const result = await pool.query(`
+      SELECT rt.template_name, rt.version,
+        (SELECT COUNT(*)::int FROM racm_template_fields f
+         WHERE f.template_id = rt.id AND NOT f.is_fixed) AS extra_field_count
+      FROM (SELECT 1 WHERE EXISTS (
+        SELECT 1 FROM coordinator_unit_assignments
+        WHERE company_identifier = $1 AND unit_id = $2
+          AND LOWER(TRIM(coordinator_email_id)) = LOWER(TRIM($3))
+      )) authorized
+      LEFT JOIN LATERAL (
+        SELECT id, template_name, version FROM racm_templates
+        WHERE company_identifier = $1 AND unit_id = $2 AND status = 'active'
+        ORDER BY id DESC LIMIT 1
+      ) rt ON TRUE
+    `, [companyIdentifier, unitId, req.user.email_id]);
+    if (!result.rows.length) {
+      return res.status(403).json({ success: false, message: 'You do not have access to this unit' });
+    }
+    const row = result.rows[0];
+    // The full import path creates Default v1 when the unit has no template yet.
+    return res.json({ success: true, data: {
+      templateName: row.template_name || 'Default',
+      version: row.version ?? 1,
+      extraFieldCount: Number(row.extra_field_count || 0),
+    } });
+  } catch (error) {
+    console.error('getActiveRacmTemplateSummary error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load RACM template summary' });
+  }
+}
+
 async function getActiveRacmTemplate(req, res) {
   const client = await pool.connect();
   try {
@@ -688,6 +727,7 @@ async function removeRacmTemplateVersion(req, res) {
 }
 
 module.exports = {
+  getActiveRacmTemplateSummary,
   getActiveRacmTemplate,
   getRacmTemplateById,
   listRacmTemplateVersions,

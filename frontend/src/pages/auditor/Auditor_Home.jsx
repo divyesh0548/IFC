@@ -153,8 +153,9 @@ function AuditorHome() {
           sx={{
             position: 'relative',
             p: { xs: 2.5, sm: 3.5, md: 4 },
+            pb: { xs: 9, sm: 10, md: 11 },
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr)',
+            gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.45fr) minmax(280px, 0.95fr)' },
             gap: 3,
             alignItems: 'stretch',
           }}
@@ -208,11 +209,26 @@ function AuditorHome() {
                 lineHeight: 1.7,
               }}
             >
-              Review the IFC landscape with read-only access to companies, users, RACMs, and supporting evidence from one place.
+              Review financial controls with read-only access to companies, users, RACMs, and supporting evidence from one place.
             </Typography>
 
           </Box>
 
+          <Paper elevation={0} sx={{ p: 2.4, borderRadius: 3, border: '1px solid', borderColor: 'divider', backgroundColor: alpha(theme.palette.background.paper, 0.82), display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Typography sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <FactCheckRoundedIcon color="primary" /> Audit overview
+            </Typography>
+            {[
+              ['Companies', stats?.total_companies],
+              ['Process owners', stats?.total_users],
+              ['RACMs', stats?.total_racms],
+            ].map(([label, value]) => (
+              <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                <Typography color="text.secondary">{label}</Typography>
+                <Typography sx={{ fontWeight: 800 }}>{value ?? 0}</Typography>
+              </Box>
+            ))}
+          </Paper>
         </Box>
         <HomeHelpSupport />
       </Box>

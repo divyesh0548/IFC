@@ -161,26 +161,31 @@ function buildRacmInactiveUserEmail({
   processOwnerName,
   coordinatorName,
   coordinatorCompanyName,
-  formId,
+  controlNumber,
+  controlDescription,
+  subProcess,
+  financialYear,
+  unitName,
 }) {
   const recipientName = processOwnerName || 'Process Owner';
   const coordinatorDisplayName = resolveCoordinatorDisplayName(coordinatorName);
   const coordinatorCompanyDisplayName = coordinatorCompanyName || 'Company';
-  const formUrl = buildUserFormDetailUrl(formId);
-  const portalUrl = getPortalBaseUrl();
   const processLabel = businessProcess || 'your business process';
 
   return {
     shouldSend: true,
-    subject: `Your IFC testing for ${processLabel} is now inactive`,
+    subject: `Strata: Control ${controlNumber || '(not numbered)'} is now inactive`,
     text: `Hi ${recipientName},
 
-Your Internal Financial Controls assignment for ${processLabel} has been set to Inactive.
+Your control assignment has been set to Inactive.
+
+Control number: ${controlNumber || 'Not assigned'}
+Business process: ${processLabel}
+${subProcess ? `Sub-process: ${subProcess}\n` : ''}${unitName ? `Unit: ${unitName}\n` : ''}${financialYear ? `Financial year: ${financialYear}\n` : ''}${controlDescription ? `Control description: ${controlDescription}\n` : ''}
 
 This RACM will no longer appear on your dashboard until it is set to Active again by your company coordinator.
 
 If you have any questions, please contact your coordinator.
-${formUrl ? `\nRACM: ${formUrl}` : (portalUrl ? `\nRACM: ${portalUrl}` : '')}
 
 Regards,
 ${coordinatorDisplayName}
@@ -192,6 +197,11 @@ ${coordinatorCompanyDisplayName}
 const RACM_STATUS_EMAIL_SELECT = `
   SELECT
     cf.form_id,
+    cf.control_number,
+    cf.standard_control_description,
+    cf.sub_process,
+    cf.financial_year,
+    cum.unit_name,
     cf.business_process,
     cf.due_date,
     cf.company_identifier,
@@ -252,7 +262,11 @@ async function sendInactiveRacmUserEmailForFormId(formId) {
     processOwnerName: row.control_owner_name || '',
     coordinatorName: row.coordinator_name || '',
     coordinatorCompanyName: row.company_name || '',
-    formId: row.form_id,
+    controlNumber: row.control_number,
+    controlDescription: row.standard_control_description,
+    subProcess: row.sub_process,
+    financialYear: row.financial_year,
+    unitName: row.unit_name,
   });
   if (!payload.shouldSend) return false;
 

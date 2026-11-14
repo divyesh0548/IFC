@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "skills": {
+    "flow-video-recorder": {
+      "source": "muayadjamal/flow-video-recorder",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "b60ed3ecc70c0be4212d5bcae27d4a0df089bb1f87c1f758cd85789743570043"
+    }
+  }
+}

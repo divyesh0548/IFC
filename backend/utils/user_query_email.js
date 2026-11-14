@@ -7,7 +7,7 @@ function buildUserQueryAdminEmail({ query }) {
 
   return {
     subject: `New User Query - ${typeOfQuery}`,
-    text: `A new user query has been submitted on the IFC portal.
+    text: `A new user query has been submitted on Strata.
 
 Submitted by: ${email}
 Explanation: ${explanation}`,

@@ -127,6 +127,11 @@ async function deleteCompanyAndRelatedRows(tx, companyIdentifier) {
         SELECT 1 FROM key_manual_ai_insights_row_data r WHERE r.run_id = rt.id
       )
   `;
+  // Older databases may not yet have the optional automatic-analysis queue.
+  const riskJobTable = await tx.$queryRaw`SELECT to_regclass('public.risk_analysis_jobs') AS name`;
+  if (riskJobTable[0]?.name) {
+    await tx.$executeRaw`DELETE FROM risk_analysis_jobs WHERE company_identifier = ${companyId}`;
+  }
   await tx.$executeRaw`DELETE FROM risk_analysis WHERE company_identifier = ${companyId}`;
   await tx.$executeRaw`DELETE FROM risk_analysis_concise_lists WHERE company_identifier = ${companyId}`;
   await tx.$executeRaw`DELETE FROM risk_analysis_overall_missing_risks WHERE company_identifier = ${companyId}`;

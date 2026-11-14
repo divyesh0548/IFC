@@ -32,6 +32,7 @@ import { useAuth } from '../contexts/AuthContext'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 import AppBreadcrumbs from './AppBreadcrumbs'
+import BrandLogo from './BrandLogo'
 import { getDashboardBreadcrumbItems } from '../utils/dashboardBreadcrumbs'
 
 const getHomePath = (pathname) => {
@@ -64,54 +65,12 @@ function DashboardLayout() {
   const accountMenuOpen = Boolean(accountMenuAnchor)
   const profilePath = getProfilePath(location.pathname)
   const { mode, toggleTheme } = useThemeMode()
-  const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || '')
   const homePath = getHomePath(location.pathname)
   const breadcrumbItems = getDashboardBreadcrumbItems(location.pathname)
-  const isSiteadminRoute = location.pathname.startsWith('/siteadmin')
   const isCreateCompanyPage = location.pathname === '/siteadmin/create-company'
   const isFullWidthPage =
     isCreateCompanyPage || location.pathname.startsWith('/company-co/control-creation')
   const boundaryPaddingX = { xs: 3, sm: 4, md: 5 }
-
-  useEffect(() => {
-    let cancelled = false
-    queueMicrotask(() => {
-      if (!cancelled) {
-        setCompanyName(localStorage.getItem(STORAGE_KEYS.companyName) || '')
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [location.pathname])
-
-  useEffect(() => {
-    if (isSiteadminRoute) return
-    if (companyName && String(companyName).trim() !== '') return
-
-    let cancelled = false
-    ;(async () => {
-      try {
-        const response = await fetch(apiUrl('/api/auth/profile'), {
-          method: 'GET',
-          credentials: 'include',
-        })
-        const data = await response.json()
-        const name = data?.profile?.company_name
-        if (!cancelled && response.ok && data?.success && name && String(name).trim() !== '') {
-          const normalizedName = String(name).trim()
-          setCompanyName(normalizedName)
-          localStorage.setItem(STORAGE_KEYS.companyName, normalizedName)
-        }
-      } catch (error) {
-        console.warn('Failed to fetch company name for navbar:', error)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [companyName, isSiteadminRoute])
 
   useEffect(() => {
     document.body.classList.add('has-dashboard-navbar')
@@ -190,38 +149,16 @@ function DashboardLayout() {
                 component={RouterLink}
                 to={homePath}
                 sx={{
-                  display: 'inline-flex',
-                  flexDirection: 'column',
+                  display: 'flex',
+                  width: 'fit-content',
+                  alignItems: 'center',
+                  py: 1,
+                  maxWidth: '100%',
                   textDecoration: 'none',
                   minWidth: 0,
                 }}
               >
-                <Typography
-                  noWrap
-                  sx={{
-                    fontWeight: 800,
-                    fontSize: '1.2rem',
-                    lineHeight: 1.2,
-                    letterSpacing: '-0.02em',
-                    color: theme.palette.mode === 'dark' ? theme.palette.navbar.fg : theme.palette.text.primary,
-                  }}
-                >
-                  {isSiteadminRoute ? 'Admin' : (companyName || 'Company')}
-                </Typography>
-                <Typography
-                  noWrap
-                  sx={{
-                    fontWeight: 400,
-                    fontSize: '0.95rem',
-                    lineHeight: 1.3,
-                    color:
-                      theme.palette.mode === 'dark'
-                        ? 'rgba(238, 238, 238, 0.78)'
-                        : alpha(theme.palette.text.primary, 0.78),
-                  }}
-                >
-                  Internal Financial Controls
-                </Typography>
+                <BrandLogo />
               </Box>
             </Box>
             <Tooltip title={mode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'} arrow>

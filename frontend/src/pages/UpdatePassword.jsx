@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import BrandLogo from '../components/BrandLogo'
 import { useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
@@ -70,10 +71,14 @@ function UpdatePassword() {
 
   useEffect(() => {
     if (authLoading) return
+    if (userRole === 'siteadmin') {
+      navigate('/siteadmin/dashboard', { replace: true })
+      return
+    }
     if (!isAuthenticated) {
       navigate('/login', { replace: true })
     }
-  }, [authLoading, isAuthenticated, navigate])
+  }, [authLoading, isAuthenticated, navigate, userRole])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -144,7 +149,7 @@ function UpdatePassword() {
     }
   }
 
-  if (checkingSession) {
+  if (checkingSession || userRole === 'siteadmin') {
     return null
   }
 
@@ -204,18 +209,9 @@ function UpdatePassword() {
             backdropFilter: 'blur(10px)',
           }}
         >
-          <Typography
-            variant="h4"
-            component="h1"
-            sx={{
-              fontWeight: 800,
-              letterSpacing: '-0.03em',
-              color: 'text.primary',
-              mb: 1,
-            }}
-          >
-            Internal Financial Controls
-          </Typography>
+          <Box component="h1" sx={{ m: 0, mb: 2, width: 'fit-content' }}>
+            <BrandLogo />
+          </Box>
           <Typography sx={{ color: 'text.secondary', lineHeight: 1.8, maxWidth: 52 * 10 }}>
             You signed in with a temporary password. Set a new password you will use from now on to keep your
             account secure.
@@ -231,7 +227,7 @@ function UpdatePassword() {
             {[
               { title: 'Use your temporary password once', subtitle: 'Enter it as the current password, then choose a new one.' },
               { title: 'Pick something memorable', subtitle: 'At least six characters; avoid obvious words.' },
-              { title: 'Same IFC experience', subtitle: 'After updating, you will continue to your dashboard as usual.' },
+              { title: 'Same Strata experience', subtitle: 'After updating, you will continue to your dashboard as usual.' },
             ].map((item) => (
               <Box
                 key={item.title}
