@@ -195,6 +195,7 @@ export function getRacmReassignmentBlockMessage(form) {
     return 'This RACM is sent for approval and cannot be re-assigned.'
   }
   const conclusion = String(form?.control_design_conclusion || '').trim().toLowerCase()
+  if (conclusion === 'failed') return 'Failed RACMs are read-only and cannot be re-assigned.'
   if (conclusion === 'effective' || conclusion === 'accepted under deviation') {
     return 'This RACM has been approved (Effective / Accepted Under Deviation) and cannot be re-assigned.'
   }

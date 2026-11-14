@@ -1,3 +1,4 @@
+const { getAutoFailGraceDays, hasAutomaticFailureSchema } = require('../../utils/racm_failure');
 /**
  * Reminder emails job for control_forms.
  * Runs every 1 minute. reminder_frequency has three values: Daily, Weekly, Monthly.
@@ -76,6 +77,8 @@ async function fetchFormsDueForReminder(client) {
   const query = `
     SELECT
       cf.form_id,
+      cf.company_identifier,
+      cf.unit_id,
       cf.control_owner,
       cf.assigned_to_coordinator,
       cf.coordinator_assigned_by,
@@ -103,7 +106,9 @@ async function fetchFormsDueForReminder(client) {
     LEFT JOIN process_owner_declaration pod
       ON pod.form_id = cf.form_id
     WHERE active = TRUE
-      AND (status IS NULL OR TRIM(status) = '' OR status != 'Approved')
+      AND LOWER(TRIM(COALESCE(cf.status, ''))) IN ('', 'pending', 'rejected', 'null')
+      AND LOWER(TRIM(COALESCE(cf.control_design_conclusion, ''))) <> 'failed'
+      AND (LOWER(TRIM(COALESCE(cf.status, ''))) = 'rejected' OR LOWER(TRIM(COALESCE(cf.control_design_conclusion, ''))) NOT IN ('not effective', 'effective', 'accepted under deviation', 'not applicable'))
       AND COALESCE(pod.no_furthure_submission, FALSE) = FALSE
       AND due_date IS NOT NULL
       AND ${IST_CURRENT_DATE_SQL} >= due_date
@@ -123,7 +128,7 @@ async function fetchFormsDueForReminder(client) {
 /**
  * Build reminder email body.
  */
-function buildReminderEmailBody(form, { finalReminder = false } = {}) {
+function buildReminderEmailBody(form, { finalReminder = false, autoFailureEnabled = true } = {}) {
   const dueStr = formatDueDateForEmail(form.due_date);
   const companyName = String(form.company_name || '').trim();
   const controlNumberText = String(form.control_number || '').trim() || String(form.form_id || '').trim() || 'N/A';
@@ -137,9 +142,9 @@ function buildReminderEmailBody(form, { finalReminder = false } = {}) {
   const opening = finalReminder
     ? `This is the final reminder that uploading documents for ${controlNumberText} control is still pending. The reminder cycle for this control is now closed, and no further reminder emails will be sent.`
     : `This is a reminder that uploading documents for ${controlNumberText} control is pending.`;
-  const closing = finalReminder
-    ? 'Upload the documents and submit without further delay.'
-    : 'Please upload the documents and submit at your earliest convenience.';
+  const closing = finalReminder && autoFailureEnabled
+    ? `Submit the RACM or make a no-further-submission declaration within ${getAutoFailGraceDays()} day(s) of this final reminder. Otherwise, the conclusion will automatically become Failed and the RACM will become read-only.`
+    : (finalReminder ? 'Upload the documents and submit without further delay.' : 'Please upload the documents and submit at your earliest convenience.');
   return `Dear ${ownerSalutation},
 
 ${opening}
@@ -161,9 +166,14 @@ ${companyName}
  */
 async function runReminderEmails() {
   const client = await pool.connect();
+  let hasJobLock = false;
   try {
+    const lock = await client.query('SELECT pg_try_advisory_lock($1) AS locked', [9043301]);
+    hasJobLock = lock.rows[0]?.locked === true;
+    if (!hasJobLock) return;
     const forms = await fetchFormsDueForReminder(client);
     if (forms.length === 0) return;
+    const autoFailureEnabled = await hasAutomaticFailureSchema(client);
 
     for (const form of forms) {
       const isCoordinatorAssigned = isCoordinatorAssignedRacm(form);
@@ -190,7 +200,7 @@ async function runReminderEmails() {
       const subject = isFinalReminder
         ? `Final reminder - Control ${controlNumberText} - ${businessProcessText} submission pending`
         : `Reminder - Control ${controlNumberText} - ${businessProcessText} submission pending`;
-      const text = buildReminderEmailBody(form, { finalReminder: isFinalReminder });
+      const text = buildReminderEmailBody(form, { finalReminder: isFinalReminder, autoFailureEnabled });
 
       const ccEmails = await getCcEmailsForRacm({
         companyIdentifier: form.company_identifier,
@@ -223,6 +233,10 @@ async function runReminderEmails() {
   } catch (err) {
     console.error('[reminder_emails] Error:', err);
   } finally {
+    if (hasJobLock) {
+      try { await client.query('SELECT pg_advisory_unlock($1)', [9043301]); }
+      catch (error) { client.release(error); return; }
+    }
     client.release();
   }
 }

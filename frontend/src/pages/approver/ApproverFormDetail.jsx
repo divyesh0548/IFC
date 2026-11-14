@@ -1,3 +1,4 @@
+import FailedRacmNotice from '../../components/FailedRacmNotice'
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
@@ -53,6 +54,7 @@ function ApproverFormDetail() {
   const navigate = useNavigate()
   const { form_id } = useParams()
   const [formData, setFormData] = useState(null)
+  const isFailed = String(formData?.control_design_conclusion || '').trim().toLowerCase() === 'failed'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [approving, setApproving] = useState(false)
@@ -723,7 +725,7 @@ function ApproverFormDetail() {
     )
   }
 
-  const isPending = !formData?.status || formData.status === '' || formData.status === 'sent for approval'
+  const isPending = !isFailed && (!formData?.status || formData.status === '' || formData.status === 'sent for approval')
   const isApproved = formData?.status === 'Approved'
   const isRejected = formData?.status === 'Rejected'
   const sampleDocs = normalizeSampleDocuments(formData?.sample_docs, formData?.sample_doc)
@@ -790,6 +792,7 @@ function ApproverFormDetail() {
   return (
     <Box sx={FORM_DETAIL_ROOT_SX}>
       <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
+        <FailedRacmNotice failed={isFailed} />
           <ProcessOwnerDeclarationBadge
             declaration={processOwnerDeclaration}
             formattedTimestamp={formatDateTime(processOwnerDeclaration?.timestamp)}
@@ -2261,7 +2264,7 @@ function ApproverFormDetail() {
                       >
                         <Button
                           onClick={handleSubmitDecision}
-                          disabled={approving}
+                          disabled={isFailed || approving}
                           variant="contained"
                           color={approvalDecision === 'Rejected' ? 'error' : 'success'}
                           sx={{
@@ -2644,7 +2647,7 @@ function ApproverFormDetail() {
                               <Button
                                 onClick={handleSubmitDeficiencyReview}
                                 variant="contained"
-                                disabled={deficiencyReviewing}
+                                disabled={isFailed || deficiencyReviewing}
                                 sx={{ textTransform: 'none', fontWeight: 700 }}
                               >
                                 {deficiencyReviewing
@@ -3049,7 +3052,7 @@ function ApproverFormDetail() {
               multiline
               minRows={3}
               required={isApproved}
-              disabled={changeDecisionSubmitting}
+              disabled={isFailed || changeDecisionSubmitting}
               variant="outlined"
               placeholder={
                 isApproved
@@ -3075,7 +3078,7 @@ function ApproverFormDetail() {
           >
             <Button
               onClick={() => setChangeDecisionOpen(false)}
-              disabled={changeDecisionSubmitting}
+              disabled={isFailed || changeDecisionSubmitting}
               variant="outlined"
               sx={{
                 textTransform: 'none',
@@ -3105,7 +3108,7 @@ function ApproverFormDetail() {
               <Button
                 variant="contained"
                 color="error"
-                disabled={changeDecisionSubmitting}
+                disabled={isFailed || changeDecisionSubmitting}
                 onClick={() => handleChangeApprovalDecision('Rejected')}
                 sx={{
                   textTransform: 'none',
@@ -3121,7 +3124,7 @@ function ApproverFormDetail() {
               <Button
                 variant="contained"
                 color="secondary"
-                disabled={changeDecisionSubmitting}
+                disabled={isFailed || changeDecisionSubmitting}
                 onClick={() => handleChangeApprovalDecision('Approved')}
                 sx={{
                   textTransform: 'none',

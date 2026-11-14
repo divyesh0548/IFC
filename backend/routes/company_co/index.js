@@ -1,3 +1,4 @@
+const { rejectFailedRacmMutation } = require('../../utils/racm_failure');
 const express = require('express');
 const controller = require('../../controllers/company_co/company_co');
 const { verifyCompanyCoordinator } = require('../../modules/auth/auth.middleware');
@@ -57,7 +58,7 @@ router.post('/excel-column-mappings/:id/touch', verifyCompanyCoordinator, racmEx
 router.get('/users', verifyCompanyCoordinator, controller.getUsers);
 router.get('/assigned-units', verifyCompanyCoordinator, controller.getAssignedUnits);
 router.get('/approvers/:email_id/assignments', verifyCompanyCoordinator, controller.getApproverAssignments);
-router.post('/racm-approver-assignments', verifyCompanyCoordinator, controller.assignRacmApprover);
+router.post('/racm-approver-assignments', verifyCompanyCoordinator, rejectFailedRacmMutation, controller.assignRacmApprover);
 router.get('/unit-management', verifyCompanyCoordinator, controller.getUnitManagement);
 router.post('/unit-management/coordinators', verifyCompanyCoordinator, controller.createUnitCoordinator);
 router.post('/unit-management/approvers', verifyCompanyCoordinator, controller.createUnitApprover);

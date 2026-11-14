@@ -2440,6 +2440,15 @@ async function updateControlForm(req, res) {
         }
       }
 
+      if (dueDateChanged || reminderFrequencyChanged || isRacmAssignmentOperation) {
+        const reminderReset = { reminderDatetime: null, reminderSentCount: 0, finalReminderSentAt: null };
+        await tx.controlsReminder.upsert({
+          where: { formId: normalizedFormId },
+          create: { formId: normalizedFormId, ...reminderReset },
+          update: reminderReset,
+        });
+      }
+
       if (replace_user_documents === true) {
         const existing = await tx.racmDoc.findMany({
           where: { formId: normalizedFormId },
@@ -2569,9 +2578,6 @@ async function updateControlForm(req, res) {
       }
     }
 
-    if (dueDateChanged) {
-      await resetReminderDatetimeForForms([normalizedFormId]);
-    }
 
     const form = await prisma.controlForm.findUnique({
       where: { formId: normalizedFormId },

@@ -14,6 +14,7 @@ function emptyIfcReportPayload(units = []) {
     conclusions: {
       effective: 0,
       not_effective: 0,
+      failed: 0,
       accepted_under_deviation: 0,
       not_applicable: 0,
     },
@@ -123,6 +124,7 @@ async function buildIfcReport({ companyIdentifier, units }) {
           COUNT(*) FILTER (
             WHERE LOWER(TRIM(COALESCE(cf.control_design_conclusion, ''))) = 'not effective'
           )::int AS not_effective_count,
+          COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(cf.control_design_conclusion, ''))) = 'failed')::int AS failed_count,
           COUNT(*) FILTER (
             WHERE LOWER(TRIM(COALESCE(cf.control_design_conclusion, ''))) = 'accepted under deviation'
           )::int AS accepted_under_deviation_count,
@@ -259,6 +261,7 @@ async function buildIfcReport({ companyIdentifier, units }) {
     conclusions: {
       effective: Number(totals.effective_count || 0),
       not_effective: Number(totals.not_effective_count || 0),
+      failed: Number(totals.failed_count || 0),
       accepted_under_deviation: Number(totals.accepted_under_deviation_count || 0),
       not_applicable: Number(totals.not_applicable_count || 0),
     },

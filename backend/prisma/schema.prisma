@@ -220,6 +220,8 @@ model ControlsReminder {
   reminderSentCount                Int       @default(0) @map("reminder_sent_count")
   finalReminderSentAt              DateTime? @map("final_reminder_sent_at") @db.Timestamp(6)
   reminderToApproverDatetime       DateTime? @map("reminder_to_approver_datetime") @db.Timestamp(6)
+  ineffectiveReminderSentCount     Int       @default(0) @map("ineffective_reminder_sent_count")
+  ineffectiveFinalReminderSentAt   DateTime? @map("ineffective_final_reminder_sent_at") @db.Timestamp(6)
   ineffectiveReminderDatetime      DateTime? @map("ineffective_reminder_datetime") @db.Timestamp(6)
   deficiencyReviewReminderDatetime DateTime? @map("deficiency_review_reminder_datetime") @db.Timestamp(6)
 

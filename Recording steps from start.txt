@@ -1,0 +1,22 @@
+Repo : https://github.com/muayadjamal/flow-video-recorder
+
+Install the requirements: Node.js 20+, FFmpeg, and Git Bash on Windows.
+
+Open your IFC project folder in Codex or Claude Code and run:
+npx skills add muayadjamal/flow-video-recorder
+
+Install the browser automation:
+npm install -D playwright
+npx playwright install chromium
+
+Configure narration: add your voice provider’s key to the project’s .env file:
+ELEVENLABS_API_KEY=your_key_here
+You can use OPENAI_API_KEY instead. Voice generation may incur charges.
+
+Start your IFC website locally, or use its live URL.
+
+Give the agent this prompt:
+Use flow-video-recorder to create a 90-second explanatory video of my IFC website at [URL]. Show the homepage, [feature 1], [feature 2], and [feature 3]. Add English voice-over, captions, and cursor highlights. Save the finished video as ifc-demo.mp4. Use Git Bash for the recording scripts.
+
+
+Review the MP4 and ask for any changes.

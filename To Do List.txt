@@ -3,3 +3,5 @@ Also test the combination of company + unit + control number must be unique. Tes
 Test sample required generation for all frequencies with modified values. Do it by temporary created a script based on current code.
 
 Test the auto Risk-analysis generation option in bulk RACM upload. 
+
+test the reminders after auto failure if not action taken after final reminder. Reminders are same for process owner in all stages if action is pendong from their side.

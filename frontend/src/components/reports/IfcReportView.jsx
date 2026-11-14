@@ -20,6 +20,7 @@ const EMPTY_REPORT = {
   conclusions: {
     effective: 0,
     not_effective: 0,
+    failed: 0,
     accepted_under_deviation: 0,
     not_applicable: 0,
   },
@@ -132,6 +133,11 @@ function IfcReportView({
       label: 'Not Effective',
       value: Number(report.conclusions?.not_effective ?? 0),
       color: theme.palette.error.main,
+    },
+    {
+      label: 'Failed',
+      value: Number(report.conclusions?.failed ?? 0),
+      color: theme.palette.error.dark,
     },
     {
       label: 'Not Applicable',

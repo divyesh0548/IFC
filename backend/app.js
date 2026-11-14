@@ -119,6 +119,9 @@ app.get('/health', (req, res) => {
 
 
 function startScheduledJobs() {
+  const { runAutomaticRacmFailure } = require('./utils/racm_failure');
+  setInterval(() => { runAutomaticRacmFailure().catch((error) => logScheduledJobError('automatic RACM failure', error)); }, 60 * 1000);
+
   const { runNextRiskAnalysisJob } = require('./utils/risk_analysis_jobs');
   setInterval(() => { void runNextRiskAnalysisJob(); }, 5000).unref();
   void runNextRiskAnalysisJob();

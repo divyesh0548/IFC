@@ -1,3 +1,4 @@
+const { hasAutomaticFailureSchema } = require('./racm_failure');
 const { pool } = require('./db');
 const { prisma } = require('../lib/prisma');
 const {
@@ -152,7 +153,8 @@ function isClosedDesignConclusion(value) {
   const normalized = normalizeDesignConclusion(value);
   return normalized === 'effective'
     || normalized === 'accepted under deviation'
-    || normalized === 'not applicable';
+    || normalized === 'not applicable'
+    || normalized === 'failed';
 }
 
 function getIntervalLiteral(reminderFrequency) {
@@ -328,13 +330,27 @@ async function seedReminderToApproverDatetime(tx, formId) {
  * Mark ineffective reminder as last-sent-at = UTC now.
  * Next eligibility is computed as last_sent + INEFFECTIVE_REMINDER_INTERVAL_DAYS (env).
  */
-async function updateIneffectiveReminderDatetime(client, formId) {
+async function recordFinalIneffectiveReminder(client, formId) {
+  await client.query(`UPDATE controls_reminder
+    SET ineffective_final_reminder_sent_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+    WHERE form_id = $1`, [formId]);
+}
+
+async function updateIneffectiveReminderDatetime(client, formId, { trackCount = true } = {}) {
+  if (!trackCount) {
+    const result = await client.query(`INSERT INTO controls_reminder (form_id, ineffective_reminder_datetime)
+      VALUES ($1, ${UTC_NOW_SQL}) ON CONFLICT (form_id) DO UPDATE
+      SET ineffective_reminder_datetime = EXCLUDED.ineffective_reminder_datetime
+      RETURNING ${controlsReminderUtcReturningSql('ineffective_reminder_datetime')}`, [formId]);
+    return result.rows?.[0]?.ineffective_reminder_datetime || null;
+  }
   const result = await client.query(
     `
-      INSERT INTO controls_reminder (form_id, ineffective_reminder_datetime)
-      VALUES ($1, ${UTC_NOW_SQL})
+      INSERT INTO controls_reminder (form_id, ineffective_reminder_datetime, ineffective_reminder_sent_count)
+      VALUES ($1, ${UTC_NOW_SQL}, 1)
       ON CONFLICT (form_id) DO UPDATE
-      SET ineffective_reminder_datetime = EXCLUDED.ineffective_reminder_datetime
+      SET ineffective_reminder_datetime = EXCLUDED.ineffective_reminder_datetime,
+          ineffective_reminder_sent_count = controls_reminder.ineffective_reminder_sent_count + 1
       RETURNING ${controlsReminderUtcReturningSql('ineffective_reminder_datetime')}
     `,
     [formId]
@@ -371,6 +387,7 @@ async function seedIneffectiveReminderDatetime(client, formId) {
       VALUES ($1, NULL)
       ON CONFLICT (form_id) DO UPDATE
       SET ineffective_reminder_datetime = NULL
+          ${(await hasAutomaticFailureSchema(client)) ? ', ineffective_reminder_sent_count = 0, ineffective_final_reminder_sent_at = NULL' : ''}
       RETURNING ${controlsReminderUtcReturningSql('ineffective_reminder_datetime')}
     `,
     [normalizedFormId]
@@ -388,6 +405,7 @@ async function resetIneffectiveReminderDatetime(client, formId) {
       VALUES ($1, NULL)
       ON CONFLICT (form_id) DO UPDATE
       SET ineffective_reminder_datetime = NULL
+          ${(await hasAutomaticFailureSchema(client)) ? ', ineffective_reminder_sent_count = 0, ineffective_final_reminder_sent_at = NULL' : ''}
     `,
     [normalizedFormId]
   );
@@ -539,6 +557,7 @@ async function getControlsReminderByFormId(formId) {
 }
 
 module.exports = {
+  recordFinalIneffectiveReminder,
   CONTROLS_REMINDER_JOIN_SQL,
   CONTROLS_REMINDER_SELECT_SQL,
   APPROVER_REMINDER_INTERVAL,

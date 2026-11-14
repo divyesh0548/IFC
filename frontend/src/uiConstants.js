@@ -326,6 +326,7 @@ export function getConclusionBadgeSolidColors(value) {
 
   if (normalized === 'effective') return STATUS_BADGE_SOLID.success
   if (normalized === 'not effective') return STATUS_BADGE_SOLID.warning
+  if (normalized === 'failed') return STATUS_BADGE_SOLID.error
   if (normalized === 'accepted under deviation') return STATUS_BADGE_SOLID.moderate
   if (normalized === 'not applicable') return STATUS_BADGE_SOLID.neutral
 

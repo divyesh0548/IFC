@@ -1,3 +1,4 @@
+const { hasAutomaticFailureSchema, getAutoFailGraceDays } = require('../../utils/racm_failure');
 /**
  * Reminder emails for process owners on ineffective RACMs pending deficiency response.
  * Runs every 1 minute.
@@ -22,6 +23,8 @@ const { getCcEmailsForRacm } = require('../../utils/racm_cc_recipients');
 const { getCoordinatorEmailForUnit } = require('../../utils/deficiency_response_notifications');
 const {
   updateIneffectiveReminderDatetime,
+  recordFinalIneffectiveReminder,
+  getReminderFinalAfter,
   buildIneffectiveReminderDatetimeDueSql,
   IST_CURRENT_DATE_SQL,
   NOT_EFFECTIVE_CONCLUSION_WHERE_SQL,
@@ -38,11 +41,12 @@ function isValidEmail(value) {
   return re.test(email);
 }
 
-async function fetchFormsDueForIneffectiveReminder(client) {
+async function fetchFormsDueForIneffectiveReminder(client, trackingReady = true) {
   const reminderDueSql = buildIneffectiveReminderDatetimeDueSql();
   const query = `
     SELECT
       cf.form_id,
+      ${trackingReady ? 'COALESCE(cr.ineffective_reminder_sent_count, 0)' : '0'} AS ineffective_reminder_sent_count,
       cf.control_number,
       cf.company_identifier,
       cf.unit_id,
@@ -65,6 +69,10 @@ async function fetchFormsDueForIneffectiveReminder(client) {
     LEFT JOIN process_owner_declaration pod
       ON pod.form_id = cf.form_id
     WHERE ${NOT_EFFECTIVE_CONCLUSION_WHERE_SQL}
+      AND cf.active = TRUE
+      AND LOWER(TRIM(COALESCE(cf.status, ''))) = 'approved'
+      ${trackingReady ? 'AND cr.ineffective_final_reminder_sent_at IS NULL' : ''}
+      AND LOWER(TRIM(COALESCE(cf.deficiency_response_status, ''))) IN ('awaiting_owner_action', 'resubmission_required')
       AND COALESCE(cf.deficiency_action_status, FALSE) = TRUE
       AND COALESCE(pod.no_furthure_submission, FALSE) = FALSE
       AND cf.ineffective_due_date IS NOT NULL
@@ -75,7 +83,7 @@ async function fetchFormsDueForIneffectiveReminder(client) {
   return result.rows;
 }
 
-function buildIneffectiveReminderEmailBody(form) {
+function buildIneffectiveReminderEmailBody(form, { finalReminder = false } = {}) {
   const companyName = String(form.company_name || '').trim();
   const ownerSalutation =
     String(form.control_owner_emp_name || '').trim() || 'Process Owner';
@@ -87,7 +95,7 @@ This is a reminder that your RACM has been marked as ineffective and requires Mi
 
 ${buildRacmDetailsSection(form, [])}
 
-Please submit a response at your earliest convenience.
+${finalReminder ? `This is the final reminder. Submit your mitigation/compensatory response or make a no-further-submission declaration within ${getAutoFailGraceDays()} day(s). Otherwise, the conclusion will automatically become Failed and this RACM will become read-only.` : 'Please submit a response at your earliest convenience.'}
 ${formUrl ? `\nRACM Link : ${formUrl}` : ''}
 
 Regards,
@@ -97,8 +105,13 @@ ${companyName}
 
 async function runIneffectiveReminderEmails() {
   const client = await pool.connect();
+  let hasJobLock = false;
   try {
-    const forms = await fetchFormsDueForIneffectiveReminder(client);
+    const lock = await client.query('SELECT pg_try_advisory_lock($1) AS locked', [9043302]);
+    hasJobLock = lock.rows[0]?.locked === true;
+    if (!hasJobLock) return;
+    const trackingReady = await hasAutomaticFailureSchema(client);
+    const forms = await fetchFormsDueForIneffectiveReminder(client, trackingReady);
     if (forms.length === 0) return;
     const intervalDays = getIneffectiveReminderIntervalDays();
 
@@ -106,19 +119,15 @@ async function runIneffectiveReminderEmails() {
       const to = String(form.control_owner || '').trim();
 
       if (!isValidEmail(to)) {
-        const updatedAt = await updateIneffectiveReminderDatetime(client, form.form_id);
-        console.warn(
-          `[ineffective_reminder_emails] form_id=${form.form_id} has invalid/empty control_owner "${to}", skipped email, updated last ineffective_reminder_datetime to ${
-            formatReminderTimestampForLog(updatedAt) || 'null'
-          } (interval=${intervalDays}d)`
-        );
+        console.warn(`[ineffective_reminder_emails] Invalid owner address for form_id=${form.form_id}; no reminder counted.`);
         continue;
       }
 
       const controlNumberText = String(form.control_number || '').trim() || String(form.form_id || '').trim() || 'N/A';
       const businessProcessText = String(form.business_process || '').trim() || 'Business Process';
-      const subject = `Reminder : Control ${controlNumberText} - ${businessProcessText} is ineffective`;
-      const text = buildIneffectiveReminderEmailBody(form);
+      const isFinalReminder = trackingReady && Number(form.ineffective_reminder_sent_count || 0) >= getReminderFinalAfter();
+      const subject = `${isFinalReminder ? 'Final reminder' : 'Reminder'} : Control ${controlNumberText} - ${businessProcessText} is ineffective`;
+      const text = buildIneffectiveReminderEmailBody(form, { finalReminder: isFinalReminder });
 
       const coordinatorEmail = await getCoordinatorEmailForUnit(form.company_identifier, form.unit_id);
       const matrixCcEmails = await getCcEmailsForRacm({
@@ -144,7 +153,11 @@ async function runIneffectiveReminderEmails() {
 
       const sent = await sendEmail(to, subject, text, ccEmails.length ? { cc: ccEmails } : undefined);
       if (sent) {
-        const updatedAt = await updateIneffectiveReminderDatetime(client, form.form_id);
+        if (isFinalReminder) {
+          await recordFinalIneffectiveReminder(client, form.form_id);
+          continue;
+        }
+        const updatedAt = await updateIneffectiveReminderDatetime(client, form.form_id, { trackCount: trackingReady });
         console.log(
           `[ineffective_reminder_emails] Sent reminder to ${to} for form_id=${form.form_id}, last ineffective_reminder_datetime=${
             formatReminderTimestampForLog(updatedAt) || 'null'
@@ -155,6 +168,10 @@ async function runIneffectiveReminderEmails() {
   } catch (err) {
     console.error('[ineffective_reminder_emails] Error:', err);
   } finally {
+    if (hasJobLock) {
+      try { await client.query('SELECT pg_advisory_unlock($1)', [9043302]); }
+      catch (error) { client.release(error); return; }
+    }
     client.release();
   }
 }

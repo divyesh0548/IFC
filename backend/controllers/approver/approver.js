@@ -1,3 +1,4 @@
+const { resetReminderDatetimeForForms } = require('../../utils/controls_reminder');
 const { pool } = require('../../utils/db');
 const { logAuditEvent } = require('../../utils/auditLog');
 const { sendEmail } = require('../../utils/send_email');
@@ -532,6 +533,7 @@ async function approveForm(req, res) {
       await client.query('BEGIN');
 
       if (status === 'Rejected') {
+        await resetReminderDatetimeForForms([form_id], client);
         await client.query(
           `
             INSERT INTO control_form_history (form_id, reason_by_approver, rejection_timestamp)
@@ -833,6 +835,7 @@ async function changeApprovalDecision(req, res) {
       await client.query('BEGIN');
 
       if (status === 'Rejected') {
+        await resetReminderDatetimeForForms([form_id], client);
         await client.query(
           `
             INSERT INTO control_form_history (form_id, reason_by_approver, rejection_timestamp)

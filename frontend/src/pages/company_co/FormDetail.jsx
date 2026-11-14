@@ -1,3 +1,4 @@
+import FailedRacmNotice from '../../components/FailedRacmNotice'
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
@@ -121,6 +122,7 @@ function FormDetail() {
   const navigate = useNavigate()
   const { form_id } = useParams()
   const [formData, setFormData] = useState(null)
+  const isFailed = String(formData?.control_design_conclusion || '').trim().toLowerCase() === 'failed'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [updating, setUpdating] = useState(false)
@@ -580,7 +582,7 @@ function FormDetail() {
   const handleModifyClick = () => {
     // Check if status allows editing (must be empty/null or 'Rejected')
     const status = formData?.status
-    const canEdit = !status || status === '' || status === null || status === 'Rejected'
+    const canEdit = !isFailed && (!status || status === '' || status === null || status === 'Rejected')
 
     if (!canEdit) {
       toast.error('Form cannot be modified.')
@@ -925,7 +927,7 @@ function FormDetail() {
   const handleSaveChanges = async () => {
     // Check status again before saving
     const status = formData?.status
-    const canEdit = !status || status === '' || status === null || status === 'Rejected'
+    const canEdit = !isFailed && (!status || status === '' || status === null || status === 'Rejected')
 
     if (!canEdit) {
       toast.error('Form cannot be modified.')
@@ -2141,9 +2143,9 @@ function FormDetail() {
   const processOwnerDeclaration = formData?.process_owner_declaration || null
   const hasProcessOwnerDeclaration = Boolean(processOwnerDeclaration?.no_furthure_submission)
   const deficiencyResponseStatus = String(formData?.deficiency_response_status || '').trim()
-  const needsDeficiencyResponse = Boolean(formData?.deficiency_action_status) && !hasProcessOwnerDeclaration
+  const needsDeficiencyResponse = !isFailed && Boolean(formData?.deficiency_action_status) && !hasProcessOwnerDeclaration
   const showDeficiencyActionNotice = needsDeficiencyResponse
-  const canSubmitDeficiencyResponse = needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review' && !hasProcessOwnerDeclaration
+  const canSubmitDeficiencyResponse = !isFailed && needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review' && !hasProcessOwnerDeclaration
   const showActiveDeficiencyResponseSection = Boolean(
     deficiencyResponse && String(deficiencyResponse.status || '').trim().toLowerCase() === 'submitted'
   )
@@ -2211,13 +2213,13 @@ function FormDetail() {
   const isRejectedRacm = racmStatus === 'rejected'
   const isApprovedNotEffective = isApprovedRacm && String(formData?.control_design_conclusion || '').trim().toLowerCase() === 'not effective'
   const hasReminderSettings = Boolean(String(formData?.due_date || '').trim()) && Boolean(String(formData?.reminder_frequency || '').trim())
-  const canSelfAssignFromDialog = !isCoordinatorAssigned
+  const canSelfAssignFromDialog = !isFailed && !isCoordinatorAssigned
     && !(validProcessOwnerAssigned
       ? Boolean(reassignmentBlockMessage)
       : (isSentForApproval || isApprovedRacm))
-  const canCoordinatorSubmit = isCoordinatorAssigned && isActive && !isSentForApproval && !isApprovedRacm && !hasProcessOwnerDeclaration
-  const canDeclareNoFurtherSubmission = !hasProcessOwnerDeclaration && ((isCoordinatorAssigned && isRejectedRacm) || isApprovedNotEffective)
-  const canDeclareNoSubmissionAvailable = isCoordinatorAssigned
+  const canCoordinatorSubmit = !isFailed && isCoordinatorAssigned && isActive && !isSentForApproval && !isApprovedRacm && !hasProcessOwnerDeclaration
+  const canDeclareNoFurtherSubmission = !isFailed && !hasProcessOwnerDeclaration && ((isCoordinatorAssigned && isRejectedRacm) || isApprovedNotEffective)
+  const canDeclareNoSubmissionAvailable = !isFailed && isCoordinatorAssigned
     && isActive
     && !hasProcessOwnerDeclaration
     && !formData?.pending_changes
@@ -2267,6 +2269,7 @@ function FormDetail() {
   return (
     <Box sx={FORM_DETAIL_ROOT_SX}>
       <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
+        <FailedRacmNotice failed={isFailed} />
         {showChangeRequestHistoryButton || showSuggestedChangesButton || isEditMode || canDeclareNoFurtherSubmission || hasProcessOwnerDeclaration ? (
           <Box sx={FORM_DETAIL_ACTION_BAR_SX}>
             {showChangeRequestHistoryButton ? (
@@ -2306,7 +2309,7 @@ function FormDetail() {
               <>
                 <Button
                   onClick={handleCancelEdit}
-                  disabled={saving}
+                  disabled={isFailed || saving}
                   variant="outlined"
                   sx={{
                     py: 1,
@@ -2333,7 +2336,7 @@ function FormDetail() {
                 </Button>
                 <Button
                   onClick={handleSaveChanges}
-                  disabled={saving || editModeSampleSizeInvalid}
+                  disabled={isFailed || saving || editModeSampleSizeInvalid}
                   variant="contained"
                   color="secondary"
                   sx={{
@@ -3007,7 +3010,7 @@ function FormDetail() {
                   {/* Toggle Active */}
                   <Button
                     onClick={handleToggleActive}
-                    disabled={updating || isEditMode}
+                    disabled={isFailed || updating || isEditMode}
                     variant="contained"
                     sx={{
                       width: '100%',
@@ -3115,7 +3118,7 @@ function FormDetail() {
                   const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                   const value = formData[key]
                   const isEmpty = value === null || value === undefined || value === ''
-                  const isEditable =
+                  const isEditable = !isFailed &&
                     isEditMode &&
                     key !== 'doc_uploaded_by_user' &&
                     key !== 'control_owner' &&
@@ -3166,7 +3169,7 @@ function FormDetail() {
                       </Typography>
                       {isEditable ? (
                         editableDropdownOptions[key] ? (
-                          <FormControl fullWidth disabled={saving}>
+                          <FormControl fullWidth disabled={isFailed || saving}>
                             <InputLabel id={`${key}-edit-label`}>{label}</InputLabel>
                             <Select
                               labelId={`${key}-edit-label`}
@@ -3190,7 +3193,7 @@ function FormDetail() {
                             fullWidth
                             multiline={isTextArea}
                             rows={isTextArea ? 4 : 1}
-                            disabled={saving}
+                            disabled={isFailed || saving}
                             sx={{
                               '& .MuiOutlinedInput-root': {
                                 backgroundColor: 'transparent',
@@ -3228,7 +3231,7 @@ function FormDetail() {
                   values={isEditMode ? editableDynamicValues : (formData.dynamic_values || {})}
                   isEditMode={isEditMode}
                   onChange={handleDynamicFieldChange}
-                  disabled={saving}
+                  disabled={isFailed || saving}
                 />
               </Box>
             </CardContent>
@@ -3241,7 +3244,7 @@ function FormDetail() {
             values={isEditMode ? editableDynamicValues : (formData.dynamic_values || {})}
             isEditMode={isEditMode}
             onChange={handleDynamicFieldChange}
-            disabled={saving}
+            disabled={isFailed || saving}
           />
 
           {/* Control Details section */}
@@ -3315,7 +3318,7 @@ function FormDetail() {
                     const label = fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
                     const value = formData[key]
                     const isEmpty = value === null || value === undefined || value === ''
-                    const isEditable =
+                    const isEditable = !isFailed &&
                       isEditMode &&
                       key !== 'doc_uploaded_by_user' &&
                       key !== 'control_owner' &&
@@ -3396,7 +3399,7 @@ function FormDetail() {
                                       inDialog={false}
                                       label={label}
                                       placeholder="Search by name or email…"
-                                      disabled={saving}
+                                      disabled={isFailed || saving}
                                       textFieldProps={{ variant: 'outlined' }}
                                     />
                                   )
@@ -3421,7 +3424,7 @@ function FormDetail() {
                                     value={editableFields.sample_size || ''}
                                     onChange={(e) => handleFieldChange('sample_size', e.target.value)}
                                     fullWidth
-                                    disabled={saving}
+                                    disabled={isFailed || saving}
                                     error={Boolean(sampleSizeFeedback.warning)}
                                     inputProps={{
                                       min: frequencyMeta.minimum ?? 1,
@@ -3438,7 +3441,7 @@ function FormDetail() {
                                 )
                               })()
                             ) : editableDropdownOptions[key] ? (
-                              <FormControl fullWidth disabled={saving}>
+                              <FormControl fullWidth disabled={isFailed || saving}>
                                 <InputLabel id={`${key}-edit-label`}>{label}</InputLabel>
                                 <Select
                                   labelId={`${key}-edit-label`}
@@ -3462,7 +3465,7 @@ function FormDetail() {
                                 fullWidth
                                 multiline={isTextArea}
                                 rows={isTextArea ? 4 : 1}
-                                disabled={saving}
+                                disabled={isFailed || saving}
                                 sx={{
                                   '& .MuiOutlinedInput-root': {
                                     backgroundColor: 'transparent',
@@ -3565,7 +3568,7 @@ function FormDetail() {
                   values={isEditMode ? editableDynamicValues : (formData.dynamic_values || {})}
                   isEditMode={isEditMode}
                   onChange={handleDynamicFieldChange}
-                  disabled={saving}
+                  disabled={isFailed || saving}
                 />
               </Box>
             </CardContent>
@@ -3578,7 +3581,7 @@ function FormDetail() {
             values={isEditMode ? editableDynamicValues : (formData.dynamic_values || {})}
             isEditMode={isEditMode}
             onChange={handleDynamicFieldChange}
-            disabled={saving}
+            disabled={isFailed || saving}
           />
 
           {hasGroupedFieldValue ? (
@@ -4801,7 +4804,7 @@ function FormDetail() {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2, gap: 1, flexWrap: 'wrap' }}>
-          <Button onClick={handleCloseAssignmentDialog} disabled={updating || selfAssigning}>
+          <Button onClick={handleCloseAssignmentDialog} disabled={isFailed || updating || selfAssigning}>
             Cancel
           </Button>
           {!selectedUser?.email_id && (
@@ -4809,7 +4812,7 @@ function FormDetail() {
               variant="outlined"
               color="primary"
               onClick={handleSelfAssignFromAssignmentDialog}
-              disabled={updating || selfAssigning || isProcessOwnerAssignmentLocked || !canSelfAssignFromDialog}
+              disabled={isFailed || updating || selfAssigning || isProcessOwnerAssignmentLocked || !canSelfAssignFromDialog}
             >
               {selfAssigning ? 'Assigning...' : 'Self Assign'}
             </Button>
@@ -4819,7 +4822,7 @@ function FormDetail() {
               variant="contained"
               color="secondary"
               onClick={handleUpdateAssignment}
-              disabled={updating || selfAssigning || isProcessOwnerAssignmentLocked}
+              disabled={isFailed || updating || selfAssigning || isProcessOwnerAssignmentLocked}
             >
               {updating ? 'Updating...' : 'Update Assignment'}
             </Button>
@@ -4843,12 +4846,12 @@ function FormDetail() {
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
-          <Button onClick={() => setAssignWithoutSampleDialogOpen(false)} disabled={updating} variant="outlined">
+          <Button onClick={() => setAssignWithoutSampleDialogOpen(false)} disabled={isFailed || updating} variant="outlined">
             Cancel
           </Button>
           <Button
             onClick={() => handleUpdateAssignment({ allowWithoutSample: true })}
-            disabled={updating}
+            disabled={isFailed || updating}
             variant="contained"
             color="secondary"
           >
@@ -4925,7 +4928,7 @@ function FormDetail() {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={handleCloseApproverAssignmentDialog} disabled={assigningApprover}>
+          <Button onClick={handleCloseApproverAssignmentDialog} disabled={isFailed || assigningApprover}>
             Cancel
           </Button>
           {selectedApprover?.email_id && (
@@ -4933,7 +4936,7 @@ function FormDetail() {
               variant="contained"
               color="secondary"
               onClick={handleAssignApprover}
-              disabled={assigningApprover}
+              disabled={isFailed || assigningApprover}
             >
               {assigningApprover ? 'Assigning...' : 'Assign Approver'}
             </Button>
@@ -5055,14 +5058,14 @@ function FormDetail() {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={handleCloseSuggestedChangesDialog} disabled={reviewSaving}>
+          <Button onClick={handleCloseSuggestedChangesDialog} disabled={isFailed || reviewSaving}>
             Close
           </Button>
           <Button
             onClick={handleSubmitSuggestedChangesReview}
             variant="contained"
             color="warning"
-            disabled={reviewSaving || !activeChangeRequest?.request_id || !areAllSuggestedChangesDecided}
+            disabled={isFailed || reviewSaving || !activeChangeRequest?.request_id || !areAllSuggestedChangesDecided}
           >
             {reviewSaving ? 'Submitting...' : 'Submit'}
           </Button>
@@ -5206,10 +5209,10 @@ function FormDetail() {
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3, gap: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
-          <Button onClick={handleSelfAssignCancel} disabled={selfAssigning} variant="outlined">
+          <Button onClick={handleSelfAssignCancel} disabled={isFailed || selfAssigning} variant="outlined">
             Cancel
           </Button>
-          <Button onClick={handleSelfAssignConfirm} disabled={selfAssigning} variant="contained" color="primary">
+          <Button onClick={handleSelfAssignConfirm} disabled={isFailed || selfAssigning} variant="contained" color="primary">
             {selfAssigning ? 'Assigning...' : 'Self Assign'}
           </Button>
         </DialogActions>
@@ -5250,7 +5253,7 @@ function FormDetail() {
             Select the target Financial Year for the replicated RACM.
           </DialogContentText>
 
-          <FormControl fullWidth variant="outlined" disabled={replicating}>
+          <FormControl fullWidth variant="outlined" disabled={isFailed || replicating}>
             <InputLabel id="replicate-fy-label">Financial Year</InputLabel>
             <Select
               labelId="replicate-fy-label"
@@ -5275,11 +5278,11 @@ function FormDetail() {
               }
             }}
             variant="outlined"
-            disabled={replicating}
+            disabled={isFailed || replicating}
           >
             Cancel
           </Button>
-          <Button onClick={handleReplicateConfirm} variant="contained" color="secondary" disabled={replicating || !replicateTargetFY}>
+          <Button onClick={handleReplicateConfirm} variant="contained" color="secondary" disabled={isFailed || replicating || !replicateTargetFY}>
             {replicating ? 'Replicating...' : 'Replicate'}
           </Button>
         </DialogActions>
@@ -5430,10 +5433,10 @@ function FormDetail() {
             borderColor: 'divider',
           }}
         >
-          <Button onClick={handleSetActiveCancel} disabled={updating} variant="outlined" sx={{ textTransform: 'none', px: 3, py: 1 }}>
+          <Button onClick={handleSetActiveCancel} disabled={isFailed || updating} variant="outlined" sx={{ textTransform: 'none', px: 3, py: 1 }}>
             Cancel
           </Button>
-          <Button onClick={handleSetActiveConfirm} disabled={updating} variant="contained" color="secondary" sx={{ textTransform: 'none', px: 3, py: 1, fontWeight: 600 }}>
+          <Button onClick={handleSetActiveConfirm} disabled={isFailed || updating} variant="contained" color="secondary" sx={{ textTransform: 'none', px: 3, py: 1, fontWeight: 600 }}>
             {updating ? 'Setting...' : (isCoordinatorAssigned || hasSampleDocs() ? 'Set Active' : 'Set Active without sample document')}
           </Button>
         </DialogActions>
@@ -5488,10 +5491,10 @@ function FormDetail() {
             borderColor: 'divider',
           }}
         >
-          <Button onClick={handleSetInactiveCancel} disabled={updating} variant="outlined" sx={{ textTransform: 'none', px: 3, py: 1 }}>
+          <Button onClick={handleSetInactiveCancel} disabled={isFailed || updating} variant="outlined" sx={{ textTransform: 'none', px: 3, py: 1 }}>
             Cancel
           </Button>
-          <Button onClick={handleSetInactiveConfirm} disabled={updating} variant="contained" color="warning" sx={{ textTransform: 'none', px: 3, py: 1, fontWeight: 600 }}>
+          <Button onClick={handleSetInactiveConfirm} disabled={isFailed || updating} variant="contained" color="warning" sx={{ textTransform: 'none', px: 3, py: 1, fontWeight: 600 }}>
             {updating ? 'Setting...' : 'Set Inactive'}
           </Button>
         </DialogActions>
@@ -5552,7 +5555,7 @@ function FormDetail() {
           <Button
             onClick={handleDeleteCancel}
             variant="outlined"
-            disabled={deleting}
+            disabled={isFailed || deleting}
             sx={{
               textTransform: 'none',
               px: 3,
@@ -5578,7 +5581,7 @@ function FormDetail() {
             onClick={handleDeleteConfirm}
             variant="contained"
             color="error"
-            disabled={deleting}
+            disabled={isFailed || deleting}
             autoFocus
             sx={{
               textTransform: 'none',

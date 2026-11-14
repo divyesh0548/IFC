@@ -1,3 +1,4 @@
+import FailedRacmNotice from '../../components/FailedRacmNotice'
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
@@ -166,6 +167,7 @@ function UserFormDetail() {
   const navigate = useNavigate()
   const { form_id } = useParams()
   const [formData, setFormData] = useState(null)
+  const isFailed = String(formData?.control_design_conclusion || '').trim().toLowerCase() === 'failed'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -1121,7 +1123,7 @@ function UserFormDetail() {
   const hasPendingChanges = Boolean(formData?.pending_changes)
   // Form is editable if status is not 'sent for approval' or 'Approved'
   // If status is 'Rejected', user can edit and resubmit
-  const isEditable = !isSentForApproval && !isApproved
+  const isEditable = !isFailed && !isSentForApproval && !isApproved
   const canModifySubmissionDetails = isEditable && !isRequestChangeMode && !hasProcessOwnerDeclaration
   const canRequestChange = isEditable && !hasPendingChanges && !isRequestChangeMode && !hasProcessOwnerDeclaration
   const extraRequestChangeFields = getExtraRequestChangeFields(formData?.field_definitions)
@@ -1138,7 +1140,7 @@ function UserFormDetail() {
   const conditionalHiddenFields = ['control_design_conclusion', 'design_deficiency_desc']
 
   // Check if status should hide conditional fields
-  const shouldHideConditionalFields = !formData?.status || formData.status === '' || formData.status === 'sent for approval'
+  const shouldHideConditionalFields = !isFailed && (!formData?.status || formData.status === '' || formData.status === 'sent for approval')
   
   // Design & Implementation fields should render only when they have a value.
   const groupedApproverFields = APPROVAL_SECTION_FIELD_KEYS
@@ -1208,11 +1210,11 @@ function UserFormDetail() {
     ? deficiencyCurrentSubmission.attachments
     : []
   const deficiencyResponseStatus = String(formData?.deficiency_response_status || '').trim()
-  const needsDeficiencyResponse = Boolean(formData?.deficiency_action_status) && !hasProcessOwnerDeclaration
+  const needsDeficiencyResponse = !isFailed && Boolean(formData?.deficiency_action_status) && !hasProcessOwnerDeclaration
   const showDeficiencyActionNotice = needsDeficiencyResponse
-  const canSubmitDeficiencyResponse = needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review' && !hasProcessOwnerDeclaration
-  const canDeclareNoFurtherSubmission = !hasProcessOwnerDeclaration && (isRejected || isApprovedNotEffective)
-  const canDeclareNoSubmissionAvailable = !hasProcessOwnerDeclaration
+  const canSubmitDeficiencyResponse = !isFailed && needsDeficiencyResponse && deficiencyResponseStatus !== 'submitted_for_review' && !hasProcessOwnerDeclaration
+  const canDeclareNoFurtherSubmission = !isFailed && !hasProcessOwnerDeclaration && (isRejected || isApprovedNotEffective)
+  const canDeclareNoSubmissionAvailable = !isFailed && !hasProcessOwnerDeclaration
     && !hasPendingChanges
     && Boolean(formData?.active)
     && (!formData?.status || String(formData.status).trim() === '')
@@ -1348,6 +1350,7 @@ function UserFormDetail() {
   return (
     <Box sx={FORM_DETAIL_ROOT_SX}>
       <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
+        <FailedRacmNotice failed={isFailed} />
           <Box sx={FORM_DETAIL_ACTION_BAR_SX}>
             {changeRequestHistoryCount > 0 ? (
               <Button
@@ -2586,7 +2589,7 @@ function UserFormDetail() {
                         <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
                           <Button
                             onClick={handleSendForApproval}
-                            disabled={saving || uploadingUserDocuments || hasPendingChanges || isRequestChangeMode}
+                            disabled={isFailed || saving || uploadingUserDocuments || hasPendingChanges || isRequestChangeMode}
                             variant="contained"
                             color="secondary"
                             sx={{
