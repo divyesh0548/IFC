@@ -1249,7 +1249,7 @@ function RiskAnalysis() {
         </Box>
       </Box>
 
-      <RiskAnalysisJobs onCompleted={refreshAutomaticResults} />
+      <RiskAnalysisJobs onCompleted={refreshAutomaticResults} hideFailed />
       {conciseScopeReady ? (
         <>
           <Paper

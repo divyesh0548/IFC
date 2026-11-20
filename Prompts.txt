@@ -1,0 +1,36 @@
+User manual video generation prompt for coordinator:
+
+Use flow-video-recorder to create a comprehensive and concise explanatory video of my IFC website at [http://localhost:5174/company_admin/home] for only company admin users.
+
+Show these features in order: [User Management, RACM Communication, RACM Templates, Creating & Uploading RACMs, RACM Management, RACM Assignment, Reports, RACM Change Requests, Deficiency Response Submission].
+
+Inspect the website and write a clear narration script based on its actual features. Record the real website with English voice-over, captions, and cursor highlights. Use the ElevenLabs key from .env and Git Bash for the recording scripts. Save the finished video as output/ifc-demo.mp4.
+
+Generate narration once and reuse the audio when retrying the recording to conserve credits.
+
+There are some action which will work on specific RACMs, like RACM chnage request and Deficiency Response Submission.
+
+I have requested chnages from a user and now there is a notification on "http://localhost/company-co/racm-management" this page which states "1 Racm pending for change request".
+
+On that page it also shows "1 RACMs are found ineffective".
+
+Also in RACM upload I will select an excel file for uploading, then perform some column mapping for demo.
+
+In RACM templates also display the Import function, till the end but do not perform any action. Also add some columns with dummny names in an existing template but do not save it.
+
+In Risk analysis display risks for APL1 unit and P2P Business process, cause it already has generated. Just display the generated risks and explain how to generate them. Similar way display for Design gap analysis.
+
+Display all oeprations and action till last stage where a submit or save button will update the database. We dot not have to perfom action in demo so do not perform any db updates during demo creatio.
+
+coordinator login credentials :
+
+coordinator.alembic@gmail.com
+Password : 123456
+
+Narration style:
+
+- Treat recording instructions, navigation order, and safety requirements as production guidance, not narration. Do not mention the agent, prompt, filming, or why this feature order was chosen.
+- Speak directly to the Company Coordinator user. Explain what each feature does, where to find it, and how to use it.
+- Do not repeatedly say that the demo will not create, update, save, or submit anything. Avoid statements such as "we will not create or update anything" and "we will follow the sequence rather than jumping to AI features."
+- For forms and actions that must remain untouched, explain the relevant fields and point out the Save or Submit button when useful, then simply do not click it. Keep the no-database-update requirement as an action constraint, not a spoken disclaimer.
+- If narration is revised after recording, keep the existing video and replace only its audio track when the visuals still match. Align replacement clips to the original segment timings with zero global offset; shorten or pace the narration to fit rather than shifting the whole soundtrack.

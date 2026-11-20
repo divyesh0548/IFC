@@ -17,6 +17,10 @@ const { runPendingLoginEmails } = require('./scripts/login_email_sender');
 const { runPendingRacmActiveUserEmails } = require('./scripts/racm_active_user_email_sender');
 const { runPendingRacmInactiveUserEmails } = require('./scripts/racm_inactive_user_email_sender');
 const { runPendingUserQueryEmails } = require('./scripts/user_query_email_sender');
+const {
+  runPendingChangeRequestCoordinatorEmails,
+  runPendingChangeRequestReviewEmails,
+} = require('./utils/change_request_coordinator_email');
 const { runBootstrap } = require('./config/bootstrap');
 const { checkDatabaseConnectivity, formatDbConnectionError, isPgConnectionError,} = require('./utils/db');
 
@@ -125,6 +129,18 @@ function startScheduledJobs() {
   const { runNextRiskAnalysisJob } = require('./utils/risk_analysis_jobs');
   setInterval(() => { void runNextRiskAnalysisJob(); }, 5000).unref();
   void runNextRiskAnalysisJob();
+
+  console.log('Starting change-request coordinator email scheduler (runs every 1 minute)...');
+  setInterval(() => {
+    Promise.all([
+      runPendingChangeRequestCoordinatorEmails(),
+      runPendingChangeRequestReviewEmails(),
+    ]).catch((error) => logScheduledJobError('change-request email job', error));
+  }, 60 * 1000);
+  void Promise.all([
+    runPendingChangeRequestCoordinatorEmails(),
+    runPendingChangeRequestReviewEmails(),
+  ]).catch((error) => logScheduledJobError('change-request email job', error));
 
   console.log('Starting reminder emails scheduler (runs every 1 minute)...');
   setInterval(async () => {

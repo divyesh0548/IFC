@@ -38,6 +38,7 @@ export default function ActiveRacmTemplateNotice({
 }) {
   const [open, setOpen] = useState(Boolean(unitId))
   const [fetchedSummary, setFetchedSummary] = useState(null)
+  const [fetchedSummaryUnitId, setFetchedSummaryUnitId] = useState('')
   const [loading, setLoading] = useState(false)
 
   const normalizedUnitId = String(unitId || '').trim()
@@ -56,6 +57,7 @@ export default function ActiveRacmTemplateNotice({
 
     if (!normalizedUnitId) {
       setFetchedSummary(null)
+      setFetchedSummaryUnitId('')
       setLoading(false)
       onLoadingChange?.(false)
       return undefined
@@ -64,6 +66,7 @@ export default function ActiveRacmTemplateNotice({
     let cancelled = false
     const controller = new AbortController()
     setFetchedSummary(null)
+    setFetchedSummaryUnitId(normalizedUnitId)
     setLoading(true)
     onLoadingChange?.(true)
     ;(async () => {
@@ -109,8 +112,8 @@ export default function ActiveRacmTemplateNotice({
         ),
       }
     }
-    return fetchedSummary
-  }, [useParentSummary, templateSummary, fetchedSummary])
+    return fetchedSummaryUnitId === normalizedUnitId ? fetchedSummary : null
+  }, [useParentSummary, templateSummary, fetchedSummary, fetchedSummaryUnitId, normalizedUnitId])
 
   if (!normalizedUnitId) return null
 

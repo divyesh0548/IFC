@@ -771,10 +771,6 @@ function FormDetail() {
   }
 
   const handleUpdateAssignment = async ({ allowWithoutSample = false } = {}) => {
-    if (!hasReminderSettings) {
-      toast.error('Configure due date and reminder frequency before assigning a process owner')
-      return
-    }
     const reassignmentBlockMessage = getRacmReassignmentBlockMessage(formData)
     if (reassignmentBlockMessage) {
       toast.error(reassignmentBlockMessage)

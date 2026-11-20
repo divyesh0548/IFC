@@ -1,4 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
+import Box from '@mui/material/Box'
+import CircularProgress from '@mui/material/CircularProgress'
+import Typography from '@mui/material/Typography'
 import { useSyncGlobalLoading } from '../contexts/GlobalLoadingContext'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -24,9 +27,21 @@ function RoleBasedProtectedRoute({ children, allowedRoles = [] }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-primary">
-        <div className="text-secondary text-lg">Loading...</div>
-      </div>
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 1.5,
+          bgcolor: 'background.default',
+          color: 'text.secondary',
+        }}
+      >
+        <CircularProgress color="secondary" />
+        <Typography variant="body2">Loading your workspace…</Typography>
+      </Box>
     )
   }
 

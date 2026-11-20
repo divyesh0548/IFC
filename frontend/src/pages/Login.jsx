@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import BrandLogo from '../components/BrandLogo'
 import { useNavigate } from 'react-router-dom'
 import { alpha, useTheme } from '@mui/material/styles'
@@ -78,11 +78,16 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // The login submit handler owns navigation for a newly created session.
+  // Without this guard, the authenticated-user effect can navigate at the same
+  // time and interrupt the first lazy dashboard render.
+  const loginRedirectInProgressRef = useRef(false)
   useSyncGlobalLoading(loading)
 
   // If user is already authenticated, redirect away from Login (uses shared AuthContext).
   useEffect(() => {
     if (authLoading || !isAuthenticated) return
+    if (loginRedirectInProgressRef.current) return
 
     const redirectAuthenticatedUser = async () => {
       if (requiresPasswordUpdate) {
@@ -143,6 +148,7 @@ function Login() {
         // Login successful - token is stored in httpOnly cookie
         console.log('Login successful:', data.user)
         toast.success('Login successful!')
+        loginRedirectInProgressRef.current = true
         setSession(data.user, data.requiresPasswordUpdate)
 
         // Prefetch company name once and store in localStorage
@@ -175,8 +181,9 @@ function Login() {
 
           const defaultRedirectPath = roleRoutes[role]
           if (defaultRedirectPath) {
-            navigate(defaultRedirectPath)
+            navigate(defaultRedirectPath, { replace: true })
           } else {
+            loginRedirectInProgressRef.current = false
             toast.error('Invalid user role')
             setError('Invalid user role')
           }
@@ -187,6 +194,7 @@ function Login() {
         toast.error(errorMessage)
       }
     } catch (err) {
+      loginRedirectInProgressRef.current = false
       console.error('Login error:', err)
       const errorMessage = 'Network error. Please try again.'
       setError(errorMessage)

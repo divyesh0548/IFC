@@ -329,6 +329,8 @@ Common variables (see `backend/.env`; do not commit secrets):
 **Frontend:** `VITE_BACKEND_URL`, `VITE_FRONTEND_URL`  
 **Runtime:** `NODE_ENV`, `PORT`
 
+When running the app with the root `docker-compose.yml`, the backend connects to the AI Summary API at `http://host.docker.internal:5001` by default. This lets the backend container reach the API published on the host; override it with `IFC_AI_SUMMARY_API_URL` if the API is hosted elsewhere. When running the Node backend directly on the host, configure `AI_SUMMARY_API_URL` in `backend/.env` (for example, `http://127.0.0.1:5001`).
+
 ---
 
 ## Local Development (Overview)

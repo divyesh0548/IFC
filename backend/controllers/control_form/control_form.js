@@ -7,6 +7,10 @@ const { prisma } = require('../../lib/prisma');
 const { uploadFileToS3, deleteFileFromS3 } = require('../../utils/s3Upload');
 const { normalizeDateOnlyValue } = require('../../utils/dateOnly');
 const { sendEmail } = require('../../utils/send_email');
+const {
+  runPendingChangeRequestCoordinatorEmails,
+  runPendingChangeRequestReviewEmails,
+} = require('../../utils/change_request_coordinator_email');
 const { getCcEmailsForRacm } = require('../../utils/racm_cc_recipients');
 const { buildApproverFormDetailUrl } = require('../../utils/racm_status_user_email');
 const { validateRejectedRacmResubmit } = require('../../utils/racm_rejected_resubmit');
@@ -73,6 +77,7 @@ const {
 } = require('../../utils/document_upload_restrictions');
 const {
   DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE,
+  partitionUniqueCompanyControlNumbers,
   formatBulkImportZeroInsertedMessage,
   formatBulkImportSuccessMessage,
 } = require('../../utils/racm_duplicate_key');
@@ -2322,6 +2327,17 @@ async function updateControlForm(req, res) {
     });
   }
 
+  // Evidence can be prepared before an approver is assigned. Only block the
+  // workflow transition that would require an approver to receive the RACM.
+  if (isNowSentForApprovalRequest && req.user?.role === 'user') {
+    const approverBlockMessage = getApproverSubmissionBlockMessage(
+      await getControlFormApproverDetails(pool, normalizedFormId)
+    );
+    if (approverBlockMessage) {
+      return res.status(400).json({ success: false, message: approverBlockMessage });
+    }
+  }
+
   if (isNowSentForApprovalRequest && String(currentForm.status || '').trim().toLowerCase() === 'rejected') {
     const rejectedResubmit = await validateRejectedRacmResubmit({
       formId: normalizedFormId,
@@ -3534,6 +3550,11 @@ async function requestChange(req, res) {
       insertedRequest.request_id
     );
 
+    // The persistent outbox flag is only marked after a successful SMTP send.
+    // Do not delay the user's response for SMTP; the scheduler retries failures.
+    void runPendingChangeRequestCoordinatorEmails({ requestId: insertedRequest.request_id })
+      .catch((emailError) => console.error('Change request coordinator email error:', emailError));
+
     return res.status(201).json({
       success: true,
       message: 'RACM change request submitted successfully',
@@ -4099,6 +4120,10 @@ async function reviewChangeRequest(req, res) {
       normalizedFormId,
       normalizedRequestId
     );
+
+    // The requester notification is persisted and retried by the scheduler on SMTP failure.
+    void runPendingChangeRequestReviewEmails({ requestId: normalizedRequestId })
+      .catch((emailError) => console.error('Change request review email error:', emailError));
 
     return res.status(200).json({
       success: true,
@@ -4789,6 +4814,8 @@ async function replicateControlForm(req, res) {
 
     const createdFormIds = [];
     const skippedDuplicates = [];
+    const nextControlNumberBySequence = new Map();
+    const replicationItems = [];
 
     for (const row of selectResult.rows) {
       // Build insert columns dynamically based on fetched row keys
@@ -4810,39 +4837,73 @@ async function replicateControlForm(req, res) {
           : '';
         if (companyId && businessProcessName) {
           const generatedPrefix = await getBusinessProcessCodeForName(client, companyId, businessProcessName);
-          const nextControlNumber = await getNextGeneratedControlNumber(client, companyId, generatedPrefix);
+          const normalizedPrefix = String(generatedPrefix || '').trim();
+          const sequenceKey = JSON.stringify([companyId, normalizedPrefix]);
+          const nextControlNumber = normalizedPrefix
+            ? nextControlNumberBySequence.get(sequenceKey)
+              || await getNextGeneratedControlNumber(client, companyId, normalizedPrefix)
+            : null;
           if (nextControlNumber) {
             insertObj.control_number = nextControlNumber;
+            const nextSuffix = Number.parseInt(
+              String(nextControlNumber).slice(normalizedPrefix.length),
+              10
+            ) + 1;
+            nextControlNumberBySequence.set(sequenceKey, `${normalizedPrefix}${nextSuffix}`);
           }
         }
       } catch (e) {
         console.error('[control_forms replicate] control number generation error:', e);
       }
 
-      // Prevent duplicate RACM creation (same company + control_number)
-      try {
-        const companyId = coordinatorCompany || insertObj.company_identifier || null
-        const cnKey = insertObj.control_number != null ? String(insertObj.control_number).trim() : ''
-        if (companyId && cnKey) {
-          const dup = await client.query(
-            `
-              SELECT 1
-              FROM control_forms
-              WHERE company_identifier = $1
-                AND TRIM(control_number) = TRIM($2)
-              LIMIT 1
-            `,
-            [companyId, cnKey]
-          )
-          if (dup.rows.length > 0) {
-            skippedDuplicates.push(row.form_id)
-            continue
-          }
-        }
-      } catch (e) {
-        console.error('[control_forms replicate] duplicate check error:', e)
-      }
+      replicationItems.push({ row, insertObj });
+    }
 
+    const controlNumbersByCompany = new Map();
+    for (const { insertObj } of replicationItems) {
+      const companyId = coordinatorCompany || insertObj.company_identifier || null;
+      const controlNumber = insertObj.control_number != null
+        ? String(insertObj.control_number).trim()
+        : '';
+      if (!companyId || !controlNumber) continue;
+
+      let controlNumbers = controlNumbersByCompany.get(companyId);
+      if (!controlNumbers) {
+        controlNumbers = new Set();
+        controlNumbersByCompany.set(companyId, controlNumbers);
+      }
+      controlNumbers.add(controlNumber);
+    }
+
+    const existingControlNumbersByCompany = new Map();
+    for (const [companyId, controlNumbers] of controlNumbersByCompany) {
+      const existingResult = await client.query(
+        `
+          SELECT DISTINCT TRIM(control_number) AS control_number
+          FROM control_forms
+          WHERE company_identifier = $1
+            AND TRIM(control_number) = ANY($2::text[])
+        `,
+        [companyId, [...controlNumbers]]
+      );
+      existingControlNumbersByCompany.set(
+        companyId,
+        new Set(existingResult.rows.map((row) => String(row.control_number || '').trim()))
+      );
+    }
+
+    const { uniqueRows: itemsToInsert, duplicateRows } = partitionUniqueCompanyControlNumbers(
+      replicationItems.map(({ row, insertObj }) => ({
+        company_identifier: coordinatorCompany || insertObj.company_identifier,
+        control_number: insertObj.control_number,
+        row,
+        insertObj,
+      })),
+      existingControlNumbersByCompany
+    );
+    skippedDuplicates.push(...duplicateRows.map(({ row }) => row.form_id));
+
+    for (const { row, insertObj } of itemsToInsert) {
       const currentTimestamp = new Date();
       const controlFrequencyValue = insertObj.control_frequency ? String(insertObj.control_frequency).trim() : null;
 
@@ -4914,6 +4975,15 @@ async function replicateControlForm(req, res) {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error replicating RACMs:', error);
+    if (
+      error.code === '23505'
+      && error.constraint === 'control_forms_company_identifier_control_number_key'
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE,
+      });
+    }
     res.status(500).json({ success: false, message: 'Error replicating RACMs', error: error.message });
   } finally {
     client.release();
@@ -5434,13 +5504,8 @@ async function uploadUserDocument(req, res) {
         });
       }
 
-      const approverBlockMessage = getApproverSubmissionBlockMessage(approverDetails);
-      if (approverBlockMessage) {
-        return res.status(400).json({
-          success: false,
-          message: approverBlockMessage,
-        });
-      }
+      // An approver is required only when the RACM is submitted for approval,
+      // not while the process owner is saving supporting evidence.
     }
 
     const docContext = await getControlFormUserDocumentContext(pool, form_id);

@@ -56,6 +56,13 @@ function hasReminderSettingsConfigured(form) {
   return hasDueDate && hasReminderFrequency
 }
 
+function getAssignmentActivationPayload(form) {
+  // Assignment itself is valid without a schedule. Only activate an inactive
+  // RACM when both schedule settings are present; otherwise leave it inactive.
+  if (Boolean(form?.active) || !hasReminderSettingsConfigured(form)) return {}
+  return { active: '1' }
+}
+
 function canCoordinatorSelfAssignRacm(form) {
   if (!form) return false
   if (isCoordinatorAssignedRacm(form)) return false
@@ -643,7 +650,7 @@ function RacmAssignment() {
           credentials: 'include',
           body: JSON.stringify({
             control_owner: selectedUser.email_id,
-            active: '1',
+            ...getAssignmentActivationPayload(selectedForm),
             modifiedFields: ['control_owner'],
           }),
         })
@@ -675,6 +682,7 @@ function RacmAssignment() {
       }
 
       if (response.ok && data.success) {
+        const remainsInactive = !Boolean(selectedForm?.active) && !hasReminderSettingsConfigured(selectedForm)
         setForms((prev) =>
           prev.map((form) =>
             form.form_id === selectedForm.form_id
@@ -705,6 +713,11 @@ function RacmAssignment() {
               ? 'Self-assigned RACM transferred to process owner successfully'
               : 'Successfully updated RACM assignment')
         )
+        if (remainsInactive) {
+          toast('RACM was assigned and remains Inactive until due date and reminder frequency are configured.', {
+            icon: 'ℹ️',
+          })
+        }
         fetchForms()
       } else {
         toast.error(data.message || `Failed to update ${isApproverMode ? 'approver' : 'RACM'} assignment`)
@@ -1017,7 +1030,7 @@ function RacmAssignment() {
                     ? { control_owner: bulkSelectedUser.email_id }
                     : {
                         control_owner: bulkSelectedUser.email_id,
-                        active: '1',
+                        ...getAssignmentActivationPayload(form),
                         modifiedFields: ['control_owner'],
                       }
                 ),
@@ -1042,6 +1055,17 @@ function RacmAssignment() {
 
       if (successCount > 0) {
         toast.success(`Successfully updated ${successCount} ${isApproverMode ? 'approver' : 'RACM'} assignment(s)`)
+        if (!isApproverMode) {
+          const inactiveWithoutScheduleCount = targetFormIds.filter((formId) => {
+            const form = forms.find((row) => String(row.form_id || '').trim() === String(formId || '').trim())
+            return form && !Boolean(form.active) && !hasReminderSettingsConfigured(form)
+          }).length
+          if (inactiveWithoutScheduleCount > 0) {
+            toast(`${inactiveWithoutScheduleCount} RACM(s) remain Inactive until due date and reminder frequency are configured.`, {
+              icon: 'ℹ️',
+            })
+          }
+        }
       }
       if (failCount > 0) {
         toast.error(`Failed to update ${failCount} ${isApproverMode ? 'approver' : 'RACM'} assignment(s)`)

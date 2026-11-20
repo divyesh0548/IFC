@@ -1,0 +1,4 @@
+@echo off
+set ELEVENLABS_API_KEY=sk_7790eced20678bf60b4f458abd38420c1aeebbb5b276cd35
+set ELEVENLABS_MODEL_ID=eleven_multilingual_v2
+node scripts/recorder.mjs scripts/flow.mjs

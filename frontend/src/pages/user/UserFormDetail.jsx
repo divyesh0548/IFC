@@ -1352,7 +1352,7 @@ function UserFormDetail() {
       <Box sx={FORM_DETAIL_CONTENT_STACK_SX}>
         <FailedRacmNotice failed={isFailed} />
           <Box sx={FORM_DETAIL_ACTION_BAR_SX}>
-            {changeRequestHistoryCount > 0 ? (
+            {!isRequestChangeMode && changeRequestHistoryCount > 0 ? (
               <Button
                 variant="outlined"
                 onClick={handleOpenChangeRequestHistoryDialog}

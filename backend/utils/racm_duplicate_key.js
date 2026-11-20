@@ -6,6 +6,39 @@
 const DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE =
   'Your company already has a RACM with the same Control Number. Duplication is not allowed.';
 
+function partitionUniqueCompanyControlNumbers(rows, existingByCompany = new Map()) {
+  const seenByCompany = new Map();
+  const uniqueRows = [];
+  const duplicateRows = [];
+
+  for (const row of rows) {
+    const companyIdentifier = String(row.company_identifier || '').trim();
+    const controlNumber = row.control_number != null ? String(row.control_number).trim() : '';
+
+    if (!companyIdentifier || !controlNumber) {
+      uniqueRows.push(row);
+      continue;
+    }
+
+    const existingNumbers = existingByCompany.get(companyIdentifier);
+    let seenNumbers = seenByCompany.get(companyIdentifier);
+    if (!seenNumbers) {
+      seenNumbers = new Set();
+      seenByCompany.set(companyIdentifier, seenNumbers);
+    }
+
+    if (existingNumbers?.has(controlNumber) || seenNumbers.has(controlNumber)) {
+      duplicateRows.push(row);
+      continue;
+    }
+
+    seenNumbers.add(controlNumber);
+    uniqueRows.push(row);
+  }
+
+  return { uniqueRows, duplicateRows };
+}
+
 /**
  * @param {{ skippedCount: number, duplicateCount: number, errorCount: number, duplicateControlNumberSamples?: string[] }} stats
  */
@@ -57,6 +90,7 @@ function formatBulkImportSuccessMessage(insertedCount, stats) {
 
 module.exports = {
   DUPLICATE_RACM_COMPANY_SCOPED_MESSAGE,
+  partitionUniqueCompanyControlNumbers,
   formatBulkImportZeroInsertedMessage,
   formatBulkImportSuccessMessage,
 };

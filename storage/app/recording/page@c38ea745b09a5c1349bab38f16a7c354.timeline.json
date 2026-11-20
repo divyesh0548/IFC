@@ -1,0 +1,52 @@
+{
+  "flowMs": 65295,
+  "videoMs": 65240,
+  "padMs": 0,
+  "offsetMs": 0,
+  "leadInMs": 400,
+  "trimMs": 436,
+  "width": 1920,
+  "height": 1080,
+  "segments": [
+    {
+      "id": "intro",
+      "startMs": 836,
+      "clip": "C:\\Divyesh\\IFC\\IFC_Prisma\\storage\\app\\recording\\tts\\5cb5f311a88ceeff.mp3",
+      "durMs": 14022,
+      "text": "Welcome to the IFC coordinator demonstration. This walkthrough covers the key features available to company coordinator users. We'll start by logging in with coordinator credentials, then explore every major module in detail from the dashboard.",
+      "caption": "IFC Coordinator Demo",
+      "actualMs": 14313
+    },
+    {
+      "id": "login",
+      "startMs": 15153,
+      "clip": "C:\\Divyesh\\IFC\\IFC_Prisma\\storage\\app\\recording\\tts\\8706f671e6003260.mp3",
+      "durMs": 14456,
+      "text": "Here at the login page, the coordinator enters their credentials — coordinator dot alembic at gmail dot com — and signs in. Once authenticated, we land on the company admin home dashboard, which serves as the central command center for all IFC activities.",
+      "caption": "Coordinator Login",
+      "actualMs": 14751
+    }
+  ],
+  "zooms": [],
+  "captions": [
+    {
+      "tMs": 833,
+      "text": "IFC Coordinator Demo"
+    },
+    {
+      "tMs": 15149,
+      "text": "Coordinator Login"
+    }
+  ],
+  "urls": [
+    {
+      "tMs": 26,
+      "url": "http://localhost/login"
+    },
+    {
+      "tMs": 232,
+      "url": "http://localhost/login"
+    }
+  ],
+  "brand": null
+}

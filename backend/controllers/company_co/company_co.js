@@ -1443,7 +1443,7 @@ async function getRiskAnalysisBusinessProcessOverview(req, res) {
     if (!companyIdentifier || !coordinatorEmail) {
       return res.status(403).json({ success: false, message: 'Company coordinator context is required' });
     }
-    if (!businessProcess) {
+  if (!businessProcess) {
       return res.status(400).json({ success: false, message: 'business_process is required' });
     }
 

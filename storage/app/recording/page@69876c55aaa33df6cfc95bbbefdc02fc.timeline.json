@@ -1,0 +1,219 @@
+{
+  "flowMs": 45570,
+  "videoMs": 46160,
+  "padMs": 590,
+  "offsetMs": 295,
+  "leadInMs": 400,
+  "trimMs": 0,
+  "width": 1920,
+  "height": 1080,
+  "segments": [
+    {
+      "id": "intro",
+      "startMs": 265,
+      "clip": null,
+      "durMs": 0,
+      "text": "Welcome to the IFC coordinator demonstration. This walkthrough covers the key features available to company admin users.",
+      "caption": "IFC Coordinator Demo",
+      "actualMs": 2493
+    },
+    {
+      "id": "login",
+      "startMs": 2761,
+      "clip": null,
+      "durMs": 0,
+      "text": "We start at the login page. The coordinator will sign in with their credentials to access the admin dashboard.",
+      "caption": "Coordinator Login",
+      "actualMs": 15288
+    },
+    {
+      "id": "user-management",
+      "startMs": 18161,
+      "clip": null,
+      "durMs": 0,
+      "text": "First, User Management. Here administrators can view, add, edit, and manage all users in the organization. You can assign roles, set permissions, and control access levels for each team member.",
+      "caption": "User Management",
+      "actualMs": 2486
+    },
+    {
+      "id": "racm-communication",
+      "startMs": 20649,
+      "clip": null,
+      "durMs": 0,
+      "text": "Next is RACM Communication. This module handles all communications related to Risk and Control Matrices. You can send notifications, track correspondence, and maintain a complete audit trail of all RACM-related communications.",
+      "caption": "RACM Communication",
+      "actualMs": 2496
+    },
+    {
+      "id": "racm-templates",
+      "startMs": 23148,
+      "clip": null,
+      "durMs": 0,
+      "text": "RACM Templates provides a library of pre-built templates for common control frameworks. You can browse existing templates, import new ones, and customize them by adding columns — though we won't save changes in this demo.",
+      "caption": "RACM Templates",
+      "actualMs": 2494
+    },
+    {
+      "id": "creating-uploading-racms",
+      "startMs": 25644,
+      "clip": null,
+      "durMs": 0,
+      "text": "Creating and Uploading RACMs lets you build new matrices from scratch or upload them via Excel. We'll demonstrate the column mapping process when uploading a file, matching each column to the appropriate RACM field.",
+      "caption": "Creating & Uploading RACMs",
+      "actualMs": 2480
+    },
+    {
+      "id": "racm-management",
+      "startMs": 28126,
+      "clip": null,
+      "durMs": 0,
+      "text": "RACM Management is the central hub for all your Risk and Control Matrices. You can view statuses, filter by business unit, and take actions. Notice the notifications: one RACM pending change request and one RACM flagged as ineffective.",
+      "caption": "RACM Management",
+      "actualMs": 2482
+    },
+    {
+      "id": "racm-assignment",
+      "startMs": 30612,
+      "clip": null,
+      "durMs": 0,
+      "text": "RACM Assignment allows you to assign RACMs to process owners and approvers. You can set due dates, configure reminder schedules, and track completion progress across the organization.",
+      "caption": "RACM Assignment",
+      "actualMs": 2493
+    },
+    {
+      "id": "reports",
+      "startMs": 33109,
+      "clip": null,
+      "durMs": 0,
+      "text": "The Reports section provides comprehensive reporting on RACM status, compliance metrics, and audit trails. You can generate and export reports for management review and regulatory compliance.",
+      "caption": "Reports",
+      "actualMs": 2495
+    },
+    {
+      "id": "racm-change-requests",
+      "startMs": 35608,
+      "clip": null,
+      "durMs": 0,
+      "text": "RACM Change Requests manages the workflow for requesting and approving changes to existing RACMs. We'll show the pending change request notification and walk through the review process up to the final approval step — without submitting to the database.",
+      "caption": "RACM Change Requests",
+      "actualMs": 2492
+    },
+    {
+      "id": "deficiency-response",
+      "startMs": 38102,
+      "clip": null,
+      "durMs": 0,
+      "text": "Deficiency Response Submission handles responses to identified control deficiencies. We'll demonstrate the response workflow, showing how process owners submit remediation plans and evidence — again, stopping before the final database update.",
+      "caption": "Deficiency Response Submission",
+      "actualMs": 2485
+    },
+    {
+      "id": "risk-analysis",
+      "startMs": 40591,
+      "clip": null,
+      "durMs": 0,
+      "text": "Risk Analysis displays generated risks for specific units and processes. We'll view the pre-generated risks for APL1 unit and the P2P business process, and explain how to generate new risk assessments. The same applies to Design Gap Analysis.",
+      "caption": "Risk Analysis",
+      "actualMs": 2494
+    },
+    {
+      "id": "outro",
+      "startMs": 43087,
+      "clip": null,
+      "durMs": 0,
+      "text": "That concludes the IFC coordinator demo. You've seen the full workflow from user management through risk analysis, all without modifying any production data.",
+      "caption": "Demo Complete",
+      "actualMs": 2483
+    }
+  ],
+  "zooms": [],
+  "captions": [
+    {
+      "tMs": 259,
+      "text": "IFC Coordinator Demo"
+    },
+    {
+      "tMs": 2758,
+      "text": "Coordinator Login"
+    },
+    {
+      "tMs": 18151,
+      "text": "User Management"
+    },
+    {
+      "tMs": 20647,
+      "text": "RACM Communication"
+    },
+    {
+      "tMs": 23145,
+      "text": "RACM Templates"
+    },
+    {
+      "tMs": 25642,
+      "text": "Creating & Uploading RACMs"
+    },
+    {
+      "tMs": 28124,
+      "text": "RACM Management"
+    },
+    {
+      "tMs": 30608,
+      "text": "RACM Assignment"
+    },
+    {
+      "tMs": 33105,
+      "text": "Reports"
+    },
+    {
+      "tMs": 35604,
+      "text": "RACM Change Requests"
+    },
+    {
+      "tMs": 38100,
+      "text": "Deficiency Response Submission"
+    },
+    {
+      "tMs": 40587,
+      "text": "Risk Analysis"
+    },
+    {
+      "tMs": 43085,
+      "text": "Demo Complete"
+    }
+  ],
+  "urls": [
+    {
+      "tMs": 19,
+      "url": "http://localhost/"
+    },
+    {
+      "tMs": 209,
+      "url": "http://localhost/"
+    },
+    {
+      "tMs": 18074,
+      "url": "http://localhost/company_admin/home"
+    },
+    {
+      "tMs": 18110,
+      "url": "http://localhost/company_admin/home"
+    },
+    {
+      "tMs": 18136,
+      "url": "http://localhost/login"
+    },
+    {
+      "tMs": 35625,
+      "url": "http://localhost/company-co/racm-management"
+    },
+    {
+      "tMs": 35655,
+      "url": "http://localhost/company-co/racm-management"
+    },
+    {
+      "tMs": 35686,
+      "url": "http://localhost/login"
+    }
+  ],
+  "brand": null
+}
