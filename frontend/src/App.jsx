@@ -69,6 +69,7 @@ const CompanyAdminFormDetail = lazy(() => import('./pages/company_admin/CompanyA
 
 const ApproverHome = lazy(() => import('./pages/approver/ApproverHome'))
 const ApproverDashboard = lazy(() => import('./pages/approver/ApproverDashboard'))
+const ApproverRacmExport = lazy(() => import('./pages/approver/ApproverRacmExport'))
 const ApproverFormDetail = lazy(() => import('./pages/approver/ApproverFormDetail'))
 
 const DashboardLayout = lazy(() => import('./components/DashboardLayout'))
@@ -284,6 +285,7 @@ function App() {
               <Route path="home" element={<ApproverHome />} />
               <Route path="company-details" element={<CompanyDetailsPage />} />
               <Route path="dashboard" element={<ApproverDashboard />} />
+              <Route path="racm-export" element={<ApproverRacmExport />} />
               <Route path="form/:form_id" element={<ApproverFormDetail />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="*" element={<Navigate to={ROLE_HOME_ROUTES.approver} replace />} />

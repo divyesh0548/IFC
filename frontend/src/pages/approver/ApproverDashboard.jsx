@@ -493,6 +493,12 @@ function ApproverDashboard() {
               flexWrap: 'wrap',
             }}
           >
+            <Button
+              variant="outlined"
+              onClick={() => navigate('/approver/racm-export')}
+            >
+              Export RACMs
+            </Button>
             {showUnitContext && (
               <FormControl variant="outlined" size="small" sx={filterControlSx}>
                 <InputLabel id="approver-unit-filter-label">Unit</InputLabel>

@@ -13,7 +13,8 @@ const HEALTH_RETRY_DELAY_MS = 400;
 function normalizeAiSummaryBaseUrl(rawUrl) {
   let baseUrl = String(rawUrl || 'http://127.0.0.1:5001')
     .trim()
-    .replace(/\/$/, '');
+    .replace(/\/+$/, '')
+    .replace(/\/health$/i, '');
   // Avoid intermittent IPv6 (::1) failures when Flask listens on 127.0.0.1 only.
   try {
     const parsed = new URL(baseUrl);

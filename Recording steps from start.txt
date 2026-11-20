@@ -3,7 +3,7 @@ Repo : https://github.com/muayadjamal/flow-video-recorder
 Install the requirements: Node.js 20+, FFmpeg, and Git Bash on Windows.
 
 Open your IFC project folder in Codex or Claude Code and run:
-npx skills add muayadjamal/flow-video-recorder
+
 
 Install the browser automation:
 npm install -D playwright

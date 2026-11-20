@@ -20,6 +20,7 @@ const {
 } = require('../../utils/controls_reminder');
 const { buildRacmDetailsSection } = require('../../utils/racm_email_details');
 const { buildScopedApproverJoinSql } = require('../../utils/approver_assignment_resolver');
+const { getRacmExportData } = require('../../utils/racm_export');
 const { getInactiveRacmApproverAccessError } = require('../../utils/racm_delete');
 const { isCoordinatorAssignedRacm, buildCoordinatorFormDetailUrl } = require('../../utils/racm_coordinator_assignment');
 const { buildUserFormDetailUrl } = require('../../utils/racm_status_user_email');
@@ -1485,6 +1486,60 @@ async function getRacmAuditLogs(req, res) {
   }
 }
 
+async function exportIfcReportRacms(req, res) {
+  try {
+    const approverEmail = String(req.approver?.email_id || '').trim();
+    const includeAll = String(req.query.include_all || '').trim().toLowerCase() === 'true';
+    const companyIdentifier = String(req.query.company_identifier || '').trim();
+    const unitId = String(req.query.unit_id || '').trim();
+    if (!companyIdentifier || !unitId) {
+      return res.status(400).json({ success: false, message: 'A unit is required for export' });
+    }
+
+    const units = await getApproverMappedUnits(approverEmail);
+    const isMappedUnit = units.some((unit) => (
+      String(unit.company_identifier || '').trim() === companyIdentifier
+      && String(unit.unit_id || '').trim() === unitId
+    ));
+    if (!isMappedUnit) {
+      return res.status(403).json({ success: false, message: 'You are not assigned to this unit' });
+    }
+
+    const data = await getRacmExportData(pool, {
+      joinsSql: scopedApproverRacmJoin('cf', '$1'),
+      whereSql: 'cf.company_identifier = $2 AND NULLIF(TRIM(cf.unit_id), \'\') = $3',
+      queryParams: [approverEmail, companyIdentifier, unitId],
+      includeAll,
+    });
+
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Approver RACM export error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to export RACMs' });
+  }
+}
+
+async function getIfcReportExportUnits(req, res) {
+  try {
+    const approverEmail = String(req.approver?.email_id || '').trim();
+    const units = await getApproverMappedUnits(approverEmail);
+    return res.status(200).json({
+      success: true,
+      data: {
+        units: units.map((unit) => ({
+          company_identifier: unit.company_identifier,
+          company_name: unit.company_name,
+          unit_id: unit.unit_id,
+          unit_name: unit.unit_name,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Approver RACM export units error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load export units' });
+  }
+}
+
 module.exports = {
   getHomeStats,
   getDashboard,
@@ -1497,4 +1552,6 @@ module.exports = {
   getControlFormHistory,
   reviewDeficiencyResponse,
   getRacmAuditLogs,
+  exportIfcReportRacms,
+  getIfcReportExportUnits,
 };

@@ -109,6 +109,10 @@ const BREADCRUMB_RULES = [
     build: (home) => [homeItem(home), { label: 'IFC Report' }],
   },
   {
+    test: (p) => p === '/approver/racm-export',
+    build: (home) => [homeItem(home), { label: 'RACM Export' }],
+  },
+  {
     test: (p) => p === '/company-co/racm-user-documents',
     build: (home) => [homeItem(home), { label: 'User Documents' }],
   },

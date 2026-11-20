@@ -8,6 +8,7 @@ function IfcReportPage({
   title = 'IFC Report',
   subtitle,
   backPath,
+  exportEndpoint,
 }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -50,6 +51,7 @@ function IfcReportPage({
       loading={loading}
       error={error}
       onRefresh={fetchReport}
+      exportEndpoint={exportEndpoint}
     />
   )
 }

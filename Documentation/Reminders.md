@@ -1,0 +1,9 @@
+# Process-owner reminder emails
+
+- **Pending submission:** After the RACM due date, reminders go to the process owner (or assigned coordinator) at its configured frequency: daily, weekly, or every 30 days. By default, three regular reminders are followed by a final reminder; the cycle then closes and emails stop.
+- **Not Effective RACM:** If mitigation or resubmission is required, reminders start after the ineffective due date (default: 2 days) and repeat every 2 days by default. With automatic-failure tracking enabled, this stage also ends with a final reminder.
+- **After a response:** If the approver rejects a normal RACM submission, the regular reminder count and final-reminder marker reset. If its due date has passed, reminders can resume immediately. If the RACM is marked Not Effective, or a mitigation/compensatory response is rejected, the ineffective reminder cycle resets and starts again after a new ineffective due date. Owner reminders pause while a response is awaiting approver review.
+- **No-submission declaration:** It is sent to the approver for a conclusion; the approver cannot reject it. The cycle closes when the approver records a conclusion.
+- **After the final reminder:** With the automatic-failure database schema installed, no submission or no-further-submission declaration within the grace period (default: 1 day) causes the scheduled job to mark the RACM **Failed** and read-only; it cannot be submitted late or reopened. A no-further-submission declaration prevents automatic failure.
+
+The scheduler checks every minute. Reminder counts, intervals, and the grace period can be configured through backend environment variables.

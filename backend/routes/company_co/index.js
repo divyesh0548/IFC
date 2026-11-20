@@ -7,6 +7,8 @@ const router = express.Router();
 
 router.get('/home-stats', verifyCompanyCoordinator, controller.getHomeStats);
 router.get('/ifc-report', verifyCompanyCoordinator, controller.getIfcReport);
+router.get('/ifc-report/export', verifyCompanyCoordinator, controller.exportIfcReportRacms);
+router.get('/ifc-report/export-units', verifyCompanyCoordinator, controller.getIfcReportExportUnits);
 router.get('/dashboard/filters', verifyCompanyCoordinator, controller.getDashboardFilters);
 router.get('/dashboard/summary', verifyCompanyCoordinator, controller.getDashboardSummary);
 router.get('/dashboard/key-controls', verifyCompanyCoordinator, controller.getDashboardKeyControlStats);

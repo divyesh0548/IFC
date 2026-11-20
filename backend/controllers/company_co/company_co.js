@@ -47,6 +47,7 @@ const {
 } = require('../../utils/sample_size_resolver');
 const { logAuditEvent } = require('../../utils/auditLog');
 const { buildIfcReport, emptyIfcReportPayload } = require('../../utils/ifc_report');
+const { getRacmExportData } = require('../../utils/racm_export');
 const { ALL_PROCESSES_KEYWORD } = require('../../utils/racm_cc_recipients');
 const {
   coordinatorHasUnitAccess,
@@ -7440,6 +7441,48 @@ async function getIfcReport(req, res) {
   }
 }
 
+async function exportIfcReportRacms(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const includeAll = String(req.query.include_all || '').trim().toLowerCase() === 'true';
+    const unitId = String(req.query.unit_id || '').trim();
+    if (!unitId) {
+      return res.status(400).json({ success: false, message: 'A unit is required for export' });
+    }
+
+    const units = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+    const isMappedUnit = units.some((unit) => String(unit.unit_id || '').trim() === unitId);
+    if (!isMappedUnit) {
+      return res.status(403).json({ success: false, message: 'You are not assigned to this unit' });
+    }
+
+    const data = await getRacmExportData(pool, {
+      whereSql: `cf.company_identifier = $1
+        AND NULLIF(TRIM(cf.unit_id), '') = $2`,
+      queryParams: [companyIdentifier, unitId],
+      includeAll,
+    });
+
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Company coordinator RACM export error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to export RACMs' });
+  }
+}
+
+async function getIfcReportExportUnits(req, res) {
+  try {
+    const companyIdentifier = String(req.user?.company_identifier || '').trim();
+    const coordinatorEmail = normalizeEmail(req.user?.email_id);
+    const units = await getCoordinatorMappedUnits(companyIdentifier, coordinatorEmail);
+    return res.status(200).json({ success: true, data: { units } });
+  } catch (error) {
+    console.error('Company coordinator RACM export units error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load export units' });
+  }
+}
+
 module.exports = {
   getRiskAnalysisJobs,
   executeConciseRiskList,
@@ -7450,6 +7493,8 @@ module.exports = {
   assignRacmApprover,
   getHomeStats,
   getIfcReport,
+  exportIfcReportRacms,
+  getIfcReportExportUnits,
   getDashboardFilters,
   getDashboardSummary,
   getDashboardKeyControlStats,

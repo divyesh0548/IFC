@@ -5,6 +5,7 @@ function CompanyCoIfcReport() {
   return (
     <IfcReportPage
       endpoint="/api/company-co/ifc-report"
+      exportEndpoint="/api/company-co/ifc-report/export"
       title="IFC Report"
       subtitle="Scoped to your assigned units. Live aggregates refresh on each load."
       backPath="/company-co/racm-management"

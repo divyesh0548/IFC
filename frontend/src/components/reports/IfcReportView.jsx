@@ -10,6 +10,7 @@ import Stack from '@mui/material/Stack'
 import Divider from '@mui/material/Divider'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
+import RacmExportOptions from './RacmExportOptions'
 import {
   DASHBOARD_PAGE_OUTER_SX,
   DASHBOARD_PAPER_SX,
@@ -112,6 +113,7 @@ function IfcReportView({
   loading = false,
   error = '',
   onRefresh,
+  exportEndpoint,
 }) {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -185,6 +187,12 @@ function IfcReportView({
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {exportEndpoint ? (
+              <RacmExportOptions
+                endpoint={exportEndpoint}
+                unitsEndpoint={`${exportEndpoint}-units`}
+              />
+            ) : null}
             {backPath ? (
               <Button
                 variant="outlined"

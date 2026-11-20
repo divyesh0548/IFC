@@ -15,5 +15,7 @@ router.get('/control-forms/:form_id/access', verifyApproverAuth, controller.chec
 router.get('/control-forms/:form_id', verifyApproverAuth, controller.getControlFormById);
 router.get('/control-form-history/:form_id', verifyApproverAuth, controller.getControlFormHistory);
 router.get('/racm-audit-logs/:form_id', verifyApproverAuth, controller.getRacmAuditLogs);
+router.get('/ifc-report/export', verifyApproverAuth, controller.exportIfcReportRacms);
+router.get('/ifc-report/export-units', verifyApproverAuth, controller.getIfcReportExportUnits);
 
 module.exports = router;
