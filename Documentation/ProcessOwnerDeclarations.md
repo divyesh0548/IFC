@@ -12,3 +12,7 @@ Both declarations are sent to the approver for a conclusion. The approver cannot
 The declaration row stores `form_id`, `no_furthure_submission = TRUE`, `declaration_type`, `declaration_confirmed`, `owner_comment`, `process_owner_email`, and `timestamp`. The RACM is set to `status = 'sent for approval'`; `sent_for_approval_timestamp`, `approver_due_date`, and `updated_at` are updated, and deficiency-action fields are cleared. `controls_reminder.reminder_to_approver_datetime` is reset; ineffective and deficiency-review reminder dates are cleared.
 
 The submission and ineffective-owner reminder jobs, and the automatic-failure task, exclude declarations using `no_furthure_submission`. The regular reminder timestamps/count are not cleared by the declaration itself; the flag and `sent for approval` status prevent it being treated as pending owner work. The approver reminder job handles it while it awaits a conclusion.
+
+## Automatic failure after the final reminder
+
+After the configured grace period (default: 1 day) with no submission or declaration, the scheduled job updates `control_forms.control_design_conclusion` to `Failed`, sets `deficiency_action_status = FALSE`, and updates `updated_at`. It does **not** change the RACM `status` or reminder timestamps. It inserts an `audit_logs_racm` row with action `RACM automatically marked Failed` and `ref_data` containing the previous conclusion, stage, final-reminder timestamp, grace days, and reason. A database trigger makes the Failed RACM read-only.

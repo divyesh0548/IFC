@@ -4,12 +4,14 @@
   "properties": {
     "risks": {
       "type": "array",
+      "minItems": 2,
+      "maxItems": 3,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "risk": { "type": "string" },
-          "status": { "type": "string" },
+          "status": { "type": "string", "enum": ["Missing Risk"] },
           "addressedBy": {
             "type": "array",
             "items": { "type": "string" }

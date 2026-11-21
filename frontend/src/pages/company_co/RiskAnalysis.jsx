@@ -1,6 +1,5 @@
 import AiSummaryAvailabilityWarning from '../../components/company_co/AiSummaryAvailabilityWarning'
-import RiskAnalysisJobs from '../../components/company_co/RiskAnalysisJobs'
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -167,15 +166,6 @@ function filePart(value, fallback) {
     .slice(0, 80) || fallback || 'export'
 }
 
-function normalizeRiskLabel(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim()
-}
-
-function comparisonChipColor(status) {
-  if (status === 'Fully addressed') return 'success'
-  if (status === 'Partially addressed') return 'warning'
-  return 'default'
-}
 
 function formatRiskAnalysisTimestamp(value) {
   if (!value) return ''
@@ -221,7 +211,6 @@ function RiskAnalysis() {
   const [analysisDialogOpen, setAnalysisDialogOpen] = useState(false)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [analysisGenerating, setAnalysisGenerating] = useState(false)
-  const [comparingRisk, setComparingRisk] = useState('')
   const [batchGenerating, setBatchGenerating] = useState(false)
   const [analysisData, setAnalysisData] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
@@ -231,17 +220,11 @@ function RiskAnalysis() {
   const [conciseLoading, setConciseLoading] = useState(false)
   const [conciseGenerating, setConciseGenerating] = useState(false)
   const [conciseListOpen, setConciseListOpen] = useState(false)
-  const [conciseTick, setConciseTick] = useState(0)
   const [overallMissingRisks, setOverallMissingRisks] = useState(null)
   const [overallMissingLoading, setOverallMissingLoading] = useState(false)
   const [overallMissingGenerating, setOverallMissingGenerating] = useState(false)
   const [overallMissingOpen, setOverallMissingOpen] = useState(false)
   const [overallMissingTick, setOverallMissingTick] = useState(0)
-  const refreshAutomaticResults = useCallback(() => {
-    setConciseTick((value) => value + 1)
-    setOverallMissingTick((value) => value + 1)
-  }, [])
-  const [controlConcise, setControlConcise] = useState({ loading: false, exists: false })
   const lastSelectedIndexRef = useRef(null)
   const rowMetaRef = useRef(new Map())
   useSyncGlobalLoading(
@@ -395,28 +378,10 @@ function RiskAnalysis() {
     const controlNumber = String(getFieldValue(row, 'control_number', 'controlNumber') || '').trim()
     if (!controlNumber) return
 
-    const unitId = String(getFieldValue(row, 'unit_id', 'unitId') || '').trim()
-    const businessProcess = String(getFieldValue(row, 'business_process', 'businessProcess') || '').trim()
     setSelectedControl(row)
     setAnalysisDialogOpen(true)
     setAnalysisLoading(true)
     setAnalysisData(null)
-    setControlConcise({ loading: true, exists: false, unitId, businessProcess })
-
-    const conciseParams = new URLSearchParams({ unit_id: unitId, business_process: businessProcess })
-    fetch(apiUrl(`/api/company-co/risk-analysis/concise-list?${conciseParams}`), { credentials: 'include' })
-      .then((conciseResponse) => conciseResponse.json().then((conciseData) => ({ ok: conciseResponse.ok, conciseData })))
-      .then(({ ok, conciseData }) => {
-        setControlConcise({
-          loading: false,
-          exists: Boolean(ok && conciseData?.success && conciseData?.data?.exists),
-          unitId,
-          businessProcess,
-        })
-      })
-      .catch(() => {
-        setControlConcise({ loading: false, exists: false, unitId, businessProcess })
-      })
 
     try {
       const response = await fetch(apiUrl(`/api/company-co/risk-analysis/control/${encodeURIComponent(controlNumber)}`), {
@@ -440,10 +405,6 @@ function RiskAnalysis() {
   const handleGenerateAnalysis = async () => {
     const controlNumber = String(getFieldValue(selectedControl, 'control_number', 'controlNumber') || '').trim()
     if (!controlNumber) return
-    if (!controlConcise.exists) {
-      toast.error('Generate the concise risk list for this unit and business process first.')
-      return
-    }
 
     setAnalysisGenerating(true)
     try {
@@ -566,7 +527,7 @@ function RiskAnalysis() {
     return () => {
       cancelled = true
     }
-  }, [conciseScopeReady, filterUnits, filterBusinessProcesses, conciseTick])
+  }, [conciseScopeReady, filterUnits, filterBusinessProcesses])
 
   useEffect(() => {
     if (!conciseScopeReady) {
@@ -601,7 +562,7 @@ function RiskAnalysis() {
     return () => {
       cancelled = true
     }
-  }, [conciseScopeReady, filterUnits, filterBusinessProcesses, conciseTick, overallMissingTick])
+  }, [conciseScopeReady, filterUnits, filterBusinessProcesses, overallMissingTick])
 
   const generateConciseList = async () => {
     if (!conciseScopeReady) return
@@ -630,12 +591,6 @@ function RiskAnalysis() {
         return
       }
       setConciseList(data.data)
-      setControlConcise((current) => (
-        current.unitId === filterUnits[0]
-        && String(current.businessProcess || '').trim().toLowerCase() === String(filterBusinessProcesses[0] || '').trim().toLowerCase()
-          ? { ...current, exists: true, loading: false }
-          : current
-      ))
       setOverallMissingTick((value) => value + 1)
       toast.success(data.message || 'Concise risk list saved')
     } catch (error) {
@@ -838,12 +793,11 @@ function RiskAnalysis() {
   }
 
   const handleCloseDialog = () => {
-    if (analysisGenerating || comparingRisk) return
+    if (analysisGenerating) return
     setAnalysisDialogOpen(false)
     setSelectedControl(null)
     setAnalysisLoading(false)
     setAnalysisData(null)
-    setComparingRisk('')
   }
 
   const handleOpenControlInNewWindow = () => {
@@ -857,70 +811,6 @@ function RiskAnalysis() {
     }
 
     window.open(`/company-co/form/${encodeURIComponent(normalizedFormId)}`, '_blank', 'noopener,noreferrer')
-  }
-
-  const handleCompareRisk = async (risk) => {
-    const controlNumber = String(
-      analysisData?.control?.control_number
-      || getFieldValue(selectedControl, 'control_number', 'controlNumber')
-      || ''
-    ).trim()
-    const selectedRisk = normalizeRiskLabel(risk)
-    if (!controlNumber || !selectedRisk || comparingRisk) return
-
-    setComparingRisk(selectedRisk)
-    try {
-      const response = await fetch(
-        apiUrl(`/api/company-co/risk-analysis/control/${encodeURIComponent(controlNumber)}/compare`),
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ risk: selectedRisk }),
-        }
-      )
-      const data = await response.json()
-      if (response.status === 409) {
-        toast('LLM Server is busy, Try again after some moments')
-        return
-      }
-      if (!response.ok || !data?.success) {
-        const error = new Error(data?.message || 'Failed to compare risk')
-        error.serverCode = String(data?.code || '').trim()
-        throw error
-      }
-      if (data.data?.dry_run) {
-        if (data.data.dry_run_txt) {
-          downloadDryRunPrompt(data.data.dry_run_txt, `risk_comparison_dry_run_${controlNumber || 'prompt'}.txt`)
-        }
-        toast.success(data.message || 'Dry-run prompt downloaded')
-        return
-      }
-
-      const comparison = data.data?.comparison
-      if (!comparison?.addressedStatus) {
-        throw new Error('Risk comparison did not return a result')
-      }
-      setAnalysisData((prev) => {
-        const responseJson = { ...(prev?.analysis?.response_json || {}) }
-        responseJson.riskComparisons = {
-          ...(responseJson.riskComparisons || {}),
-          [comparison.risk || selectedRisk]: comparison,
-        }
-        return {
-          ...prev,
-          analysis: {
-            ...(prev?.analysis || {}),
-            response_json: responseJson,
-          },
-        }
-      })
-    } catch (error) {
-      console.error('Error comparing risk:', error)
-      toast.error(error?.serverCode ? formatServerErrorToast(error.serverCode) : (error.message || 'Failed to compare risk'))
-    } finally {
-      setComparingRisk('')
-    }
   }
 
   const renderAnalysisResponse = () => {
@@ -949,7 +839,7 @@ function RiskAnalysis() {
         }}
         >
           <Box sx={riskCardSx}>
-            <Typography variant="body2" sx={INSIGHT_CARD_LABEL_SX}>Missing / partially covered risks</Typography>
+            <Typography variant="body2" sx={INSIGHT_CARD_LABEL_SX}>Missing risks</Typography>
             {missingRisks.length === 0 ? (
               <Typography variant="body2" sx={DETAIL_FIELD_VALUE_SX}>None</Typography>
             ) : missingRisks.map((item, index) => (
@@ -995,16 +885,10 @@ function RiskAnalysis() {
           {missingRiskPointers.length > 0 ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
               {missingRiskPointers.map((item, index) => {
-                const risk = normalizeRiskLabel(item?.risk)
                 const pointer = String(item?.pointer || '').trim()
-                const comparison = response.riskComparisons?.[risk]
-                const isComparing = comparingRisk === risk
-                const addressedBy = Array.isArray(comparison?.addressedBy)
-                  ? comparison.addressedBy.filter(Boolean)
-                  : []
                 return (
                   <Box
-                    key={`${risk}-${index}`}
+                    key={`${String(item?.risk || item?.pointer || '')}-${index}`}
                     sx={{
                       display: 'flex',
                       alignItems: 'flex-start',
@@ -1028,31 +912,6 @@ function RiskAnalysis() {
                       <Typography variant="body2" sx={{ color: theme.palette.text.primary, lineHeight: 1.6 }}>
                         {pointer}
                       </Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                        {comparison?.addressedStatus ? (
-                          <Chip
-                            size="small"
-                            label={comparison.addressedStatus}
-                            color={comparisonChipColor(comparison.addressedStatus)}
-                            variant={comparison.addressedStatus === 'Not addressed' ? 'outlined' : 'filled'}
-                          />
-                        ) : null}
-                        <Button
-                          size="small"
-                          variant="text"
-                          onClick={() => handleCompareRisk(risk)}
-                          disabled={!risk || Boolean(comparingRisk) || analysisGenerating}
-                          sx={{ whiteSpace: 'normal', textAlign: 'left', lineHeight: 1.4 }}
-                        >
-                          {isComparing ? 'Comparing…' : comparison?.addressedStatus ? 'Compare again' : 'Check if this risk is addressed in other controls or not'}
-                        </Button>
-                      </Box>
-                      {comparison?.addressedStatus ? (
-                        <Typography variant="body2" sx={{ color: theme.palette.text.secondary, lineHeight: 1.6 }}>
-                          {comparison.reason}
-                          {addressedBy.length > 0 ? ` Addressed by ${addressedBy.join(', ')}.` : ''}
-                        </Typography>
-                      ) : null}
                     </Box>
                   </Box>
                 )
@@ -1249,7 +1108,6 @@ function RiskAnalysis() {
         </Box>
       </Box>
 
-      <RiskAnalysisJobs onCompleted={refreshAutomaticResults} hideFailed />
       {conciseScopeReady ? (
         <>
           <Paper
@@ -1777,11 +1635,6 @@ function RiskAnalysis() {
                 ) : null}
               </Box>
             </Box>
-            {!controlConcise.loading && !controlConcise.exists ? (
-              <Alert severity="warning">
-                Generate the concise risk list for this unit and business process before analysing this control.
-              </Alert>
-            ) : null}
             <Box
               sx={{
                 display: 'flex',
@@ -1798,14 +1651,14 @@ function RiskAnalysis() {
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={handleCloseDialog} disabled={analysisGenerating || Boolean(comparingRisk)}>
+          <Button onClick={handleCloseDialog} disabled={analysisGenerating}>
             Close
           </Button>
           <Button
             variant="contained"
             color="secondary"
             onClick={handleGenerateAnalysis}
-            disabled={analysisLoading || analysisGenerating || !selectedControl || Boolean(comparingRisk) || controlConcise.loading || !controlConcise.exists}
+            disabled={analysisLoading || analysisGenerating || !selectedControl}
           >
             {analysisGenerating ? 'Generating…' : 'Generate Risk Analysis'}
           </Button>
@@ -1881,7 +1734,7 @@ function RiskAnalysis() {
                         }}
                         >
                           <Box sx={{ p: 1.5 }}>
-                            <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>Missing / partially covered risks</Typography>
+                            <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>Missing risks</Typography>
                             {missingRisks.length === 0 ? (
                               <Typography variant="body2" color="text.secondary">None</Typography>
                             ) : missingRisks.map((item, index) => (
@@ -1903,20 +1756,9 @@ function RiskAnalysis() {
                       {pointers.length === 0 ? (
                         <Typography variant="body2" color="text.secondary">No missing-risk pointers returned.</Typography>
                       ) : pointers.map((item, index) => {
-                        const risk = String(item?.risk || '').replace(/\s+/g, ' ').trim()
-                        const comparison = response.riskComparisons?.[risk]
-                          || Object.entries(response.riskComparisons || {}).find(([key]) => String(key).trim().toLowerCase() === risk.toLowerCase())?.[1]
-                        const addressedBy = Array.isArray(comparison?.addressedBy) ? comparison.addressedBy.filter(Boolean) : []
                         return (
-                          <Box key={`${risk}-${index}`} sx={{ mt: 1 }}>
+                          <Box key={`${String(item?.risk || '')}-${index}`} sx={{ mt: 1 }}>
                             <Typography variant="body2">{`${index + 1}. ${item?.pointer || '—'}`}</Typography>
-                            {comparison?.addressedStatus ? (
-                              <Typography variant="body2" color="text.secondary">
-                                {comparison.addressedStatus}
-                                {comparison.reason ? ` — ${comparison.reason}` : ''}
-                                {addressedBy.length > 0 ? ` Addressed by ${addressedBy.join(', ')}.` : ''}
-                              </Typography>
-                            ) : null}
                           </Box>
                         )
                       })}

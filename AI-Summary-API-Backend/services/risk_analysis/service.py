@@ -246,13 +246,13 @@ def condense_risks(
 def build_prompts(
     control: dict,
     business_process: str,
-    concise_risks: list[dict],
+    concise_risks: list[dict] | None = None,
     ) -> tuple[str, str]:
     user_prompt = (
         load_text("user_prompt.txt")
         .replace("{business_process}", business_process)
         .replace("{control_json}", json.dumps(control, ensure_ascii=False))
-        .replace("{concise_risks_json}", json.dumps(concise_risks, ensure_ascii=False))
+        .replace("{concise_risks_json}", "[]")
         .replace("{schema_json}", _schema_text("schema.json"))
     )
     system_prompt = load_text("system_prompt.txt")
@@ -286,7 +286,6 @@ def _clean_analysis(parsed: dict, concise_risks: list[dict]) -> dict:
     risks = []
     missing_risks = []
     pointers = []
-    comparisons = {}
     seen: set[str] = set()
     for item in parsed.get("risks") or []:
         if not isinstance(item, dict):
@@ -322,11 +321,6 @@ def _clean_analysis(parsed: dict, concise_risks: list[dict]) -> dict:
                 "pointer": pointer,
                 "subProcess": sub_process,
             })
-            comparisons[risk] = {
-                "addressedStatus": "Partially addressed",
-                "addressedBy": addressed_by,
-                "reason": pointer or "This risk is only partially covered by existing controls in this unit and business process.",
-            }
             missing_risks.append(risk)
             pointers.append({
                 "risk": risk,
@@ -348,12 +342,14 @@ def _clean_analysis(parsed: dict, concise_risks: list[dict]) -> dict:
                 "pointer": pointer or risk,
                 "subProcess": sub_process,
             })
+        if len(risks) >= 3:
+            break
 
     return {
         "risks": risks,
         "missingRisks": missing_risks,
         "missingRiskPointers": pointers,
-        "riskComparisons": comparisons,
+        "riskComparisons": {},
         "matchedSubProcess": None,
         "matchConfidence": None,
         "coverageStatus": "Missing or partially covered risks" if missing_risks else "No missing risks",
@@ -412,8 +408,6 @@ def analyze_control(
     dry_run: bool = False,
     form_id: str = "",
     ) -> dict:
-    if not isinstance(concise_risks, list):
-        raise ValueError("concise_risks is required")
     dry_run = is_risk_analysis_dry_run_enabled(dry_run)
     system_prompt, user_prompt = build_prompts(
         control,

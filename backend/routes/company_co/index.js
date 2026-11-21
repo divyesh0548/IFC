@@ -27,7 +27,6 @@ router.get('/risk-analysis/overall-missing-risks', verifyCompanyCoordinator, con
 router.post('/risk-analysis/overall-missing-risks', verifyCompanyCoordinator, controller.generateRiskAnalysisOverallMissingRisks);
 router.get('/risk-analysis/control/:control_number', verifyCompanyCoordinator, controller.getRiskAnalysisByControl);
 router.post('/risk-analysis/control/:control_number/generate', verifyCompanyCoordinator, controller.generateRiskAnalysisByControl);
-router.post('/risk-analysis/control/:control_number/compare', verifyCompanyCoordinator, controller.compareRiskAnalysis);
 router.post('/risk-analysis/generate', verifyCompanyCoordinator, controller.generateRiskAnalysesSelected);
 
 const designGapInsights = require('../../controllers/company_co/design_gap_insights');

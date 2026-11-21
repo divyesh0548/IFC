@@ -1,25 +1,18 @@
-Review this RACM control using its details, business process and the existing RACM risks.
 Business process: {business_process}
 
-Control:
+RACM control:
 {control_json}
 
-Existing risks covered in the client's RACM for the same unit and business process. Each item contains the sub-process and concise risk already recorded there:
-{concise_risks_json}
+Identify 2–3 missing risks for this control only.
 
-Do all of the following in this order.
-1. Build the independent risk universe relevant to this control's business process, sub-process, objective, risk description and control description.
-2. Compare those risks against the existing RACM risks above.
-3. Return only risks that are missing or partially covered. Do not return risks that are fully addressed by the existing RACM risk list.
-
-Field rules:
-- status must be "Missing Risk" when the risk is not addressed by the existing RACM risk list. addressedBy must be an empty array.
-- status must be "Partially Covered Risk" when one or more existing RACM risks cover part of the risk but an important risk factor, assertion, compliance area, fraud scenario, sub-process, or control condition remains uncovered. addressedBy must be an empty array because the concise list no longer carries control numbers.
-- Do not return "Addressed Risk" or any fully addressed risk.
-- risk must be the complete concise risk statement to display to the user, in one sentence.
-- pointer must exactly repeat risk because the application uses it as the display pointer.
-- subProcess must contain the relevant sub-process or control area.
-- Do not invent control numbers.
+Rules:
+- Do not compare with other controls or assume other controls exist.
+- Base each risk on the control's objective, sub-process, risk description and control description.
+- Keep each risk short and specific; use a different wording for every risk.
+- Use "Missing Risk" for status.
+- pointer must repeat risk exactly.
+- addressedBy must be an empty array.
+- subProcess must identify the relevant sub-process or control area.
 
 Return JSON matching this schema:
 {schema_json}

@@ -171,16 +171,6 @@ async function condenseRiskList(businessProcess, controls) {
   });
 }
 
-async function compareRiskCoverage(risk, peers) {
-  return callAiSummaryApi('/v1/risk-analysis/compare', {
-    method: 'POST',
-    body: {
-      risk: String(risk || '').trim(),
-      peers: Array.isArray(peers) ? peers : [],
-    },
-  });
-}
-
 async function probeAiSummaryHealthOnce(baseUrl) {
   const response = await fetchWithTimeout(`${baseUrl}/health`, {
     method: 'GET',
@@ -221,6 +211,5 @@ module.exports = {
   analyzeRiskAnalysis,
   analyzeOverallMissingRisks,
   condenseRiskList,
-  compareRiskCoverage,
   checkAiSummaryHealth,
 };

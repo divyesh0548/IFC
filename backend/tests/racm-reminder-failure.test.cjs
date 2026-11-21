@@ -5,9 +5,25 @@ const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../scripts/reminder_emails/ineffective_reminder_emails.js'), 'utf8');
 
-async function run({ count = 0, sent = true, email = 'owner@example.test', busy = false, schemaReady = true } = {}) {
+async function run({
+  count = 0,
+  sent = true,
+  email = 'owner@example.test',
+  assignedToCoordinator = false,
+  coordinatorEmail = 'coordinator@example.test',
+  busy = false,
+  schemaReady = true,
+} = {}) {
   const events = []; let message;
-  const form = { form_id: 'F', control_number: 'P2P1', control_owner: email, ineffective_reminder_sent_count: count };
+  const form = {
+    form_id: 'F',
+    control_number: 'P2P1',
+    control_owner: email,
+    assigned_to_coordinator: assignedToCoordinator,
+    coordinator_assigned_by: coordinatorEmail,
+    coordinator_emp_name: 'Coordinator Name',
+    ineffective_reminder_sent_count: count,
+  };
   const client = {
     async query(sql) {
       if (sql.includes('pg_try_advisory_lock')) return { rows: [{ locked: !busy }] };
@@ -20,9 +36,13 @@ async function run({ count = 0, sent = true, email = 'owner@example.test', busy 
     require(name) {
       if (name.endsWith('/db')) return { pool: { connect: async () => client } };
       if (name.endsWith('/racm_failure')) return { getAutoFailGraceDays: () => 2, hasAutomaticFailureSchema: async () => schemaReady };
-      if (name.endsWith('/send_email')) return { sendEmail: async (_, subject, text) => { message = { subject, text }; events.push('send'); return sent; } };
+      if (name.endsWith('/send_email')) return { sendEmail: async (to, subject, text) => { message = { to, subject, text }; events.push('send'); return sent; } };
       if (name.endsWith('/racm_cc_recipients')) return { getCcEmailsForRacm: async () => [] };
       if (name.endsWith('/deficiency_response_notifications')) return { getCoordinatorEmailForUnit: async () => null };
+      if (name.endsWith('/racm_coordinator_assignment')) return {
+        isCoordinatorAssignedRacm: (row) => row.assigned_to_coordinator === true,
+        buildCoordinatorFormDetailUrl: () => '/company-co/form/F',
+      };
       if (name.endsWith('/controls_reminder')) return {
         updateIneffectiveReminderDatetime: async () => { events.push('normal'); },
         recordFinalIneffectiveReminder: async () => { events.push('final'); },
@@ -44,6 +64,21 @@ test('Not Effective stage sends normal reminders up to the configured count', as
     assert.deepEqual(result.events, ['send', 'normal', 'release']);
     assert.ok(!result.message.subject.includes('Final'));
   }
+});
+
+test('empty process owner falls back to the assigned coordinator and keeps normal reminder updates', async () => {
+  const result = await run({ email: '', assignedToCoordinator: true });
+
+  assert.equal(result.message.to, 'coordinator@example.test');
+  assert.match(result.message.text, /Dear Coordinator Name/);
+  assert.match(result.message.text, /\/company-co\/form\/F/);
+  assert.deepEqual(result.events, ['send', 'normal', 'release']);
+});
+
+test('a configured process owner remains the recipient even when coordinator assignment is enabled', async () => {
+  const result = await run({ assignedToCoordinator: true });
+
+  assert.equal(result.message.to, 'owner@example.test');
 });
 
 test('next reminder is final and explains the configured deadline and Failed result', async () => {

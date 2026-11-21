@@ -1,6 +1,6 @@
 User manual video generation prompt for coordinator:
 
-Use flow-video-recorder to create a comprehensive and concise explanatory video of my IFC website at [http://localhost:5174/company_admin/home] for only company admin users.
+Use flow-video-recorder to create a comprehensive and concise explanatory video of my IFC website at [http://localhost:5174] for only company coordinator user.
 
 Show these features in order: [User Management, RACM Communication, RACM Templates, Creating & Uploading RACMs, RACM Management, RACM Assignment, Reports, RACM Change Requests, Deficiency Response Submission].
 
@@ -10,15 +10,13 @@ Generate narration once and reuse the audio when retrying the recording to conse
 
 There are some action which will work on specific RACMs, like RACM chnage request and Deficiency Response Submission.
 
-I have requested chnages from a user and now there is a notification on "http://localhost/company-co/racm-management" this page which states "1 Racm pending for change request".
+I have requested chnages from a user and now there is a notification on "site-url/company-co/racm-management" this page which states "1 Racm pending for change request". On that page it also shows "1 RACMs are found ineffective".
 
-On that page it also shows "1 RACMs are found ineffective".
-
-Also in RACM upload I will select an excel file for uploading, then perform some column mapping for demo.
+Also in RACM upload create a dummy excel file and display how column mapping is done.
 
 In RACM templates also display the Import function, till the end but do not perform any action. Also add some columns with dummny names in an existing template but do not save it.
 
-In Risk analysis display risks for APL1 unit and P2P Business process, cause it already has generated. Just display the generated risks and explain how to generate them. Similar way display for Design gap analysis.
+In Risk analysis display risks for Alem unit and P2P Business process, cause it already has generated. Just display the generated risks and explain how to generate them. Similar way display for Design gap analysis.
 
 Display all oeprations and action till last stage where a submit or save button will update the database. We dot not have to perfom action in demo so do not perform any db updates during demo creatio.
 

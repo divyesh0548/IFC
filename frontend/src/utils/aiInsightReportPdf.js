@@ -278,17 +278,6 @@ export function downloadKeyManualReportPdf(reportData) {
   doc.save(`key_manual_report_${header.unitPart}_${header.bpPart}_${fileStamp()}.pdf`)
 }
 
-function pointerComparison(response, risk) {
-  const comparisons = response?.riskComparisons
-  if (!comparisons || typeof comparisons !== 'object') return null
-  const wanted = safeText(risk).toLowerCase()
-  if (!wanted) return null
-  const direct = comparisons[risk] || comparisons[safeText(risk)]
-  if (direct?.addressedStatus) return direct
-  const match = Object.entries(comparisons).find(([key]) => safeText(key).toLowerCase() === wanted)
-  return match?.[1]?.addressedStatus ? match[1] : null
-}
-
 export function downloadRiskAnalysisReportPdf(reportData) {
   const state = createReportDocument()
   const { doc, margin, contentWidth } = state
@@ -330,7 +319,7 @@ export function downloadRiskAnalysisReportPdf(reportData) {
 
       if (storedRisks) {
         const groups = [
-          ['Missing / partially covered risks', storedRisks.filter((item) => item?.status !== 'Addressed Risk')],
+          ['Missing risks', storedRisks.filter((item) => item?.status !== 'Addressed Risk')],
         ]
         groups.forEach(([title, items]) => {
           state.y = ensureSpace(doc, state.y, 12)
@@ -396,29 +385,12 @@ export function downloadRiskAnalysisReportPdf(reportData) {
         doc.setTextColor(...COLORS.text)
       } else {
         pointers.forEach((item, index) => {
-          const risk = safeText(item?.risk)
           const pointer = safeText(item?.pointer) || '—'
-          const comparison = pointerComparison(response, risk)
-          const addressedBy = Array.isArray(comparison?.addressedBy)
-            ? comparison.addressedBy.map((value) => safeText(value)).filter(Boolean)
-            : []
           state.y = ensureSpace(doc, state.y, 14)
           doc.setFont('helvetica', 'bold')
           doc.setFontSize(9)
           doc.setTextColor(...COLORS.text)
           state.y = addWrapped(doc, `${index + 1}. ${pointer}`, margin + 3, state.y + 2, contentWidth - 3, 4)
-          if (comparison?.addressedStatus) {
-            doc.setFont('helvetica', 'normal')
-            if (comparison.addressedStatus === 'Not addressed') doc.setTextColor(...COLORS.red)
-            else doc.setTextColor(...COLORS.green)
-            state.y = addWrapped(doc, comparison.addressedStatus, margin + 6, state.y + 0.5, contentWidth - 6, 4)
-            doc.setTextColor(...COLORS.text)
-            const reason = safeText(comparison.reason)
-            const coverage = addressedBy.length > 0 ? ` Addressed by ${addressedBy.join(', ')}.` : ''
-            if (reason || coverage) {
-              state.y = addWrapped(doc, `${reason}${coverage}`.trim(), margin + 6, state.y + 0.5, contentWidth - 6, 4)
-            }
-          }
         })
       }
       state.y += 5

@@ -22,6 +22,10 @@ const { sendEmail } = require('../../utils/send_email');
 const { getCcEmailsForRacm } = require('../../utils/racm_cc_recipients');
 const { getCoordinatorEmailForUnit } = require('../../utils/deficiency_response_notifications');
 const {
+  isCoordinatorAssignedRacm,
+  buildCoordinatorFormDetailUrl,
+} = require('../../utils/racm_coordinator_assignment');
+const {
   updateIneffectiveReminderDatetime,
   recordFinalIneffectiveReminder,
   getReminderFinalAfter,
@@ -51,7 +55,10 @@ async function fetchFormsDueForIneffectiveReminder(client, trackingReady = true)
       cf.company_identifier,
       cf.unit_id,
       cf.control_owner,
+      cf.assigned_to_coordinator,
+      cf.coordinator_assigned_by,
       owner_u.emp_name AS control_owner_emp_name,
+      coordinator_u.emp_name AS coordinator_emp_name,
       cf.standard_control_description,
       cf.business_process,
       cf.financial_year,
@@ -64,6 +71,9 @@ async function fetchFormsDueForIneffectiveReminder(client, trackingReady = true)
     LEFT JOIN ifc_users owner_u
       ON owner_u.company_identifier = cf.company_identifier
      AND LOWER(TRIM(COALESCE(owner_u.email_id, ''))) = LOWER(TRIM(COALESCE(cf.control_owner, '')))
+    LEFT JOIN ifc_users coordinator_u
+      ON coordinator_u.company_identifier = cf.company_identifier
+     AND LOWER(TRIM(COALESCE(coordinator_u.email_id, ''))) = LOWER(TRIM(COALESCE(cf.coordinator_assigned_by, '')))
     LEFT JOIN companies c
       ON c.company_identifier = cf.company_identifier
     LEFT JOIN process_owner_declaration pod
@@ -83,11 +93,17 @@ async function fetchFormsDueForIneffectiveReminder(client, trackingReady = true)
   return result.rows;
 }
 
-function buildIneffectiveReminderEmailBody(form, { finalReminder = false } = {}) {
+function buildIneffectiveReminderEmailBody(
+  form,
+  { finalReminder = false, coordinatorAssigned = false } = {}
+) {
   const companyName = String(form.company_name || '').trim();
-  const ownerSalutation =
-    String(form.control_owner_emp_name || '').trim() || 'Process Owner';
-  const formUrl = buildUserFormDetailUrl(form.form_id);
+  const ownerSalutation = coordinatorAssigned
+    ? String(form.coordinator_emp_name || '').trim() || 'Coordinator'
+    : String(form.control_owner_emp_name || '').trim() || 'Process Owner';
+  const formUrl = coordinatorAssigned
+    ? buildCoordinatorFormDetailUrl(form.form_id)
+    : buildUserFormDetailUrl(form.form_id);
 
   return `Dear ${ownerSalutation},
 
@@ -116,7 +132,11 @@ async function runIneffectiveReminderEmails() {
     const intervalDays = getIneffectiveReminderIntervalDays();
 
     for (const form of forms) {
-      const to = String(form.control_owner || '').trim();
+      const processOwnerEmail = String(form.control_owner || '').trim();
+      const coordinatorAssigned = !processOwnerEmail && isCoordinatorAssignedRacm(form);
+      const to = coordinatorAssigned
+        ? String(form.coordinator_assigned_by || '').trim()
+        : processOwnerEmail;
 
       if (!isValidEmail(to)) {
         console.warn(`[ineffective_reminder_emails] Invalid owner address for form_id=${form.form_id}; no reminder counted.`);
@@ -127,7 +147,10 @@ async function runIneffectiveReminderEmails() {
       const businessProcessText = String(form.business_process || '').trim() || 'Business Process';
       const isFinalReminder = trackingReady && Number(form.ineffective_reminder_sent_count || 0) >= getReminderFinalAfter();
       const subject = `${isFinalReminder ? 'Final reminder' : 'Reminder'} : Control ${controlNumberText} - ${businessProcessText} is ineffective`;
-      const text = buildIneffectiveReminderEmailBody(form, { finalReminder: isFinalReminder });
+      const text = buildIneffectiveReminderEmailBody(form, {
+        finalReminder: isFinalReminder,
+        coordinatorAssigned,
+      });
 
       const coordinatorEmail = await getCoordinatorEmailForUnit(form.company_identifier, form.unit_id);
       const matrixCcEmails = await getCcEmailsForRacm({

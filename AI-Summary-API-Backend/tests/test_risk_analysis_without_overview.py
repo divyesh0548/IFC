@@ -31,7 +31,6 @@ class RiskAnalysisWithoutOverviewTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.get_json())
             prompt = response.get_json()["dry_run_txt"]
             self.assertIn("Procure to Pay", prompt)
-            self.assertIn("Duplicate invoices are paid.", prompt)
             self.assertNotIn("{business_process_overview}", prompt)
             self.assertNotIn("{concise_risks_json}", prompt)
             self.assertIn("do not invent client-specific", prompt.lower())
@@ -41,27 +40,25 @@ class RiskAnalysisWithoutOverviewTests(unittest.TestCase):
     def test_control_generation_without_overview(self):
         prompt = self.generate("analyze", {
             "business_process": "Procure to Pay", "control": self.control,
-            "concise_risks": self.risks,
         })
         self.assertIn("P2P1", prompt)
-        self.assertIn("Partially Covered Risk", prompt)
+        self.assertIn("2–3", prompt)
+        self.assertIn("Do not compare with other controls", prompt)
 
     def test_overall_generation_without_overview(self):
-        self.generate("overall-missing", {
+        prompt = self.generate("overall-missing", {
             "business_process": "Procure to Pay", "concise_risks": self.risks,
         })
+        self.assertIn("Duplicate invoices are paid.", prompt)
 
-    def test_invalid_risk_list_still_rejected(self):
+    def test_invalid_overall_risk_list_still_rejected(self):
         with patch.dict(os.environ, {"AI_SUMMARY_API_KEY": "test-key"}):
-            for endpoint in ("analyze", "overall-missing"):
-                response = self.client.post(
-                    f"/v1/risk-analysis/{endpoint}",
-                    headers={"X-API-Key": "test-key"},
-                    json={"business_process": "Procure to Pay", "control": self.control,
-                          "concise_risks": "invalid"},
-                )
-                self.assertEqual(response.status_code, 400)
-                self.assertEqual(response.get_json()["message"], "concise_risks must be an array")
+            response = self.client.post(
+                "/v1/risk-analysis/overall-missing",
+                headers={"X-API-Key": "test-key"},
+                json={"business_process": "Procure to Pay", "concise_risks": "invalid"},
+            )
+            self.assertEqual(response.status_code, 400)
 
 
 if __name__ == "__main__":
