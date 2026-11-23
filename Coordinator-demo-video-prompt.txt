@@ -4,7 +4,7 @@ Use flow-video-recorder to create a comprehensive and concise explanatory video 
 
 Show these features in order: [User Management, RACM Communication, RACM Templates, Creating & Uploading RACMs, RACM Management, RACM Assignment, Reports, RACM Change Requests, Deficiency Response Submission].
 
-Inspect the website and write a clear narration script based on its actual features. Record the real website with English voice-over, captions, and cursor highlights. Use the ElevenLabs key from .env and Git Bash for the recording scripts. Save the finished video as output/ifc-demo.mp4.
+Inspect the website and write a clear narration script based on its actual features. Record the real website with English voice-over, captions, and cursor highlights. Use free audio libraries for audio. Save the finished video as output/ifc-coordinator-manul.mp4.
 
 Generate narration once and reuse the audio when retrying the recording to conserve credits.
 
@@ -16,14 +16,20 @@ Also in RACM upload create a dummy excel file and display how column mapping is 
 
 In RACM templates also display the Import function, till the end but do not perform any action. Also add some columns with dummny names in an existing template but do not save it.
 
-In Risk analysis display risks for Alem unit and P2P Business process, cause it already has generated. Just display the generated risks and explain how to generate them. Similar way display for Design gap analysis.
+In Risk analysis display risks for Alembic unit and P2P Business process, cause it already has generated. Just display the generated risks and explain how to generate them. Similar way display for Design gap analysis.
 
-Display all oeprations and action till last stage where a submit or save button will update the database. We dot not have to perfom action in demo so do not perform any db updates during demo creatio.
+Display all oeprations and action till last stage where a submit or save button will update the database. We dot not have to perfom action in demo so do not perform any db updates during demo creation.
+
+In RACM Assignment page, bulk Assignment option is given. But only RACMs with remidner and due dates configured will be listed there. So mention that point, it is really important. Also explain approver assignment, which is RACM specific type.
+
+Keep video in 2560*1440 resolution and use whatever free audio library you find best. Keep male voice in video.
 
 coordinator login credentials :
 
 coordinator.alembic@gmail.com
 Password : 123456
+
+Login using this credentials, but do not record it. Start recording from dashboard.
 
 Narration style:
 

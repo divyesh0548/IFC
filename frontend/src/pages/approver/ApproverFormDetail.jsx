@@ -271,8 +271,11 @@ function ApproverFormDetail() {
     }
 
     if (nextStatus === 'Approved') {
-      if (!designProcedures || !designConclusion) {
+      if (!isDeclarationReview && (!designProcedures || !designConclusion)) {
         return 'Design and Implementation fields are required for approval of RACM.'
+      }
+      if (isDeclarationReview && !designConclusion) {
+        return 'Conclusion on design of control is required.'
       }
     }
 
@@ -2107,7 +2110,7 @@ function ApproverFormDetail() {
                       {showApproveFlowFields ? (
                         <>
                           {(showDeclarationFields
-                            ? ['control_design_conclusion', 'control_design_procs']
+                            ? ['control_design_conclusion']
                             : groupedApproverFields
                           )
                             .filter((key) => key !== 'design_deficiency_desc' || showDesignDeficiencyField)
@@ -2221,11 +2224,13 @@ function ApproverFormDetail() {
                         </>
                       ) : null}
 
-                      {(showApproveFlowFields || showRejectFlowFields) && !showDeclarationFields ? (
+                      {(showApproveFlowFields || showRejectFlowFields) ? (
                         <TextField
-                          label="Reason by Approver"
+                          label={showDeclarationFields ? 'Reason' : 'Reason by Approver'}
                           placeholder={
-                            approvalDecision === 'Rejected'
+                            showDeclarationFields
+                              ? 'Enter reason (optional)'
+                              : approvalDecision === 'Rejected'
                               ? 'Enter reason for rejection'
                               : 'Enter reason for approval or rejection (optional)'
                           }
@@ -2235,7 +2240,7 @@ function ApproverFormDetail() {
                           value={reasonByApprover}
                           onChange={(e) => setReasonByApprover(e.target.value)}
                           variant="outlined"
-                          required={approvalDecision === 'Rejected'}
+                          required={!showDeclarationFields && approvalDecision === 'Rejected'}
                           sx={{
                             gridColumn: { xs: '1', md: '1 / -1' },
                             '& .MuiOutlinedInput-root': {

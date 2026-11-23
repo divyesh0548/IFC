@@ -1,0 +1,35 @@
+User manual video generation prompt for process owner:
+
+Use flow-video-recorder to create a comprehensive and concise explanatory video of my IFC website at [http://localhost:5174] for only process owner user.
+
+Show these features in order: [Dashboard and filters, sending RACM for approval, requesting chnages, resubmission of rejected control, sending mitigation plan in ineffective RACM.].
+
+Inspect the website and write a clear narration script based on its actual features. Record the real website with English voice-over, captions, and cursor highlights. Use free audio libraries for audio. Save the finished video as output/ifc-coordinator-manul.mp4.
+
+Generate narration once and reuse the audio when retrying the recording to conserve credits.
+
+There are some action which will work on specific RACMs, like RACM resubmission and Deficiency Response Submission.
+
+I have made available a rejected RACM and an ineffective RACM on "site-url/user/dashboard". Just open them and show how to re-submit them. (Do not actually submit them)
+
+Also display the option "No Submission" declaration on a fresh RACM which is for the case if not records are avialable during the time period of audit.
+In Rejected RACMs and ineffective RACMS there will be an option to declare "No Furthure Submission" which indicates that no other Submission is available. Both of these declaration will go to approver for conclude. declaration means closing responsibility from process owner side. 
+
+Display all oeprations and action till last stage where a submit or save button will update the database. We dot not have to perfom action in demo so do not perform any db updates during demo creation.
+
+Keep video in 2560*1440 resolution and use whatever free audio library you find best. Keep male voice in video.
+
+coordinator login credentials :
+
+user1.alembic@gmail.com
+Password : 123456
+
+Login using this credentials, but do not record it. Start recording from dashboard.
+
+Narration style:
+
+- Treat recording instructions, navigation order, and safety requirements as production guidance, not narration. Do not mention the agent, prompt, filming, or why this feature order was chosen.
+- Speak directly to the Company Coordinator user. Explain what each feature does, where to find it, and how to use it.
+- Do not repeatedly say that the demo will not create, update, save, or submit anything. Avoid statements such as "we will not create or update anything" and "we will follow the sequence rather than jumping to AI features."
+- For forms and actions that must remain untouched, explain the relevant fields and point out the Save or Submit button when useful, then simply do not click it. Keep the no-database-update requirement as an action constraint, not a spoken disclaimer.
+- If narration is revised after recording, keep the existing video and replace only its audio track when the visuals still match. Align replacement clips to the original segment timings with zero global offset; shorten or pace the narration to fit rather than shifting the whole soundtrack.

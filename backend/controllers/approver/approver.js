@@ -507,7 +507,7 @@ async function approveForm(req, res) {
       ? declarationConclusion
       : designConclusion;
 
-    if (status === 'Approved' && !designProcedures) {
+    if (status === 'Approved' && !isDeclarationReview && !designProcedures) {
       return res.status(400).json({
         success: false,
         message: 'Procedures to Evaluate Design and Implementation is required for approval.',
