@@ -18,7 +18,6 @@ services:
       - ./backend/.env
     environment:
       PORT: "3000"
-      VITE_FRONTEND_URL: ${VITE_FRONTEND_URL:-http://localhost}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     expose:
