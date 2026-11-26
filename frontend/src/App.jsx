@@ -20,7 +20,7 @@ const Company_Management = lazy(() => import('./pages/siteadmin/Company_Manageme
 const CompanyCreation = lazy(() => import('./pages/siteadmin/CompanyCreation'))
 const CompanyDetail = lazy(() => import('./pages/siteadmin/CompanyDetail'))
 const AuditorManagement = lazy(() => import('./pages/siteadmin/AuditorManagement'))
-const Siteadmin_Dashboard = lazy(() => import('./pages/siteadmin/Siteadmin_Dashboard'))
+const Siteadmin_Dashboard = lazy(() => import('./pages/siteadmin/Siteadmin_dashboard'))
 const SiteadminBusinessProcessManagement = lazy(() => import('./pages/siteadmin/BusinessProcessManagement'))
 const ControlsLibraryUpload = lazy(() => import('./pages/siteadmin/ControlsLibraryUpload'))
 const ControlsLibrary = lazy(() => import('./pages/siteadmin/ControlsLibrary'))
