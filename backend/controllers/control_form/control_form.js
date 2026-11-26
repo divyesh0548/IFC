@@ -957,7 +957,6 @@ const REQUEST_CHANGE_ALLOWED_FIELDS = new Set([
   'nature_of_control',
   'sample_size',
   'sample_required',
-  'due_date',
 ]);
 
 const REQUEST_CHANGE_FIELD_LABELS = {
@@ -1037,6 +1036,7 @@ async function loadRequestChangeExtraFieldContext(client, templateId, formId) {
 }
 
 function resolveRequestChangeFieldKind(fieldDbName, extraFieldByKey) {
+  if (fieldDbName === 'due_date') return null;
   if (extraFieldByKey.has(fieldDbName)) return 'dynamic';
   if (REQUEST_CHANGE_ALLOWED_FIELDS.has(fieldDbName)) return 'fixed';
   return null;
@@ -3313,7 +3313,7 @@ async function requestChange(req, res) {
   const requesterEmail = String(req.user?.email_id || '').trim();
   const requesterRole = String(req.user?.role || '').trim().toLowerCase();
   const submittedChanges = Array.isArray(req.body?.changes) ? req.body.changes : [];
-  const requestReason = req.body?.request_reason == null ? null : String(req.body.request_reason).trim() || null;
+  const requestReason = req.body?.request_reason == null ? '' : String(req.body.request_reason).trim();
 
   if (requesterRole !== 'user') {
     return res.status(403).json({
@@ -3326,6 +3326,13 @@ async function requestChange(req, res) {
     return res.status(400).json({
       success: false,
       message: 'Form id is required',
+    });
+  }
+
+  if (!requestReason) {
+    return res.status(400).json({
+      success: false,
+      message: 'Reason for change is required',
     });
   }
 
@@ -3989,6 +3996,9 @@ async function reviewChangeRequest(req, res) {
 
       for (const approvedItem of approvedItems) {
         const fieldName = String(approvedItem.field_db_name || '').trim();
+        if (fieldName === 'due_date') {
+          continue;
+        }
         if (extraFieldByKey.has(fieldName)) {
           dynamicApprovedChanges[fieldName] = approvedItem.new_value_text;
           continue;
@@ -4106,13 +4116,6 @@ async function reviewChangeRequest(req, res) {
     );
 
     await client.query('COMMIT');
-
-    const dueDateApproved = approvedItems.some(
-      (item) => String(item.field_db_name || '').trim() === 'due_date'
-    );
-    if (dueDateApproved) {
-      await resetReminderDatetimeForForms([normalizedFormId]);
-    }
 
     await logAuditEvent(
       'RACM Change Request Reviewed',

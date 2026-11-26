@@ -73,7 +73,6 @@ const REQUEST_CHANGE_FIELD_KEYS = [
   'control_type_fo',
   'control_type_ma',
   'nature_of_control',
-  'due_date',
 ]
 
 const REQUEST_CHANGE_BOOLEAN_FIELDS = new Set([])
@@ -152,7 +151,8 @@ function isRequestChangeFieldEditable(fieldKey) {
 function getExtraRequestChangeFields(fieldDefinitions) {
   return (Array.isArray(fieldDefinitions) ? fieldDefinitions : [])
     .filter((field) => (
-      !field.is_fixed
+      field.field_key !== 'due_date'
+      && !field.is_fixed
       && String(field.section_key || '').trim() !== DESIGN_IMPLEMENTATION_SECTION_KEY
     ))
     .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
@@ -683,6 +683,11 @@ function UserFormDetail() {
   }
 
   const handleSubmitRequestChange = async () => {
+    if (!String(requestReason || '').trim()) {
+      toast.error('Reason for change is required')
+      return
+    }
+
     const extraFields = getExtraRequestChangeFields(formData?.field_definitions)
     const fixedChanges = REQUEST_CHANGE_FIELD_KEYS
       .map((fieldKey, index) => {
@@ -1467,6 +1472,7 @@ function UserFormDetail() {
               fullWidth
               multiline
               rows={3}
+              required
               sx={{ mt: -1 }}
             />
           ) : null}
@@ -1726,21 +1732,17 @@ function UserFormDetail() {
                     >
                       Due Date
                     </Typography>
-                    {isRequestChangeMode && isRequestChangeFieldEditable('due_date') ? (
-                      renderRequestChangeInput('due_date', 'Due Date')
-                    ) : (
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: 'text.primary',
-                          fontWeight: 500,
-                          fontSize: '0.9375rem',
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        {formatDateOnly(formData?.due_date)}
-                      </Typography>
-                    )}
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.primary',
+                        fontWeight: 500,
+                        fontSize: '0.9375rem',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {formatDateOnly(formData?.due_date)}
+                    </Typography>
                   </Box>
 
                   {/* Approver */}
